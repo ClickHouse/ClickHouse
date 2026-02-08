@@ -179,14 +179,16 @@ def main():
         "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
         "max_string_length": random.randint(min_string_length, max_string_length),
-        "max_parallel_queries": (
-            1
-            if (
-                any(x in Info().job_name for x in ["tsan", "asan", "msan"])
-                or random.randint(1, 2) == 1
-            )
-            else random.randint(1, 5)
-        ),
+        # Disable parallel queries, there are issues in the CI currently
+        # "max_parallel_queries": (
+        #    1
+        #    if (
+        #        any(x in Info().job_name for x in ["tsan", "asan", "msan"])
+        #        or random.randint(1, 2) == 1
+        #    )
+        #    else random.randint(1, 5)
+        # ),
+        "max_parallel_queries": 1,
         "max_number_alters": (1 if random.randint(1, 2) == 1 else random.randint(1, 4)),
         "fuzz_floating_points": random.choice([True, False]),
         "enable_fault_injection_settings": random.randint(1, 4) == 1,

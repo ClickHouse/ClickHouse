@@ -534,7 +534,7 @@ private:
                 res_values[row] = 1.0;
                 continue;
             }
-            res_values[row] = 1.0 - (distance->getFloat64(row) / weights_sum);
+            res_values[row] = 1.0 - (distance->getFloat64(row) / static_cast<Float64>(weights_sum));
         }
         return true;
     }

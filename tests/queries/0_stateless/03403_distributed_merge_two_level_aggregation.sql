@@ -1,4 +1,4 @@
--- Tags: no-fasttest, long
+-- Tags: no-fasttest, long, no-azure-blob-storage
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1(number UInt64) ENGINE = MergeTree ORDER BY number;

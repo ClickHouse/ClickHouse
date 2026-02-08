@@ -24,7 +24,7 @@ struct CramersVData : CrossTabData
             return std::numeric_limits<Float64>::quiet_NaN();
 
         UInt64 q = std::min(count_a.size(), count_b.size());
-        return sqrt(getPhiSquared() / (q - 1));
+        return sqrt(getPhiSquared() / static_cast<Float64>(q - 1));
     }
 };
 
@@ -38,7 +38,7 @@ The result of the `cramersV` function ranges from 0 (corresponding to no associa
 It may be viewed as the association between two variables as a percentage of their maximum possible variation.
 
 :::note
-For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramersvbiascorrected.md)
+For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](/sql-reference/aggregate-functions/reference/cramersvbiascorrected)
 :::
     )";
     FunctionDocumentation::Syntax syntax = "cramersV(column1, column2)";

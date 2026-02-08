@@ -27,6 +27,7 @@ class Html:
         S3.copy_file_to_s3(
             s3_path=str(Path(Settings.HTML_S3_PATH) / Path(page_file).name),
             local_path=compressed_file,
+            content_type="text/html",
             content_encoding="gzip",
             with_rename=True,
         )

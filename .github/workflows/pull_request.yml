@@ -27,7 +27,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -52,9 +52,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Config Workflow' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Config Workflow' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_amd:
@@ -67,7 +67,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -92,9 +92,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_arm:
@@ -107,7 +107,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -132,9 +132,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_multiplatform_manifest:
@@ -147,7 +147,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -172,9 +172,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (multiplatform manifest)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (multiplatform manifest)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (multiplatform manifest)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (multiplatform manifest)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   style_check:
@@ -187,7 +187,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -212,9 +212,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Style check' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Style check' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Style check' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Style check' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   docs_check:
@@ -227,7 +227,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -252,9 +252,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docs check' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docs check' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Docs check' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docs check' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   fast_test:
@@ -267,7 +267,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -292,9 +292,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Fast test' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Fast test' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Fast test' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Fast test' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_tidy:
@@ -307,7 +307,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -332,9 +332,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_tidy)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_tidy)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_tidy)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_tidy)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_debug:
@@ -347,7 +347,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -372,9 +372,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_asan:
@@ -387,7 +387,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -412,9 +412,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_asan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_asan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_asan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_tsan:
@@ -427,7 +427,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -452,9 +452,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_tsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_tsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_msan:
@@ -467,7 +467,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -492,9 +492,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_msan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_msan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_ubsan:
@@ -507,7 +507,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -532,9 +532,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_ubsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_ubsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_binary:
@@ -547,7 +547,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -572,9 +572,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_binary)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_binary)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_binary)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_binary)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_asan:
@@ -587,7 +587,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -612,9 +612,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_asan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_asan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_asan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_binary:
@@ -627,7 +627,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -652,9 +652,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_binary)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_binary)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_binary)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_binary)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_tsan:
@@ -667,7 +667,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -692,9 +692,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_tsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_tsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_release:
@@ -707,7 +707,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -732,9 +732,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_release:
@@ -747,7 +747,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -772,9 +772,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_darwin:
@@ -787,7 +787,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -812,9 +812,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_darwin)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_darwin)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_darwin)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_darwin)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_darwin:
@@ -827,7 +827,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -852,9 +852,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_darwin)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_darwin)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_darwin)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_darwin)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_v80compat:
@@ -867,7 +867,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -892,9 +892,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_v80compat)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_v80compat)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_v80compat)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_v80compat)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_freebsd:
@@ -907,7 +907,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -932,9 +932,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_freebsd)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_freebsd)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_freebsd)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_freebsd)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_ppc64le:
@@ -947,7 +947,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -972,9 +972,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (ppc64le)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (ppc64le)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (ppc64le)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (ppc64le)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_compat:
@@ -987,7 +987,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1012,9 +1012,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_compat)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_compat)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_compat)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_compat)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_musl:
@@ -1027,7 +1027,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1052,9 +1052,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_musl)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_musl)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_musl)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_musl)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_riscv64:
@@ -1067,7 +1067,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1092,9 +1092,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (riscv64)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (riscv64)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (riscv64)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (riscv64)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_s390x:
@@ -1107,7 +1107,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1132,9 +1132,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (s390x)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (s390x)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (s390x)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (s390x)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_loongarch64:
@@ -1147,7 +1147,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1172,9 +1172,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (loongarch64)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (loongarch64)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (loongarch64)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (loongarch64)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_fuzzers:
@@ -1187,7 +1187,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1212,9 +1212,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   quick_functional_tests:
@@ -1227,7 +1227,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1252,9 +1252,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Quick functional tests' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Quick functional tests' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Quick functional tests' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Quick functional tests' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_arm_asan_targeted:
@@ -1267,7 +1267,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1292,9 +1292,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_asan, targeted)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_asan, targeted)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_asan, targeted)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_asan, targeted)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_targeted:
@@ -1307,7 +1307,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1332,9 +1332,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, targeted)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, targeted)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, targeted)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, targeted)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_asan_flaky_check:
@@ -1347,7 +1347,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1372,9 +1372,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, flaky check)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, flaky check)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, flaky check)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, flaky check)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_flaky:
@@ -1387,7 +1387,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1412,9 +1412,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, flaky)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, flaky)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, flaky)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, flaky)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   bugfix_validation_functional_tests:
@@ -1427,7 +1427,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1452,9 +1452,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Bugfix validation (functional tests)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Bugfix validation (functional tests)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Bugfix validation (functional tests)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Bugfix validation (functional tests)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   bugfix_validation_integration_tests:
@@ -1467,7 +1467,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1492,9 +1492,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Bugfix validation (integration tests)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Bugfix validation (integration tests)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Bugfix validation (integration tests)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Bugfix validation (integration tests)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_asan_distributed_plan_parallel_1_2:
@@ -1507,7 +1507,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1532,9 +1532,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_asan_distributed_plan_parallel_2_2:
@@ -1547,7 +1547,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1572,9 +1572,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_asan_db_disk_distributed_plan_sequential:
@@ -1587,7 +1587,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1612,9 +1612,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel:
@@ -1627,7 +1627,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1652,9 +1652,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential:
@@ -1667,7 +1667,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1692,9 +1692,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel:
@@ -1707,7 +1707,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1732,9 +1732,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, parallel)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, parallel)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential:
@@ -1747,7 +1747,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1772,9 +1772,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_binary, ParallelReplicas, s3 storage, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_debug_asyncinsert_s3_storage_parallel:
@@ -1787,7 +1787,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1812,9 +1812,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, parallel)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, parallel)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_debug_asyncinsert_s3_storage_sequential:
@@ -1827,7 +1827,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1852,9 +1852,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, AsyncInsert, s3 storage, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_debug_parallel:
@@ -1867,7 +1867,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1892,9 +1892,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, parallel)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, parallel)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_debug_sequential:
@@ -1907,7 +1907,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1932,9 +1932,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_tsan_parallel_1_2:
@@ -1947,7 +1947,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1972,9 +1972,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 1/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 1/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_tsan_parallel_2_2:
@@ -1987,7 +1987,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2012,9 +2012,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 2/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 2/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_tsan_sequential_1_2:
@@ -2027,7 +2027,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2052,9 +2052,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 1/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 1/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_tsan_sequential_2_2:
@@ -2067,7 +2067,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2092,9 +2092,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 2/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 2/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_msan_parallel_1_2:
@@ -2107,7 +2107,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2132,9 +2132,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 1/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 1/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_msan_parallel_2_2:
@@ -2147,7 +2147,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2172,9 +2172,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 2/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, parallel, 2/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_msan_sequential_1_2:
@@ -2187,7 +2187,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2212,9 +2212,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 1/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 1/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_msan_sequential_2_2:
@@ -2227,7 +2227,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2252,9 +2252,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 2/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_msan, sequential, 2/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_ubsan_parallel:
@@ -2267,7 +2267,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2292,9 +2292,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_ubsan, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_ubsan, parallel)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_ubsan, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_ubsan, parallel)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_ubsan_sequential:
@@ -2307,7 +2307,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2332,9 +2332,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_ubsan, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_ubsan, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_ubsan, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_ubsan, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_debug_distributed_plan_s3_storage_parallel:
@@ -2347,7 +2347,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2372,9 +2372,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, parallel)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, parallel)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_debug_distributed_plan_s3_storage_sequential:
@@ -2387,7 +2387,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2412,9 +2412,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_tsan_s3_storage_parallel_1_2:
@@ -2427,7 +2427,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2452,9 +2452,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 1/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 1/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_tsan_s3_storage_parallel_2_2:
@@ -2467,7 +2467,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2492,9 +2492,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 2/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 2/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_tsan_s3_storage_sequential_1_2:
@@ -2507,7 +2507,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2532,9 +2532,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 1/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 1/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 1/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_tsan_s3_storage_sequential_2_2:
@@ -2547,7 +2547,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2572,9 +2572,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 2/2)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 2/2)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 2/2)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_arm_binary_parallel:
@@ -2587,7 +2587,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2612,9 +2612,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_binary, parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_binary, parallel)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_binary, parallel)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_binary, parallel)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_arm_binary_sequential:
@@ -2627,7 +2627,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2652,9 +2652,89 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_arm_asan_azure_parallel:
+    runs-on: [self-hosted, arm-medium]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_arm_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbiwgYXp1cmUsIHBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (arm_asan, azure, parallel)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (arm_asan, azure, parallel)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (arm_asan, azure, parallel)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_arm_asan_azure_sequential:
+    runs-on: [self-hosted, arm-small-mem]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_arm_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbiwgYXp1cmUsIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (arm_asan, azure, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (arm_asan, azure, sequential)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (arm_asan, azure, sequential)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_1_6:
@@ -2667,7 +2747,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2692,9 +2772,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_2_6:
@@ -2707,7 +2787,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2732,9 +2812,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_3_6:
@@ -2747,7 +2827,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2772,9 +2852,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_4_6:
@@ -2787,7 +2867,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2812,9 +2892,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_5_6:
@@ -2827,7 +2907,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2852,9 +2932,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_6_6:
@@ -2867,7 +2947,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2892,9 +2972,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_binary_1_5:
@@ -2907,7 +2987,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2932,9 +3012,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_binary, 1/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 1/5)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_binary, 1/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 1/5)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_binary_2_5:
@@ -2947,7 +3027,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2972,9 +3052,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_binary, 2/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 2/5)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_binary, 2/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 2/5)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_binary_3_5:
@@ -2987,7 +3067,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3012,9 +3092,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_binary, 3/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 3/5)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_binary, 3/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 3/5)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_binary_4_5:
@@ -3027,7 +3107,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3052,9 +3132,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_binary, 4/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 4/5)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_binary, 4/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 4/5)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_binary_5_5:
@@ -3067,7 +3147,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3092,9 +3172,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_binary, 5/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 5/5)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_binary, 5/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_binary, 5/5)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_arm_binary_distributed_plan_1_4:
@@ -3107,7 +3187,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3132,9 +3212,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 1/4)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 1/4)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 1/4)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 1/4)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_arm_binary_distributed_plan_2_4:
@@ -3147,7 +3227,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3172,9 +3252,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 2/4)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 2/4)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 2/4)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 2/4)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_arm_binary_distributed_plan_3_4:
@@ -3187,7 +3267,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3212,9 +3292,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 3/4)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 3/4)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 3/4)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 3/4)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_arm_binary_distributed_plan_4_4:
@@ -3227,7 +3307,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3252,9 +3332,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 4/4)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 4/4)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 4/4)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 4/4)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_1_6:
@@ -3267,7 +3347,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3292,9 +3372,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_2_6:
@@ -3307,7 +3387,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3332,9 +3412,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_3_6:
@@ -3347,7 +3427,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3372,9 +3452,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_4_6:
@@ -3387,7 +3467,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3412,9 +3492,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_5_6:
@@ -3427,7 +3507,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3452,9 +3532,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_6_6:
@@ -3467,7 +3547,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3492,9 +3572,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   unit_tests_asan:
@@ -3507,7 +3587,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3532,9 +3612,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Unit tests (asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Unit tests (asan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Unit tests (asan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Unit tests (asan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   unit_tests_tsan:
@@ -3547,7 +3627,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3572,9 +3652,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Unit tests (tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Unit tests (tsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Unit tests (tsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Unit tests (tsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   unit_tests_msan:
@@ -3587,7 +3667,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3612,9 +3692,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Unit tests (msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Unit tests (msan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Unit tests (msan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Unit tests (msan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   unit_tests_ubsan:
@@ -3627,7 +3707,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3652,9 +3732,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Unit tests (ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Unit tests (ubsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Unit tests (ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Unit tests (ubsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   docker_server_image:
@@ -3667,7 +3747,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3692,9 +3772,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docker server image' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docker server image' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Docker server image' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docker server image' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   docker_keeper_image:
@@ -3707,7 +3787,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3732,9 +3812,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docker keeper image' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docker keeper image' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Docker keeper image' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docker keeper image' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   install_packages_amd_release:
@@ -3747,7 +3827,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3772,9 +3852,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Install packages (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Install packages (amd_release)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Install packages (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Install packages (amd_release)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   install_packages_arm_release:
@@ -3787,7 +3867,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3812,9 +3892,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Install packages (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Install packages (arm_release)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Install packages (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Install packages (arm_release)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   compatibility_check_amd_release:
@@ -3827,7 +3907,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3852,9 +3932,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Compatibility check (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Compatibility check (amd_release)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Compatibility check (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Compatibility check (amd_release)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   compatibility_check_arm_release:
@@ -3867,7 +3947,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3892,9 +3972,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Compatibility check (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Compatibility check (arm_release)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Compatibility check (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Compatibility check (arm_release)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_debug:
@@ -3907,7 +3987,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3932,9 +4012,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_debug)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_debug)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_tsan:
@@ -3947,7 +4027,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3972,9 +4052,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_arm_asan:
@@ -3987,7 +4067,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4012,9 +4092,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (arm_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (arm_asan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_arm_asan_s3:
@@ -4027,7 +4107,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4052,9 +4132,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (arm_asan, s3)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan, s3)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (arm_asan, s3)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan, s3)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_ubsan:
@@ -4067,7 +4147,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4092,9 +4172,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_msan:
@@ -4107,7 +4187,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4132,22 +4212,22 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_msan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_msan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
-  upgrade_check_amd_asan:
+  upgrade_check_amd_release:
     runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX2FzYW4p') }}
-    name: "Upgrade check (amd_asan)"
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_arm_binary, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX3JlbGVhc2Up') }}
+    name: "Upgrade check (amd_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4172,129 +4252,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Upgrade check (amd_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Upgrade check (amd_release)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Upgrade check (amd_asan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  upgrade_check_amd_tsan:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX3RzYW4p') }}
-    name: "Upgrade check (amd_tsan)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Upgrade check (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Upgrade check (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  upgrade_check_amd_msan:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_amd_msan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX21zYW4p') }}
-    name: "Upgrade check (amd_msan)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Upgrade check (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Upgrade check (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  upgrade_check_amd_debug:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VXBncmFkZSBjaGVjayAoYW1kX2RlYnVnKQ==') }}
-    name: "Upgrade check (amd_debug)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Upgrade check (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Upgrade check (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Upgrade check (amd_release)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   ast_fuzzer_amd_debug:
@@ -4307,7 +4267,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4332,9 +4292,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'AST fuzzer (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (amd_debug)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'AST fuzzer (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (amd_debug)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   ast_fuzzer_arm_asan:
@@ -4347,7 +4307,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4372,9 +4332,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'AST fuzzer (arm_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (arm_asan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'AST fuzzer (arm_asan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (arm_asan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   ast_fuzzer_amd_tsan:
@@ -4387,7 +4347,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4412,9 +4372,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'AST fuzzer (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (amd_tsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'AST fuzzer (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (amd_tsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   ast_fuzzer_amd_msan:
@@ -4427,7 +4387,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4452,9 +4412,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'AST fuzzer (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (amd_msan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'AST fuzzer (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (amd_msan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   ast_fuzzer_amd_ubsan:
@@ -4467,7 +4427,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4492,9 +4452,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'AST fuzzer (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (amd_ubsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'AST fuzzer (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'AST fuzzer (amd_ubsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   buzzhouse_amd_debug:
@@ -4507,7 +4467,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4532,9 +4492,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'BuzzHouse (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (amd_debug)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'BuzzHouse (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (amd_debug)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   buzzhouse_arm_asan:
@@ -4547,7 +4507,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4572,9 +4532,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'BuzzHouse (arm_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (arm_asan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'BuzzHouse (arm_asan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (arm_asan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   buzzhouse_amd_tsan:
@@ -4587,7 +4547,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4612,9 +4572,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'BuzzHouse (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (amd_tsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'BuzzHouse (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (amd_tsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   buzzhouse_amd_msan:
@@ -4627,7 +4587,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4652,9 +4612,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'BuzzHouse (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (amd_msan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'BuzzHouse (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (amd_msan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   buzzhouse_amd_ubsan:
@@ -4667,7 +4627,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4692,9 +4652,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'BuzzHouse (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (amd_ubsan)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'BuzzHouse (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'BuzzHouse (amd_ubsan)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_amd_release_master_head_1_6:
@@ -4707,7 +4667,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4732,9 +4692,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_amd_release_master_head_2_6:
@@ -4747,7 +4707,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4772,9 +4732,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_amd_release_master_head_3_6:
@@ -4787,7 +4747,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4812,9 +4772,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_amd_release_master_head_4_6:
@@ -4827,7 +4787,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4852,9 +4812,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 4/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 4/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 4/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 4/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_amd_release_master_head_5_6:
@@ -4867,7 +4827,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4892,9 +4852,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 5/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 5/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 5/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 5/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_amd_release_master_head_6_6:
@@ -4907,7 +4867,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4932,9 +4892,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 6/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 6/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 6/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (amd_release, master_head, 6/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_1_6:
@@ -4947,7 +4907,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4972,9 +4932,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_2_6:
@@ -4987,7 +4947,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5012,9 +4972,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_3_6:
@@ -5027,7 +4987,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5052,9 +5012,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_4_6:
@@ -5067,7 +5027,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5092,9 +5052,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 4/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 4/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 4/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 4/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_5_6:
@@ -5107,7 +5067,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5132,9 +5092,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 5/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 5/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 5/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 5/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   performance_comparison_arm_release_master_head_6_6:
@@ -5147,7 +5107,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5172,14 +5132,54 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/6)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/6)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/6)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/6)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
+          fi
+
+  macos_smoke_test_arm_darwin:
+    runs-on: [macos-14]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_arm_binary, build_amd_darwin, build_arm_darwin, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'bWFjT1Mgc21va2UgdGVzdCAoYXJtX2Rhcndpbik=') }}
+    name: "macOS smoke test (arm_darwin)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'macOS smoke test (arm_darwin)' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'macOS smoke test (arm_darwin)' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, docs_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_asan, build_arm_binary, build_arm_tsan, build_amd_release, build_arm_release, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch64, build_arm_fuzzers, quick_functional_tests, stateless_tests_arm_asan_targeted, integration_tests_amd_asan_targeted, stateless_tests_amd_asan_flaky_check, integration_tests_amd_asan_flaky, bugfix_validation_functional_tests, bugfix_validation_integration_tests, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_amd_msan_parallel_1_2, stateless_tests_amd_msan_parallel_2_2, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_tsan_s3_storage_parallel_1_2, stateless_tests_amd_tsan_s3_storage_parallel_2_2, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_binary_1_5, integration_tests_amd_binary_2_5, integration_tests_amd_binary_3_5, integration_tests_amd_binary_4_5, integration_tests_amd_binary_5_5, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, unit_tests_asan, unit_tests_tsan, unit_tests_msan, unit_tests_ubsan, docker_server_image, docker_keeper_image, install_packages_amd_release, install_packages_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_amd_ubsan, stress_test_amd_msan, upgrade_check_amd_asan, upgrade_check_amd_tsan, upgrade_check_amd_msan, upgrade_check_amd_debug, ast_fuzzer_amd_debug, ast_fuzzer_arm_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_arm_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan, performance_comparison_amd_release_master_head_1_6, performance_comparison_amd_release_master_head_2_6, performance_comparison_amd_release_master_head_3_6, performance_comparison_amd_release_master_head_4_6, performance_comparison_amd_release_master_head_5_6, performance_comparison_amd_release_master_head_6_6, performance_comparison_arm_release_master_head_1_6, performance_comparison_arm_release_master_head_2_6, performance_comparison_arm_release_master_head_3_6, performance_comparison_arm_release_master_head_4_6, performance_comparison_arm_release_master_head_5_6, performance_comparison_arm_release_master_head_6_6]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, docs_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_asan, build_arm_binary, build_arm_tsan, build_amd_release, build_arm_release, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch64, build_arm_fuzzers, quick_functional_tests, stateless_tests_arm_asan_targeted, integration_tests_amd_asan_targeted, stateless_tests_amd_asan_flaky_check, integration_tests_amd_asan_flaky, bugfix_validation_functional_tests, bugfix_validation_integration_tests, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_amd_msan_parallel_1_2, stateless_tests_amd_msan_parallel_2_2, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_tsan_s3_storage_parallel_1_2, stateless_tests_amd_tsan_s3_storage_parallel_2_2, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, stateless_tests_arm_asan_azure_parallel, stateless_tests_arm_asan_azure_sequential, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_binary_1_5, integration_tests_amd_binary_2_5, integration_tests_amd_binary_3_5, integration_tests_amd_binary_4_5, integration_tests_amd_binary_5_5, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, unit_tests_asan, unit_tests_tsan, unit_tests_msan, unit_tests_ubsan, docker_server_image, docker_keeper_image, install_packages_amd_release, install_packages_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_amd_ubsan, stress_test_amd_msan, upgrade_check_amd_release, ast_fuzzer_amd_debug, ast_fuzzer_arm_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_arm_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan, performance_comparison_amd_release_master_head_1_6, performance_comparison_amd_release_master_head_2_6, performance_comparison_amd_release_master_head_3_6, performance_comparison_amd_release_master_head_4_6, performance_comparison_amd_release_master_head_5_6, performance_comparison_amd_release_master_head_6_6, performance_comparison_arm_release_master_head_1_6, performance_comparison_arm_release_master_head_2_6, performance_comparison_arm_release_master_head_3_6, performance_comparison_arm_release_master_head_4_6, performance_comparison_arm_release_master_head_5_6, performance_comparison_arm_release_master_head_6_6, macos_smoke_test_arm_darwin]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
@@ -5187,7 +5187,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5212,7 +5212,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Finish Workflow' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Finish Workflow' --workflow "PR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Finish Workflow' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Finish Workflow' --workflow "PR" --ci 2>&1 | tee ./ci/tmp/job.log
           fi

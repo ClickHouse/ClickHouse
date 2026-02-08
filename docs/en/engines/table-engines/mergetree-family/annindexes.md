@@ -7,8 +7,6 @@ title: 'Exact and Approximate Vector Search'
 doc_type: 'guide'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
 # Exact and approximate vector search
 
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
@@ -601,8 +599,6 @@ Further example datasets that use approximate vector search:
 
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 
-<BetaBadge/>
-
 One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
 For example, if vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, the data size is reduced by half, and query runtimes are expected to decrease proportionally.
 This method is known as quantization. While it speeds up computation, it may reduce result accuracy despite performing an exhaustive scan of all vectors.
@@ -614,11 +610,6 @@ ClickHouse offers the Quantized Bit (`QBit`) data type that addresses these limi
 2. Allowing quantization precision to be specified at query time.
 
 This is achieved by storing data in a bit-grouped format (meaning all i-th bits of all vectors are stored together), enabling reads at only the requested precision level. You get the speed benefits of reduced I/O and computation from quantization while keeping all original data available when needed. When maximum precision is selected, the search becomes exact.
-
-:::note
-The `QBit` data type and its associated distance functions are Beta features. To enable them, run `SET enable_qbit_type = 1`.
-If you encounter problems, please open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
-:::
 
 To declare a column of `QBit` type, use the following syntax:
 

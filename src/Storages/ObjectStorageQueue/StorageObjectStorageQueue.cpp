@@ -118,6 +118,8 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;
     extern const ObjectStorageQueueSettingsString after_processing_tag_value;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
+    extern const ObjectStorageQueueSettingsUInt64 metadata_cache_size_bytes;
+    extern const ObjectStorageQueueSettingsUInt64 metadata_cache_size_elements;
 }
 
 namespace ErrorCodes
@@ -250,7 +252,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , WithContext(context_)
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
-    , zk_path(chooseZooKeeperPath(getContext(), table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
@@ -347,14 +348,23 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     if (engine_args->settings)
-        storage_metadata.settings_changes = engine_args->getChild(*engine_args->settings);
+        storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
+    zk_path = chooseZooKeeperPath(
+        getContext(),
+        table_id_,
+        context_->getSettingsRef(),
+        *queue_settings_,
+        UUIDHelpers::Nil,
+        &zookeeper_name);
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_,
+        zookeeper_name,
+        zk_path,
+        *queue_settings_,
         storage_metadata.getColumns(),
         configuration_->format,
         context_,
@@ -365,13 +375,16 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         storage_type,
+        zookeeper_name,
         zk_path,
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -393,6 +406,7 @@ void StorageObjectStorageQueue::startup()
     /// Create a persistent node for the table under /registry node.
     bool created_new_metadata = false;
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
+        zookeeper_name,
         zk_path,
         std::move(temp_metadata),
         getStorageID(),
@@ -407,6 +421,7 @@ void StorageObjectStorageQueue::startup()
             /// if it was just created by us (created_new_metadata == true)
             /// and if /registry is empty (no table was concurrently created).
             ObjectStorageQueueMetadataFactory::instance().remove(
+                zookeeper_name,
                 zk_path,
                 getStorageID(),
                 /* is_drop */created_new_metadata,
@@ -482,7 +497,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
             tryLogCurrentException(log);
         }
 
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop, keep_data_in_keeper);
+        ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
 
         files_metadata.reset();
     }
@@ -1111,6 +1126,8 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_tag_key",
     "after_processing_tag_value",
     "commit_on_select",
+    "metadata_cache_size_bytes",
+    "metadata_cache_size_elements",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
@@ -1141,6 +1158,8 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_tag_key",
     "after_processing_tag_value",
     "commit_on_select",
+    "metadata_cache_size_bytes",
+    "metadata_cache_size_elements",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1467,7 +1486,7 @@ void StorageObjectStorageQueue::alter(
 
 zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
 {
-    return getContext()->getZooKeeper();
+    return getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 }
 
 const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
@@ -1521,7 +1540,10 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
-    settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
+    if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
+        settings[ObjectStorageQueueSetting::keeper_path] = zk_path.string();
+    else
+        settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path.string());
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
     settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
@@ -1536,6 +1558,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
+    const auto & file_statuses_cache = files_metadata->getFileStatusesCache();
+    settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
+    settings[ObjectStorageQueueSetting::metadata_cache_size_elements] = file_statuses_cache.maxCount();
 
     {
         std::lock_guard lock(mutex);
@@ -1582,7 +1607,8 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     const StorageID & table_id,
     const Settings & settings,
     const ObjectStorageQueueSettings & queue_settings,
-    UUID database_uuid)
+    UUID database_uuid,
+    String * result_zookeeper_name)
 {
     /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
     /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
@@ -1594,12 +1620,34 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     std::string result_zk_path;
     if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
     {
-        /// We do not add table uuid here on purpose.
-        result_zk_path = fs::path(zk_path_prefix) / queue_settings[ObjectStorageQueueSetting::keeper_path].value;
+        String configured_path = queue_settings[ObjectStorageQueueSetting::keeper_path].value;
 
-        Macros::MacroExpansionInfo info;
-        info.table_id.uuid = table_id.uuid;
-        result_zk_path = context_->getMacros()->expand(result_zk_path, info);
+        const auto first_slash = configured_path.find('/');
+        const auto first_colon = configured_path.find(':');
+        const bool has_keeper_prefix = first_colon != String::npos && (first_slash == String::npos || first_colon < first_slash);
+
+        String keeper_name;
+        String keeper_path = configured_path;
+        if (has_keeper_prefix)
+        {
+            keeper_name = configured_path.substr(0, first_colon);
+            keeper_path = configured_path.substr(first_colon + 1);
+            if (keeper_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
+        }
+
+        const bool starts_with_slash = !keeper_path.empty() && keeper_path.front() == '/';
+
+        if (starts_with_slash)
+            result_zk_path = configured_path;
+        else
+        {
+            const auto prefixed_path = (fs::path(zk_path_prefix) / keeper_path).string();
+            if (has_keeper_prefix)
+                result_zk_path = keeper_name + ":" + prefixed_path;
+            else
+                result_zk_path = prefixed_path;
+        }
     }
     else
     {
@@ -1608,6 +1656,16 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
 
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
+
+    if (context_ && result_zk_path.find('{') != String::npos)
+    {
+        Macros::MacroExpansionInfo info;
+        info.table_id = table_id;
+        result_zk_path = context_->getMacros()->expand(result_zk_path, info);
+    }
+
+    if (result_zookeeper_name)
+        *result_zookeeper_name = zkutil::extractZooKeeperName(result_zk_path);
     return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 

@@ -55,6 +55,15 @@ public:
   virtual void enterParens(PromQLParser::ParensContext *ctx) = 0;
   virtual void exitParens(PromQLParser::ParensContext *ctx) = 0;
 
+  virtual void enterTimestamp(PromQLParser::TimestampContext *ctx) = 0;
+  virtual void exitTimestamp(PromQLParser::TimestampContext *ctx) = 0;
+
+  virtual void enterDuration(PromQLParser::DurationContext *ctx) = 0;
+  virtual void exitDuration(PromQLParser::DurationContext *ctx) = 0;
+
+  virtual void enterOffsetValue(PromQLParser::OffsetValueContext *ctx) = 0;
+  virtual void exitOffsetValue(PromQLParser::OffsetValueContext *ctx) = 0;
+
   virtual void enterInstantSelector(PromQLParser::InstantSelectorContext *ctx) = 0;
   virtual void exitInstantSelector(PromQLParser::InstantSelectorContext *ctx) = 0;
 
@@ -67,11 +76,11 @@ public:
   virtual void enterLabelMatcherList(PromQLParser::LabelMatcherListContext *ctx) = 0;
   virtual void exitLabelMatcherList(PromQLParser::LabelMatcherListContext *ctx) = 0;
 
-  virtual void enterMatrixSelector(PromQLParser::MatrixSelectorContext *ctx) = 0;
-  virtual void exitMatrixSelector(PromQLParser::MatrixSelectorContext *ctx) = 0;
+  virtual void enterRangeSelector(PromQLParser::RangeSelectorContext *ctx) = 0;
+  virtual void exitRangeSelector(PromQLParser::RangeSelectorContext *ctx) = 0;
 
-  virtual void enterOffset(PromQLParser::OffsetContext *ctx) = 0;
-  virtual void exitOffset(PromQLParser::OffsetContext *ctx) = 0;
+  virtual void enterSelectorWithOffset(PromQLParser::SelectorWithOffsetContext *ctx) = 0;
+  virtual void exitSelectorWithOffset(PromQLParser::SelectorWithOffsetContext *ctx) = 0;
 
   virtual void enterFunction_(PromQLParser::Function_Context *ctx) = 0;
   virtual void exitFunction_(PromQLParser::Function_Context *ctx) = 0;

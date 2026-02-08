@@ -686,7 +686,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             if (ParserKeyword{Keyword::FROM}.ignore(pos, expected) && ParserIdentifierWithOptionalParameters{}.parse(pos, ast, expected))
             {
-                ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+                ast->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
                 res->backup_source = ast;
                 res->children.push_back(res->backup_source);
             }
@@ -920,7 +920,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 #endif
-
+        case Type::RESET_DDL_WORKER: {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))

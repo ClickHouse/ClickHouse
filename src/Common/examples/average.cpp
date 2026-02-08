@@ -78,7 +78,7 @@ struct State
 
     Float result() const
     {
-        return sum / count;
+        return sum / static_cast<Float>(count);
     }
 
     bool operator!() const
@@ -513,7 +513,7 @@ struct State4
 
     Float result() const
     {
-        return (sum[0] + sum[1] + sum[2] + sum[3]) / (count[0] + count[1] + count[2] + count[3]);
+        return (sum[0] + sum[1] + sum[2] + sum[3]) / static_cast<Float>(count[0] + count[1] + count[2] + count[3]);
     }
 };
 
@@ -629,8 +629,8 @@ int main(int argc, char ** argv)
     fmt::print("Aggregated (res = {}) in {} sec., {} million rows/sec., {} MiB/sec.\n",
         res,
         watch.elapsedSeconds(),
-        size_t(size / watch.elapsedSeconds() / 1000000),
-        size_t(size * (sizeof(Float) + sizeof(UInt8)) / watch.elapsedSeconds() / 1000000));
+        size_t(static_cast<double>(size) / watch.elapsedSeconds() / 1000000),
+        size_t(static_cast<double>(size) * (sizeof(Float) + sizeof(UInt8)) / watch.elapsedSeconds() / 1000000));
 
     return 0;
 }

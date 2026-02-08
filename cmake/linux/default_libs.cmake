@@ -19,7 +19,7 @@ if (NOT EXISTS "${BUILTINS_LIBRARY}")
     include (cmake/build_clang_builtin.cmake)
     build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
 elseif (SANITIZE STREQUAL undefined)
-    # Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
+    # UBSan support library for C++ is in ubsan_standalone_cxx.a, so we have to include both.
     string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
 endif ()
 

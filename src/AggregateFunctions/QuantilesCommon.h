@@ -6,6 +6,7 @@
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/NaNUtils.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/iota.h>
 
 
@@ -31,8 +32,8 @@ namespace ErrorCodes
 template <typename T>    /// float or double
 struct QuantileLevels
 {
-    using Levels = std::vector<T>;
-    using Permutation = std::vector<size_t>;
+    using Levels = VectorWithMemoryTracking<T>;
+    using Permutation = VectorWithMemoryTracking<size_t>;
 
     Levels levels;
     Permutation permutation;    /// Index of the i-th level in `levels`.

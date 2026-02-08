@@ -143,7 +143,7 @@ __attribute__((__weak__)) void checkStackSize()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Frame address is greater than stack begin address");
 
     size_t stack_size = int_stack_address + max_stack_size - int_frame_address;
-    size_t max_stack_size_allowed = static_cast<size_t>(max_stack_size * STACK_SIZE_FREE_RATIO);
+    size_t max_stack_size_allowed = static_cast<size_t>(static_cast<double>(max_stack_size) * STACK_SIZE_FREE_RATIO);
 
     /// Just check if we have eat more than a STACK_SIZE_FREE_RATIO of stack size already.
     if (stack_size > max_stack_size_allowed)

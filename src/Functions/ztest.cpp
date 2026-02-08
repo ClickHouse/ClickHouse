@@ -158,8 +158,8 @@ public:
             const UInt64 trials_y = data_trials_y[row_num];
             const Float64 confidence_level = data_confidence_level[row_num];
 
-            const Float64 props_x = static_cast<Float64>(successes_x) / trials_x;
-            const Float64 props_y = static_cast<Float64>(successes_y) / trials_y;
+            const Float64 props_x = static_cast<Float64>(successes_x) / static_cast<Float64>(trials_x);
+            const Float64 props_y = static_cast<Float64>(successes_y) / static_cast<Float64>(trials_y);
             const Float64 diff = props_x - props_y;
             const UInt64 trials_total = trials_x + trials_y;
 
@@ -170,7 +170,7 @@ public:
                 continue;
             }
 
-            Float64 se = std::sqrt(props_x * (1.0 - props_x) / trials_x + props_y * (1.0 - props_y) / trials_y);
+            Float64 se = std::sqrt(props_x * (1.0 - props_x) / static_cast<Float64>(trials_x) + props_y * (1.0 - props_y) / static_cast<Float64>(trials_y));
 
             /// z-statistics
             /// z = \frac{ \bar{p_{1}} - \bar{p_{2}} }{ \sqrt{ \frac{ \bar{p_{1}} \left ( 1 - \bar{p_{1}} \right ) }{ n_{1} } \frac{ \bar{p_{2}} \left ( 1 - \bar{p_{2}} \right ) }{ n_{2} } } }
@@ -182,8 +182,8 @@ public:
             else
             {
                 UInt64 successes_total = successes_x + successes_y;
-                Float64 p_pooled = static_cast<Float64>(successes_total) / trials_total;
-                Float64 trials_fact = 1.0 / trials_x + 1.0 / trials_y;
+                Float64 p_pooled = static_cast<Float64>(successes_total) / static_cast<Float64>(trials_total);
+                Float64 trials_fact = 1.0 / static_cast<Float64>(trials_x) + 1.0 / static_cast<Float64>(trials_y);
                 zstat = diff / std::sqrt(p_pooled * (1.0 - p_pooled) * trials_fact);
             }
 

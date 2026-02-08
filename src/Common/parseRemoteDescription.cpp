@@ -45,7 +45,7 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
         if (!isNumericASCII(description[pos]))
             return false;
         res = res * 10 + description[pos] - '0';
-        if (res > 1e15)
+        if (static_cast<double>(res) > 1e15)
             return false;
     }
     return true;

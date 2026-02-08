@@ -386,7 +386,8 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
 
     for (auto i = Begin; i < End; i += direction)
     {
-        const T v = static_cast<T>(gen(i));
+        /// Pass index as T so generators using decltype(i) produce values of the target type.
+        const T v = static_cast<T>(gen(static_cast<T>(i)));
 
         unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
@@ -484,7 +485,7 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
     ASSERT_TRUE(EqualByteContainers(static_cast<uint8_t>(test_sequence.data_type->getSizeOfValueInMemory()), source_data, decoded));
 
     const auto header_size = ICompressionCodec::getHeaderSize();
-    const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
+    const auto compression_ratio = (encoded_size - header_size) / static_cast<double>(source_data.size());
 
     if (expected_compression_ratio)
     {
@@ -614,17 +615,17 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
 
         for (const auto & v : tmp_v)
         {
-            mean += v;
+            mean += static_cast<double>(v);
         }
 
-        mean = mean / tmp_v.size();
+        mean = mean / static_cast<double>(tmp_v.size());
         double std_dev = 0.0;
         for (const auto & v : tmp_v)
         {
-            const auto d = (v - mean);
+            const auto d = (static_cast<double>(v) - mean);
             std_dev += (d * d);
         }
-        std_dev = std::sqrt(std_dev / tmp_v.size());
+        std_dev = std::sqrt(std_dev / static_cast<double>(tmp_v.size()));
 
         return std::make_tuple(mean, std_dev);
     };
@@ -748,7 +749,7 @@ MonotonicGenerator() -> MonotonicGenerator<Int32>;
 auto RandomishGenerator = [](auto i)
 {
     using T = decltype(i);
-    double sin_value = sin(static_cast<double>(i * i)) * i;
+    double sin_value = sin(static_cast<double>(i * i)) * static_cast<double>(i);
     if (sin_value < std::numeric_limits<T>::lowest() || sin_value > static_cast<double>(std::numeric_limits<T>::max()))
         return T{};
     return T(sin_value);

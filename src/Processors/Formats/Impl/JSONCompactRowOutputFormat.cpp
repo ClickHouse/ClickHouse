@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <Processors/Formats/Impl/JSONCompactRowOutputFormat.h>
+#include <Processors/Port.h>
 
 namespace DB
 {

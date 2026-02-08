@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/PODArray.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -54,7 +55,7 @@ protected:
     void writeSuffix() override;
     virtual void writeSuffixImpl();
 
-    void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
+    void onRowsReadBeforeUpdate() override;
 
     void calculateWidths(
         const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,

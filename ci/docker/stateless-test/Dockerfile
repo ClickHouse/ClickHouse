@@ -60,12 +60,6 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "aws
     && ./aws/install \
     && rm awscliv2.zip
 
-# Install Node.js 20 from NodeSource (azurite 3.34 fails with 24)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
 ARG PROTOC_VERSION=25.1
 RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip \
     && unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local \
@@ -105,8 +99,13 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 RUN chmod 777 /home
 ENV HOME="/home"
 
-RUN npm install -g azurite@3.34.0 \
-    && npm install -g tslib
+# Download azurite-rs (Azure Blob Storage emulator in Rust)
+# https://github.com/ClickHouse/azurite-rs
+ARG AZURITE_RS_VERSION=v0.1.0-28a2afc
+RUN arch=${TARGETARCH:-amd64} \
+    && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
+    && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \
+    && chmod +x /usr/local/bin/azurite-rs
 
 ENV PYTHONPATH=".:./ci"
 

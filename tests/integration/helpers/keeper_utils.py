@@ -346,7 +346,7 @@ def wait_until_connected(
         while True:
             zk_cli = None
             try:
-                time_passed = min(time.time() - start, 5.0)
+                time_passed = time.time() - start
                 if time_passed >= timeout:
                     raise Exception(
                         f"{timeout}s timeout while waiting for {node.name} to start serving requests"
@@ -357,7 +357,7 @@ def wait_until_connected(
 
                 zk_cli = KazooClient(
                     hosts=f"{host}:9181",
-                    timeout=timeout - time_passed,
+                    timeout=min(timeout - time_passed, 5.0),
                     client_id=client_id,
                 )
                 zk_cli.start()
@@ -367,7 +367,11 @@ def wait_until_connected(
                 pass
             finally:
                 if zk_cli:
-                    zk_cli.stop()
+                    try:
+                        # stop() can raise if the connection is already broken
+                        zk_cli.stop()
+                    except Exception:
+                        pass
                     zk_cli.close()
 
 

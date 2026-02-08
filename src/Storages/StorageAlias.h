@@ -136,10 +136,7 @@ public:
     bool areAsynchronousInsertsEnabled() const override { return getTargetTable()->areAsynchronousInsertsEnabled(); }
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
-
-    /// This is important for DatabaseReplicated, avoid not supported by distributed DDL
-    bool supportsReplication() const override { return false; }
-
+    bool supportsReplication() const override { return getTargetTable()->supportsReplication(); }
     bool hasLightweightDeletedMask() const override { return getTargetTable()->hasLightweightDeletedMask(); }
     bool supportsLightweightDelete() const override { return getTargetTable()->supportsLightweightDelete(); }
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getTargetTable()->supportsLightweightUpdate(); }
