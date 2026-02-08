@@ -113,7 +113,12 @@ columns1=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where 
 columns2=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_2' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
 columns3=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_3' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
 
+CONVERGE_TIMEOUT=$((SECONDS + 300))
 while [ "$columns1" != "$columns2" ] || [ "$columns2" != "$columns3" ]; do
+    if [ $SECONDS -ge "$CONVERGE_TIMEOUT" ]; then
+        echo "Columns did not converge after 300 seconds: $columns1 $columns2 $columns3"
+        break
+    fi
     columns1=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_1' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
     columns2=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_2' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
     columns3=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_3' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)

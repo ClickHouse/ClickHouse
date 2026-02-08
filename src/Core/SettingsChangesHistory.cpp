@@ -42,8 +42,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.2",
         {
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
+            {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
-
+            {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
+            {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
+            {"use_statistics_cache", false, true, "Enable statistics cache"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

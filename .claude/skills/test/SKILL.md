@@ -13,7 +13,9 @@ Run stateless tests from `tests/queries/0_stateless/` or integration tests from 
 ## Arguments
 
 - `$0` (optional): Test name (e.g., `03312_issue_63093` for stateless or `test_keeper_three_nodes_start` for integration), or empty to prompt for selection
-- `$1+` (optional): Additional flags for test runner (e.g., `--no-random-settings`, `--record` for stateless tests)
+- `$1+` (optional): Additional flags for test runner:
+  - For stateless tests: `--no-random-settings`, `--record`, etc.
+  - For integration tests: `--path <binary_path>` to specify custom ClickHouse binary (e.g., debug build)
 
 ## Test Types
 
@@ -158,7 +160,7 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 
    **Step 2b: Start the integration test with praktika:**
    ```bash
-   python -u -m ci.praktika run "integration" --test <test_name> > [log file path] 2>&1
+   python -u -m ci.praktika run "integration" --test <test_name> [--path <binary_path>] > [log file path] 2>&1
    ```
 
    **Important:**
@@ -170,6 +172,12 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
    - Tests may take longer than stateless tests (container startup time)
    - Run in the background using `run_in_background: true`
    - **After starting the test**, report: "Test started in the background. Waiting for completion..."
+
+   **Custom binary path (--path option):**
+   - Use `--path <binary_path>` to specify a custom ClickHouse binary location
+   - Useful for testing with different builds (e.g., debug build to trigger assertions)
+   - Example: `--path ./build_debug/programs/clickhouse` for debug build
+   - Default search order without `--path`: `./ci/tmp/clickhouse`, `./build/programs/clickhouse`, `./clickhouse`
 
 3. **Wait for integration test completion:**
    - Use TaskOutput with `block=true` to wait for the background task to finish
@@ -309,6 +317,7 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 ### Integration Tests
 - `/test test_keeper_three_nodes_start` - Run specific integration test
 - `/test test_access_control_on_cluster` - Run integration test by name
+- `/test test_named_collections --path ./build_debug/programs/clickhouse` - Run with debug build (to trigger assertions)
 - `/test` - If viewing `tests/integration/test_*/test.py`, automatically detect and run that integration test
 
 ## Environment Variables
@@ -342,3 +351,5 @@ The test runner automatically detects and sets the necessary environment variabl
 - Docker daemon must be running and accessible
 - Requires Python dependencies from `tests/integration/` directory
 - Tests are run via praktika: `python -m ci.praktika run "integration" --test <test_name>`
+- Use `--path <binary_path>` to specify a custom ClickHouse binary (e.g., debug build)
+- Debug builds (`build_debug`) enable `chassert` assertions - useful for reproducing race conditions

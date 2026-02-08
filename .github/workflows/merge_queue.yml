@@ -47,9 +47,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Config Workflow' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "MergeQueueCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Config Workflow' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "MergeQueueCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_amd:
@@ -87,9 +87,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "MergeQueueCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "MergeQueueCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_arm:
@@ -127,9 +127,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "MergeQueueCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "MergeQueueCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   style_check:
@@ -167,9 +167,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Style check' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Style check' --workflow "MergeQueueCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Style check' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Style check' --workflow "MergeQueueCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   fast_test:
@@ -207,9 +207,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Fast test' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Fast test' --workflow "MergeQueueCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Fast test' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Fast test' --workflow "MergeQueueCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_binary:
@@ -247,9 +247,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_binary)' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_binary)' --workflow "MergeQueueCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_binary)' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_binary)' --workflow "MergeQueueCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   finish_workflow:
@@ -287,7 +287,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Finish Workflow' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Finish Workflow' --workflow "MergeQueueCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Finish Workflow' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Finish Workflow' --workflow "MergeQueueCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi

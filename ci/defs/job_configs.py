@@ -11,6 +11,22 @@ from ci.defs.defs import (
     RunnerLabels,
 )
 
+# macOS smoke test job - runs on GitHub-hosted macOS runners without Docker
+# no_aws=True because GitHub-hosted macOS runners have no AWS credentials;
+# the binary is downloaded via public HTTP inside the job script.
+common_macos_smoke_test_job_config = Job.Config(
+    name=JobNames.MACOS_SMOKE_TEST,
+    runs_on=[],  # from parametrize
+    command="python3 ./ci/jobs/macos_smoke_test.py",
+    no_aws=True,
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/macos_smoke_test.py",
+        ],
+    ),
+    timeout=600,
+)
+
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
 BINARY_DOCKER_COMMAND = (
@@ -243,7 +259,10 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
-            provides=[ArtifactNames.CH_ARM_BINARY, ArtifactNames.PARSER_MEMORY_PROFILER],
+            provides=[
+                ArtifactNames.CH_ARM_BINARY,
+                ArtifactNames.PARSER_MEMORY_PROFILER,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -622,19 +641,19 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    functional_tests_jobs_azure = (
-        common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
-            Job.ParamSet(
-                parameter="arm_asan, azure, parallel",
-                runs_on=RunnerLabels.ARM_MEDIUM,
-                requires=[ArtifactNames.CH_ARM_ASAN],
-            ),
-            Job.ParamSet(
-                parameter="arm_asan, azure, sequential",
-                runs_on=RunnerLabels.ARM_SMALL_MEM,
-                requires=[ArtifactNames.CH_ARM_ASAN],
-            ),
-        )
+    functional_tests_jobs_azure = common_ft_job_config.set_allow_merge_on_failure(
+        True
+    ).parametrize(
+        Job.ParamSet(
+            parameter="arm_asan, azure, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
+        Job.ParamSet(
+            parameter="arm_asan, azure, sequential",
+            runs_on=RunnerLabels.ARM_SMALL_MEM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
     )
     bugfix_validation_it_job = (
         common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE_IT)
@@ -1157,4 +1176,15 @@ class JobConfigs:
             include_paths=["./ci/jobs/merge_llvm_coverage_job.py"],
         ),
         timeout=3600,
+    )
+    # macOS smoke tests - run on GitHub-hosted macOS runners (no Docker)
+    # No `requires` here because artifact download from S3 needs AWS credentials
+    # which are not available on GitHub-hosted macOS runners.
+    # The dependency on the build job is set via set_dependency in the workflow.
+    # The binary is downloaded via public HTTP inside the job script.
+    macos_smoke_test_jobs = common_macos_smoke_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_darwin",
+            runs_on=RunnerLabels.MACOS_ARM,
+        ),
     )

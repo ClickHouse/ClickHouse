@@ -49,9 +49,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   collect_statistics:
@@ -88,7 +88,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci 2>&1 | tee ./ci/tmp/job.log
           fi

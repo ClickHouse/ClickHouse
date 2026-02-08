@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -610,7 +611,12 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     assertValid(frame_start);
 
-    if (frame_start <= partition_start)
+    // When moving backwards (PRECEDING) and we hit the start of available data
+    // (offset_left < 0), the logical position is before partition_start.
+    // We must check offset_left < 0 first because partition_start might point
+    // to a block that has already been freed, making the comparison unreliable.
+    if (frame_start <= partition_start
+        || (window_description.frame.begin_preceding && offset_left < 0))
     {
         // Got to the beginning of partition and can't go further back.
         frame_start = partition_start;
@@ -628,12 +634,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     // Handled the equality case above. Now the frame start is inside the
     // partition, if we walked all the offset, it's final.
-    assert(partition_start < frame_start);
     frame_started = offset_left == 0;
-
-    // If we ran into the start of data (offset left is negative), we won't be
-    // able to make progress. Should have handled this case above.
-    assert(offset_left >= 0);
 }
 
 
@@ -855,7 +856,12 @@ void WindowTransform::advanceFrameEndRowsOffset()
         return;
     }
 
-    if (moved_row <= partition_start)
+    // When moving backwards (PRECEDING) and we hit the start of available data
+    // (offset_left < 0), the logical position is before partition_start.
+    // We must check offset_left < 0 first because partition_start might point
+    // to a block that has already been freed, making the comparison unreliable.
+    if (moved_row <= partition_start
+        || (window_description.frame.end_preceding && offset_left < 0))
     {
         // Clamp to the start of partition.
         frame_end = partition_start;
@@ -866,10 +872,6 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Frame end inside partition, if we walked all the offset, it's final.
     frame_end = moved_row;
     frame_ended = offset_left == 0;
-
-    // If we ran into the start of data (offset left is negative), we won't be
-    // able to make progress. Should have handled this case above.
-    assert(offset_left >= 0);
 }
 
 void WindowTransform::advanceFrameEndRangeOffset()

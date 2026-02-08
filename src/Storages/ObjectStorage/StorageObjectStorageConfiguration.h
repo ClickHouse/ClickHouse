@@ -228,8 +228,14 @@ public:
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const std::optional<FormatSettings> & /*format_settings*/) {}
-    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
+        const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
+    }
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
+    }
 
     virtual void checkAlterIsPossible(const AlterCommands & commands)
     {

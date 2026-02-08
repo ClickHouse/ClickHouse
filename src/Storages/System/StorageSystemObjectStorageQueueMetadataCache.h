@@ -7,12 +7,12 @@ namespace DB
 {
 
 template <ObjectStorageType type>
-class StorageSystemObjectStorageQueue final : public IStorageSystemOneBlock
+class StorageSystemObjectStorageQueueMetadataCache final : public IStorageSystemOneBlock
 {
 public:
     static constexpr auto name = type == ObjectStorageType::S3 ? "SystemS3Queue" : "SystemAzureQueue";
 
-    explicit StorageSystemObjectStorageQueue(const StorageID & table_id_);
+    explicit StorageSystemObjectStorageQueueMetadataCache(const StorageID & table_id_);
 
     std::string getName() const override { return name; }
 

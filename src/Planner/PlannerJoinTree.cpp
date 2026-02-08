@@ -2373,8 +2373,12 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         return;
     if (root_node->children.size() != 1 || !root_node->children.front())
         return;
-    auto * reading_step = typeid_cast<ReadFromMergeTree *>(root_node->children.front()->step.get());
-    if (!reading_step)
+
+    const auto * children_step = root_node->children.front()->step.get();
+    bool is_allowed_storage = typeid_cast<const ReadFromMergeTree *>(children_step)
+                           || typeid_cast<const ReadNothingStep *>(children_step)
+                           || typeid_cast<const ReadFromPreparedSource *>(children_step);
+    if (!is_allowed_storage)
         return;
 
     if (lhs.fromRight() && rhs.fromLeft())

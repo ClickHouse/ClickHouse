@@ -683,6 +683,10 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
+    /// Wait for parts in PreActive state within the drop range to finish committing.
+    /// This prevents a race between a concurrent INSERT and DROP_RANGE processing.
+    void waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const;
+
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
     /// New metadata and columns values stored in entry.

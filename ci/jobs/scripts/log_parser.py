@@ -433,13 +433,23 @@ class FuzzerLogParser:
         if not failure_output:
             return None
         if "Inconsistent AST formatting: the query:" in failure_output:
-            query_command = failure_output.splitlines()[1]
-            return query_command
+            lines = failure_output.splitlines()
+            if len(lines) > 1:
+                query_command = lines[1]
+                return query_command
+            else:
+                print("ERROR: Expected query on second line but not found")
+                return None
 
         assert failure_output, "No failure found in server log"
-        failure_first_line = failure_output.splitlines()[0]
-        assert failure_first_line, "No failure first line found in server log"
-        query_id = failure_first_line.split(" ] {")[1].split("}")[0]
+        # Find the first line that has a proper log format with query ID.
+        # rg may match continuation lines (e.g. SQL comments like "-- Logical error query")
+        # that lack the "] {query_id}" prefix.
+        query_id = None
+        for line in failure_output.splitlines():
+            if " ] {" in line and "} <" in line:
+                query_id = line.split(" ] {")[1].split("}")[0]
+                break
         if not query_id:
             print("ERROR: Query id not found")
             return None

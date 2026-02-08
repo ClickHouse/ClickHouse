@@ -776,6 +776,16 @@ def _finish_workflow(workflow, job_name):
                 workflow_result.dump()
                 workflow_result.ext["is_cancelled"] = True
                 update_final_report = True
+                dropped_results.append(result.name)
+                continue
+            elif gh_job_result == "success":
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to success"
+                )
+                result.status = Result.Status.SUCCESS
+                workflow_result.dump()
+                update_final_report = True
+                continue
             else:
                 print(
                     f"ERROR: not finished job [{result.name}] in the workflow - set status to error"

@@ -14,6 +14,8 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <mutex>
 #include <lz4.h>
@@ -32,6 +34,12 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int CHECKSUM_DOESNT_MATCH;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ParquetRowsFilterExpression;
+    extern const Event ParquetColumnsFilterExpression;
 }
 
 namespace DB::Parquet
@@ -660,11 +668,12 @@ void Reader::preparePrewhere()
 
     /// Convert ActionsDAG to ExpressionActions.
     std::optional<ExpressionActionsSettings> actions_settings;
-    auto add_step = [&](const ActionsDAG & dag, const String & filter_column_name, bool needs_filter)
+
+    auto add_single_step = [&] (const ActionsDAG & dag, const String & filter_column_name, bool needs_filter, size_t step_idx)
     {
         if (!actions_settings.has_value())
             actions_settings.emplace();
-        PrewhereStep step { .actions = ExpressionActions(dag.clone(), actions_settings.value()) };
+        Step step { .actions = ExpressionActions(dag.clone(), actions_settings.value()) };
         if (needs_filter)
             step.filter_column_name = filter_column_name;
 
@@ -676,12 +685,13 @@ void Reader::preparePrewhere()
             if (output_idx.has_value())
             {
                 OutputColumnInfo & output_info = output_columns[output_idx.value()];
-                output_info.use_prewhere = true;
+                output_info.step_idx = step_idx + 1;
                 bool only_for_prewhere = idx_in_output_block >= sample_block->columns();
 
                 for (size_t primitive_idx = output_info.primitive_start; primitive_idx < output_info.primitive_end; ++primitive_idx)
                 {
-                    primitive_columns[primitive_idx].use_prewhere = true;
+                    if (primitive_columns[primitive_idx].first_step_to_calculate == 0)
+                        primitive_columns[primitive_idx].first_step_to_calculate = steps.size() + 1;
                     primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
                 }
             }
@@ -705,7 +715,39 @@ void Reader::preparePrewhere()
             }
         }
 
-        prewhere_steps.push_back(std::move(step));
+        steps.push_back(std::move(step));
+    };
+
+    auto add_step = [&](const ActionsDAG & dag, const String & filter_column_name, bool needs_filter)
+    {
+        if (!actions_settings.has_value())
+            actions_settings.emplace();
+
+        auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
+        prewhere_info_patched->need_filter = needs_filter;
+        PrewhereExprInfo prewhere_expr_info;
+
+        bool success = tryBuildPrewhereSteps(
+            prewhere_info_patched,
+            *actions_settings,
+            prewhere_expr_info,
+            /*force_short_circuit_execution*/ false);
+
+        if (success)
+        {
+            /// Add all steps separately.
+            for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
+            {
+                auto filter = prewhere_expr_info.steps[i];
+                if (needs_filter)
+                    add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
+            }
+        }
+        else
+        {
+            /// Execute everything as one large step
+            add_single_step(dag, filter_column_name, needs_filter, 0);
+        }
     };
 
     if (row_level_filter)
@@ -1286,48 +1328,69 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     /// Find ranges of rows that pass filter and decode them.
 
-    size_t row_subidx = 0;
-    while (true) // loop over row ranges that pass the filter
-    {
-        /// Find a range of rows that pass filter.
-        /// TODO [parquet]: We call decoder for each such range separately, with a bunch of overhead per call.
-        ///       This will probably be slow on something like `PREWHERE idx%2=0`.
-        ///       If it's too slow and/or comes up in practice or benchmarks, make decoders accept
-        ///       a (optional) filter mask, like e.g. in commit c1a361d176507a19c2fdc49f0f1d6dc7e2cd539e.
-        size_t num_rows = row_subgroup.filter.rows_total - row_subidx;
-        if (!row_subgroup.filter.filter.empty())
-        {
-            /// TODO [parquet]: simd or something
-            while (row_subidx < row_subgroup.filter.rows_total && !row_subgroup.filter.filter[row_subidx])
-                row_subidx += 1;
-            num_rows = 0;
-            while (row_subidx + num_rows < row_subgroup.filter.rows_total && row_subgroup.filter.filter[row_subidx + num_rows])
-                num_rows += 1;
-        }
-        if (!num_rows)
-            break;
-        size_t start_row_idx = row_subgroup.start_row_idx + row_subidx;
-        size_t end_row_idx = start_row_idx + num_rows;
-        row_subidx += num_rows;
+    const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
+        !row_subgroup.filter.filter.empty() &&
+        column.page.initialized &&
+        !column.page.is_dictionary_encoded;
+    const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
-        skipToRowOrNextPage(start_row_idx, column, column_info);
+    if (use_filter_in_decoder)
+    {
+        skipToRowOrNextPage(row_subgroup.start_row_idx, column, column_info);
 
         while (true) // loop over pages
         {
-            readRowsInPage(end_row_idx, subchunk, column, column_info);
+            readRowsInPage(subgroup_end_row_idx, subchunk, column, column_info, &row_subgroup);
 
-            /// We're done if we've reached end_row_idx and we're at a row boundary.
             auto & page = column.page;
-            if (page.next_row_idx == end_row_idx &&
+            if (page.next_row_idx == subgroup_end_row_idx &&
                 (page.value_idx < page.num_values ||
-                 page.end_row_idx.has_value() || // page ends on row boundary
+                 page.end_row_idx.has_value() ||
                  column.next_page_offset >= column.data_pages_bytes))
                 break;
 
-            /// Advance to next page.
             chassert(page.value_idx == page.num_values);
             skipToRowOrNextPage(std::nullopt, column, column_info);
             chassert(page.value_idx == 0);
+        }
+    }
+    else
+    {
+        size_t row_subidx = 0;
+        while (true) // loop over row ranges that pass the filter
+        {
+            size_t num_rows = row_subgroup.filter.rows_total - row_subidx;
+            if (!row_subgroup.filter.filter.empty())
+            {
+                while (row_subidx < row_subgroup.filter.rows_total && !row_subgroup.filter.filter[row_subidx])
+                    row_subidx += 1;
+                num_rows = 0;
+                while (row_subidx + num_rows < row_subgroup.filter.rows_total && row_subgroup.filter.filter[row_subidx + num_rows])
+                    num_rows += 1;
+            }
+            if (!num_rows)
+                break;
+            size_t start_row_idx = row_subgroup.start_row_idx + row_subidx;
+            size_t end_row_idx = start_row_idx + num_rows;
+            row_subidx += num_rows;
+
+            skipToRowOrNextPage(start_row_idx, column, column_info);
+
+            while (true) // loop over pages
+            {
+                readRowsInPage(end_row_idx, subchunk, column, column_info);
+
+                auto & page = column.page;
+                if (page.next_row_idx == end_row_idx &&
+                    (page.value_idx < page.num_values ||
+                     page.end_row_idx.has_value() ||
+                     column.next_page_offset >= column.data_pages_bytes))
+                    break;
+
+                chassert(page.value_idx == page.num_values);
+                skipToRowOrNextPage(std::nullopt, column, column_info);
+                chassert(page.value_idx == 0);
+            }
         }
     }
 
@@ -1359,7 +1422,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk {} {}", subchunk.column->size(), row_subgroup.filter.rows_pass);
 
     if (column_info.output_nullable)
     {
@@ -1817,7 +1880,7 @@ static void processRepDefLevelsForArray(
     out_offsets.back() = offset;
 }
 
-void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
 {
     PageState & page = column.page;
     chassert(page.initialized && page.value_idx < page.num_values);
@@ -1828,6 +1891,8 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     /// readRowsInPage in page 1 will continue until it sees the end of the array, i.e. the start of
     /// the next row (rep == 0), still with next_row_idx == end_row_idx.
     chassert(end_row_idx >= page.next_row_idx);
+
+    size_t first_row_idx = page.next_row_idx;
 
     /// Convert number of rows to number of values.
     size_t prev_value_idx = page.value_idx;
@@ -1887,7 +1952,9 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     /// Decode values.
 
     /// See if we can decompress the whole page directly into IColumn's memory.
-    if (!page.is_dictionary_encoded && prev_value_idx == 0 && page.value_idx == page.num_values &&
+    /// Skip when filter is set: direct read bypasses decode and would write all values without applying the filter.
+    const bool has_filter = row_subgroup && !row_subgroup->filter.filter.empty();
+    if (!has_filter && !page.is_dictionary_encoded && prev_value_idx == 0 && page.value_idx == page.num_values &&
         page.codec != parq::CompressionCodec::UNCOMPRESSED)
     {
         std::span<char> span;
@@ -1906,6 +1973,15 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
         if (!page.decoder)
             createPageDecoder(page, column, column_info);
 
+        const UInt8 * filter = nullptr;
+        size_t filter_offset = 0;
+        if (row_subgroup && !row_subgroup->filter.filter.empty())
+        {
+            chassert(first_row_idx >= row_subgroup->start_row_idx);
+            filter_offset = first_row_idx - row_subgroup->start_row_idx;
+            filter = row_subgroup->filter.filter.data();
+        }
+
         if (page.is_dictionary_encoded)
         {
             if (!page.indices_column)
@@ -1913,13 +1989,14 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
             auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
             auto & data = indices_column_uint32.getData();
             chassert(data.empty());
-            page.decoder->decode(encoded_values_to_read, *page.indices_column);
+            chassert(!filter);
+            page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
             column.dictionary.index(indices_column_uint32, *subchunk.column);
             data.clear();
         }
         else
         {
-            page.decoder->decode(encoded_values_to_read, *subchunk.column);
+            page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
         }
     }
 
@@ -2051,11 +2128,10 @@ ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx
     return state.column;
 }
 
-void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group)
+void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx)
 {
-    for (size_t step_idx = 0; step_idx < prewhere_steps.size(); ++step_idx)
     {
-        const PrewhereStep & step = prewhere_steps.at(step_idx);
+        const Step & step = steps.at(step_idx - 1);
 
         Block block;
         for (size_t idx_in_output_block : step.input_idxs)
@@ -2063,8 +2139,16 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             const ColumnWithTypeAndName & col = extended_sample_block.getByPosition(idx_in_output_block);
             block.insert({getOrFormOutputColumn(row_subgroup, idx_in_output_block), col.type, col.name});
         }
-        addDummyColumnWithRowCount(block, row_subgroup.filter.rows_total);
+        addDummyColumnWithRowCount(block, row_subgroup.filter.rows_pass);
 
+        ProfileEvents::increment(ProfileEvents::ParquetRowsFilterExpression, block.rows());
+        ProfileEvents::increment(ProfileEvents::ParquetColumnsFilterExpression, block.columns());
+
+        if (block.rows() == 0)
+        {
+            row_subgroup.filter.rows_pass = 0;
+            return;
+        }
         step.actions.execute(block);
 
         for (const auto & [name, idx] : step.idxs_in_output_block)
@@ -2075,20 +2159,19 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         }
 
         /// If it's the last prewhere step, deallocate the columns that were only needed for prewhere.
-        if (step_idx == prewhere_steps.size() - 1)
+        if (step_idx == steps.size())
         {
             while (row_subgroup.output.size() > sample_block->columns())
                 row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
         }
 
         if (!step.filter_column_name.has_value())
-            continue;
+            return;
 
         ColumnPtr filter_column = block.getByName(step.filter_column_name.value()).column;
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
-
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
         if (rows_pass == 0 || !row_group.need_to_process)
         {
@@ -2096,24 +2179,18 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             row_subgroup.filter.rows_pass = 0;
             return;
         }
-        if (rows_pass == filter.size())
-            /// Nothing was filtered out.
-            continue;
 
         /// Filter columns that were already read.
-
         for (auto & state : row_subgroup.output)
             if (state.column)
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).
-
         auto mut_col = IColumn::mutate(std::move(filter_column));
         auto & mut_filter = typeid_cast<ColumnUInt8 &>(*mut_col);
         if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
             mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
-
         row_subgroup.filter.filter = std::move(mut_filter.getData());
         row_subgroup.filter.rows_pass = rows_pass;
     }
