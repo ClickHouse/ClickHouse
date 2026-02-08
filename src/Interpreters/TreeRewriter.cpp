@@ -38,6 +38,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -535,11 +536,53 @@ void executeScalarSubqueries(
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
+/// When there is JOIN but no ARRAY JOIN clause, collect arrayJoin(column) from SELECT (and optionally WHERE)
+/// so they are executed before JOIN (fixes duplicated rows, see issue #96398).
+static void collectArrayJoinFunctionFromSelectWithJoin(
+    ASTSelectQuery * select_query,
+    TreeRewriterResult & result,
+    const NameSet & source_columns_set)
+{
+    if (!select_query->hasJoin() || select_query->arrayJoinExpressionList().first)
+        return;
+
+    ASTPtr select_list = select_query->select();
+    if (!select_list || !select_list->as<ASTExpressionList>())
+        return;
+
+    for (auto & child : select_list->children)
+    {
+        auto * func = child->as<ASTFunction>();
+        if (!func || func->name != "arrayJoin" || !func->arguments || func->arguments->children.size() != 1)
+            continue;
+
+        const ASTPtr & arg = func->arguments->children[0];
+        const auto * arg_ident = arg->as<ASTIdentifier>();
+        if (!arg_ident)
+            continue;
+
+        String source_name = arg_ident->name();
+        if (!source_columns_set.contains(source_name))
+            continue;
+
+        String result_name = child->getAliasOrColumnName();
+        if (result_name.empty())
+            result_name = source_name;
+
+        result.array_join_result_to_source[result_name] = source_name;
+        child = std::make_shared<ASTIdentifier>(result_name);
+    }
+}
+
 void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
     if (!select_query->arrayJoinExpressionList().first)
+    {
+        /// No ARRAY JOIN clause; still collect arrayJoin() used as function when JOIN is present.
+        collectArrayJoinFunctionFromSelectWithJoin(const_cast<ASTSelectQuery *>(select_query), result, source_columns_set);
         return;
+    }
 
     ArrayJoinedColumnsVisitor::Data visitor_data{
         result.aliases, result.array_join_name_to_alias, result.array_join_alias_to_name, result.array_join_result_to_source};
@@ -1044,6 +1087,20 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         source_column_names.insert(column.name);
 
     NameSet required = columns_context.requiredColumns();
+
+    /// When arrayJoin() is used as function with JOIN, array_join_result_to_source is filled but
+    /// the visitor never sees ASTArrayJoin, so has_array_join is false. Treat result columns as
+    /// requiring their source column so the array join step gets the right inputs.
+    if (!array_join_result_to_source.empty() && !columns_context.has_array_join)
+    {
+        columns_context.has_array_join = true;
+        for (const auto & [result_name, source_name] : array_join_result_to_source)
+        {
+            required.erase(result_name);
+            required.insert(source_name);
+        }
+    }
+
     if (columns_context.has_table_join)
     {
         NameSet available_columns;

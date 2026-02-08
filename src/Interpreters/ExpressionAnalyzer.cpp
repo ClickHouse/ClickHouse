@@ -238,7 +238,23 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAG & acti
     auto [array_join_expression_list, is_array_join_left] = select_query->arrayJoinExpressionList();
 
     if (!array_join_expression_list)
-        return src_columns;
+    {
+        /// arrayJoin() as function with JOIN: columns_after_array_join must include the result columns.
+        if (syntax->array_join_result_to_source.empty())
+            return src_columns;
+        NamesAndTypesList out = src_columns;
+        for (const auto & [result_name, source_name] : syntax->array_join_result_to_source)
+        {
+            const auto * type_it = std::find_if(src_columns.begin(), src_columns.end(),
+                [&](const NameAndTypePair & p) { return p.name == source_name; });
+            if (type_it != src_columns.end())
+            {
+                if (auto array_type = getArrayJoinDataType(type_it->type))
+                    out.emplace_back(result_name, array_type->getNestedType());
+            }
+        }
+        return out;
+    }
 
     getRootActionsNoMakeSet(array_join_expression_list, actions, false);
 
@@ -944,8 +960,21 @@ std::optional<ArrayJoin> SelectQueryExpressionAnalyzer::appendArrayJoin(Expressi
     const auto * select_query = getSelectQuery();
 
     auto [array_join_expression_list, is_array_join_left] = select_query->arrayJoinExpressionList();
+
     if (!array_join_expression_list)
+    {
+        /// arrayJoin() used as function with JOIN: lift it before join to avoid duplicated rows (#96398).
+        if (!syntax->array_join_result_to_source.empty() && hasTableJoin())
+        {
+            ExpressionActionsChainSteps::Step & step = chain.lastStep(columns_after_array_join);
+            auto array_join = addMultipleArrayJoinAction(step.actions()->dag, false);
+            before_array_join = chain.getLastActions();
+            chain.steps.push_back(std::make_unique<ExpressionActionsChainSteps::ArrayJoinStep>(array_join.columns, step.getResultColumns()));
+            chain.addStep();
+            return array_join;
+        }
         return {};
+    }
 
     ExpressionActionsChainSteps::Step & step = chain.lastStep(sourceColumns());
 
