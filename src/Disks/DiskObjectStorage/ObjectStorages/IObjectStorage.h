@@ -199,7 +199,7 @@ public:
         const std::string & path_prefix,
         size_t max_keys,
         bool with_tags,
-        const std::optional<std::string> & start_after = std::nullopt) const;
+        const std::optional<std::string> & start_after) const;
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;

@@ -42,7 +42,7 @@ public:
         const std::string & path_prefix,
         size_t max_keys,
         bool with_tags,
-        const std::optional<std::string> & start_after = std::nullopt) const override;
+        const std::optional<std::string> & start_after) const override;
 
     std::string getName() const override { return "Azure"; }
 
