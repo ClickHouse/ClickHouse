@@ -126,6 +126,29 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
     return wb.str();
 }
 
+std::optional<std::string> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPath(
+    const std::filesystem::path & zk_path_,
+    size_t buckets_num_,
+    size_t bucket,
+    const std::string & zookeeper_name_,
+    LoggerPtr log_)
+{
+    const bool use_buckets = DB::useBucketsForProcessing(buckets_num_);
+    const auto processed_node_path = use_buckets
+        ? getProcessedPathWithBucket(zk_path_, bucket)
+        : getProcessedPathWithoutBucket(zk_path_);
+
+    auto state = getProcessingStateFromKeeper(
+        /* processed_node_stat */nullptr,
+        processed_node_path,
+        /* file_path */"",
+        std::nullopt,
+        std::nullopt,
+        log_,
+        zookeeper_name_);
+    return state.last_processed_path;
+}
+
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
     const std::string & bucket_lock_path_,

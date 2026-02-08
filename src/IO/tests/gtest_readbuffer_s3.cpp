@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <optional>
+
 #include <IO/S3/Credentials.h>
 #include "config.h"
 
@@ -10,6 +12,7 @@
 #include <Poco/Net/HTTPBasicStreamBuf.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
@@ -134,6 +137,7 @@ struct ClientFake : DB::S3::Client
     }
 
     std::optional<GetObjectFn> getObjectImpl;
+    mutable std::optional<std::string> last_start_after;
 
     void setGetObjectSuccess(const std::shared_ptr<CountedSession> & session, std::streambuf * sb)
     {
@@ -153,6 +157,16 @@ struct ClientFake : DB::S3::Client
     {
         assert(getObjectImpl);
         return (*getObjectImpl)(request);
+    }
+
+    Aws::S3::Model::ListObjectsV2Outcome ListObjectsV2(const Aws::S3::Model::ListObjectsV2Request & request) const override
+    {
+        last_start_after = request.GetStartAfter().c_str();
+
+        Aws::S3::Model::ListObjectsV2Outcome outcome;
+        Aws::S3::Model::ListObjectsV2Result result(outcome.GetResultWithOwnership());
+        result.SetIsTruncated(false);
+        return result;
     }
 };
 
@@ -223,6 +237,28 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
 
     ASSERT_TRUE(subject.eof());
     ASSERT_FALSE(subject.nextImpl());
+}
+
+TEST_F(ReadBufferFromS3Test, IterateUsesStartAfter)
+{
+    std::unique_ptr<DB::S3::Client> client = std::make_unique<ClientFake>();
+    DB::S3::URI uri;
+    uri.bucket = "test_bucket";
+    DB::S3Capabilities cap;
+    String disk_name = "s3";
+    DB::ObjectStorageKeyGeneratorPtr gen;
+    auto object_storage = std::make_shared<DB::S3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), cap, gen, disk_name);
+
+    const std::optional<std::string> start_after = "prefix/file_010";
+    auto iterator = object_storage->iterate("prefix/", /*max_keys=*/1000, /*with_tags=*/false, start_after);
+    iterator->getCurrentBatchAndScheduleNext();
+
+    auto storage_client = object_storage->getS3StorageClient();
+    auto * fake = dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()));
+    ASSERT_TRUE(fake);
+    ASSERT_TRUE(fake->last_start_after.has_value());
+    ASSERT_EQ(*fake->last_start_after, "prefix/file_010");
 }
 
 TEST_F(ReadBufferFromS3Test, HavingZeroBytes)

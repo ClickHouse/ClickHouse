@@ -286,6 +286,34 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
     return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, parser);
 }
 
+std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing() const
+{
+    if (storage_type != ObjectStorageType::S3)
+        return std::nullopt;
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return std::nullopt;
+    if (partitioning_mode != ObjectStorageQueuePartitioningMode::NONE)
+        return std::nullopt;
+
+    const size_t buckets = std::max<size_t>(getBucketsNum(), 1);
+    std::optional<std::string> min_path;
+
+    for (size_t bucket = 0; bucket < buckets; ++bucket)
+    {
+        auto last = ObjectStorageQueueOrderedFileMetadata::getLastProcessedPath(
+            zookeeper_path, buckets, bucket, zookeeper_name, log);
+
+        if (!last.has_value() || last->empty())
+            return std::nullopt;
+
+        /// Use the smallest processed key across buckets to avoid skipping unprocessed files.
+        if (!min_path || *last < *min_path)
+            min_path = *last;
+    }
+
+    return min_path;
+}
+
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
 ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 {
