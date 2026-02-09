@@ -163,10 +163,9 @@ struct ClientFake : DB::S3::Client
     {
         last_start_after = request.GetStartAfter().c_str();
 
-        Aws::S3::Model::ListObjectsV2Outcome outcome;
-        Aws::S3::Model::ListObjectsV2Result result(outcome.GetResultWithOwnership());
+        Aws::S3::Model::ListObjectsV2Result result;
         result.SetIsTruncated(false);
-        return result;
+        return Aws::S3::Model::ListObjectsV2Outcome(std::move(result));
     }
 };
 

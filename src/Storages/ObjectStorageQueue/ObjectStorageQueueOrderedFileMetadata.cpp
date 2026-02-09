@@ -126,27 +126,64 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
     return wb.str();
 }
 
-std::optional<std::string> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPath(
+std::vector<std::optional<std::string>> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(
     const std::filesystem::path & zk_path_,
     size_t buckets_num_,
-    size_t bucket,
+    ObjectStorageQueuePartitioningMode partitioning_mode_,
     const std::string & zookeeper_name_,
     LoggerPtr log_)
 {
-    const bool use_buckets = DB::useBucketsForProcessing(buckets_num_);
-    const auto processed_node_path = use_buckets
-        ? getProcessedPathWithBucket(zk_path_, bucket)
-        : getProcessedPathWithoutBucket(zk_path_);
+    if (partitioning_mode_ != ObjectStorageQueuePartitioningMode::NONE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Getting StartAfter does not support partitioning mode {}", magic_enum::enum_name(partitioning_mode_));
 
-    auto state = getProcessingStateFromKeeper(
-        /* processed_node_stat */nullptr,
-        processed_node_path,
-        /* file_path */"",
-        std::nullopt,
-        std::nullopt,
-        log_,
-        zookeeper_name_);
-    return state.last_processed_path;
+    std::vector<std::string> processed_node_paths;
+    if (DB::useBucketsForProcessing(buckets_num_))
+    {
+        processed_node_paths.reserve(buckets_num_);
+        for (size_t bucket = 0; bucket < buckets_num_; ++bucket)
+            processed_node_paths.push_back(getProcessedPathWithBucket(zk_path_, bucket));
+    }
+    else
+    {
+        processed_node_paths.push_back(getProcessedPathWithoutBucket(zk_path_));
+    }
+
+    zkutil::ZooKeeper::MultiTryGetResponse responses;
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
+    zk_retry.retryLoop([&]
+    {
+        responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(processed_node_paths);
+    });
+
+    if (responses.size() != processed_node_paths.size())
+    {
+        throw Exception(ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+            "Unexpected size of Keeper response, expected {}, got {}",
+            processed_node_paths.size(), responses.size());
+    }
+
+    std::vector<std::optional<std::string>> result;
+    result.reserve(processed_node_paths.size());
+
+    for (size_t i = 0; i < responses.size(); ++i)
+    {
+        if (responses[i].error == Coordination::Error::ZNONODE || responses[i].data.empty())
+        {
+            result.emplace_back(std::nullopt);
+            continue;
+        }
+
+        if (responses[i].error != Coordination::Error::ZOK)
+            throw zkutil::KeeperException::fromPath(responses[i].error, processed_node_paths[i]);
+
+        auto metadata = NodeMetadata::fromString(responses[i].data);
+        if (metadata.file_path.empty())
+            result.emplace_back(std::nullopt);
+        else
+            result.emplace_back(std::move(metadata.file_path));
+    }
+
+    return result;
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(

@@ -288,21 +288,19 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
 
 std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing() const
 {
-    if (storage_type != ObjectStorageType::S3)
-        return std::nullopt;
-    if (mode != ObjectStorageQueueMode::ORDERED)
-        return std::nullopt;
-    if (partitioning_mode != ObjectStorageQueuePartitioningMode::NONE)
+    if (storage_type != ObjectStorageType::S3
+        || mode != ObjectStorageQueueMode::ORDERED
+        || partitioning_mode != ObjectStorageQueuePartitioningMode::NONE)
         return std::nullopt;
 
     const size_t buckets = std::max<size_t>(getBucketsNum(), 1);
+    const auto last_processed_paths = ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(
+        zookeeper_path, buckets, partitioning_mode, zookeeper_name, log);
     std::optional<std::string> min_path;
 
-    for (size_t bucket = 0; bucket < buckets; ++bucket)
+    /// One Keeper multi-read for all buckets to avoid O(buckets) round-trips.
+    for (const auto & last : last_processed_paths)
     {
-        auto last = ObjectStorageQueueOrderedFileMetadata::getLastProcessedPath(
-            zookeeper_path, buckets, bucket, zookeeper_name, log);
-
         if (!last.has_value() || last->empty())
             return std::nullopt;
 
