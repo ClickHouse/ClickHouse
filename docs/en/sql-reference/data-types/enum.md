@@ -172,7 +172,7 @@ There is a syntax sugar to add new values to enum using ALTER [MODIFY COLUMN ADD
 ```sql
 CREATE TABLE enum
 (
-	x Enum('One' = 1, 'Two', 'Three')
+    x Enum('One' = 1, 'Two', 'Three')
 ) ENGINE = Memory;
 ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES ('Zero' = 0, 'Four' = 4);
 SHOW CREATE TABLE enum;

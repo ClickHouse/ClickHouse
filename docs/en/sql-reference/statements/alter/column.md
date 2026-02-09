@@ -144,10 +144,10 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 ```sql
 MODIFY COLUMN [IF EXISTS] name
     [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
-	| ADD ENUM VALUES ( 'name' [= number] [, ...] )
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
     TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
-	| ADD ENUM VALUES ( 'name' [= number] [, ...] )
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
 
 This query changes the `name` column properties:
