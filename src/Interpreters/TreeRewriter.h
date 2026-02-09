@@ -135,4 +135,9 @@ private:
     bool no_throw = false;
 };
 
+/// When enable_analyzer=1, run before buildQueryTree so arrayJoin() in SELECT with JOIN is rewritten
+/// to identifier everywhere (SELECT, WHERE, JOIN ON, HAVING). Returns array_join_result_to_source
+/// for the planner to add the array join step before the join. See #96398.
+NameToNameMap rewriteArrayJoinFunctionWithJoin(ASTPtr & query, ContextPtr context);
+
 }

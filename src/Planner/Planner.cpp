@@ -1599,6 +1599,20 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     SelectQueryOptions & select_query_options_,
+    NameToNameMap array_join_result_to_source_)
+    : query_tree(query_tree_)
+    , select_query_options(select_query_options_)
+    , planner_context(buildPlannerContext(query_tree_, select_query_options_,
+        std::make_shared<GlobalPlannerContext>(
+            findQueryForParallelReplicas(query_tree_, select_query_options_),
+            findTableForParallelReplicas(query_tree_, select_query_options_),
+            collectFiltersForAnalysis(query_tree_, select_query_options_))))
+{
+    planner_context->setArrayJoinResultToSource(std::move(array_join_result_to_source_));
+}
+
+Planner::Planner(const QueryTreeNodePtr & query_tree_,
+    SelectQueryOptions & select_query_options_,
     GlobalPlannerContextPtr global_planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)

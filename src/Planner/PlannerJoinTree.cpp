@@ -2571,6 +2571,78 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
 }
 
+/// When arrayJoin() is used as function with JOIN, the AST was rewritten and we have result_name -> source_name.
+/// Wrap the left table plan with an array join step so the result columns exist before the join.
+static JoinTreeQueryPlan wrapLeftPlanWithArrayJoinFromMap(
+    JoinTreeQueryPlan join_tree_query_plan,
+    const NameToNameMap & array_join_result_to_source,
+    PlannerContextPtr & planner_context)
+{
+    if (array_join_result_to_source.empty())
+        return join_tree_query_plan;
+    if (join_tree_query_plan.stage != QueryProcessingStage::FetchColumns)
+        return join_tree_query_plan;
+
+    auto plan = std::move(join_tree_query_plan.query_plan);
+    auto plan_output_columns = plan.getCurrentHeader()->getColumnsWithTypeAndName();
+
+    ActionsDAG array_join_action_dag(plan_output_columns);
+    std::unordered_set<std::string> array_join_expressions_output_nodes;
+    Names array_join_column_names;
+    array_join_column_names.reserve(array_join_result_to_source.size());
+
+    for (const auto & [result_name, source_name] : array_join_result_to_source)
+    {
+        const ActionsDAG::Node * source_node = nullptr;
+        for (const auto * node : array_join_action_dag.getInputs())
+        {
+            if (node->result_name == source_name)
+            {
+                source_node = node;
+                break;
+            }
+        }
+        if (!source_node)
+            continue;
+        const auto * array_join_column_node = &array_join_action_dag.addArrayJoin(*source_node, result_name);
+        array_join_action_dag.getOutputs().push_back(array_join_column_node);
+        array_join_expressions_output_nodes.insert(result_name);
+        array_join_column_names.push_back(result_name);
+    }
+    if (array_join_column_names.empty())
+        return JoinTreeQueryPlan{.query_plan = std::move(plan), .stage = join_tree_query_plan.stage, .used_row_policies = std::move(join_tree_query_plan.used_row_policies), .useful_sets = std::move(join_tree_query_plan.useful_sets), .query_node_to_plan_step_mapping = std::move(join_tree_query_plan.query_node_to_plan_step_mapping)};
+
+    /// Debug: ensure array-join step is applied at most once (catches planner duplication).
+    if (planner_context->getArrayJoinApplied())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "arrayJoin applied twice in planner (wrapLeftPlanWithArrayJoinFromMap)");
+    planner_context->setArrayJoinApplied(true);
+
+    array_join_action_dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
+
+    auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(array_join_action_dag));
+    array_join_actions->setStepDescription("ARRAY JOIN actions (arrayJoin function with JOIN)");
+    appendSetsFromActionsDAG(array_join_actions->getExpression(), join_tree_query_plan.useful_sets);
+    plan.addStep(std::move(array_join_actions));
+
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    auto array_join_step = std::make_unique<ArrayJoinStep>(
+        plan.getCurrentHeader(),
+        ArrayJoin{std::move(array_join_column_names), true /* left */},
+        settings[Setting::enable_unaligned_array_join],
+        settings[Setting::max_block_size],
+        settings[Setting::enable_lazy_columns_replication]);
+    array_join_step->setStepDescription("ARRAY JOIN");
+    plan.addStep(std::move(array_join_step));
+
+    return JoinTreeQueryPlan{
+        .query_plan = std::move(plan),
+        .stage = QueryProcessingStage::FetchColumns,
+        .used_row_policies = std::move(join_tree_query_plan.used_row_policies),
+        .useful_sets = std::move(join_tree_query_plan.useful_sets),
+        .query_node_to_plan_step_mapping = std::move(join_tree_query_plan.query_node_to_plan_step_mapping),
+    };
+}
+
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const SelectQueryInfo & select_query_info,
     SelectQueryOptions & select_query_options,
@@ -2812,7 +2884,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         {
             if (table_expression == left_table_expression)
             {
-                query_plans_stack.push_back(std::move(left_table_expression_query_plan)); /// NOLINT
+                auto plan_to_push = std::move(left_table_expression_query_plan);
+                const auto & array_join_map = planner_context->getArrayJoinResultToSource();
+                if (!array_join_map.empty())
+                    plan_to_push = wrapLeftPlanWithArrayJoinFromMap(std::move(plan_to_push), array_join_map, planner_context);
+                query_plans_stack.push_back(std::move(plan_to_push));
                 left_table_expression = {};
                 continue;
             }
