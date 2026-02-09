@@ -510,26 +510,41 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 }
                 else
                 {
-                    LOG_WARNING(
-                        getLogger("KeeperSnapshotManager"),
-                        "Found orphaned node (parent '{}' doesn't exist), will be removed: {}",
-                        parent_path,
-                        itr.key);
                     orphaned_nodes.push_back(std::string(itr.key));
                 }
             }
         }
 
-        /// Remove orphaned nodes from storage
+        /// Handle orphaned nodes - removal requires both:
+        /// 1. remove_orphaned_nodes_on_startup config option enabled (opt-in)
+        /// 2. digest disabled (to avoid digest mismatch during rolling upgrades)
         if (!orphaned_nodes.empty())
         {
-            LOG_WARNING(
-                getLogger("KeeperSnapshotManager"),
-                "Removing {} orphaned nodes from snapshot",
-                orphaned_nodes.size());
+            const bool remove_enabled = keeper_context->removeOrphanedNodesOnStartup();
+            const bool can_remove = remove_enabled && !keeper_context->digestEnabled();
 
-            for (const auto & orphan : orphaned_nodes)
-                storage.container.erase(orphan);
+            if (can_remove)
+            {
+                LOG_WARNING(
+                    getLogger("KeeperSnapshotManager"),
+                    "Removing {} orphaned nodes from snapshot",
+                    orphaned_nodes.size());
+
+                for (const auto & orphan : orphaned_nodes)
+                    storage.container.erase(orphan);
+            }
+            else
+            {
+                const char * reason = !remove_enabled
+                    ? "remove_orphaned_nodes_on_startup is disabled"
+                    : "digest is enabled (set digest_enabled=false)";
+
+                LOG_WARNING(
+                    getLogger("KeeperSnapshotManager"),
+                    "Found {} orphaned nodes but cannot remove: {}",
+                    orphaned_nodes.size(),
+                    reason);
+            }
         }
 
         for (const auto & itr : storage.container)
