@@ -84,7 +84,7 @@ public:
         for (size_t i = 0; i < size; ++i)
             sum += static_cast<Float64>(src[i]);
 
-        Float64 mean = sum / size;
+        Float64 mean = sum / static_cast<Float64>(size);
 
         // Calculate Variance
         Float64 denominator = 0.0;
