@@ -299,6 +299,7 @@ def test_create_table():
         f"ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
         f"ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
         f"URL('https://username:{password}@domain.com/path', 'CSV')",
+        f"Redis('localhost', 0, '{password}') PRIMARY KEY x;",
     ]
 
     def make_test_case(i):
@@ -391,6 +392,7 @@ def test_create_table():
             generate_create_table_numbered("(`x` int) ENGINE = ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')"),
             generate_create_table_numbered("(`x` int) ENGINE = ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')"),
             generate_create_table_numbered("(`x` int) ENGINE = URL('https://username:[HIDDEN]@domain.com/path', 'CSV')"),
+            generate_create_table_numbered("(`x` int) ENGINE = Redis('localhost', 0, '[HIDDEN]') PRIMARY KEY x"),
         ],
         must_not_contain=[password],
     )
@@ -519,6 +521,7 @@ def test_table_functions():
         f"arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
         f"arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
         f"url('https://username:{password}@domain.com/path', 'CSV')",
+        f"redis('localhost', 'key', 'key Int64', 0, '{password}')"
     ]
 
     def make_test_case(i):
@@ -611,6 +614,7 @@ def test_table_functions():
             "CREATE TABLE tablefunc46 (`x` int) AS arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
             "CREATE TABLE tablefunc47 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
             "CREATE TABLE tablefunc48 (`x` int) AS url('https://username:[HIDDEN]@domain.com/path', 'CSV')",
+            "CREATE TABLE tablefunc49 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )

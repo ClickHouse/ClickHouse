@@ -10,11 +10,13 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/ContainersWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -123,7 +125,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 {
     static constexpr auto name = "distinctJSONPathsAndTypes";
 
-    UnorderedMapWithMemoryTracking<String, std::unordered_set<String>> data;
+    UnorderedMapWithMemoryTracking<String, UnorderedSetWithMemoryTracking<String>> data;
 
     void add(const ColumnObject & column, size_t row_num, const UnorderedMapWithMemoryTracking<String, String> & typed_paths_type_names)
     {

@@ -13,7 +13,7 @@ DROP TABLE test_table_03745;
 
 -- Test 2: MergeTree table (schedule pool)
 DROP TABLE IF EXISTS test_merge_tree_03745;
-CREATE TABLE test_merge_tree_03745 (x UInt64, y String) ENGINE = MergeTree() ORDER BY x;
+CREATE TABLE test_merge_tree_03745 (x UInt64, y String) ENGINE = MergeTree() ORDER BY x SETTINGS refresh_statistics_interval = '0';
 INSERT INTO test_merge_tree_03745 VALUES (1, 'a'), (2, 'b');
 SELECT pool, database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name FROM system.background_schedule_pool WHERE database = currentDatabase();
 DROP TABLE test_merge_tree_03745;

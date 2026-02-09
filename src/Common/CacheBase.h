@@ -242,6 +242,12 @@ public:
         return cache_policy->maxSizeInBytes();
     }
 
+    size_t maxCount() const
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->maxCount();
+    }
+
     void setMaxCount(size_t max_count)
     {
         std::lock_guard lock(mutex);

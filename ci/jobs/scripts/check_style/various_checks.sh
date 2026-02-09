@@ -13,6 +13,8 @@ for test_case in "${tests_with_query_log[@]}"; do
         grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
     } || {
         grep -qE 'has\(databases\,\ currentDatabase\(\)\)' "$test_case"
+    } || {
+        grep -qE 'has\(databases\,\ current_database\(\)\)' "$test_case"
     } || echo "Query to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 
@@ -77,7 +79,9 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
 done
 
 # Check for existence of __init__.py files
-# for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
+# This check is necessary to prevent issues with Python imports when test directories are missing this file.
+# See https://stackoverflow.com/questions/53918088/import-file-mismatch-in-pytest
+for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
 
 # Check for executable bit on non-executable files
 git ls-files -s $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} | \

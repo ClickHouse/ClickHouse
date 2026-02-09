@@ -41,7 +41,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
-
+            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
+            {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
+            {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+            {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
+            {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
+            {"use_statistics_cache", false, true, "Enable statistics cache"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -1037,7 +1042,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
-
+            {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
+            {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
+            {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
+            {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
+            {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {

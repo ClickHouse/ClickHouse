@@ -143,7 +143,7 @@ std::shared_ptr<KeeperHTTPClient> createKeeperClient(
         * Poco::Timespan::MILLISECONDS);
 
     /// Factory lambda allows ZooKeeper to create new sessions on reconnection
-    auto zk_client = zkutil::ZooKeeper::create_from_impl(
+    auto zk_client = zkutil::ZooKeeper::createFromImpl(
         [keeper_dispatcher, session_timeout]()
         {
             return std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, session_timeout);

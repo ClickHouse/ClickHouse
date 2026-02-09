@@ -6,6 +6,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {

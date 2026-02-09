@@ -532,32 +532,33 @@ protected:
             new_grower.increaseSize();
 
         /// Expand the space.
-
         size_t old_buffer_size = getBufferSizeInBytes();
         buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
-
         grower = new_grower;
 
-        /** Now some items may need to be moved to a new location.
-          * The element can stay in place, or move to a new location "on the right",
-          *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
-          */
-        size_t i = 0;
-        for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this))
-                reinsert(buf[i], buf[i].getHash(*this));
+        if (!empty())
+        {
+            /** Now some items may need to be moved to a new location.
+              * The element can stay in place, or move to a new location "on the right",
+              *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
+              */
+            size_t i = 0;
+            for (; i < old_size; ++i)
+                if (!buf[i].isZero(*this))
+                    reinsert(buf[i], buf[i].getHash(*this));
 
-        /** There is also a special case:
-          *    if the element was to be at the end of the old buffer,                  [        x]
-          *    but is at the beginning because of the collision resolution chain,      [o       x]
-          *    then after resizing, it will first be out of place again,               [        xo        ]
-          *    and in order to transfer it where necessary,
-          *    after transferring all the elements from the old halves you need to     [         o   x    ]
-          *    process tail from the collision resolution chain immediately after it   [        o    x    ]
-          */
-        size_t new_size = grower.bufSize();
-        for (; i < new_size && !buf[i].isZero(*this); ++i)
-            reinsert(buf[i], buf[i].getHash(*this));
+            /** There is also a special case:
+              *    if the element was to be at the end of the old buffer,                  [        x]
+              *    but is at the beginning because of the collision resolution chain,      [o       x]
+              *    then after resizing, it will first be out of place again,               [        xo        ]
+              *    and in order to transfer it where necessary,
+              *    after transferring all the elements from the old halves you need to     [         o   x    ]
+              *    process tail from the collision resolution chain immediately after it   [        o    x    ]
+              */
+            size_t new_size = grower.bufSize();
+            for (; i < new_size && !buf[i].isZero(*this); ++i)
+                reinsert(buf[i], buf[i].getHash(*this));
+        }
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();

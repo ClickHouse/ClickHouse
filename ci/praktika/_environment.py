@@ -254,9 +254,6 @@ class _Environment(MetaClasses.Serializable):
 
     @classmethod
     def from_workflow_data(cls) -> "_Environment":
-        assert Path(
-            Settings.WORKFLOW_STATUS_FILE
-        ).is_file(), f"File not found: {Settings.WORKFLOW_STATUS_FILE}"
         with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
             workflow_status_data = json.load(f)
         # Access the config job data and parse the JSON string in "data" field

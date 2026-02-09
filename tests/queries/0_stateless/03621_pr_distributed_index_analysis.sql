@@ -4,7 +4,7 @@
 -- Make sure that distributed index analysis works with parallel replicas
 
 drop table if exists test_10m;
-create table test_10m (key Int, value Int) engine=MergeTree() order by key;
+create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_size_to_activate=0;
 system stop merges test_10m;
 insert into test_10m select number, number*100 from numbers(10e6);
 
@@ -39,7 +39,7 @@ select
     )
   ) queries_with_subqueries,
   anyIf(ProfileEvents['DistributedIndexAnalysisScheduledReplicas'] > 0, is_initial_query) distributed_index_analysis_replicas,
-  anyIf(ProfileEvents['ParallelReplicasReadRequestMicroseconds'] > 0, is_initial_query) read_with_parallel_replicas
+  anyIf(ProfileEvents['ParallelReplicasUsedCount'] > 0, is_initial_query) read_with_parallel_replicas
 from system.query_log
 where
   event_date >= yesterday()

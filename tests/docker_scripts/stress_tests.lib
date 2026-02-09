@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -ex
+
 OK="\tOK\t\\N\t"
 FAIL="\tFAIL\t\\N\t"
 
@@ -67,7 +69,7 @@ function configure()
     #
     #  DB::Exception: Incorrect file extension: V.sql.move_from.X in metadata directory store/346/346b09d6-907d-4b6b-a1e3-361ecfdab8a4/. (INCORRECT_FILE_NAME)
     #
-    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk
+    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk "$@"
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -96,13 +98,9 @@ function configure()
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
 
-    if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
-        randomize_config_boolean_value use_compression zookeeper_fault_injection
-        randomize_config_boolean_value use_xid_64 zookeeper_fault_injection
-    else
-        randomize_config_boolean_value use_compression zookeeper
-        randomize_config_boolean_value use_xid_64 zookeeper
-    fi
+    # Always randomize in zookeeper.xml (the base config)
+    randomize_config_boolean_value use_compression zookeeper
+    randomize_config_boolean_value use_xid_64 zookeeper
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
@@ -111,7 +109,10 @@ function configure()
 
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
+}
 
+function configure_limits()
+{
     local total_mem
     total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
     total_mem=$(( total_mem*1024 )) # bytes
@@ -174,7 +175,19 @@ EOL
                 <max_ast_depth>
                     <readonly/>
                 </max_ast_depth>
+
+               <!--
+                Disable experimental WINDOW VIEW tests for stress tests, since they may be
+                created with old analyzer and then, after server restart it will refuse to start.
+                FIXME: remove once the support for WINDOW VIEW will be implemented in analyzer.
+               -->
+               <allow_experimental_window_view>
+                   <readonly/>
+               </allow_experimental_window_view>
+
             </constraints>
+
+            <allow_experimental_window_view>false</allow_experimental_window_view>
         </default>
     </profiles>
 </clickhouse>
@@ -190,9 +203,20 @@ EOL
          since clickhouse is not started as daemon (via clickhouse start)
     -->
     <core_path>$PWD</core_path>
+
+    <remote_servers>
+      <test_cluster_database_replicated>
+          <shard>
+              <replica>
+                  <host>localhost</host>
+                  <port>9000</port>
+              </replica>
+          </shard>
+      </test_cluster_database_replicated>
+  </remote_servers>
+
 </clickhouse>
 EOL
-
 }
 
 function stop_server()
@@ -244,7 +268,7 @@ function stop_server()
 function start_server()
 {
     counter=0
-    max_attempt=${1:-5}
+    max_attempt=${1:-6}
     until clickhouse-client --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
@@ -255,11 +279,11 @@ function start_server()
             cat /var/log/clickhouse-server/stdout.log
             tail -n100 /var/log/clickhouse-server/stderr.log
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
-            exit 1
+            return 1
         fi
         # use root to match with current uid
         clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
-        sleep 60
+        sleep 20
         counter=$((counter + 1))
     done
 }
@@ -272,7 +296,7 @@ function check_server_start()
         >> /test_output/test_results.tsv)
 
     # Remove file application_errors.txt if it's empty
-    [ -s /test_output/application_errors.txt ] || rm /test_output/application_errors.txt
+    [ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 }
 
 function check_logs_for_critical_errors()
@@ -292,10 +316,10 @@ function check_logs_for_critical_errors()
         || echo -e "No SharedMergeTree lost forever in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
     # Remove file no_such_key_errors.txt if it's empty
-    [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
+    [ -s /test_output/no_such_key_errors.txt ] || rm -f /test_output/no_such_key_errors.txt
 
     # Remove file fatal_messages.txt if it's empty
-    [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
+    [ -s /test_output/fatal_messages.txt ] || rm -f /test_output/fatal_messages.txt
 
     dmesg -T > /test_output/dmesg.log
 }

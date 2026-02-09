@@ -28,6 +28,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -351,7 +352,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 }
 
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -405,7 +406,21 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
     auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
+
+    /// After swapping, the join output may lose columns because TableJoin::swapSides
+    /// swaps result_columns_from_left_table with columns_added_by_join, and the join
+    /// algorithm may filter different columns from the (now swapped) left input.
+    /// If any column required by downstream steps would be missing, skip the swap.
+    auto original_output = join_step->getOutputHeader();
+    auto swapped_algorithm_header = JoiningTransform::transformHeader(*right_stream_input_header, updated_join);
+    for (const auto & col : *original_output)
+    {
+        if (!swapped_algorithm_header.has(col.name))
+            return true;
+    }
+
     join_step->setJoin(std::move(updated_join), /* swap_streams= */ true);
+
     return true;
 }
 

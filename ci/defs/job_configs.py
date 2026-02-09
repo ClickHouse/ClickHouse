@@ -1,14 +1,39 @@
 from praktika import Job
 from praktika.utils import Utils
 
-from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
+from ci.defs.defs import (
+    LLVM_ARTIFACTS_LIST,
+    LLVM_FT_NUM_BATCHES,
+    LLVM_IT_NUM_BATCHES,
+    ArtifactNames,
+    BuildTypes,
+    JobNames,
+    RunnerLabels,
+)
+
+# macOS smoke test job - runs on GitHub-hosted macOS runners without Docker
+# no_aws=True because GitHub-hosted macOS runners have no AWS credentials;
+# the binary is downloaded via public HTTP inside the job script.
+common_macos_smoke_test_job_config = Job.Config(
+    name=JobNames.MACOS_SMOKE_TEST,
+    runs_on=[],  # from parametrize
+    command="python3 ./ci/jobs/macos_smoke_test.py",
+    no_aws=True,
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/macos_smoke_test.py",
+        ],
+    ),
+    timeout=600,
+)
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
 BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host+"
-    f"--memory={Utils.physical_memory() * 95 // 100}+"
-    f"--memory-reservation={Utils.physical_memory() * 9 // 10}"
+    "clickhouse/binary-builder+--network=host"
+    f"+--memory={Utils.physical_memory() * 95 // 100}"
+    f"+--memory-reservation={Utils.physical_memory() * 9 // 10}"
+    f"+--volume=.:/ClickHouse"
 )
 
 if Utils.is_arm():
@@ -71,6 +96,16 @@ common_ft_job_config = Job.Config(
     timeout=int(3600 * 2.5),
 )
 
+common_unit_test_job_config = Job.Config(
+    name=JobNames.UNITTEST,
+    runs_on=[],  # from parametrize()
+    command=f"python3 ./ci/jobs/unit_tests_job.py",
+    run_in_docker="clickhouse/fasttest+--privileged",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=["./ci/jobs/unit_tests_job.py"],
+    ),
+)
+
 common_stress_job_config = Job.Config(
     name=JobNames.STRESS,
     runs_on=[],  # from parametrize()
@@ -107,12 +142,6 @@ common_integration_test_job_config = Job.Config(
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
 )
 
-BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host+"
-    f"--memory={Utils.physical_memory() * 95 // 100}+"
-    f"--memory-reservation={Utils.physical_memory() * 9 // 10}"
-)
-
 
 class JobConfigs:
     style_check = Job.Config(
@@ -134,7 +163,7 @@ class JobConfigs:
         runs_on=RunnerLabels.AMD_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log",
+        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/fast_test.py",
@@ -230,7 +259,10 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
-            provides=[ArtifactNames.CH_ARM_BINARY],
+            provides=[
+                ArtifactNames.CH_ARM_BINARY,
+                ArtifactNames.PARSER_MEMORY_PROFILER,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -609,19 +641,19 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    functional_tests_jobs_azure_master_only = (
-        common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
-            Job.ParamSet(
-                parameter="arm_asan, azure, parallel",
-                runs_on=RunnerLabels.ARM_MEDIUM,
-                requires=[ArtifactNames.CH_ARM_ASAN],
-            ),
-            Job.ParamSet(
-                parameter="arm_asan, azure, sequential",
-                runs_on=RunnerLabels.ARM_SMALL_MEM,
-                requires=[ArtifactNames.CH_ARM_ASAN],
-            ),
-        )
+    functional_tests_jobs_azure = common_ft_job_config.set_allow_merge_on_failure(
+        True
+    ).parametrize(
+        Job.ParamSet(
+            parameter="arm_asan, azure, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
+        Job.ParamSet(
+            parameter="arm_asan, azure, sequential",
+            runs_on=RunnerLabels.ARM_SMALL_MEM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
     )
     bugfix_validation_it_job = (
         common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE_IT)
@@ -630,15 +662,7 @@ class JobConfigs:
             "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
         )
     )
-    unittest_jobs = Job.Config(
-        name=JobNames.UNITTEST,
-        runs_on=[],  # from parametrize()
-        command=f"python3 ./ci/jobs/unit_tests_job.py",
-        run_in_docker="clickhouse/fasttest+--privileged",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/unit_tests_job.py"],
-        ),
-    ).parametrize(
+    unittest_jobs = common_unit_test_job_config.parametrize(
         Job.ParamSet(
             parameter="asan",
             runs_on=RunnerLabels.AMD_LARGE,
@@ -722,24 +746,9 @@ class JobConfigs:
         timeout=3600 * 2,
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_asan",
+            parameter="amd_release",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_ASAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_debug",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_DEBUG],
+            requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
     # why it's master only?
@@ -803,6 +812,60 @@ class JobConfigs:
             )
         )
     )
+
+    build_llvm_coverage_job = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.LLVM_COVERAGE_BUILD,
+            provides=[
+                ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+                ArtifactNames.UNITTEST_LLVM_COVERAGE,
+            ],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
+    )
+
+    unittest_llvm_coverage_job = common_unit_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_llvm_coverage",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_LLVM_COVERAGE],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE],
+        ),
+    )
+
+    functional_test_llvm_coverage_jobs = common_ft_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
+            )
+            for total_batches in (LLVM_FT_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ]
+    )
+
+    integration_test_llvm_coverage_jobs = (
+        common_integration_test_job_config.parametrize(
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_llvm_coverage, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.AMD_MEDIUM,
+                    requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                    provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"],
+                )
+                for total_batches in (LLVM_IT_NUM_BATCHES,)
+                for batch in range(1, total_batches + 1)
+            ],
+        )
+    )
+
     integration_test_targeted_pr_jobs = common_integration_test_job_config.parametrize(
         Job.ParamSet(
             parameter=f"amd_asan, targeted",
@@ -1097,4 +1160,31 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_MEDIUM,
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
+    )
+    llvm_coverage_merge_job = Job.Config(
+        name=JobNames.LLVM_COVERAGE_MERGE,
+        runs_on=RunnerLabels.AMD_MEDIUM,
+        run_in_docker="clickhouse/test-base",
+        requires=[
+            ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.UNITTEST_LLVM_COVERAGE,
+            *LLVM_ARTIFACTS_LIST,
+        ],
+        provides=[ArtifactNames.LLVM_COVERAGE_HTML_REPORT],
+        command="python3 ./ci/jobs/merge_llvm_coverage_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/merge_llvm_coverage_job.py"],
+        ),
+        timeout=3600,
+    )
+    # macOS smoke tests - run on GitHub-hosted macOS runners (no Docker)
+    # No `requires` here because artifact download from S3 needs AWS credentials
+    # which are not available on GitHub-hosted macOS runners.
+    # The dependency on the build job is set via set_dependency in the workflow.
+    # The binary is downloaded via public HTTP inside the job script.
+    macos_smoke_test_jobs = common_macos_smoke_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_darwin",
+            runs_on=RunnerLabels.MACOS_ARM,
+        ),
     )

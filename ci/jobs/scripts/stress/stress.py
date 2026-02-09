@@ -3,21 +3,122 @@
 """This script is used in docker images for stress tests and upgrade tests"""
 import argparse
 import logging
+import os
 import random
+import signal
+import subprocess
 import time
+import threading
 from multiprocessing import cpu_count
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
-from typing import List
+from typing import List, Optional
 
 
 class ServerDied(Exception):
     pass
 
 
+class RandomQueryKiller:
+    """Background thread that randomly kills queries and client processes during stress tests.
+
+    This helps test that queries are cancelled correctly and handles scenarios
+    where the client unexpectedly disconnects (issue #39803).
+    """
+
+    def __init__(self, interval: float = 3.0):
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._interval = interval
+
+    def _kill_random_query(self) -> None:
+        """Select a random query from system.processes and kill it."""
+        try:
+            # Get a random query_id, excluding our own queries and system queries
+            result = check_output(
+                "clickhouse client -q \""
+                "SELECT query_id FROM system.processes "
+                "WHERE query NOT LIKE '%system.processes%' "
+                "AND query NOT LIKE '%KILL QUERY%' "
+                "AND elapsed > 0.1 "
+                "ORDER BY rand() LIMIT 1\" 2>/dev/null",
+                shell=True,
+                timeout=5,
+            )
+            query_id = result.decode("utf-8").strip()
+            if query_id:
+                logging.info("Killing random query: %s", query_id)
+                call(
+                    f"clickhouse client -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
+                    shell=True,
+                    timeout=5,
+                )
+        except Exception as e:
+            # Errors are expected (server busy, no queries, etc.)
+            logging.debug("Random query killer got exception (expected): %s", e)
+
+    def _kill_random_client(self) -> None:
+        """Kill a random clickhouse-client process."""
+        try:
+            # Get list of clickhouse-test child processes (clickhouse client)
+            result = check_output(
+                "pgrep -f 'clickhouse-client|clickhouse client' 2>/dev/null || true",
+                shell=True,
+                timeout=5,
+            )
+            pids = [p.strip() for p in result.decode("utf-8").strip().split("\n") if p.strip()]
+            if pids:
+                # Pick a random pid and kill it
+                pid = random.choice(pids)
+                logging.info("Killing random client process: %s", pid)
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                except (ProcessLookupError, ValueError):
+                    pass  # Process already gone
+        except Exception as e:
+            logging.debug("Random client killer got exception (expected): %s", e)
+
+    def _run(self) -> None:
+        """Main loop that runs in the background thread."""
+        logging.info("Random query/client killer started (interval: %.1fs)", self._interval)
+        while not self._stop_event.is_set():
+            # Randomly choose to kill a query or a client process
+            if random.random() < 0.7:
+                self._kill_random_query()
+            else:
+                self._kill_random_client()
+            self._stop_event.wait(self._interval)
+        logging.info("Random query/client killer stopped")
+
+    def start(self) -> None:
+        """Start the background killer thread."""
+        if self._thread is not None:
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Stop the background killer thread."""
+        if self._thread is None:
+            return
+        self._stop_event.set()
+        self._thread.join(timeout=10)
+        self._thread = None
+
+
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     options = []
     client_options = []
+
+    if upgrade_check:
+        # Disable settings randomization for upgrade checks to prevent test failures caused by missing settings in old version
+        options.append("--no-random-settings")
+        options.append("--no-random-merge-tree-settings")
+
+    # allow constraint
+    client_options.append(f"enable_analyzer=1")
+
     if i > 0:
         options.append("--order=random")
 
@@ -105,6 +206,21 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append(
             f"query_plan_optimize_join_order_limit={random.randint(0, 64)}"
         )
+
+    if random.random() < 0.2:
+        client_options.append(
+            f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'"
+        )
+
+    if random.random() < 0.3:
+        options.append("--replace-log-memory-with-mergetree")
+
+    if random.random() < 0.2:
+        client_options.append("async_insert=1")
+
+    if random.random() < 0.05:
+        client_options.append("enable_join_runtime_filters=1")
+
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
     join_order_algorithm_combinations = ["greedy", "dpsize,greedy", "greedy,dpsize"]
@@ -126,6 +242,7 @@ def run_func_test(
     global_time_limit: int,
     upgrade_check: bool,
     encrypted_storage: bool,
+    query_killer: Optional["RandomQueryKiller"] = None,
 ) -> List[Popen]:
     upgrade_check_option = "--upgrade-check" if upgrade_check else ""
     encrypted_storage_option = "--encrypted-storage" if encrypted_storage else ""
@@ -137,16 +254,64 @@ def run_func_test(
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
     ]
     pipes = []
+    commands = []
+    logging.info("Smoke check")
+    for i, path in enumerate(output_paths):
+        # Validate that simple tests work across all randomizations.
+        # IF THIS FAILS, THE STRESS TESTS ARE BROKEN
+        full_command = (
+            f"{cmd} --stress-tests {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
+            f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
+        )
+        commands.append(full_command)
+        check_command = (
+            full_command
+            + "--jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
+        )
+        logging.info(check_command)
+        try:
+            execute_bash(check_command, timeout=180)
+        except subprocess.CalledProcessError as e:
+            logging.info(e.stdout)
+
+            # Ignore fault injects and transient errors, but most of the time tests should complete successfully
+            ignored_errors = [
+                "CANNOT_SCHEDULE_TASK",
+                "Fault injection",
+                "Query memory tracker: fault injected",
+                "KEEPER_EXCEPTION",
+            ]
+            if any(err in e.stdout or err in e.stderr for err in ignored_errors):
+                logging.warning(
+                    f"Detected known transient error, ignoring: {ignored_errors}"
+                )
+                continue
+            raise
+
+    # Start the query killer after smoke check completes, before actual stress test
+    if query_killer is not None:
+        query_killer.start()
+
+    logging.info("Run stress tests")
     for i, path in enumerate(output_paths):
         with open(path, "w", encoding="utf-8") as op:
-            full_command = (
-                f"{cmd} {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
-                f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option}"
-            )
-            logging.info("Run func tests '%s'", full_command)
+            command = commands[i]
+            logging.info("Run func tests '%s'", command)
             # pylint:disable-next=consider-using-with
-            pipes.append(Popen(full_command, shell=True, stdout=op, stderr=op))
+            pipes.append(Popen(command, shell=True, stdout=op, stderr=op))
             time.sleep(0.5)
+
+    logging.info("Will wait functests to finish")
+    while True:
+        retcodes = []
+        for p in pipes:
+            if p.poll() is not None:
+                retcodes.append(p.returncode)
+        if len(retcodes) == len(pipes):
+            break
+        logging.info("Finished %s from %s processes", len(retcodes), len(pipes))
+        time.sleep(5)
+
     return pipes
 
 
@@ -158,15 +323,45 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
     check_output(cmd, shell=True)
 
 
-def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None:
+def call_with_retry(
+    query: str, timeout: int | float = 30, retry_count: int = 5
+) -> None:
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
-        code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
+        try:
+            code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            logging.info("Command timed out after %s seconds, retrying", str(timeout))
+            time.sleep(i)
+            continue
         if code != 0:
             logging.info("Command returned %s, retrying", str(code))
             time.sleep(i)
         else:
             break
+
+
+def execute_bash(full_command, timeout=120):
+    try:
+        result = subprocess.run(
+            full_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=True,
+        )
+        logging.info(result.stdout)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        # Display output before raising the exception as requested
+        logging.info("Test failed. Captured Output:")
+        logging.info(e.stdout)
+        logging.info(e.stderr)
+        raise
+    except subprocess.TimeoutExpired as e:
+        logging.info(f"Test timed out. Partial output:\n{e.stdout}")
+        raise
 
 
 def make_query_command(query: str) -> str:
@@ -323,13 +518,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-folder", type=Path)
     parser.add_argument("--global-time-limit", type=int, default=1800)
-    parser.add_argument("--num-parallel", type=int, default=cpu_count())
+    parser.add_argument("--num-parallel", type=int, default=min(8, cpu_count()))
     parser.add_argument("--upgrade-check", action="store_true")
     parser.add_argument("--hung-check", action="store_true", default=False)
     # make sense only for hung check
     parser.add_argument("--drop-databases", action="store_true", default=False)
     parser.add_argument(
         "--encrypted-storage", type=lambda x: bool(int(x)), default=False
+    )
+    parser.add_argument(
+        "--no-random-query-killer",
+        action="store_true",
+        default=False,
+        help="Disable random query/client killer during stress test",
     )
     return parser.parse_args()
 
@@ -343,27 +544,31 @@ def main():
             "--drop-databases only used in hung check (--hung-check)"
         )
 
-    func_pipes = []
-    func_pipes = run_func_test(
-        args.test_cmd,
-        args.output_folder,
-        args.num_parallel,
-        args.skip_func_tests,
-        args.global_time_limit,
-        args.upgrade_check,
-        args.encrypted_storage,
-    )
+    call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
 
-    logging.info("Will wait functests to finish")
-    while True:
-        retcodes = []
-        for p in func_pipes:
-            if p.poll() is not None:
-                retcodes.append(p.returncode)
-        if len(retcodes) == len(func_pipes):
-            break
-        logging.info("Finished %s from %s processes", len(retcodes), len(func_pipes))
-        time.sleep(5)
+    # Create random query/client killer unless disabled or in upgrade check mode
+    # (upgrade check mode should not have random kills as it may interfere with
+    # the upgrade process itself)
+    # Note: the killer is started inside run_func_test after the smoke check completes
+    query_killer = None
+    if not args.no_random_query_killer and not args.upgrade_check:
+        query_killer = RandomQueryKiller(interval=3.0)
+
+    try:
+        func_pipes = run_func_test(
+            args.test_cmd,
+            args.output_folder,
+            args.num_parallel,
+            args.skip_func_tests,
+            args.global_time_limit,
+            args.upgrade_check,
+            args.encrypted_storage,
+            query_killer,
+        )
+    finally:
+        # Stop the query killer when tests are done
+        if query_killer is not None:
+            query_killer.stop()
 
     logging.info("All processes finished")
 

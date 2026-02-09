@@ -143,15 +143,15 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
                 "Cannot wrap disk `{}` with cache layer `{}`: cached disk is allowed only on top of object storage",
                 disk_name, name);
 
-        auto disk_object_storage = disk->createDiskObjectStorage();
-        disk_object_storage->wrapWithCache(cache, cache_settings, name);
+        auto cached_disk_object_storage = std::dynamic_pointer_cast<DiskObjectStorage>(disk)->wrapWithCache(cache, cache_settings, name);
+        cached_disk_object_storage->startupImpl();
 
         LOG_INFO(
             getLogger("DiskCache"),
             "Registered cached disk (`{}`) with structure: {}",
-            name, assert_cast<DiskObjectStorage *>(disk_object_storage.get())->getStructure());
+            name, assert_cast<DiskObjectStorage *>(cached_disk_object_storage.get())->getStructure());
 
-        return disk_object_storage;
+        return cached_disk_object_storage;
     };
 
     factory.registerDiskType("cache", creator);
