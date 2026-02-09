@@ -10,8 +10,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/NaNUtils.h>
-#include "Columns/IColumn.h"
-#include "base/types.h"
+#include <Columns/IColumn.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -68,7 +68,8 @@ public:
     template <typename Element>
     static void impl(const Element * __restrict src, size_t size, size_t max_lag, PaddedPODArray<Float64> & res_values)
     {
-        if(size == 0){
+        if (size == 0)
+        {
             return;
         }
 
@@ -96,8 +97,10 @@ public:
         //Apply the max_lag limit
         size_t limit = std::min(size, max_lag);
 
-        if(denominator == 0.0){
-            for(size_t i = 0; i < limit; ++i){
+        if (denominator == 0.0)
+        {
+            for (size_t i = 0; i < limit; ++i)
+            {
                 res_values.push_back(std::numeric_limits<Float64>::quiet_NaN());
             }
             return;
@@ -141,9 +144,10 @@ public:
 
             // Determine max_lag for this row
             size_t max_lag = array_size;
-            if(col_max_lag){
+            if (col_max_lag)
+            {
                 Int64 lag_arg = col_max_lag->getInt(i);
-                if(lag_arg < 0) lag_arg = 0;
+                if (lag_arg < 0) lag_arg = 0;
                 max_lag = static_cast<size_t>(lag_arg);
             }
 
