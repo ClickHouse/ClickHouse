@@ -176,7 +176,6 @@ NULLs are treated as equal.
     FunctionDocumentation documentation = {
         description, syntax,
         {{"arr", "Array(T)"}, {"elem", "T"}},
-        {},
         returned_value,
         examples,
         introduced_in,

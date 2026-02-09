@@ -1244,24 +1244,17 @@ def test_url_reconnect_in_the_middle(started_cluster):
 
     with PartitionManager() as pm:
         pm_rule_reject = {
-            "instance": instance,
-            "chain": "INPUT",
             "probability": 0.02,
             "destination": instance.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "REJECT --reject-with tcp-reset",
-            "protocol": "tcp",
         }
         pm_rule_drop_all = {
-            "instance": instance,
-            "chain": "INPUT",
             "destination": instance.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "DROP",
-            "protocol": "tcp",
         }
-
-        pm.add_rule(pm_rule_reject)
+        pm._add_rule(pm_rule_reject)
 
         def select():
             global result
@@ -1275,11 +1268,11 @@ def test_url_reconnect_in_the_middle(started_cluster):
         thread = threading.Thread(target=select)
         thread.start()
         time.sleep(4)
-        pm.add_rule(pm_rule_drop_all)
+        pm._add_rule(pm_rule_drop_all)
 
         time.sleep(2)
-        pm.delete_rule(pm_rule_drop_all)
-        pm.delete_rule(pm_rule_reject)
+        pm._delete_rule(pm_rule_drop_all)
+        pm._delete_rule(pm_rule_reject)
 
         thread.join()
 

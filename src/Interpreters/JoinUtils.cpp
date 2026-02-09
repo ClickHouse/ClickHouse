@@ -484,7 +484,8 @@ ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
     {
-        auto casted_column = ColumnUInt8::create(column->size());
+        auto casted_column = ColumnUInt8::create();
+        casted_column->getData().resize(column->size());
         if (!tryConvertAnyColumnToBool(*column, casted_column->getData()))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Illegal type {} of column for JOIN filter. Must be Number or Nullable(Number).", column->getName());
@@ -520,7 +521,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(*nested_column);
         const auto & null_map = nullable_col->getNullMapColumn();
 
-        auto res = ColumnUInt8::create(nullable_col->size(), static_cast<UInt8>(0));
+        auto res = ColumnUInt8::create(nullable_col->size(), 0);
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
         return JoinMask(std::move(res));
@@ -600,9 +601,7 @@ static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Bl
 
 static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
-    /// Use the "fastrange" method from Daniel Lemire:
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards,
-        [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; });
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) { return hash % num_shards; });
 }
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)

@@ -1,12 +1,11 @@
 #include <memory>
 #include <optional>
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/setThreadName.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -27,7 +26,6 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -71,7 +69,6 @@ namespace Setting
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
-    extern const SettingsUInt64 s3_path_filter_limit;
 }
 
 namespace ErrorCodes
@@ -181,66 +178,23 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    if (reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
+    if (reading_path.hasGlobs())
     {
-        auto paths = expandSelectionGlob(reading_path.path);
-        iterator = std::make_unique<KeysIterator>(
-            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
-            query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
-            file_progress_callback);
-    }
-    else if (reading_path.hasGlobs())
-    {
-        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
-        std::optional<Strings> paths;
-        if (filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
-            paths = VirtualColumnUtils::extractPathValuesFromFilter(
-                filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
-
-        // If paths is nullopt, use the glob iterator to scan all matching files.
-        // If paths contains a value, validate the extracted paths and use the key-based iterator
-        // (even if the result is empty, indicating no scanning is required).
-        if (!paths)
-            iterator = std::make_unique<GlobIterator>(
-                object_storage,
-                configuration,
-                predicate,
-                virtual_columns,
-                hive_columns,
-                local_context,
-                is_archive ? nullptr : read_keys,
-                query_settings.list_object_keys_size,
-                query_settings.throw_on_zero_files_match,
-                with_tags,
-                file_progress_callback);
-        else
+        if (hasExactlyOneBracketsExpansion(reading_path.path))
         {
-            // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
-            Strings validated_paths;
-            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
-            if (matcher.ok())
-            {
-                for (const auto & path : paths.value())
-                {
-                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
-                    if (RE2::FullMatch(relative_path, matcher))
-                        validated_paths.push_back(relative_path);
-                }
-            }
-            else
-                throw Exception(
-                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
-
+            auto paths = expandSelectionGlob(reading_path.path);
             iterator = std::make_unique<KeysIterator>(
-                validated_paths,
-                object_storage,
-                virtual_columns,
-                is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file,
-                skip_object_metadata,
-                with_tags,
+                paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+                query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
                 file_progress_callback);
         }
+        else
+            /// Iterate through disclosed globs and make a source for each file
+            iterator = std::make_unique<GlobIterator>(
+                object_storage, configuration, predicate, virtual_columns, hive_columns,
+                local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+                query_settings.throw_on_zero_files_match, with_tags,
+                file_progress_callback);
     }
     else if (configuration->supportsFileIterator())
     {
@@ -385,6 +339,7 @@ Chunk StorageObjectStorageSource::generate()
                 },
                 read_context);
 
+
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
             {
@@ -441,23 +396,6 @@ Chunk StorageObjectStorageSource::generate()
                 }
             }
 #endif
-
-            /// Convert any Const columns to full columns before returning.
-            /// This is necessary because when chunks with different Const values (e.g., partition columns
-            /// from different files in DeltaLake) are squashed together during INSERT, the squashing code
-            /// doesn't properly handle merging Const columns with different constant values.
-            /// By converting to full columns here, we ensure the values are preserved correctly.
-            if (chunk.hasColumns())
-            {
-                size_t chunk_num_rows = chunk.getNumRows();
-                auto columns = chunk.detachColumns();
-                for (auto & column : columns)
-                {
-                    if (column->isConst())
-                        column = column->cloneResized(chunk_num_rows)->convertToFullColumnIfConst();
-                }
-                chunk.setColumns(std::move(columns), chunk_num_rows);
-            }
 
             return chunk;
         }
@@ -630,7 +568,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto mapper = configuration->getColumnMapperForObject(object_info);
             if (!mapper)
                 return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
+            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, nullptr, nullptr);
         }();
 
         LOG_DEBUG(
@@ -661,37 +599,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
+        configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
 
-        if (object_info->data_lake_metadata
-            && object_info->data_lake_metadata->excluded_rows
-            && object_info->data_lake_metadata->excluded_rows->size() > 0)
+        std::optional<ActionsDAG> transformer;
+        if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)
         {
-            builder.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
-            });
-        }
-
-        std::optional<ActionsDAG> schema_transform;
-        if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
-        {
-            schema_transform = object_info->data_lake_metadata->schema_transform->clone();
+            transformer = object_info->data_lake_metadata->transform->clone();
             /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            schema_transform->removeUnusedActions(read_from_format_info.requested_columns.getNames());
+            transformer->removeUnusedActions(read_from_format_info.requested_columns.getNames());
         }
-        if (!schema_transform)
+        if (!transformer)
         {
-            auto transform = configuration->getSchemaTransformer(context_, object_info);
-            if (transform)
-                schema_transform = transform->clone();
+            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info))
+                transformer = schema_transformer->clone();
         }
 
-        if (schema_transform.has_value())
+        if (transformer.has_value())
         {
-            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(schema_transform.value()));
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(transformer.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
@@ -846,7 +773,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 object_info.getPath(),
                 cache_key,
                 cache,
-                FileCache::getCommonOrigin(),
+                FileCache::getCommonUser(),
                 read_buffer_creator,
                 use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
@@ -856,7 +783,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
 
-            LOG_TRACE(
+            LOG_TEST(
                 log,
                 "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
                 filesystem_cache_name,
@@ -874,12 +801,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     if (!use_async_buffer)
-    {
-        LOG_TRACE(log, "Downloading object {} of size {} without initial prefetch", object_info.getPath(), object_size);
         return impl;
-    }
 
-    LOG_TRACE(log, "Downloading object {} of size {} with initial prefetch", object_info.getPath(), object_size);
+    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
+
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size
         && impl->isCached();
 

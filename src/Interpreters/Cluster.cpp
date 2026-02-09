@@ -131,7 +131,7 @@ Cluster::Address::Address(
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
-    is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    is_local = isLocal(config.getInt(port_type, 0));
 
     /// if bind_host is set, then force is_local to false for easier testing
     if (!bind_host.empty())
@@ -292,7 +292,7 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
         secure = Protocol::Secure::Enable;
     }
 
-    const char * colon = strchr(full_string.data(), ':'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    const char * colon = strchr(full_string.data(), ':');  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     if (!user_pw_end || !colon)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
 
@@ -301,7 +301,7 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
     if (!host_end)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
 
-    const char * has_db = strchr(full_string.data(), '#'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    const char * has_db = strchr(full_string.data(), '#');  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     const char * port_end = has_db ? has_db : address_end;
 
     Address address;

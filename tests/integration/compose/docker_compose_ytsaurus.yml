@@ -23,4 +23,3 @@ services:
                     --id primary -c '{name=query-tracker}'
                     --enable-auth
                     --create-admin-user
-        cpus: 3

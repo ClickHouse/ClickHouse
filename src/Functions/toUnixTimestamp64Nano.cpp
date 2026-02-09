@@ -8,7 +8,7 @@ REGISTER_FUNCTION(ToUnixTimestamp64Nano)
 {
     /// toUnixTimestamp64Nano documentation
     FunctionDocumentation::Description description_toUnixTimestamp64Nano = R"(
-Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/functions/type-conversion-functions#toInt64) value with fixed nanosecond precision.
+Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/functions/type-conversion-functions#toint64) value with fixed nanosecond precision.
 The input value is scaled up or down appropriately depending on its precision.
 
 :::note
@@ -36,7 +36,7 @@ SELECT toUnixTimestamp64Nano(dt64);
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUnixTimestamp64Nano = {20, 5};
     FunctionDocumentation::Category category_toUnixTimestamp64Nano = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUnixTimestamp64Nano = {description_toUnixTimestamp64Nano, syntax_toUnixTimestamp64Nano, arguments_toUnixTimestamp64Nano, {}, returned_value_toUnixTimestamp64Nano, examples_toUnixTimestamp64Nano, introduced_in_toUnixTimestamp64Nano, category_toUnixTimestamp64Nano};
+    FunctionDocumentation documentation_toUnixTimestamp64Nano = {description_toUnixTimestamp64Nano, syntax_toUnixTimestamp64Nano, arguments_toUnixTimestamp64Nano, returned_value_toUnixTimestamp64Nano, examples_toUnixTimestamp64Nano, introduced_in_toUnixTimestamp64Nano, category_toUnixTimestamp64Nano};
 
     factory.registerFunction("toUnixTimestamp64Nano",
         [](ContextPtr){ return std::make_shared<FunctionToUnixTimestamp64>(9, "toUnixTimestamp64Nano"); }, documentation_toUnixTimestamp64Nano);

@@ -1,90 +1,237 @@
 #pragma once
 
+#include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/StorageIDMaybeEmpty.h>
+
+#include <base/defines.h>
+#include <Common/Logger.h>
 
 
 namespace DB
 {
+    class RestoreChunkInfosTransform : public ISimpleTransform
+    {
+    public:
+        RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, SharedHeader header_)
+                : ISimpleTransform(header_, header_, true)
+                , chunk_infos(std::move(chunk_infos_))
+        {}
 
-class RestoreChunkInfosTransform : public ISimpleTransform
+        String getName() const override { return "RestoreChunkInfosTransform"; }
+
+        void transform(Chunk & chunk) override;
+
+    private:
+        Chunk::ChunkInfoCollection chunk_infos;
+    };
+
+
+namespace DeduplicationToken
 {
-public:
-    RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, SharedHeader header_);
+    class TokenInfo : public ChunkInfoCloneable<TokenInfo>
+    {
+    public:
+        TokenInfo() = default;
+        TokenInfo(const TokenInfo & other) = default;
 
-    String getName() const override { return "RestoreChunkInfosTransform"; }
+        String getToken() const;
+        String debugToken() const;
 
-    void transform(Chunk & chunk) override;
+        bool empty() const { return parts.empty(); }
 
-private:
-    Chunk::ChunkInfoCollection chunk_infos;
-};
+        bool isDefined() const { return stage == DEFINED; }
 
+        void addChunkHash(String part);
+        void finishChunkHashes();
 
-class InsertDependenciesBuilder;
-using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
+        void setUserToken(const String & token);
+        void setSourceWithUserToken(size_t block_number);
 
-class AddDeduplicationInfoTransform : public ISimpleTransform
-{
-    InsertDependenciesBuilderConstPtr insert_dependencies;
-    StorageIDMaybeEmpty root_view_id;
-    std::string user_token;
-    size_t block_number = 0;
-public:
-    explicit AddDeduplicationInfoTransform(SharedHeader header_);
+        void setViewID(const String & id);
+        void setViewBlockNumber(size_t block_number);
 
-    AddDeduplicationInfoTransform(
-        InsertDependenciesBuilderConstPtr insert_dependencies_, StorageIDMaybeEmpty root_view_id_, std::string user_token_, SharedHeader header_);
+        void reset();
 
-    String getName() const override { return "AddDeduplicationInfoTransform"; }
+    private:
+        String getTokenImpl() const;
 
-    void transform(Chunk & chunk) override;
-};
+        void addTokenPart(String part);
+        size_t getTotalSize() const;
 
+        /* Token has to be prepared in a particular order.
+        * BuildingStage ensures that token is expanded according the following order.
+        * Firstly token is expanded with information about the source.
+        * It could be done with two ways: add several hash sums from the source chunks or provide user defined deduplication token and its sequentional block number.
+        *
+        * transition // method
+        * UNDEFINED -> DEFINE_SOURCE_WITH_HASHES // addChunkHash
+        * DEFINE_SOURCE_WITH_HASHES -> DEFINE_SOURCE_WITH_HASHES // addChunkHash
+        * DEFINE_SOURCE_WITH_HASHES -> DEFINED // defineSourceWithChankHashes
+        *
+        * transition // method
+        * UNDEFINED -> DEFINE_SOURCE_USER_TOKEN // setUserToken
+        * DEFINE_SOURCE_USER_TOKEN -> DEFINED // defineSourceWithUserToken
+        *
+        * After token is defined, it could be extended with view id and view block number. Actually it has to be expanded with view details if there is one or several views.
+        *
+        * transition // method
+        * DEFINED -> DEFINE_VIEW // setViewID
+        * DEFINE_VIEW -> DEFINED // defineViewID
+        */
 
-class RedefineDeduplicationInfoWithDataHashTransform : public ISimpleTransform
-{
-public:
-    explicit RedefineDeduplicationInfoWithDataHashTransform(SharedHeader header_);
+        enum BuildingStage
+        {
+            UNDEFINED,
+            DEFINE_SOURCE_WITH_HASHES,
+            DEFINE_SOURCE_USER_TOKEN,
+            DEFINE_VIEW,
+            DEFINED,
+        };
 
-    String getName() const override { return "RedefineDeduplicationInfoWithDataHashTransform"; }
-
-    void transform(Chunk & chunk) override;
-};
-
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-
-class SelectPartitionTransform : public ISimpleTransform
-{
-    std::string partition_id;
-    StorageMetadataPtr metadata_snapshot;
-    ContextPtr context;
-
-public:
-    SelectPartitionTransform(std::string partition_id_, StorageMetadataPtr metadata_snapshot_, ContextPtr contex_, SharedHeader header_);
-
-    String getName() const override { return "SelectPartitionTransform"; }
-
-    void transform(Chunk &) override;
-};
-
-
-class UpdateDeduplicationInfoWithViewIDTransform : public ISimpleTransform
-{
-public:
-    UpdateDeduplicationInfoWithViewIDTransform(StorageIDMaybeEmpty view_id_, SharedHeader header_);
-
-    String getName() const override { return "UpdateDeduplicationInfoWithViewIDTransform"; }
-
-    void transform(Chunk & chunk) override;
-
-private:
-    StorageIDMaybeEmpty view_id;
-    size_t block_number = 0;
-};
+        BuildingStage stage = UNDEFINED;
+        std::vector<String> parts;
+    };
 
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// use that class only with debug builds in CI for introspection
+    class CheckTokenTransform : public ISimpleTransform
+    {
+    public:
+        CheckTokenTransform(String debug_, SharedHeader header_)
+            : ISimpleTransform(header_, header_, true)
+            , debug(std::move(debug_))
+        {
+        }
+
+        String getName() const override { return "DeduplicationToken::CheckTokenTransform"; }
+
+        void transform(Chunk & chunk) override;
+
+    private:
+        String debug;
+        LoggerPtr log = getLogger("CheckInsertDeduplicationTokenTransform");
+    };
+#endif
+
+
+    class AddTokenInfoTransform : public ISimpleTransform
+    {
+    public:
+        explicit AddTokenInfoTransform(SharedHeader header_)
+            : ISimpleTransform(header_, header_, true)
+        {
+        }
+
+        String getName() const override { return "DeduplicationToken::AddTokenInfoTransform"; }
+
+        void transform(Chunk & chunk) override
+        {
+            chunk.getChunkInfos().add(std::make_shared<TokenInfo>());
+        }
+    };
+
+
+    class DefineSourceWithChunkHashTransform : public ISimpleTransform
+    {
+    public:
+        explicit DefineSourceWithChunkHashTransform(SharedHeader header_)
+            : ISimpleTransform(header_, header_, true)
+        {
+        }
+
+        String getName() const override { return "DeduplicationToken::DefineSourceWithChunkHashesTransform"; }
+
+        // Usually MergeTreeSink/ReplicatedMergeTreeSink calls addChunkHash for the deduplication token with hashes from the parts.
+        // But if there is some table with different engine, we still need to define the source of the data in deduplication token
+        // We use that transform to define the source as a hash of entire block in deduplication token
+        void transform(Chunk & chunk) override;
+
+        static String getChunkHash(const Chunk & chunk);
+    };
+
+    class ResetTokenTransform : public ISimpleTransform
+    {
+    public:
+        explicit ResetTokenTransform(SharedHeader header_)
+            : ISimpleTransform(header_, header_, true)
+        {
+        }
+
+        String getName() const override { return "DeduplicationToken::ResetTokenTransform"; }
+
+        void transform(Chunk & chunk) override;
+    };
+
+
+    class SetUserTokenTransform : public ISimpleTransform
+    {
+    public:
+        SetUserTokenTransform(String user_token_, SharedHeader header_)
+            : ISimpleTransform(header_, header_, true)
+            , user_token(std::move(user_token_))
+        {
+        }
+
+        String getName() const override { return "DeduplicationToken::SetUserTokenTransform"; }
+
+        void transform(Chunk & chunk) override;
+
+    private:
+        String user_token;
+    };
+
+
+    class SetSourceBlockNumberTransform : public ISimpleTransform
+    {
+    public:
+        explicit SetSourceBlockNumberTransform(SharedHeader header_)
+            : ISimpleTransform(header_, header_, true)
+        {
+        }
+
+        String getName() const override { return "DeduplicationToken::SetSourceBlockNumberTransform"; }
+
+        void transform(Chunk & chunk) override;
+
+    private:
+        size_t block_number = 0;
+    };
+
+
+    class SetViewIDTransform : public ISimpleTransform
+    {
+    public:
+        SetViewIDTransform(String view_id_, SharedHeader header_)
+            : ISimpleTransform(header_, header_, true)
+            , view_id(std::move(view_id_))
+        {
+        }
+
+        String getName() const override { return "DeduplicationToken::SetViewIDTransform"; }
+
+        void transform(Chunk & chunk) override;
+
+    private:
+        String view_id;
+    };
+
+
+    class SetViewBlockNumberTransform : public ISimpleTransform
+    {
+    public:
+        explicit SetViewBlockNumberTransform(SharedHeader header_)
+            : ISimpleTransform(header_, header_, true)
+        {
+        }
+
+        String getName() const override { return "DeduplicationToken::SetViewBlockNumberTransform"; }
+
+        void transform(Chunk & chunk) override;
+
+    private:
+        size_t block_number = 0;
+    };
+
+}
 }

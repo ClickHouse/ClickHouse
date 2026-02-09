@@ -228,9 +228,9 @@ private:
                     if constexpr (std::is_same_v<KeyType, String>)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
-                            key = col_fixed->getDataAt(offset + j);
+                            key = col_fixed->getDataAt(offset + j).toString();
                         else if (const auto * col_str = checkAndGetColumn<ColumnString>(arg.key_column.get()))
-                            key = col_str->getDataAt(offset + j);
+                            key = col_str->getDataAt(offset + j).toString();
                         else // should not happen
                             throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Expected String or FixedString, got {} in {}",
@@ -465,7 +465,7 @@ Collect all the keys and sum corresponding values.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapAdd = {20, 7};
     FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapAdd = {description_mapAdd, syntax_mapAdd, arguments_mapAdd, {}, returned_value_mapAdd, examples_mapAdd, introduced_in_mapAdd, category_mapAdd};
+    FunctionDocumentation documentation_mapAdd = {description_mapAdd, syntax_mapAdd, arguments_mapAdd, returned_value_mapAdd, examples_mapAdd, introduced_in_mapAdd, category_mapAdd};
     factory.registerFunction<FunctionMapOp<OpTypes::ADD>>(documentation_mapAdd);
 
     /// mapSubtract function documentation
@@ -483,7 +483,7 @@ Collect all the keys and subtract corresponding values.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapSubtract = {20, 7};
     FunctionDocumentation::Category category_mapSubtract = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapSubtract = {description_mapSubtract, syntax_mapSubtract, arguments_mapSubtract, {}, returned_value_mapSubtract, examples_mapSubtract, introduced_in_mapSubtract, category_mapSubtract};
+    FunctionDocumentation documentation_mapSubtract = {description_mapSubtract, syntax_mapSubtract, arguments_mapSubtract, returned_value_mapSubtract, examples_mapSubtract, introduced_in_mapSubtract, category_mapSubtract};
     factory.registerFunction<FunctionMapOp<OpTypes::SUBTRACT>>(documentation_mapSubtract);
 }
 

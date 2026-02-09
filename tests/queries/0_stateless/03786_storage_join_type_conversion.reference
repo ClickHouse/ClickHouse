@@ -37,7 +37,7 @@ Positions: 0 3 1
                FUNCTION _CAST(__table2.x :: 0, \'Nullable(UInt32)\'_String :: 1) -> _CAST(__table2.x, \'Nullable(UInt32)\'_String) Nullable(UInt32) : 2
                ALIAS _CAST(__table2.x, \'Nullable(UInt32)\'_String) :: 2 -> __table2.x Nullable(UInt32) : 1
       Positions: 1
-        FilledJoin (Filled JOIN)
+        FilledJoin
         Header: __table1.str String
                 __table2.s String
                 __table2.x UInt32

@@ -4,13 +4,13 @@ import random
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import threading
 
 from pathlib import Path
 from integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
-from .kafkatest import KafkaHandler
 from .laketables import (
     TableStorage,
     LakeFormat,
@@ -21,6 +21,7 @@ from .tablegenerator import LakeTableGenerator, sample_from_dict, true_false_lam
 from .datagenerator import LakeDataGenerator
 from .tablecheck import SparkAndClickHouseCheck
 
+sys.path.append("..")
 from utils.backgroundworker import BackgroundWorker
 
 
@@ -220,8 +221,6 @@ logger.jetty.level = warn
 
         self.worker = BackgroundWorker(my_task, interval=1)
         self.worker.start()
-        if cluster.with_kafka:
-            self.kafka_handler = KafkaHandler(cluster)
 
     def start_uc_server(self):
         with self.catalogs_lock:
@@ -311,13 +310,15 @@ logger.jetty.level = warn
         catalog_extension = ""
         catalog_format = ""
         all_jars = [
-            "io.delta:delta-spark_2.13:4.0.0",
-            "io.unitycatalog:unitycatalog-spark_2.13:0.3.0",
-            "org.apache.iceberg:iceberg-aws-bundle:1.10.0",
-            "org.apache.iceberg:iceberg-azure-bundle:1.10.0",
-            "org.apache.iceberg:iceberg-spark-extensions-4.0_2.13:1.10.0",
-            "org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.0",
-            "org.apache.spark:spark-hadoop-cloud_2.13:4.0.1",
+            "com.microsoft.azure:azure-storage:8.6.6",
+            "io.delta:delta-spark_2.12:3.3.2",
+            "io.unitycatalog:unitycatalog-spark_2.12:0.2.0",
+            "org.apache.hadoop:hadoop-azure:3.3.6",
+            "org.apache.iceberg:iceberg-aws-bundle:1.9.2",
+            "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
+            "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
+            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
+            "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
             # Derby jars
             "org.apache.derby:derby:10.14.2.0",
             "org.apache.derby:derbytools:10.14.2.0",
@@ -341,7 +342,7 @@ logger.jetty.level = warn
             raise Exception("Unknown lake format")
 
         os.environ["PYSPARK_SUBMIT_ARGS"] = (
-            f"--packages {','.join(all_jars)} pyspark-shell"
+            f"--packages {",".join(all_jars)} pyspark-shell"
         )
         for k, val in env.items():
             os.environ[k] = val
@@ -475,7 +476,7 @@ logger.jetty.level = warn
                 )
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
-                    f"http://localhost:{'8085/api/2.1/unity-catalog/iceberg' if catalog == LakeCatalogs.Unity else '8182'}",
+                    f"http://localhost:{"8085/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -591,7 +592,7 @@ logger.jetty.level = warn
                     cluster.azurite_account,
                 )
                 builder.config(
-                    f"spark.hadoop.fs.azure.account.key.{cluster.azurite_account}.blob.core.windows.net",
+                    f"spark.hadoop.fs.azure.account.key.{cluster.azurite_account}",
                     cluster.azurite_key,
                 )
                 # WASB implementation, ABFS is not compatible with Azurite?
@@ -599,16 +600,14 @@ logger.jetty.level = warn
                     "spark.hadoop.fs.wasb.impl",
                     "org.apache.hadoop.fs.azure.NativeAzureFileSystem",
                 )
-                builder.config("spark.hadoop.fs.azure.always.use.https", "false")
-                builder.config("spark.hadoop.fs.azure.ssl.enabled", "false")
 
                 builder.config(
                     "spark.sql.warehouse.dir",
-                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/{catalog_name}",
+                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
                 )
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.warehouse",
-                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/{catalog_name}",
+                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
                 )
             elif storage == TableStorage.Local:
                 os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
@@ -697,7 +696,7 @@ logger.jetty.level = warn
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
+        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_catalog = LakeCatalogs.catalog_from_str(catalog)
         next_catalog_impl = None
 
@@ -781,19 +780,9 @@ logger.jetty.level = warn
 
     def create_lake_table(self, cluster, data) -> bool:
         saved_exception = None
-        if data["engine"] == "kafka":
-            # At the moment, this is an ugly hack
-            return self.kafka_handler.create_kafka_table(
-                cluster,
-                data["database_name"],
-                data["table_name"],
-                data["topic"],
-                data["format"],
-                data["columns"],
-            )
         catalog_name = data["catalog_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
+        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
         catalog_type = LakeCatalogs.NoCatalog
         catalog_impl = None
@@ -869,19 +858,13 @@ logger.jetty.level = warn
 
     def update_or_check_table(self, cluster, data) -> bool:
         res = False
-        next_table = None
-        next_session = None
         saved_exception = None
         catalog_name = data["catalog_name"]
-        catalog_type = LakeCatalogs.NoCatalog
         run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
-
-        if data["engine"] != "kafka":
-            with self.catalogs_lock:
-                next_table = self.catalogs[catalog_name].spark_tables[
-                    data["table_name"]
-                ]
-                catalog_type = self.catalogs[catalog_name].catalog_type
+        catalog_type = LakeCatalogs.NoCatalog
+        with self.catalogs_lock:
+            next_table = self.catalogs[catalog_name].spark_tables[data["table_name"]]
+            catalog_type = self.catalogs[catalog_name].catalog_type
 
         if run_background_worker:
 
@@ -896,43 +879,33 @@ logger.jetty.level = warn
                     command=cluster.client_bin_path,
                 )
                 nloops = random.randint(1, 50)
-                tbl = (
-                    f"{data['catalog_name']}.{data['table_name']}"
-                    if data["engine"] == "kafka"
-                    else next_table.get_clickhouse_path()
-                )
                 for _ in range(nloops):
-                    client.query(f"SELECT * FROM {tbl} LIMIT 100;")
+                    client.query(
+                        f"SELECT * FROM {next_table.get_clickhouse_path()} LIMIT 100;"
+                    )
                     time.sleep(1)
 
             self.worker.set_task_function(my_new_task)
             self.worker.resume()
 
-        if data["engine"] != "kafka":
-            next_session = self.get_next_session(
-                cluster,
-                catalog_name,
-                next_table.storage,
-                next_table.lake_format,
-                catalog_type,
-            )
+        next_session = self.get_next_session(
+            cluster,
+            catalog_name,
+            next_table.storage,
+            next_table.lake_format,
+            catalog_type,
+        )
         try:
-            if data["engine"] == "kafka":
-                res = self.kafka_handler.update_table(
-                    cluster, data["catalog_name"], data["table_name"]
-                )
-            elif data["engine"] in ["iceberg", "deltalake"]:
-                res = (
-                    self.data_generator.update_table(next_session, next_table)
-                    if random.randint(1, 10) < 9
-                    else self.table_check.check_table(cluster, next_session, next_table)
-                )
+            res = (
+                self.data_generator.update_table(next_session, next_table)
+                if random.randint(1, 10) < 9
+                else self.table_check.check_table(cluster, next_session, next_table)
+            )
         except Exception as e:
             saved_exception = e
         if run_background_worker:
             self.worker.pause()
-        if next_session is not None:
-            next_session.stop()
+        next_session.stop()
         if saved_exception is not None:
             raise saved_exception
         return res
