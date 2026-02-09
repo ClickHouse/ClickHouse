@@ -2884,12 +2884,12 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         {
             if (table_expression == left_table_expression)
             {
-                auto plan_to_push = std::move(left_table_expression_query_plan);
+                left_table_expression = {};
                 const auto & array_join_map = planner_context->getArrayJoinResultToSource();
                 if (!array_join_map.empty())
-                    plan_to_push = wrapLeftPlanWithArrayJoinFromMap(std::move(plan_to_push), array_join_map, planner_context);
-                query_plans_stack.push_back(std::move(plan_to_push));
-                left_table_expression = {};
+                    query_plans_stack.push_back(wrapLeftPlanWithArrayJoinFromMap(std::move(left_table_expression_query_plan), array_join_map, planner_context));
+                else
+                    query_plans_stack.push_back(std::move(left_table_expression_query_plan));
                 continue;
             }
 
