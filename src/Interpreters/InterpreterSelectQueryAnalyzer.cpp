@@ -127,6 +127,9 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
 }
 
+namespace DB
+{
+
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
     auto nodes = extractAllTableReferences(query_tree);
@@ -409,6 +412,8 @@ void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
         return std::make_unique<InterpreterSelectQueryAnalyzer>(args.query, args.context, args.options);
     };
     factory.registerInterpreter("InterpreterSelectQueryAnalyzer", create_fn);
+}
+
 }
 
 }
