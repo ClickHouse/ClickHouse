@@ -579,8 +579,11 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
 {
     if (!select_query->arrayJoinExpressionList().first)
     {
-        /// No ARRAY JOIN clause; still collect arrayJoin() used as function when JOIN is present.
-        collectArrayJoinFunctionFromSelectWithJoin(const_cast<ASTSelectQuery *>(select_query), result, source_columns_set);
+        /// No ARRAY JOIN clause. When JOIN is present we already collected and rewrote
+        /// in collectArrayJoinFunctionFromSelectWithJoin before normalize() to avoid
+        /// WHERE being expanded to arrayJoin() (double evaluation). Otherwise do it here.
+        if (result.array_join_result_to_source.empty())
+            collectArrayJoinFunctionFromSelectWithJoin(const_cast<ASTSelectQuery *>(select_query), result, source_columns_set);
         return;
     }
 
@@ -1416,6 +1419,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         for (const auto & [name, _] : table_join->columnsFromJoinedTable())
             all_source_columns_set.insert(name);
     }
+
+    /// Rewrite arrayJoin(column) in SELECT to identifier before normalize(), so that
+    /// QueryAliasesVisitor does not record alias x -> arrayJoin(arr), and WHERE "x" is
+    /// not expanded to arrayJoin(arr) (which would cause double evaluation). See #96398.
+    if (!select_query->arrayJoinExpressionList().first && select_query->hasJoin())
+        collectArrayJoinFunctionFromSelectWithJoin(select_query, result, source_columns_set);
 
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext(), select_options.is_create_parameterized_view);
 
