@@ -4,7 +4,7 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO test_date SELECT 'invalid' FROM numbers(100000);
+        INSERT INTO test_date SELECT 'invalid' FROM numbers(7500000);
     </fill_query>
 
     <settings>

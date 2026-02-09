@@ -72,7 +72,7 @@
             rand64(4)
         FROM
             system.numbers_mt
-        LIMIT 10000000
+        LIMIT 2000000
     </fill_query>
 
     <query>

@@ -47,13 +47,13 @@
             <name>num_unique_sessions</name>
             <values>
                 <value>1000</value>
-                <value>1000000</value>
+                <value>500000</value>
             </values>
         </substitution>
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>1000000</value>
+                <value>500000</value>
             </values>
         </substitution>
     </substitutions>

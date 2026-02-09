@@ -22,7 +22,6 @@
     <fill_query>insert into ips_v6 select * from ips_v6</fill_query>
     <fill_query>insert into ips_v6 select * from ips_v6</fill_query>
     <fill_query>insert into ips_v6 select * from ips_v6</fill_query>
-    <fill_query>insert into ips_v6 select * from ips_v6</fill_query>
 
     <query tag="IPv6StringToNum">SELECT count() FROM ips_v6 WHERE NOT ignore(IPv6StringToNum(materialize(ip)))</query>
     <query tag="IPv6NumToString+IPv6StringToNum">SELECT count() FROM ips_v6 WHERE NOT ignore(IPv6NumToString(IPv6StringToNum(materialize(ip))))</query>

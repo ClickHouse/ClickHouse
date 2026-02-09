@@ -5,7 +5,7 @@
     </settings>
 
     <create_query>create table test (x UInt32, n Nullable(UInt32), s String, t Tuple(a UInt32, b String), json JSON) engine=MergeTree order by tuple()</create_query>
-    <fill_query>insert into test select number, number = 0 ? NULL : number, repeat('a', 1000), tuple(number, randomString(1000)), toJSONString(map('a', number::Int32, 'b', repeat('a', 1000))) from numbers(1000000)</fill_query>
+    <fill_query>insert into test select number, number = 0 ? NULL : number, repeat('a', 1000), tuple(number, randomString(1000)), toJSONString(map('a', number::Int32, 'b', repeat('a', 1000))) from numbers(10000000)</fill_query>
 
     <query>select * from test where t.a = 42 format Null</query>
     <query>select * from test where n.null format Null</query>
