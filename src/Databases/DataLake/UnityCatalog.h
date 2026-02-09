@@ -21,6 +21,7 @@ public:
         const std::string & catalog_,
         const std::string & base_url_,
         const std::string & catalog_credential_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     ~UnityCatalog() override = default;
@@ -58,6 +59,10 @@ private:
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
 
     Poco::Net::HTTPBasicCredentials credentials{};
+
+    std::unordered_set<std::string> allowed_namespaces;
+
+    bool isNamespaceAllowed(const std::string & namespace_) const;
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
