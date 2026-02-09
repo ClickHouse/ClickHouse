@@ -4,6 +4,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/89976
 -- Check whether the distance is calculated correctly when query_vec has a different type than qbit
 
+SET allow_experimental_qbit_type = 1;
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test 

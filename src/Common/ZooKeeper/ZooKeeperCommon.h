@@ -296,7 +296,7 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     ZooKeeperRemoveRequest() = default;
     explicit ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
 
-    OpNum getOpNum() const override { return try_remove ? OpNum::TryRemove : OpNum::Remove; }
+    OpNum getOpNum() const override { return OpNum::Remove; }
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
@@ -310,7 +310,7 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperRemoveResponse : RemoveResponse, ZooKeeperResponse
+struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}
     void writeImpl(WriteBuffer &) const override {}
@@ -318,12 +318,6 @@ struct ZooKeeperRemoveResponse : RemoveResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Remove; }
 
     size_t bytesSize() const override { return RemoveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
-};
-
-struct ZooKeeperTryRemoveResponse final : ZooKeeperRemoveResponse
-{
-    OpNum getOpNum() const override { return OpNum::TryRemove; }
-    using ZooKeeperRemoveResponse::ZooKeeperRemoveResponse;
 };
 
 struct ZooKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, ZooKeeperRequest
@@ -463,7 +457,7 @@ struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
     ZooKeeperResponsePtr makeResponse() const override;
 };
 
-struct ZooKeeperFilteredListRequest : ZooKeeperListRequest
+struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
 {
     ListRequestType list_request_type{ListRequestType::ALL};
 
@@ -476,23 +470,6 @@ struct ZooKeeperFilteredListRequest : ZooKeeperListRequest
     size_t bytesSize() const override { return ZooKeeperListRequest::bytesSize() + sizeof(list_request_type); }
 };
 
-/// Extension of FilteredListRequest with optional stats and data fields
-struct ZooKeeperFilteredListWithStatsAndDataRequest final : ZooKeeperFilteredListRequest
-{
-    /// Feature LIST_WITH_STAT_AND_DATA: optionally populate stats and data in response
-    bool with_stat = false;
-    bool with_data = false;
-
-    OpNum getOpNum() const override { return OpNum::FilteredListWithStatsAndData; }
-    void writeImpl(WriteBuffer & out) const override;
-    size_t sizeImpl() const override;
-    void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl(bool short_format) const override;
-    ZooKeeperResponsePtr makeResponse() const override;
-
-    size_t bytesSize() const override { return ZooKeeperFilteredListRequest::bytesSize() + sizeof(with_stat) + sizeof(with_data); }
-};
-
 struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
@@ -503,15 +480,6 @@ struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
     size_t bytesSize() const override { return ListResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
-};
-
-/// Extension of ListResponse with optional stats and data fields
-struct ZooKeeperFilteredListWithStatsAndDataResponse final : ZooKeeperListResponse
-{
-    OpNum getOpNum() const override { return OpNum::FilteredListWithStatsAndData; }
-    void readImpl(ReadBuffer & in) override;
-    void writeImpl(WriteBuffer & out) const override;
-    size_t sizeImpl() const override;
 };
 
 struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse

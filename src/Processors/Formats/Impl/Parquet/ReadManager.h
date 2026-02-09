@@ -62,7 +62,6 @@ private:
     using ColumnChunk = Reader::ColumnChunk;
     using ColumnSubchunk = Reader::ColumnSubchunk;
     using PrimitiveColumnInfo = Reader::PrimitiveColumnInfo;
-    using OutputColumnState = Reader::OutputColumnState;
 
     struct Task
     {

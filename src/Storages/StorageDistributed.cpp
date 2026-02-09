@@ -326,7 +326,7 @@ public:
             if (!isColumnConst(*result.column))
                 return;
 
-            node = make_intrusive<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+            node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
         }
     }
 };
@@ -929,8 +929,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
-    replace_alias_columns_visitor.visit(query_tree_to_modify);
+    ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
+    replase_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 
@@ -1078,7 +1078,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto new_query = boost::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
+    auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
 
     if (src_distributed.remote_table_function_ptr)
     {
@@ -1090,13 +1090,13 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         }
         else
         {
-            const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-            select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
+            const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+            select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
 
-            const auto select = make_intrusive<ASTSelectQuery>();
+            const auto select = std::make_shared<ASTSelectQuery>();
 
-            auto expression_list = make_intrusive<ASTExpressionList>();
-            expression_list->children.push_back(make_intrusive<ASTAsterisk>());
+            auto expression_list = std::make_shared<ASTExpressionList>();
+            expression_list->children.push_back(std::make_shared<ASTAsterisk>());
             select->setExpression(ASTSelectQuery::Expression::SELECT, expression_list->clone());
             select->addTableFunction(src_distributed.remote_table_function_ptr);
 
@@ -1107,11 +1107,11 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     }
     else
     {
-        const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-        select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
+        const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
 
         auto * select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.at(0)->as<ASTSelectQuery>();
-        auto new_select_query = boost::dynamic_pointer_cast<ASTSelectQuery>(select->clone());
+        auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(select->clone());
         select_with_union_query->list_of_selects->children.push_back(new_select_query);
 
         new_select_query->replaceDatabaseAndTable(src_distributed.getRemoteDatabaseName(), src_distributed.getRemoteTableName());
@@ -1265,7 +1265,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     auto dst_cluster = getCluster();
 
-    auto new_query = boost::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
+    auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
     if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
     {
         new_query->table_id = StorageID(getRemoteDatabaseName(), getRemoteTableName());
@@ -1989,7 +1989,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
             "Too many bytes pending for async INSERT: {} (bytes_to_throw_insert={})",
             formatReadableSizeWithBinarySuffix(total_bytes),
-            formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_throw_insert].value));
+            formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_throw_insert]));
     }
 
     if ((*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
@@ -2019,7 +2019,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
             throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
                 "Too many bytes pending for async INSERT: {} (bytes_to_delay_insert={})",
                 formatReadableSizeWithBinarySuffix(new_total_bytes),
-                formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_delay_insert].value));
+                formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_delay_insert]));
         }
     }
 }

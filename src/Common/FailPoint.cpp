@@ -2,6 +2,7 @@
 #include <Common/FailPoint.h>
 
 #include <boost/core/noncopyable.hpp>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 
@@ -39,6 +40,7 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \
     REGULAR(cluster_discovery_faults) \
+    REGULAR(replicated_sends_failpoint) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
@@ -64,7 +66,6 @@ static struct InitFiu
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(distributed_cache_fail_continue_request) \
-    REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
@@ -102,7 +103,6 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
-    PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
@@ -116,33 +116,25 @@ static struct InitFiu
     REGULAR(output_format_sleep_on_progress) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
-    ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
     PAUSEABLE(sc_state_application_pause) \
-    PAUSEABLE(sc_state_application_pause_after_fetch) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
-    PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
-    PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
-    PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
-    REGULAR(mt_select_parts_to_mutate_no_free_threads) \
-    REGULAR(mt_select_parts_to_mutate_max_part_size) \
-    REGULAR(rmt_merge_selecting_task_no_free_threads) \
-    REGULAR(rmt_merge_selecting_task_max_part_size) \
+    PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(smt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_kill_part_pause) \
-    ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
-    ONCE(local_object_storage_network_error_during_remove) \
+    ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(parallel_replicas_check_read_mode_always)
 
 namespace FailPoints
@@ -159,24 +151,13 @@ std::mutex FailPointInjection::mu;
 
 struct FailPointChannel
 {
-    /// Condition variable for target threads to wait when paused at failpoint
-    std::condition_variable pause_cv;
-
-    /// Condition variable for target threads to wait for resume notification
-    std::condition_variable resume_cv;
-
-    /// Number of threads currently paused at this failpoint
-    size_t pause_count = 0;
-
-    /// Resume epoch: incremented on each notify or disable to wake up waiting threads.
-    /// Threads record the epoch when they start waiting, and only wake up
-    /// if the current epoch is greater than their recorded epoch.
-    size_t resume_epoch = 0;
+    std::condition_variable cv;
+    bool notified = false;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 {
-    fiu_do_on(fail_point_name.c_str(), FailPointInjection::notifyPauseAndWaitForResume(fail_point_name););
+    fiu_do_on(fail_point_name.c_str(), FailPointInjection::wait(fail_point_name););
 }
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
@@ -212,82 +193,25 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
-        /// Increment resume_epoch to wake up all waiting threads.
-        ++iter->second->resume_epoch;
-        iter->second->resume_cv.notify_all();
-        iter->second->pause_cv.notify_all();
+        /// can not rely on deconstruction to do the notify_all things, because
+        /// if someone wait on this, the deconstruct will never be called.
+        iter->second->notified = true;
+        iter->second->cv.notify_all();
         fail_point_wait_channels.erase(iter);
     }
     fiu_disable(fail_point_name.c_str());
 }
 
-void FailPointInjection::notifyFailPoint(const String & fail_point_name)
-{
-    std::lock_guard lock(mu);
-    if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
-    {
-        /// Increment resume_epoch to mark a new notification cycle
-        ++iter->second->resume_epoch;
-        iter->second->resume_cv.notify_all();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find channel for fail point {}", fail_point_name);
-    }
-}
-
-void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_name)
+void FailPointInjection::wait(const String & fail_point_name)
 {
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
+        /// We may get here if pauseFailPoint was called in parallel with disableFailPoint.
         return;
-
     auto channel = iter->second;
-    size_t my_resume_epoch = channel->resume_epoch;
-
-    /// Signal that a thread has reached and paused at this failpoint
-    ++channel->pause_count;
-    channel->pause_cv.notify_all();
-
-    /// Wait for resume_epoch to be incremented by notify or disable
-    channel->resume_cv.wait(lock, [&] {
-        return channel->resume_epoch > my_resume_epoch;
-    });
-
-    --channel->pause_count;
-
-}
-
-void FailPointInjection::waitForPause(const String & fail_point_name)
-{
-    std::unique_lock lock(mu);
-    auto iter = fail_point_wait_channels.find(fail_point_name);
-    if (iter == fail_point_wait_channels.end())
-        return;
-
-    auto channel = iter->second;
-
-    /// Wait until at least one thread has paused at this failpoint
-    channel->pause_cv.wait(lock, [&] {
-        return channel->pause_count > 0;
-    });
-}
-
-void FailPointInjection::waitForResume(const String & fail_point_name)
-{
-    std::unique_lock lock(mu);
-    auto iter = fail_point_wait_channels.find(fail_point_name);
-    if (iter == fail_point_wait_channels.end())
-        return;
-
-    auto channel = iter->second;
-    size_t my_resume_epoch = channel->resume_epoch;
-
-    /// Wait for resume_epoch to be incremented by notify or disable
-    channel->resume_cv.wait(lock, [&] {
-        return channel->resume_epoch > my_resume_epoch;
-    });
+    /// Note: this may unlock and re-lock the mutex, invalidating `iter`.
+    channel->cv.wait(lock, [&] { return channel->notified; });
 }
 
 #else // USE_LIBFIU
@@ -308,19 +232,7 @@ void FailPointInjection::disableFailPoint(const String &)
 {
 }
 
-void FailPointInjection::notifyFailPoint(const String &)
-{
-}
-
 void FailPointInjection::wait(const String &)
-{
-}
-
-void FailPointInjection::waitForPause(const String &)
-{
-}
-
-void FailPointInjection::waitForResume(const String &)
 {
 }
 

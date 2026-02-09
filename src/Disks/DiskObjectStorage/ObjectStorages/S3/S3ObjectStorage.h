@@ -53,9 +53,7 @@ public:
     {
     }
 
-    std::string getName() const override { return "S3"; }
-
-    std::string getDiskName() const override { return disk_name; }
+    std::string getName() const override { return "S3ObjectStorage"; }
 
     std::string getCommonKeyPrefix() const override { return uri.key; }
 
