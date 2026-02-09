@@ -374,6 +374,7 @@ bool SplitByNonAlphaTokenExtractor::nextInStringLike(const char * data, size_t l
         else
         {
             const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[pos]));
+            /// `j < sz` iterates the UTF-8 sequence; `pos < length` guards against truncated input.
             for (size_t j = 0; j < sz && pos < length; ++j)
             {
                 token += data[pos];
@@ -607,9 +608,8 @@ bool UnicodeWordTokenExtractor::nextInString(
         token_start = pos;
         char c = data[pos];
 
-        /// =======================
         /// 1. ASCII fast path
-        /// =======================
+
         if (isAlphaNumericASCII(c) || c == '_')
         {
             size_t token_alnum_count = 0;
@@ -683,25 +683,23 @@ bool UnicodeWordTokenExtractor::nextInString(
             continue;
         }
 
-        /// =======================
         /// 2. ASCII non-alphanumeric: skip
-        /// =======================
+
         if (isASCII(c))
         {
             ++pos;
             continue;
         }
 
-        /// =======================
         /// 3. Unicode character handling
-        /// =======================
+
         size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
 
-        /// Prevent out-of-bounds
+        /// Truncated UTF-8 sequence at end of buffer
         if (pos + char_len > length)
         {
-            ++pos;
-            continue;
+            pos = length;
+            return false;
         }
 
         std::string_view utf8_char(data + pos, char_len);
@@ -743,9 +741,7 @@ bool UnicodeWordTokenExtractor::nextInStringLike(const char * data, size_t lengt
             escaped = true;
         }
 
-        /// =======================
-        /// 1. ASCII fast path
-        /// =======================
+        /// ASCII alphanumeric or escaped underscore
         if (isAlphaNumericASCII(c) || (c == '_' && escaped))
         {
             size_t token_alnum_count = 0;
@@ -827,13 +823,16 @@ bool UnicodeWordTokenExtractor::nextInStringLike(const char * data, size_t lengt
                 break;
             }
 
-            /// Token must contain at least one alphanumeric character
+            /// Token must contain at least one alphanumeric character. Tokens adjacent to unescaped wildcards are
+            /// discarded, since their boundaries are ambiguous.
             if (token_alnum_count > 0 && (!last_glob_pos || (*last_glob_pos + 1 != pos && *last_glob_pos + 1 != token_start)))
             {
                 /// Check if token is a stop word
                 if (stop_words.contains(token))
                     continue;
 
+                /// If we consumed a backslash but the escaped char didn't continue the token, back up so the next call
+                /// re-parses `\X` with proper escape context.
                 if (escaped)
                     --pos;
                 return true;
@@ -843,9 +842,7 @@ bool UnicodeWordTokenExtractor::nextInStringLike(const char * data, size_t lengt
             continue;
         }
 
-        /// =======================
-        /// 2. ASCII non-alphanumeric: skip
-        /// =======================
+        /// Skip ASCII non-alphanumeric
         if (isASCII(c))
         {
             if (!escaped && (c == '_' || c == '%'))
@@ -856,9 +853,7 @@ bool UnicodeWordTokenExtractor::nextInStringLike(const char * data, size_t lengt
             continue;
         }
 
-        /// =======================
-        /// 3. Unicode character handling
-        /// =======================
+        /// Unicode character
         size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
 
         /// Prevent out-of-bounds

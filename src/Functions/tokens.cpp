@@ -292,7 +292,7 @@ REGISTER_FUNCTION(Tokens)
         {"min_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
         {"max_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
         {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}},
-        {"stop_words", "Only relevant if argument `tokenizer` is `unicode_word`: An optional parameter which defines the stop words. If not set explicitly, defaults to `['，', '。', '！', '？', '；', '：', '、', '“', '”', '‘', '’']`.", {"const Array(String)"}},
+        {"stop_words", "Only relevant if argument `tokenizer` is `unicode_word`: An optional parameter which defines the stop words. If not set explicitly, defaults to common CJK punctuation marks: `['，', '。', '！', '？', '；', '：', '、', '“', '”', '‘', '’']`.", {"const Array(String)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
