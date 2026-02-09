@@ -27,5 +27,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT {func}({expr}) FROM numbers(1000000000) FORMAT Null</query>
+    <query>SELECT {func}({expr}) FROM numbers(460000000) FORMAT Null</query>
 </test>

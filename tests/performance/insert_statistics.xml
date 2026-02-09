@@ -23,10 +23,10 @@
         ENGINE = MergeTree ORDER BY c1;
     </create_query>
 
-    <fill_query>INSERT INTO t_minmax_stats_src SELECT rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand() FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_minmax_stats_src SELECT rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand() FROM numbers(570000)</fill_query>
     <fill_query>SYSTEM STOP MERGES t_minmax_stats</fill_query>
 
-    <fill_query>INSERT INTO t_uniq_stats_src SELECT rand(), rand() % 10, rand() % 100, rand() % 1000, rand() % 100000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_uniq_stats_src SELECT rand(), rand() % 10, rand() % 100, rand() % 1000, rand() % 100000 FROM numbers(570000)</fill_query>
     <fill_query>SYSTEM STOP MERGES t_uniq_stats</fill_query>
 
     <query>INSERT INTO t_minmax_stats SELECT * FROM t_minmax_stats_src</query>

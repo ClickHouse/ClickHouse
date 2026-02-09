@@ -9,7 +9,7 @@
     ENGINE = MergeTree
     ORDER BY tuple()
     </create_query>
-    <fill_query>INSERT INTO iso_3166_1_alpha_2 SELECT ((rand(number) % 256) - 128) as x, x FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO iso_3166_1_alpha_2 SELECT ((rand(number) % 256) - 128) as x, x FROM numbers(35000000)</fill_query>
     <fill_query>OPTIMIZE TABLE iso_3166_1_alpha_2 FINAL</fill_query>
 
     <query>SELECT code_enum FROM iso_3166_1_alpha_2 FORMAT Null SETTINGS max_threads = 1</query>

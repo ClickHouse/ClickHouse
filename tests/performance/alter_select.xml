@@ -16,7 +16,7 @@
 
   <fill_query>
       insert into alter_select_{engine} (part_id, col_0)
-      select toString(number % 5000), 0 from numbers(10000)
+      select toString(number % 5000), 0 from numbers(27000)
       settings
       max_block_size=1,
       max_insert_threads=32,

@@ -34,7 +34,7 @@
             lpad(toString(number % 1000), 512, '0'),
             lpad(toString(((number * 17 + 12345) % 1000)), 512, '0'),
             number
-        FROM numbers_mt(3000000)
+        FROM numbers_mt(12000000)
     </fill_query>
 
     <fill_query>OPTIMIZE TABLE test_group_by_strings FINAL</fill_query>

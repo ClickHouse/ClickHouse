@@ -9,7 +9,7 @@
     <fill_query>
         INSERT INTO perf_lc_str (str)
         SELECT concat('asdf', toString(number % 10000))
-        FROM numbers(100000000)
+        FROM numbers(23000000)
     </fill_query>
 
     <query>SELECT count() FROM perf_lc_str WHERE str = 'asdf337'</query>

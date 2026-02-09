@@ -8,7 +8,7 @@
 
     <fill_query>
         INSERT INTO window_test 
-        SELECT number, rand(1) % 500, number % 3000, randomPrintableASCII(2) FROM numbers(5000000)
+        SELECT number, rand(1) % 500, number % 3000, randomPrintableASCII(2) FROM numbers(900000)
     </fill_query>
 
     <query>

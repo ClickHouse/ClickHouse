@@ -7,7 +7,7 @@
         FROM
         (
             SELECT sipHash64(sipHash64(sipHash64(number))) AS x
-            FROM remote('127.0.0.{{2,3,4,5}}', numbers(10000000))
+            FROM remote('127.0.0.{{2,3,4,5}}', numbers(4300000))
         )
         SETTINGS max_threads = 2, max_distributed_connections = 2
     </query>

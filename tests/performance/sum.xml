@@ -1,28 +1,28 @@
 <test>
-    <query>SELECT sum(number) FROM numbers(100000000)</query>
-    <query>SELECT sum(toUInt32(number)) FROM numbers(100000000)</query>
-    <query>SELECT sum(toUInt16(number)) FROM numbers(100000000)</query>
-    <query>SELECT sum(toUInt8(number)) FROM numbers(100000000)</query>
-    <query>SELECT sum(toFloat32(number)) FROM numbers(100000000)</query>
-    <query>SELECT sum(toFloat64(number)) FROM numbers(100000000)</query>
-    <query>SELECT sumKahan(toFloat32(number)) FROM numbers(100000000)</query>
-    <query>SELECT sumKahan(toFloat64(number)) FROM numbers(100000000)</query>
+    <query>SELECT sum(number) FROM numbers(210000000)</query>
+    <query>SELECT sum(toUInt32(number)) FROM numbers(210000000)</query>
+    <query>SELECT sum(toUInt16(number)) FROM numbers(210000000)</query>
+    <query>SELECT sum(toUInt8(number)) FROM numbers(210000000)</query>
+    <query>SELECT sum(toFloat32(number)) FROM numbers(210000000)</query>
+    <query>SELECT sum(toFloat64(number)) FROM numbers(210000000)</query>
+    <query>SELECT sumKahan(toFloat32(number)) FROM numbers(210000000)</query>
+    <query>SELECT sumKahan(toFloat64(number)) FROM numbers(210000000)</query>
 
-    <query>SELECT sum(toNullable(number)) FROM numbers(100000000)</query>
-    <query>SELECT sum(toNullable(toUInt32(number))) FROM numbers(100000000)</query>
-    <query>SELECT sum(toNullable(toUInt16(number))) FROM numbers(100000000)</query>
-    <query>SELECT sum(toNullable(toUInt8(number))) FROM numbers(100000000)</query>
-    <query>SELECT sum(toNullable(toFloat32(number))) FROM numbers(100000000)</query>
-    <query>SELECT sum(toNullable(toFloat64(number))) FROM numbers(100000000)</query>
-    <query>SELECT sumKahan(toNullable(toFloat32(number))) FROM numbers(100000000)</query>
-    <query>SELECT sumKahan(toNullable(toFloat64(number))) FROM numbers(100000000)</query>
+    <query>SELECT sum(toNullable(number)) FROM numbers(210000000)</query>
+    <query>SELECT sum(toNullable(toUInt32(number))) FROM numbers(210000000)</query>
+    <query>SELECT sum(toNullable(toUInt16(number))) FROM numbers(210000000)</query>
+    <query>SELECT sum(toNullable(toUInt8(number))) FROM numbers(210000000)</query>
+    <query>SELECT sum(toNullable(toFloat32(number))) FROM numbers(210000000)</query>
+    <query>SELECT sum(toNullable(toFloat64(number))) FROM numbers(210000000)</query>
+    <query>SELECT sumKahan(toNullable(toFloat32(number))) FROM numbers(210000000)</query>
+    <query>SELECT sumKahan(toNullable(toFloat64(number))) FROM numbers(210000000)</query>
 
-    <query>select sumIf(number::Decimal128(3), rand32() % 2 = 0) from numbers(100000000)</query>
-    <query>select sumIf(number::Decimal256(3), rand32() % 2 = 0) from numbers(100000000)</query>
-    <query>select sumIf(number::Int128, rand32() % 2 = 0) from numbers(100000000)</query>
-    <query>select sumIf(number::UInt128, rand32() % 2 = 0) from numbers(100000000)</query>
-    <query>select sumIf(number::Int256, rand32() % 2 = 0) from numbers(100000000)</query>
-    <query>select sumIf(number::UInt256, rand32() % 2 = 0) from numbers(100000000)</query>
+    <query>select sumIf(number::Decimal128(3), rand32() % 2 = 0) from numbers(210000000)</query>
+    <query>select sumIf(number::Decimal256(3), rand32() % 2 = 0) from numbers(210000000)</query>
+    <query>select sumIf(number::Int128, rand32() % 2 = 0) from numbers(210000000)</query>
+    <query>select sumIf(number::UInt128, rand32() % 2 = 0) from numbers(210000000)</query>
+    <query>select sumIf(number::Int256, rand32() % 2 = 0) from numbers(210000000)</query>
+    <query>select sumIf(number::UInt256, rand32() % 2 = 0) from numbers(210000000)</query>
 
     <!-- Create a table with ~20% null values. Make it random so the branch predictor doesn't do all the work -->
     <create_query>CREATE TABLE nullfloat32 (x Nullable(Float32)) ENGINE = Memory</create_query>

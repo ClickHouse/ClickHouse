@@ -25,7 +25,7 @@
     <fill_query>SYSTEM STOP MERGES mt_3</fill_query>
     <fill_query>SYSTEM STOP MERGES mt_4</fill_query>
 
-    <query>insert into main_table select number from numbers(10000000)</query>
+    <query>insert into main_table select number from numbers(3000000)</query>
 
     <drop_query>drop table if exists mv_1</drop_query>
     <drop_query>drop table if exists mv_2</drop_query>
