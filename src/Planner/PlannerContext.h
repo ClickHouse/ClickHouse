@@ -186,6 +186,15 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
+    /// When arrayJoin() is used as function with JOIN (no ARRAY JOIN clause), the AST is rewritten
+    /// and this map is set (result_name -> source_name) so the planner adds array join before the join.
+    const NameToNameMap & getArrayJoinResultToSource() const { return array_join_result_to_source; }
+    void setArrayJoinResultToSource(NameToNameMap map) { array_join_result_to_source = std::move(map); }
+
+    /// Debug guard: set when wrapLeftPlanWithArrayJoinFromMap applies the array-join step. Throws if applied twice.
+    bool getArrayJoinApplied() const { return array_join_applied; }
+    void setArrayJoinApplied(bool v) { array_join_applied = v; }
+
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -208,6 +217,12 @@ private:
 
     /// Set key to set
     PreparedSets prepared_sets;
+
+    /// When arrayJoin() as function with JOIN is rewritten (analyzer path), result_name -> source_name.
+    NameToNameMap array_join_result_to_source;
+
+    /// Debug guard: true after wrapLeftPlanWithArrayJoinFromMap has added the array-join step (prevents double application).
+    bool array_join_applied = false;
 };
 
 }

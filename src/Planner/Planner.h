@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Core/Names.h>
 
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -25,6 +26,11 @@ public:
     /// Initialize planner with query tree after analysis phase
     Planner(const QueryTreeNodePtr & query_tree_,
         SelectQueryOptions & select_query_options_);
+
+    /// Initialize planner with query tree and optional array_join_result_to_source (when arrayJoin() as function with JOIN was rewritten)
+    Planner(const QueryTreeNodePtr & query_tree_,
+        SelectQueryOptions & select_query_options_,
+        NameToNameMap array_join_result_to_source_);
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,

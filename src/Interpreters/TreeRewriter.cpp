@@ -1036,6 +1036,107 @@ struct RewriteShardNum
 };
 using RewriteShardNumVisitor = InDepthNodeVisitor<RewriteShardNum, true>;
 
+/// Replaces every occurrence of arrayJoin(source_column) with identifier(result_name) in WHERE, JOIN ON, HAVING,
+/// and elsewhere, so that alias expansion or later analysis cannot re-introduce the function (fixes #96398).
+struct ReplaceArrayJoinWithIdentifierData
+{
+    const NameToNameMap & array_join_result_to_source;
+};
+
+struct ReplaceArrayJoinWithIdentifierMatcher
+{
+    using Data = ReplaceArrayJoinWithIdentifierData;
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        auto * func = ast->as<ASTFunction>();
+        if (!func || func->name != "arrayJoin" || !func->arguments || func->arguments->children.size() != 1)
+            return;
+
+        const ASTPtr & arg = func->arguments->children[0];
+        const auto * arg_ident = arg->as<ASTIdentifier>();
+        if (!arg_ident)
+            return;
+
+        String source_name = arg_ident->name();
+        for (const auto & [result_name, src_name] : data.array_join_result_to_source)
+        {
+            if (src_name == source_name)
+            {
+                ast = make_intrusive<ASTIdentifier>(result_name);
+                if (!func->alias.empty())
+                    ast->setAlias(func->alias);
+                return;
+            }
+        }
+    }
+};
+
+using ReplaceArrayJoinWithIdentifierVisitor = InDepthNodeVisitor<ReplaceArrayJoinWithIdentifierMatcher, true>;
+
+void replaceArrayJoinWithIdentifierInQuery(ASTPtr & query, const NameToNameMap & array_join_result_to_source)
+{
+    if (array_join_result_to_source.empty())
+        return;
+    ReplaceArrayJoinWithIdentifierData data{array_join_result_to_source};
+    ReplaceArrayJoinWithIdentifierVisitor(data).visit(query);
+}
+
+}
+
+NameToNameMap rewriteArrayJoinFunctionWithJoin(ASTPtr & query, ContextPtr context)
+{
+    ASTSelectQuery * select_query = nullptr;
+    if (auto * swu = query->as<ASTSelectWithUnionQuery>())
+    {
+        if (swu->list_of_selects && !swu->list_of_selects->children.empty())
+            select_query = swu->list_of_selects->children[0]->as<ASTSelectQuery>();
+    }
+    else
+    {
+        select_query = query->as<ASTSelectQuery>();
+    }
+    if (!select_query || !select_query->hasJoin() || select_query->arrayJoinExpressionList().first)
+        return {};
+
+    ASTTableExprConstPtrs table_exprs = getTableExpressions(*select_query);
+    if (table_exprs.empty())
+        return {};
+
+    TablesWithColumns tables_with_columns;
+    try
+    {
+        tables_with_columns = getDatabaseAndTablesWithColumns(table_exprs, context, true, true, false);
+    }
+    catch (...)
+    {
+        return {};
+    }
+    if (tables_with_columns.empty())
+        return {};
+
+    NameSet source_columns_set;
+    for (const auto & col : tables_with_columns[0].columns)
+        source_columns_set.insert(col.name);
+
+    TreeRewriterResult result(tables_with_columns[0].columns);
+    collectArrayJoinFunctionFromSelectWithJoin(select_query, result, source_columns_set);
+    if (result.array_join_result_to_source.empty())
+        return {};
+    replaceArrayJoinWithIdentifierInQuery(query, result.array_join_result_to_source);
+
+    /// Debug (WIP): assert no arrayJoin() left in AST after rewrite; log rewritten AST.
+    {
+        String ast_after = query->formatWithSecretsOneLine();
+        LOG_DEBUG(getLogger("TreeRewriter"), "Rewritten AST (analyzer path): {}", ast_after);
+        if (ast_after.find("arrayJoin(") != String::npos)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "arrayJoin() still present in AST after rewrite (analyzer path). Rewritten AST: {}", ast_after);
+    }
+
+    return result.array_join_result_to_source;
 }
 
 TreeRewriterResult::TreeRewriterResult(
@@ -1424,7 +1525,21 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// QueryAliasesVisitor does not record alias x -> arrayJoin(arr), and WHERE "x" is
     /// not expanded to arrayJoin(arr) (which would cause double evaluation). See #96398.
     if (!select_query->arrayJoinExpressionList().first && select_query->hasJoin())
+    {
         collectArrayJoinFunctionFromSelectWithJoin(select_query, result, source_columns_set);
+        /// Replace every remaining arrayJoin(column) node (WHERE, JOIN ON, HAVING, etc.) with the
+        /// materialized identifier so no stage re-evaluates it.
+        replaceArrayJoinWithIdentifierInQuery(query, result.array_join_result_to_source);
+
+        /// Debug (WIP): assert no arrayJoin() left in AST after rewrite; log rewritten AST.
+        {
+            String ast_after = query->formatWithSecretsOneLine();
+            LOG_DEBUG(getLogger("TreeRewriter"), "Rewritten AST (old path): {}", ast_after);
+            if (ast_after.find("arrayJoin(") != String::npos)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "arrayJoin() still present in AST after rewrite (old path). Rewritten AST: {}", ast_after);
+        }
+    }
 
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext(), select_options.is_create_parameterized_view);
 
