@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -10,6 +12,14 @@ namespace DB
 {
 
 class QueryPlan;
+
+/// Holds result of buildQueryTreeAndPlanner so planner can be constructed in the initializer list (no default ctor).
+struct QueryTreeAndPlanner
+{
+    QueryTreeNodePtr query_tree;
+    Planner planner;
+    QueryTreeAndPlanner(QueryTreeNodePtr t, Planner p) : query_tree(std::move(t)), planner(std::move(p)) { }
+};
 
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
@@ -85,6 +95,7 @@ private:
     ASTPtr query;
     ContextMutablePtr context;
     SelectQueryOptions select_query_options;
+    std::optional<QueryTreeAndPlanner> query_tree_and_planner;
     QueryTreeNodePtr query_tree;
     Planner planner;
 

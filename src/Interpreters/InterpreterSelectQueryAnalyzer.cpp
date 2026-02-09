@@ -176,20 +176,27 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     return query_tree;
 }
 
+QueryTreeAndPlanner buildQueryTreeAndPlanner(
+    ASTPtr & query,
+    const ContextPtr & context,
+    SelectQueryOptions & select_query_options,
+    const StoragePtr & storage)
+{
+    auto map = rewriteArrayJoinFunctionWithJoin(query, context);
+    auto tree = buildQueryTreeAndRunPasses(query, select_query_options, context, storage);
+    return QueryTreeAndPlanner{tree, Planner(tree, select_query_options, std::move(map))};
+}
+
+}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_, const Names & column_names)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(
-          [this]()
-          {
-              auto map = rewriteArrayJoinFunctionWithJoin(query, context);
-              auto tree = buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/);
-              planner = Planner(tree, select_query_options, std::move(map));
-              return tree;
-          }())
+    , query_tree_and_planner(buildQueryTreeAndPlanner(query, context, select_query_options, nullptr))
+    , query_tree(query_tree_and_planner->query_tree)
+    , planner(std::move(query_tree_and_planner->planner))
     , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           {
@@ -230,14 +237,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(
-          [this, &storage_]()
-          {
-              auto map = rewriteArrayJoinFunctionWithJoin(query, context);
-              auto tree = buildQueryTreeAndRunPasses(query, select_query_options, context, storage_);
-              planner = Planner(tree, select_query_options, std::move(map));
-              return tree;
-          }())
+    , query_tree_and_planner(buildQueryTreeAndPlanner(query, context, select_query_options, storage_))
+    , query_tree(query_tree_and_planner->query_tree)
+    , planner(std::move(query_tree_and_planner->planner))
     , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
@@ -276,6 +278,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(query_tree_->toAST())
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
+    , query_tree_and_planner(std::nullopt)
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
