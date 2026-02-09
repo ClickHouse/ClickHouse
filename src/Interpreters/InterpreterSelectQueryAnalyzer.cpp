@@ -182,12 +182,14 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree([this]() {
-        auto map = rewriteArrayJoinFunctionWithJoin(query, context);
-        auto tree = buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/);
-        planner = Planner(tree, select_query_options, std::move(map));
-        return tree;
-    }())
+    , query_tree(
+          [this]()
+          {
+              auto map = rewriteArrayJoinFunctionWithJoin(query, context);
+              auto tree = buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/);
+              planner = Planner(tree, select_query_options, std::move(map));
+              return tree;
+          }())
     , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           {
@@ -228,12 +230,14 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree([this, &storage_]() {
-        auto map = rewriteArrayJoinFunctionWithJoin(query, context);
-        auto tree = buildQueryTreeAndRunPasses(query, select_query_options, context, storage_);
-        planner = Planner(tree, select_query_options, std::move(map));
-        return tree;
-    }())
+    , query_tree(
+          [this, &storage_]()
+          {
+              auto map = rewriteArrayJoinFunctionWithJoin(query, context);
+              auto tree = buildQueryTreeAndRunPasses(query, select_query_options, context, storage_);
+              planner = Planner(tree, select_query_options, std::move(map));
+              return tree;
+          }())
     , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
