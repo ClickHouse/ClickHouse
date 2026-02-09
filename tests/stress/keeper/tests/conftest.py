@@ -21,6 +21,7 @@ def pytest_configure(config):
 def pytest_addoption(parser):
     pa = parser.addoption
     pa("--commit-sha", action="store", default=os.environ.get("COMMIT_SHA", "local"))
+    pa("--branch", action="store", default=os.environ.get("BRANCH", "master"))
     # Sink URL is resolved via CI ClickHouse helper; no explicit option needed
     pa("--duration", type=int, default=None)
     pa(
@@ -66,6 +67,7 @@ def pytest_addoption(parser):
 def run_meta(request):
     return {
         "commit_sha": request.config.getoption("--commit-sha"),
+        "branch": request.config.getoption("--branch"),
     }
 
 

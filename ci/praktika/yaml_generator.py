@@ -145,6 +145,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{{{ env.CHECKOUT_REF }}}}
+          lfs: true
 {JOB_ADDONS}
       - name: Prepare env script
         run: |

@@ -59,6 +59,7 @@ def _make_metric_row(run_id, run_meta, scenario_id, topo, node, stage, source, n
         "ts": ts or ts_ms(),
         "run_id": run_id,
         "commit_sha": run_meta.get("commit_sha", "local"),
+        "branch": run_meta.get("branch"),
         "backend": run_meta.get("backend", "default"),
         "scenario": scenario_id,
         "topology": topo,

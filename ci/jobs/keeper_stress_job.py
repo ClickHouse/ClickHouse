@@ -127,6 +127,59 @@ def get_commit_sha(env):
     return "local"
 
 
+def get_branch(env):
+    """
+    Returns the branch name for metrics usage (e.g., for Grafana dashboards).
+
+    Priority:
+    1. Info().env.BRANCH, if present and non-empty
+    2. env["BRANCH"], if set and non-empty
+    3. $GITHUB_HEAD_REF or $GITHUB_REF_NAME from the environment
+    4. git rev-parse --abbrev-ref HEAD
+    5. Fallback: "master"
+    """
+    # 1. Check Info().env.BRANCH if available
+    try:
+        info = Info()
+        info_env = getattr(info, "env", None)
+        if info_env:
+            branch = getattr(info_env, "BRANCH", None)
+            if branch:
+                branch = str(branch).strip()
+                if branch:
+                    return branch
+    except Exception:
+        print(f"failed to get branch from Info().env.BRANCH: {traceback.format_exc()}")
+
+    # 2. Check env["BRANCH"]
+    b = str(env.get("BRANCH", "")).strip()
+    if b:
+        return b
+
+    # 3. Check CI standard branch envs
+    for k in ("GITHUB_HEAD_REF", "GITHUB_REF_NAME"):
+        val = os.environ.get(k, "").strip()
+        if val:
+            return val
+
+    # 4. Attempt to get branch from git
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=REPO_DIR,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+        ).strip()
+        if out:
+            return out
+    except Exception as e:
+        print(f"failed to get branch from git: {e}")
+
+    # 5. Fallback to "master"
+    return "master"
+
+
 def build_pytest_command():
     dur = env_int("KEEPER_DURATION", DEFAULT_TIMEOUT)
     ready = _ready_timeout()
@@ -150,6 +203,7 @@ def build_pytest_env(ch_path, timeout_val):
     env["KEEPER_METRICS_FILE"] = f"{TEMP_DIR}/keeper_metrics.jsonl"
     env["PYTHONPATH"] = f"{REPO_DIR}:{REPO_DIR}/tests/stress:{REPO_DIR}/ci"
     env["COMMIT_SHA"] = get_commit_sha(env)
+    env["BRANCH"] = get_branch(env)
     env["PYTEST_ADDOPTS"] = f"--ignore-glob=tests/stress/keeper/tests/_instances-* -o faulthandler_timeout={timeout_val - 60}"
     return env
 
@@ -234,6 +288,8 @@ def main():
 
     if env.get("COMMIT_SHA") and "--commit-sha=" not in cmd:
         cmd = f"{cmd} --commit-sha={env['COMMIT_SHA']}"
+    if env.get("BRANCH") and "--branch=" not in cmd:
+        cmd = f"{cmd} --branch={env['BRANCH']}"
 
     sidecar = env["KEEPER_METRICS_FILE"]
     Path(sidecar).parent.mkdir(parents=True, exist_ok=True)
