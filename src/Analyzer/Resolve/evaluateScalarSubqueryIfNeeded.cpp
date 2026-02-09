@@ -4,6 +4,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/QueryTreeUtils.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
 

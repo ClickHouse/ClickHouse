@@ -25,6 +25,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/QueryTreeUtils.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -123,30 +124,6 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
     return result_context;
-}
-
-void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
-{
-    auto nodes = extractAllTableReferences(query_tree);
-    IQueryTreeNode::ReplacementMap replacement_map;
-
-    for (auto & node : nodes)
-    {
-        auto & table_node = node->as<TableNode &>();
-
-        /// Don't replace storage if table name differs
-        if (table_node.getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
-            continue;
-
-        auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
-        replacement_table_expression->setAlias(node->getAlias());
-
-        if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
-            replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-
-        replacement_map.emplace(node.get(), std::move(replacement_table_expression));
-    }
-    query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
 static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
