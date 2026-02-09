@@ -235,14 +235,23 @@ def container_stats(node):
     except Exception as e:
         print(f"[keeper][container_stats] error getting container memory for node {node.name}: {e}")
     try:
-        # CPU: cgroup v2 cpu.stat (usage_usec) or v1 cpuacct.usage (nanoseconds)
-        cpu_cmd = (
-            "grep '^usage_usec' /sys/fs/cgroup/cpu.stat 2>/dev/null | awk '{print $2}' || "
-            "cat /sys/fs/cgroup/cpuacct/cpuacct.usage 2>/dev/null"
-        )
-        r = _exec(node, cpu_cmd, nothrow=True, timeout=2)
-        if r and str(r).strip().isdigit():
-            val = int(str(r).strip())
+        # CPU: cgroup v2 cpu.stat (usage_usec) or v1 cpuacct.usage (nanoseconds).
+        # Try multiple paths: v2 unified, v1 cpuacct, v1 cpu,cpuacct (common in Docker).
+        cpu_commands = [
+            "grep '^usage_usec' /sys/fs/cgroup/cpu.stat 2>/dev/null | awk '{print $2}'",
+            "cat /sys/fs/cgroup/cpuacct/cpuacct.usage 2>/dev/null",
+            "cat /sys/fs/cgroup/cpu,cpuacct/cpuacct.usage 2>/dev/null",
+        ]
+        val = None
+        for cpu_cmd in cpu_commands:
+            r = _exec(node, cpu_cmd, nothrow=True, timeout=2)
+            s = (r and str(r).strip()).strip() if r else ""
+            # Allow first token only (in case of trailing newline or extra output)
+            s = s.splitlines()[0].strip() if s else ""
+            if s and s.isdigit():
+                val = int(s)
+                break
+        if val is not None:
             # cpuacct.usage is in nanoseconds; convert to microseconds for a single metric unit
             if val > 10**12:
                 val = val // 1000
