@@ -538,7 +538,7 @@ void executeScalarSubqueries(
 
 /// When there is JOIN but no ARRAY JOIN clause, collect arrayJoin(column) from SELECT (and optionally WHERE)
 /// so they are executed before JOIN (fixes duplicated rows, see issue #96398).
-static void collectArrayJoinFunctionFromSelectWithJoin(
+void collectArrayJoinFunctionFromSelectWithJoin(
     ASTSelectQuery * select_query,
     TreeRewriterResult & result,
     const NameSet & source_columns_set)
@@ -570,7 +570,7 @@ static void collectArrayJoinFunctionFromSelectWithJoin(
             result_name = source_name;
 
         result.array_join_result_to_source[result_name] = source_name;
-        child = std::make_shared<ASTIdentifier>(result_name);
+        child = make_intrusive<ASTIdentifier>(result_name);
     }
 }
 
