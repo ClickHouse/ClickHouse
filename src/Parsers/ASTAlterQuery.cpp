@@ -135,7 +135,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << " ADD ENUM VALUES (";
             ostr << " ";
             add_enum_values->format(ostr, settings, state, frame);
-            ostr << " (";
+            ostr << " )";
             ostr << " ";
         }
         else
