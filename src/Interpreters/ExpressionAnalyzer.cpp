@@ -245,7 +245,7 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAG & acti
         NamesAndTypesList out = src_columns;
         for (const auto & [result_name, source_name] : syntax->array_join_result_to_source)
         {
-            const auto * type_it = std::find_if(src_columns.begin(), src_columns.end(),
+            auto type_it = std::find_if(src_columns.begin(), src_columns.end(),
                 [&](const NameAndTypePair & p) { return p.name == source_name; });
             if (type_it != src_columns.end())
             {
