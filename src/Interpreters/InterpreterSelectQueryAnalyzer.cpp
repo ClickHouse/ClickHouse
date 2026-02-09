@@ -126,7 +126,7 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
-static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
     const StoragePtr & storage)
