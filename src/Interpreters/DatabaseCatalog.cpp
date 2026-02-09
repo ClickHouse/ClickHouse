@@ -1031,12 +1031,6 @@ void DatabaseCatalog::addPlainViewDependencies(const QualifiedTableName & table_
         plain_view_dependencies.addDependency(StorageID{source_table}, StorageID{table_name});
 }
 
-std::vector<StorageID> DatabaseCatalog::getDependentPlainViews(const StorageID & source_table_id) const
-{
-    std::lock_guard lock{databases_mutex};
-    return plain_view_dependencies.getDependencies(source_table_id);
-}
-
 std::vector<StorageID> DatabaseCatalog::getAllDependentViews(const StorageID & source_table_id) const
 {
     std::lock_guard lock{databases_mutex};

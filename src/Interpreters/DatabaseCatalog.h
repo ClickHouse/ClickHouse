@@ -186,7 +186,6 @@ public:
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
     void addPlainViewDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_plain_view_dependencies);
-    std::vector<StorageID> getDependentPlainViews(const StorageID & source_table_id) const;
     std::vector<StorageID> getAllDependentViews(const StorageID & source_table_id) const;
 
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
