@@ -24,6 +24,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -63,6 +67,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -102,6 +110,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -141,6 +153,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -180,6 +196,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -219,6 +239,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -258,6 +282,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -297,6 +325,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -336,6 +368,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -375,6 +411,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -414,6 +454,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -453,6 +497,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -492,6 +540,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -531,6 +583,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -570,6 +626,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -609,6 +669,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -648,6 +712,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -687,6 +755,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -726,6 +798,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -765,6 +841,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -804,6 +884,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -843,6 +927,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -882,6 +970,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -921,6 +1013,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -960,6 +1056,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -999,6 +1099,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1038,6 +1142,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1077,6 +1185,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1116,6 +1228,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1155,6 +1271,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1194,6 +1314,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1233,6 +1357,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1272,6 +1400,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1311,6 +1443,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1350,6 +1486,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1389,6 +1529,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1428,6 +1572,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1467,6 +1615,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1506,6 +1658,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1545,6 +1701,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1584,6 +1744,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1623,6 +1787,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1662,6 +1830,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1701,6 +1873,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1740,6 +1916,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1779,6 +1959,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1818,6 +2002,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1857,6 +2045,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1896,6 +2088,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1935,6 +2131,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -1974,6 +2174,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2013,6 +2217,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2052,6 +2260,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2091,6 +2303,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2130,6 +2346,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2169,6 +2389,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2208,6 +2432,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2247,6 +2475,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2286,6 +2518,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2325,6 +2561,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2364,6 +2604,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2403,6 +2647,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2442,6 +2690,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2481,6 +2733,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2520,6 +2776,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2559,6 +2819,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2598,6 +2862,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2637,6 +2905,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2676,6 +2948,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2715,6 +2991,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2754,6 +3034,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2793,6 +3077,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2832,6 +3120,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2871,6 +3163,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2910,6 +3206,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2949,6 +3249,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -2988,6 +3292,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3027,6 +3335,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3066,6 +3378,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3105,6 +3421,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3144,6 +3464,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3183,6 +3507,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3222,6 +3550,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3261,6 +3593,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3300,6 +3636,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3339,6 +3679,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3378,6 +3722,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3417,6 +3765,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3456,6 +3808,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3495,6 +3851,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3534,6 +3894,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3573,6 +3937,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3612,6 +3980,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3651,6 +4023,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3918,6 +4294,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3957,6 +4337,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -3996,6 +4380,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4035,6 +4423,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4074,6 +4466,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4151,6 +4547,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4190,6 +4590,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4229,6 +4633,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4268,6 +4676,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4307,6 +4719,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4346,6 +4762,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4385,6 +4805,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4424,6 +4848,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4463,6 +4891,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4502,6 +4934,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4541,6 +4977,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4580,6 +5020,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4619,6 +5063,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4658,6 +5106,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4697,6 +5149,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4736,6 +5192,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4775,6 +5235,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4814,6 +5278,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4853,6 +5321,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4892,6 +5364,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4931,6 +5407,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -4970,6 +5450,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5009,6 +5493,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5048,6 +5536,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5087,6 +5579,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5126,6 +5622,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5165,6 +5665,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5204,6 +5708,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5243,6 +5751,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5282,6 +5794,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5321,6 +5837,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5360,6 +5880,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5399,6 +5923,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5438,6 +5966,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5477,6 +6009,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5516,6 +6052,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5555,6 +6095,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5594,6 +6138,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5633,6 +6181,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5710,6 +6262,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -5749,6 +6305,10 @@ jobs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
