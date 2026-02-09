@@ -102,6 +102,4 @@ private:
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 };
 
-void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
-
 }
