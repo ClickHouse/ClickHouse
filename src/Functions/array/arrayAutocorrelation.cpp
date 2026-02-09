@@ -1,4 +1,5 @@
 #include <limits>
+#include <algorithm>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
@@ -147,7 +148,7 @@ public:
             if (col_max_lag)
             {
                 Int64 lag_arg = col_max_lag->getInt(i);
-                if (lag_arg < 0) lag_arg = 0;
+                lag_arg = std::max<Int64>(lag_arg, 0);
                 max_lag = static_cast<size_t>(lag_arg);
             }
 
