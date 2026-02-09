@@ -8,6 +8,7 @@
 namespace DB
 {
 
+
 /** The SELECT subquery, in parentheses.
   */
 class ParserSubquery : public IParserBase
@@ -25,10 +26,7 @@ class ParserIdentifier : public IParserBase
 {
 public:
     explicit ParserIdentifier(bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
-        : allow_query_parameter(allow_query_parameter_)
-        , highlight_type(highlight_type_)
-    {
-    }
+        : allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_) {}
     Highlight highlight() const override { return highlight_type; }
 
 protected:
@@ -63,11 +61,8 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    explicit ParserCompoundIdentifier(
-        bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_)
-        , allow_query_parameter(allow_query_parameter_)
-        , highlight_type(highlight_type_)
+    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
     {
     }
 
@@ -102,14 +97,12 @@ public:
         REPLACE,
     };
     using ColumnTransformers = MultiEnum<ColumnTransformer, UInt8>;
-    static constexpr auto AllTransformers
-        = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
+    static constexpr auto AllTransformers = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
 
     explicit ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
         : allowed_transformers(allowed_transformers_)
         , is_strict(is_strict_)
-    {
-    }
+    {}
 
 protected:
     const char * getName() const override { return "COLUMNS transformers"; }
@@ -126,8 +119,7 @@ public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
     explicit ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
-    {
-    }
+    {}
 
 protected:
     const char * getName() const override { return "asterisk"; }
@@ -153,8 +145,7 @@ public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
     explicit ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
-    {
-    }
+    {}
 
 protected:
     const char * getName() const override { return "COLUMNS matcher"; }
@@ -171,8 +162,7 @@ public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
     explicit ParserQualifiedColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
-    {
-    }
+    {}
 
 protected:
     const char * getName() const override { return "qualified COLUMNS matcher"; }
@@ -243,7 +233,6 @@ class ParserCollation : public IParserBase
 protected:
     const char * getName() const override { return "collation"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
 private:
     static const char * valid_collations[];
 };
@@ -303,11 +292,7 @@ protected:
 class ParserStringLiteral : public IParserBase
 {
 public:
-    explicit ParserStringLiteral(Highlight color_ = Highlight::string)
-        : color(color_)
-    {
-    }
-
+    explicit ParserStringLiteral(Highlight color_ = Highlight::string) : color(color_) {}
 protected:
     const char * getName() const override { return "string literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -328,15 +313,10 @@ class ParserCollectionOfLiterals : public IParserBase
 {
 public:
     ParserCollectionOfLiterals(TokenType opening_bracket_, TokenType closing_bracket_)
-        : opening_bracket(opening_bracket_)
-        , closing_bracket(closing_bracket_)
-    {
-    }
-
+        : opening_bracket(opening_bracket_), closing_bracket(closing_bracket_) {}
 protected:
     const char * getName() const override { return "collection of literals"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
 private:
     TokenType opening_bracket;
     TokenType closing_bracket;
@@ -347,20 +327,24 @@ class ParserTupleOfLiterals : public IParserBase
 {
 public:
     ParserCollectionOfLiterals<Tuple> tuple_parser{TokenType::OpeningRoundBracket, TokenType::ClosingRoundBracket};
-
 protected:
     const char * getName() const override { return "tuple"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override { return tuple_parser.parse(pos, node, expected); }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return tuple_parser.parse(pos, node, expected);
+    }
 };
 
 class ParserArrayOfLiterals : public IParserBase
 {
 public:
     ParserCollectionOfLiterals<Array> array_parser{TokenType::OpeningSquareBracket, TokenType::ClosingSquareBracket};
-
 protected:
     const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override { return array_parser.parse(pos, node, expected); }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return array_parser.parse(pos, node, expected);
+    }
 };
 
 /** Parses all collections of literals and their various combinations
@@ -369,10 +353,7 @@ protected:
 class ParserAllCollectionsOfLiterals : public IParserBase
 {
 public:
-    explicit ParserAllCollectionsOfLiterals(bool allow_map_ = true)
-        : allow_map(allow_map_)
-    {
-    }
+    explicit ParserAllCollectionsOfLiterals(bool allow_map_ = true) : allow_map(allow_map_) {}
 
 protected:
     const char * getName() const override { return "combination of maps, arrays, tuples"; }
@@ -398,10 +379,7 @@ protected:
 class ParserAlias : public IParserBase
 {
 public:
-    explicit ParserAlias(bool allow_alias_without_as_keyword_)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
-    {
-    }
+    explicit ParserAlias(bool allow_alias_without_as_keyword_) : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) { }
 
 private:
     static const char * restricted_keywords[];
@@ -452,11 +430,7 @@ class ParserWithOptionalAlias : public IParserBase
 {
 public:
     ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
-        : elem_parser(std::move(elem_parser_))
-        , allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
-    {
-    }
-
+    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;
@@ -470,10 +444,7 @@ protected:
 class ParserStorageOrderByElement : public IParserBase
 {
 public:
-    explicit ParserStorageOrderByElement(bool allow_order_)
-        : allow_order(allow_order_)
-    {
-    }
+    explicit ParserStorageOrderByElement(bool allow_order_) : allow_order(allow_order_) {}
 
 protected:
     bool allow_order;
@@ -509,12 +480,12 @@ protected:
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
 public:
-    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
-        : brackets_can_be_omitted(brackets_can_be_omitted_)
+    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false) : brackets_can_be_omitted(brackets_can_be_omitted_)
     {
     }
 
 protected:
+
     const char * getName() const override { return "function with key-value arguments"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
@@ -528,12 +499,12 @@ protected:
 class ParserIdentifierWithOptionalParameters : public IParserBase
 {
 protected:
-    const char * getName() const override { return "identifier with optional parameters"; }
+    const char * getName() const  override{ return "identifier with optional parameters"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 /** Element of TTL expression - same as expression element, but in addition,
-  * TO DISK 'xxx' | TO VOLUME 'xxx' | DELETE could be specified
+ *   TO DISK 'xxx' | TO VOLUME 'xxx' | DELETE could be specified
   */
 class ParserTTLElement : public IParserBase
 {
@@ -546,7 +517,7 @@ protected:
 class ParserAssignment : public IParserBase
 {
 protected:
-    const char * getName() const override { return "column assignment"; }
+    const char * getName() const  override{ return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

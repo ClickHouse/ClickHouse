@@ -4,7 +4,6 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
-#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -107,7 +106,7 @@ struct MergeTreeSource::AsyncReadingState
     AsyncReadingState()
     {
         control = std::make_shared<Control>();
-        callback_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::MERGETREE_READ);
+        callback_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "MergeTreeRead");
     }
 
     ~AsyncReadingState()

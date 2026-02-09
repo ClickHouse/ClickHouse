@@ -80,7 +80,7 @@ public:
 
         ColumnUInt8::MutablePtr col_null_map;
         if (error_handling == ErrorHandling::Null)
-            col_null_map = ColumnUInt8::create(input_rows_count, false);
+            col_null_map = ColumnUInt8::create(input_rows_count, 0);
 
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {

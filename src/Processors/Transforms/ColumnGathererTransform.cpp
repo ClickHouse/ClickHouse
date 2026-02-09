@@ -65,7 +65,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
             continue;
 
         if (!is_result_sparse)
-            removeSpecialColumnRepresentations(inputs[i].chunk);
+            convertToFullIfSparse(inputs[i].chunk);
 
         sources[i].update(inputs[i].chunk.detachColumns().at(0));
         source_columns.push_back(sources[i].column);
@@ -180,7 +180,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
     if (input.chunk)
     {
         if (!is_result_sparse)
-            removeSpecialColumnRepresentations(input.chunk);
+            convertToFullIfSparse(input.chunk);
 
         source.update(input.chunk.getColumns().at(0));
     }

@@ -4,7 +4,6 @@ sidebar_label: 'prometheusQueryRange'
 sidebar_position: 145
 slug: /sql-reference/table-functions/prometheusQueryRange
 title: 'prometheusQueryRange'
-doc_type: 'reference'
 ---
 
 # prometheusQuery Table Function

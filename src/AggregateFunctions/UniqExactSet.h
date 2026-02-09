@@ -60,7 +60,7 @@ public:
     /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
     /// It's not in parallel and will cost extra large time if the thread_num is large.
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
-    static void parallelizeMergePrepare(const VectorWithMemoryTracking<UniqExactSet *> & data_vec, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
+    static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
     {
         UInt64 single_level_set_num = 0;
         UInt64 all_single_hash_size = 0;
@@ -88,7 +88,7 @@ public:
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
                 auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = CurrentThread::getGroup()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
+                    ThreadGroupSwitcher switcher(thread_group, "UniqExaConvert");
 
                     while (true)
                     {
@@ -148,12 +148,12 @@ public:
             }
             else
             {
-                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
+                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, "UniqExactMerger");
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled]()
+                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
                         while (true)
                         {
@@ -168,7 +168,7 @@ public:
                     };
 
                     for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        runner.enqueueAndKeepTrack(thread_func, Priority{});
+                        runner(thread_func, Priority{});
                 }
                 catch (...)
                 {

@@ -2,7 +2,6 @@
 
 #if USE_RAPIDJSON || USE_SIMDJSON
 #include <DataTypes/DataTypeString.h>
-#include <Parsers/IAST.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 

@@ -56,7 +56,7 @@ public:
     }
 };
 
-class StorageAzureConfigurationFriend : private StorageAzureConfiguration
+class StorageAzureConfigurationFriend : public StorageAzureConfiguration
 {
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override

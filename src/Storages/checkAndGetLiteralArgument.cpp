@@ -17,10 +17,10 @@ T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name)
     if (arg)
     {
         if (const auto * func = arg->as<const ASTFunction>(); func && func->name == "_CAST")
-            return T(checkAndGetLiteralArgument<T>(func->arguments->children.at(0), arg_name));
+            return checkAndGetLiteralArgument<T>(func->arguments->children.at(0), arg_name);
 
         if (arg->as<ASTLiteral>())
-            return T(checkAndGetLiteralArgument<T>(*arg->as<ASTLiteral>(), arg_name));
+            return checkAndGetLiteralArgument<T>(*arg->as<ASTLiteral>(), arg_name);
     }
 
     throw Exception(
@@ -44,7 +44,7 @@ T checkAndGetLiteralArgument(const ASTLiteral & arg, const String & arg_name)
             fieldTypeToString(requested_type),
             fieldTypeToString(provided_type));
 
-    return T(arg.value.safeGet<T>());
+    return arg.value.safeGet<T>();
 }
 
 template <typename T>

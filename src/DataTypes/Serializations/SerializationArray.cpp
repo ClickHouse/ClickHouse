@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -48,13 +47,13 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_array_size);
+            settings.binary.max_binary_string_size);
 
     field = Array();
     Array & arr = field.safeGet<Array>();
@@ -88,13 +87,13 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_array_size);
+            settings.binary.max_binary_string_size);
 
     IColumn & nested_column = column_array.getData();
 
@@ -114,21 +113,6 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     offsets.push_back(offsets.back() + size);
 }
 
-void SerializationArray::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[ssize_t(row_num) - 1];
-    size_t next_offset = offsets[row_num];
-    size_t size = next_offset - offset;
-
-    writeVarUInt(size, ostr);
-
-    const IColumn & nested_column = column_array.getData();
-    for (size_t i = offset; i < next_offset; ++i)
-        nested->serializeForHashCalculation(nested_column, i, ostr);
-}
 
 namespace
 {
@@ -502,6 +486,9 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
 
+    /// Adjust value size hint. Divide it to the average array size.
+    settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
+
     nested->deserializeBinaryBulkWithMultipleStreams(
         nested_column, skipped_nested_rows, nested_limit, settings, state, cache);
 
@@ -559,16 +546,6 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
         if constexpr (throw_exception)
             throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
         return ReturnType(false);
-    }
-    else
-    {
-        skipWhitespaceIfAny(istr);
-        if (istr.eof())
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Cannot read array from text, expected opening bracket '[' or array element");
-            return ReturnType(false);
-        }
     }
 
     auto on_error_no_throw = [&]()
@@ -644,32 +621,6 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
     return ReturnType(true);
 }
 
-void SerializationArray::readArraySafe(DB::IColumn & column, std::function<void()> && read_func)
-{
-    size_t initial_size = column.size();
-
-    try
-    {
-        read_func();
-    }
-    catch (...)
-    {
-        ColumnArray & column_array = assert_cast<ColumnArray &>(column);
-        ColumnArray::Offsets & offsets = column_array.getOffsets();
-        IColumn & nested_column = column_array.getData();
-
-        if (offsets.size() > initial_size)
-        {
-            chassert(offsets.size() - initial_size == 1);
-            offsets.pop_back();
-        }
-
-        if (nested_column.size() > offsets.back())
-            nested_column.popBack(nested_column.size() - offsets.back());
-
-        throw;
-    }
-}
 
 void SerializationArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -755,34 +706,16 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
         return;
     }
 
-    auto nested_column_type = removeNullable(column_array.getDataPtr())->getDataType();
-    bool print_each_element_on_separate_line =
-        nested_column_type == TypeIndex::Array ||
-        nested_column_type == TypeIndex::Map ||
-        nested_column_type == TypeIndex::Object ||
-        nested_column_type == TypeIndex::Tuple;
-
-
-    writeChar('[', ostr);
+    writeCString("[\n", ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeChar(',', ostr);
-
-        if (print_each_element_on_separate_line)
-        {
-            writeChar('\n', ostr);
-            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
-        }
-
+            writeCString(",\n", ostr);
+        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
         nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
     }
-
-    if (print_each_element_on_separate_line)
-    {
-        writeChar('\n', ostr);
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
-    }
+    writeChar('\n', ostr);
+    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
     writeChar(']', ostr);
 }
 
