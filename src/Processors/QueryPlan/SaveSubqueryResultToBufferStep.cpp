@@ -51,7 +51,10 @@ void SaveSubqueryResultToBufferStep::transformPipeline(QueryPipelineBuilder & pi
     }
     /// No need to lock here, as this method is called during pipeline building,
     /// before the execution starts.
-    chunk_buffer->setInputsNumber(pipeline.getNumStreams());
+    size_t num_inputs = pipeline.getNumStreams();
+    if (pipeline.hasTotals())
+        ++num_inputs;
+    chunk_buffer->setInputsNumber(num_inputs);
 
     pipeline.addSimpleTransform(
         [this, &columns_to_save_indices](const SharedHeader & in_header)
