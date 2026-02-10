@@ -50,7 +50,8 @@ std::optional<size_t> AtomicBitSet::findFirst()
 void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
 {
     parser_shared_resources = parser_shared_resources_;
-    reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
+    if (reader.file_metadata.row_groups.empty())
+        reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
 
     if (buckets_to_read_)
     {

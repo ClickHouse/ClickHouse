@@ -43,9 +43,9 @@ function alter_thread_1()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % 3 + 1))
-        ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 String SETTINGS mutations_sync = 0"
+        ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 String SETTINGS mutations_sync = 0, replication_alter_partitions_sync = 0"
         sleep 1.$RANDOM
-        ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 UInt8 SETTINGS mutations_sync = 0"
+        ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 UInt8 SETTINGS mutations_sync = 0, replication_alter_partitions_sync = 0"
         sleep 1.$RANDOM
     done
 

@@ -2,8 +2,6 @@
 
 #include <cstddef>
 #include <cstring>
-#include <deque>
-#include <vector>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -15,7 +13,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 

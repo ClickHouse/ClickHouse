@@ -2318,6 +2318,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
         select_query_info,
         max_step_description_length);
 
+    /// For filled joins (StorageJoin), the right-side columns come directly from the storage
+    /// with their original types. The pre-join cast on right_plan (line "Cast JOIN USING columns")
+    /// is ineffective because filled joins don't use right_plan data.
+    /// We need to add a post-join type conversion step for USING columns whose types differ
+    /// between the right table and the common super type.
+    if (join_algorithm->isFilled() && !right_plan_column_name_to_cast_type.empty())
+        join_cast_plan_output_nodes(result_plan, right_plan_column_name_to_cast_type);
+
     for (const auto & right_join_tree_query_plan_row_policy : right_join_tree_query_plan.used_row_policies)
         left_join_tree_query_plan.used_row_policies.insert(right_join_tree_query_plan_row_policy);
 

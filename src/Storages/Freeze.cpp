@@ -62,7 +62,7 @@ void FreezeMetaData::save(DiskPtr data_disk, const String & path) const
     buffer.write("\n", 1);
 
     tx->writeStringToFile(file_path, buffer.str());
-    tx->commit();
+    tx->commit(NoCommitOptions{});
 }
 
 bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
@@ -109,8 +109,8 @@ void FreezeMetaData::clean(DiskPtr data_disk, const String & path)
     if (metadata_storage->existsFile(fname))
     {
         auto tx = metadata_storage->createTransaction();
-        tx->unlinkFile(fname);
-        tx->commit();
+        tx->unlinkFile(fname, /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(NoCommitOptions{});
     }
 }
 

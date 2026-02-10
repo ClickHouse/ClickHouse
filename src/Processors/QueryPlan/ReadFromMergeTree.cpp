@@ -3909,6 +3909,11 @@ bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_ke
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
 {
+    /// Just attempting to read statistics files on disk can increase query latencies
+    /// First check the in-memory metadata if statistics are present at all
+    if (!getStorageMetadata()->hasStatistics())
+        return nullptr;
+
     return data.getConditionSelectivityEstimator(getParts(), getContext());
 }
 

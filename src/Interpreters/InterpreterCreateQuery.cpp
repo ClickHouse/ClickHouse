@@ -735,7 +735,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
-    ASTCreateQuery & create, LoadingStrictnessLevel mode) const
+    ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
@@ -784,9 +784,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->projections)
-            for (const auto & projection_ast : create.columns_list->projections->children)
+            for (auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
+                /// Replace the original AST with the normalized one (e.g., positional GROUP BY arguments
+                /// like `GROUP BY 1, 2` are rewritten to use actual column names). This ensures that
+                /// the stored table metadata uses resolved names and can be loaded on server restart.
+                projection_ast = projection.definition_ast;
                 properties.projections.add(std::move(projection));
             }
 
@@ -2311,7 +2315,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
-        String as_database_name = getContext()->resolveDatabase(create.as_database);
+        String as_database_name = getContext()->resolveDatabase(as_database_saved);
 
         auto partition = make_intrusive<ASTPartition>();
         partition->all = true;

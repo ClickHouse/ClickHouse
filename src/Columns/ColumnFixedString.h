@@ -1,8 +1,6 @@
 #pragma once
 
 #include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/PODArray.h>
 #include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
@@ -95,12 +93,7 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override
-    {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
-        return std::make_shared<DataTypeString>();
-    }
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
 
     std::string_view getDataAt(size_t index) const override
     {

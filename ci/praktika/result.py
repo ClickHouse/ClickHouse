@@ -1045,7 +1045,7 @@ class _ResultS3:
         local_dir = Path(local_path).parent
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
         latest_result_file = Shell.get_output(
-            f"aws s3 ls {s3_path}/{file_name}_ | awk '{{print $4}}' | sort -r | head -n 1",
+            f"set -o pipefail && aws s3 ls {s3_path}/{file_name}_ | awk '{{print $4}}' | sort -r | head -n 1",
             strict=True,
             verbose=True,
         )

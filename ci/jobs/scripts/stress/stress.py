@@ -212,6 +212,15 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'"
         )
 
+    if random.random() < 0.3:
+        options.append("--replace-log-memory-with-mergetree")
+
+    if random.random() < 0.2:
+        client_options.append("async_insert=1")
+
+    if random.random() < 0.05:
+        client_options.append("enable_join_runtime_filters=1")
+
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
     join_order_algorithm_combinations = ["greedy", "dpsize,greedy", "greedy,dpsize"]
@@ -319,7 +328,12 @@ def call_with_retry(
 ) -> None:
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
-        code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
+        try:
+            code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            logging.info("Command timed out after %s seconds, retrying", str(timeout))
+            time.sleep(i)
+            continue
         if code != 0:
             logging.info("Command returned %s, retrying", str(code))
             time.sleep(i)

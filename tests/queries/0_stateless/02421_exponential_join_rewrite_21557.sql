@@ -204,7 +204,7 @@ CREATE TABLE store
     `s_zip` Nullable(String),
     `s_country` Nullable(String),
     `s_gmt_offset` Nullable(Float32),
-    `s_tax_precentage` Nullable(Float32)
+    `s_tax_percentage` Nullable(Float32)
 )
 ENGINE = MergeTree ORDER BY s_store_sk;
 

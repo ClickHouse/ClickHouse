@@ -55,9 +55,6 @@
 
     GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
 01231_operator_null_in
-    Alter (Method read is not supported by storage Set)
-    https://fiddle.clickhouse.com/6237cbe7-242e-4ae5-95d2-754a8284072c
-02581_share_big_sets_between_mutation_tasks_with_storage_set
 
     https://github.com/ClickHouse/ClickHouse/issues/74366
     Cannot convert type UInt8 to Variant(String, UInt64)
@@ -65,11 +62,7 @@
 
     Bloom filters
     Needle must not contain whitespace or separator characters: while executing 'FUNCTION hasToken(s : 0, 'abcabcabcabcabcabcabcab\0'_String :: 1) -> hasToken(__table1.s, 'abcabcabcabcabcabcabcab\0'_String) UInt8 : 2': While executing MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread). (BAD_ARGUMENTS) (version 25.1.1.1927 (official build)) (from [::ffff:127.0.0.1]:44318) (comment: 01781_token_extractor_buffer_overflow.sql) (in query: SELECT max(`__table1`.`id`) AS `max(id)` FROM `test_klfow1or`.`bloom_filter` AS `__table1` WHERE hasToken(`__table1`.`s`, 'abcabcabcabcabcabcabcab\0'))
-01781_token_extractor_buffer_overflow
 00945_bloom_filter_index
-    Number of columns in section IN doesn't match. 1 at left, 2 at right.: while executing 'FUNCTION in(str : 0, __set_5453536365783156953_2864831594540334414 :: 1) -> in(__table1.str, __set_5453536365783156953_2864831594540334414) Nullable(UInt8) : 2': While executing MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread). (NUMBER_OF_COLUMNS_DOESNT_MATCH)
-    (query: SELECT * FROM bloom_filter_nullable_index WHERE str IN (SELECT '1048576', str FROM bloom_filter_nullable_index) SETTINGS transform_null_in = 0;)
-01681_bloom_filter_nullable_column
 
     Setting offset=5 not work
 01892_setting_limit_offset_distributed
@@ -78,9 +71,6 @@
 02517_wrong_total_structure_crash
 02985_shard_query_start_time
 
-    CANNOT_PARSE_TEXT
-02771_ignore_data_skipping_indices
-
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
 01513_optimize_aggregation_in_order_memory_long
@@ -88,24 +78,11 @@
 
     https://github.com/ClickHouse/clickhouse-private/issues/15758
     dictGet by dict name
-02366_direct_dictionary_dict_has
-03071_fix_short_circuit_logic
-02234_column_function_short_circuit
-03171_hashed_dictionary_short_circuit_bug_fix
-02950_dictionary_short_circuit
-01852_dictionary_found_rate_long
-01037_polygon_dicts_correctness_all
-01037_polygon_dicts_correctness_fast
-01037_polygon_dicts_simple_functions
 01904_dictionary_default_nullable_type.cloud
 01904_ssd_cache_dictionary_default_nullable_type
 02950_dictionary_ssd_cache_short_circuit
 02504_regexp_dictionary_ua_parser
 03062_analyzer_join_engine_missing_column
-01852_dictionary_query_count_long
-01904_dictionary_default_nullable_type
-02391_hashed_dictionary_shards
-02740_hashed_dictionary_load_factor_smoke
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
     Actual WithMergeableState
@@ -144,47 +121,7 @@
 03040_recursive_cte_postgres_6
 03154_recursive_cte_distributed
 
-    WINDOW VIEW
-01047_window_view_parser_inner_table
-01048_window_view_parser
-01052_window_view_proc_tumble_to_now
-01053_window_view_proc_hop_to_now
-01054_window_view_proc_tumble_to
-01055_window_view_proc_hop_to
-01056_window_view_proc_hop_watch
-01057_window_view_event_tumble_to_strict_asc
-01058_window_view_event_hop_to_strict_asc
-01059_window_view_event_hop_watch_strict_asc
-01060_window_view_event_tumble_to_asc
-01061_window_view_event_hop_to_asc
-01062_window_view_event_hop_watch_asc
-01063_window_view_event_tumble_to_bounded
-01064_window_view_event_hop_to_bounded
-01065_window_view_event_hop_watch_bounded
-01066_window_view_event_tumble_to_strict_asc_lateness
-01067_window_view_event_tumble_to_asc_lateness
-01068_window_view_event_tumble_to_bounded_lateness
-01069_window_view_proc_tumble_watch
-01070_window_view_watch_events
-01071_window_view_event_tumble_asc_join
-01073_window_view_event_tumble_to_asc_populate
-01074_window_view_event_tumble_asc_join_populate
-01075_window_view_proc_tumble_to_now_populate
-01076_window_view_alter_query_to
-01077_window_view_alter_query_to_modify_source
-01078_window_view_alter_query_watch
-01079_window_view_inner_table_memory_tumble
-01080_window_view_inner_table_memory_hop
-01081_window_view_target_table_engine
-01082_window_view_watch_limit
-01083_window_view_select
-01084_window_view_with_table_identifier
-01087_window_view_alter_query
-01088_window_view_default_column
-
     analyzer=0 (partially supported)
-02918_join_pm_lc_crash
-01925_join_materialized_columns
 02962_join_using_bug_57894
 01049_join_low_card_bug_long.gen
 01721_join_implicit_cast_long.gen
@@ -304,7 +241,6 @@
 
     # NOT BUGS
     Not a bug
-02910_object-json-crash-add-column
 02494_query_cache_user_isolation
 02346_non_negative_derivative
 01913_exact_rows_before_limit
@@ -336,9 +272,6 @@
 
     minor: formatted query in system.query_log
 02751_query_log_test_partitions
-
-    fail with parallel_replicas_local_plan=0
-    03155_in_nested_subselects
 
     max_memory_usage limit
     !!!(MEMORY_LIMIT_EXCEEDED) (version 25.1.1.3390 (official build)) (from [::1]:59776) (comment: 02782_uniq_exact_parallel_merging_bug.sh) (in query: select count(distinct s) from test_372i6d19.t settings max_memory_usage = \'50Mi\')
@@ -378,16 +311,7 @@
     max rows: 2.00, current rows: 11.00
 01585_use_index_for_global_in_with_null
 
-00955_test_final_mark_use
 01624_soft_constraints
-03031_minmax_index_for_pointinpolygon
-
-    ORDER BY ALL is missing for multiple queries
-00326_long_function_multi_if
-00328_long_case_construction
-
-    GLOBAL JOIN duplicates
-00857_global_joinsavel_table_alias
 
     !!!Reason: Timeout!
 01666_merge_tree_max_query_limit

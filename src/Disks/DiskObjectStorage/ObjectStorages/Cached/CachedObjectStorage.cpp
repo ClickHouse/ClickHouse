@@ -144,15 +144,12 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeCacheIfExists(object.remote_path);
-    object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
         removeCacheIfExists(object.remote_path);
-
-    object_storage->removeObjectsIfExist(objects);
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT

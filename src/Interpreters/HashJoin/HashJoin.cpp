@@ -1887,7 +1887,7 @@ void HashJoin::tryRerangeRightTableData()
     if (!data
         || data->sorted
         || data->columns.empty()
-        || data->maps.size() > 1
+        || data->maps.size() != 1
         || data->rows_to_join > table_join->sortRightMaximumTableRows()
         || data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
     {

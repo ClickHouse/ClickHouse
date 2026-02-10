@@ -17,9 +17,9 @@
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>

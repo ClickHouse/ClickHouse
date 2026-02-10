@@ -1,5 +1,4 @@
--- Test that text index direct read optimization works correctly with nullable function arguments.
--- This tests the fix for https://github.com/ClickHouse/ClickHouse/issues/95063
+-- Test that text index direct read optimization works correctly with nullable needles.
 
 SET enable_full_text_index = 1;
 
@@ -16,7 +15,7 @@ ORDER BY key;
 
 INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar');
 
--- When hasAnyTokens has a nullable argument (toNullable('FOO')), the result type is Nullable(UInt8).
+-- When hasAnyTokens has a nullable needle, the result type is Nullable(UInt8).
 -- The text index direct read optimization should correctly handle this by wrapping the result with toNullable.
 SELECT * FROM tab WHERE hasAnyTokens(val, toNullable('hello'));
 SELECT * FROM tab PREWHERE hasAnyTokens(val, toNullable('hello'));

@@ -86,6 +86,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(terminate_with_exception) \
+    ONCE(terminate_with_std_exception) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
