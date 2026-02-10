@@ -95,6 +95,7 @@ public:
                     return;
                 Polygon<Point> polygon;
                 polygon.outer() = std::move(rings[0]);
+                boost::geometry::correct(polygon);
                 current_multi_polygon.emplace_back(std::move(polygon));
                 break;
             }
@@ -103,6 +104,7 @@ public:
                 auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
                 if (polygons.empty())
                     return;
+                boost::geometry::correct(polygons[0]);
                 current_multi_polygon.emplace_back(std::move(polygons[0]));
                 break;
             }
@@ -112,6 +114,7 @@ public:
                 if (multi_polygons.empty())
                     return;
                 current_multi_polygon = std::move(multi_polygons[0]);
+                boost::geometry::correct(current_multi_polygon);
                 break;
             }
         }
