@@ -177,7 +177,7 @@ private:
         if (enc_val < max_enc_size)
         {
             res_curr = ensureGrowth(res_data, res_curr, 1);
-            *res_curr++ = '0' + enc_val;
+            *res_curr++ = static_cast<UInt8>('0' + enc_val);
         }
 
         return res_curr;
@@ -230,7 +230,7 @@ The function is used for natural sorting.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNaturalSortKey>(documentation);
 }

@@ -51,45 +51,67 @@
         FROM numbers(1000000)
     </fill_query>
 
-    <!-- Performance tests: Compare regular sort vs natural sort on small dataset -->
+    <!-- Performance tests: Compare regular sort vs natural sort vs COLLATE 'en-u-kn-true' vs naturalSortKey().
+         For naturalSortKey() to run, the server must be built with naturalSortKey (build/programs/clickhouse). -->
+    <!-- Small dataset: -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key LIMIT 10000) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key NATURAL LIMIT 10000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key COLLATE 'en-u-kn-true' LIMIT 10000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY naturalSortKey(key) LIMIT 10000) FORMAT Null</query>
 
-    <!-- Performance tests: Compare regular sort vs natural sort on medium dataset -->
+    <!-- Performance tests: Compare on medium dataset -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key LIMIT 100000) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key NATURAL LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key COLLATE 'en-u-kn-true' LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY naturalSortKey(key) LIMIT 100000) FORMAT Null</query>
 
-    <!-- Performance tests: Compare regular sort vs natural sort on large dataset -->
+    <!-- Performance tests: Compare on large dataset -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_large ORDER BY key LIMIT 1000000) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_large ORDER BY key NATURAL LIMIT 1000000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_large ORDER BY key COLLATE 'en-u-kn-true' LIMIT 1000000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_large ORDER BY naturalSortKey(key) LIMIT 1000000) FORMAT Null</query>
 
     <!-- Performance tests: Full sort on small dataset -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key NATURAL) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key COLLATE 'en-u-kn-true') FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY naturalSortKey(key)) FORMAT Null</query>
 
     <!-- Performance tests: Full sort on medium dataset -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key NATURAL) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key COLLATE 'en-u-kn-true') FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY naturalSortKey(key)) FORMAT Null</query>
 
-    <!-- Performance tests: Mixed patterns - where natural sort should show difference -->
+    <!-- Performance tests: Mixed patterns -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_mixed ORDER BY key LIMIT 100000) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_mixed ORDER BY key NATURAL LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_mixed ORDER BY key COLLATE 'en-u-kn-true' LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_mixed ORDER BY naturalSortKey(key) LIMIT 100000) FORMAT Null</query>
 
     <!-- Performance tests: File patterns -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_files ORDER BY key LIMIT 100000) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_files ORDER BY key NATURAL LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_files ORDER BY key COLLATE 'en-u-kn-true' LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_files ORDER BY naturalSortKey(key) LIMIT 100000) FORMAT Null</query>
 
     <!-- Performance tests: Version patterns -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_versions ORDER BY key LIMIT 100000) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_versions ORDER BY key NATURAL LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_versions ORDER BY key COLLATE 'en-u-kn-true' LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_versions ORDER BY naturalSortKey(key) LIMIT 100000) FORMAT Null</query>
 
     <!-- Performance tests: DESC natural sort -->
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key DESC LIMIT 100000) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key DESC NATURAL LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key DESC COLLATE 'en-u-kn-true' LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY naturalSortKey(key) DESC LIMIT 100000) FORMAT Null</query>
 
     <!-- Performance tests: Multiple columns with natural sort on first -->
     <query>SELECT sum(length(key)) FROM (SELECT key, length(key) as len FROM natural_sort_medium ORDER BY key, len LIMIT 100000) FORMAT Null</query>
     <query>SELECT sum(length(key)) FROM (SELECT key, length(key) as len FROM natural_sort_medium ORDER BY key NATURAL, len LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT key, length(key) as len FROM natural_sort_medium ORDER BY key COLLATE 'en-u-kn-true', len LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT key, length(key) as len FROM natural_sort_medium ORDER BY naturalSortKey(key), len LIMIT 100000) FORMAT Null</query>
 
     <!-- Cleanup -->
     <drop_query>DROP TABLE IF EXISTS natural_sort_small</drop_query>
