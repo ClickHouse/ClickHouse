@@ -96,7 +96,8 @@ private:
         size_t digits = 0;
         UInt8 prev_c = 0;
 
-        for (; data_curr != data_end; ++data_curr) {
+        for (; data_curr != data_end; ++data_curr)
+        {
             const UInt8 c = *data_curr;
             const bool is_digit = '0' <= c && c <= '9';
 
