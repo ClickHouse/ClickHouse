@@ -7001,6 +7001,12 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \
+    DECLARE(Bool, parallel_replicas_allow_merge_tables, false, R"(
+Allow usage of Merge tables and merge() table function with parallel replicas.
+When enabled, queries to Merge tables or merge() function that contain MergeTree
+tables will expand the Merge table into per-table parallel replicas plans on the
+initiator, each with its own coordinator, and UNION ALL the results.
+)", 0) \
     DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
 Allow pushing down filters to part of query which parallel replicas choose to execute
 )", BETA) \

@@ -46,6 +46,7 @@
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/SelectUnionMode.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -62,6 +63,7 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
@@ -76,6 +78,7 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 
+#include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerJoins.h>
@@ -134,6 +137,8 @@ namespace Setting
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ErrorCodes
@@ -1105,6 +1110,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         table_ptr = mv->getTargetTable().get();
                     }
 
+                    /// Allow Merge tables when the setting is enabled.
+                    const auto * merge = typeid_cast<const StorageMerge *>(table_ptr);
+                    if (merge)
+                        return static_cast<bool>(query_settings[Setting::parallel_replicas_allow_merge_tables]);
+
                     if (!table_ptr->isMergeTree())
                         return false;
 
@@ -1184,7 +1194,115 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         return false;
                     };
 
-                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
+                    const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get());
+
+                    if (merge_storage && settings[Setting::parallel_replicas_allow_merge_tables]
+                        && ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
+                        && allow_parallel_replicas_for_table_expression(table_expression, parent_join_tree))
+                    {
+                        /// Build per-table parallel replicas plans and UNION ALL them on initiator.
+                        QueryPlan::Node * node = query_plan.getRootNode();
+                        ReadFromMerge * read_from_merge = nullptr;
+                        while (node)
+                        {
+                            read_from_merge = typeid_cast<ReadFromMerge *>(node->step.get());
+                            if (read_from_merge)
+                                break;
+
+                            QueryPlan::Node * prev_node = node;
+                            if (!node->children.empty())
+                            {
+                                chassert(node->children.size() == 1);
+                                node = node->children.at(0);
+                            }
+                            else
+                            {
+                                throw Exception(
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Step is expected to be ReadFromMerge but it's {}",
+                                    prev_node->step->getName());
+                            }
+                        }
+
+                        chassert(read_from_merge);
+
+                        const auto & selected_tables = read_from_merge->getSelectedTables();
+                        if (!selected_tables.empty())
+                        {
+                            std::vector<std::unique_ptr<QueryPlan>> child_plans;
+                            SharedHeaders child_headers;
+                            child_plans.reserve(selected_tables.size());
+                            child_headers.reserve(selected_tables.size());
+
+                            QueryProcessingStage::Enum max_child_stage = QueryProcessingStage::FetchColumns;
+
+                            for (const auto & table : selected_tables)
+                            {
+                                const auto & child_storage = std::get<1>(table);
+                                const auto & child_lock = std::get<2>(table);
+                                auto child_storage_snapshot = child_storage->getStorageSnapshot(child_storage->getInMemoryMetadataPtr(), query_context);
+
+                                auto child_table_node = std::make_shared<TableNode>(
+                                    child_storage,
+                                    child_storage->getStorageID(),
+                                    child_lock,
+                                    child_storage_snapshot);
+
+                                if (table_node && table_node->hasTableExpressionModifiers())
+                                    child_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
+
+                                if (table_expression->hasAlias())
+                                    child_table_node->setAlias(table_expression->getAlias());
+
+                                auto child_query_tree = table_expression_query_info.query_tree->cloneAndReplace(table_expression, child_table_node);
+                                auto child_global_context
+                                    = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+                                auto child_planner_context
+                                    = std::make_shared<PlannerContext>(Context::createCopy(query_context), child_global_context, select_query_options);
+
+                                collectTableExpressionData(child_query_tree, child_planner_context);
+
+                                auto child_select_query_info = buildSelectQueryInfo(child_query_tree, child_planner_context);
+                                auto & child_query_node = child_query_tree->as<QueryNode &>();
+                                auto child_plan = buildQueryPlanForTableExpression(
+                                    child_table_node,
+                                    child_query_node.getJoinTree(),
+                                    child_select_query_info,
+                                    select_query_options,
+                                    child_planner_context,
+                                    true /* is_single_table_expression */,
+                                    wrap_read_columns_in_subquery);
+
+                                max_child_stage = static_cast<QueryProcessingStage::Enum>(
+                                    std::max(static_cast<int>(max_child_stage), static_cast<int>(child_plan.stage)));
+
+                                for (const auto & row_policy : child_plan.used_row_policies)
+                                    used_row_policies.insert(row_policy);
+                                useful_sets.insert(child_plan.useful_sets.begin(), child_plan.useful_sets.end());
+
+                                auto child_query_plan = std::make_unique<QueryPlan>(std::move(child_plan.query_plan));
+                                child_headers.push_back(child_query_plan->getCurrentHeader());
+                                child_plans.push_back(std::move(child_query_plan));
+                            }
+
+                            if (!child_plans.empty())
+                            {
+                                Block union_common_header = buildCommonHeaderForUnion(
+                                    child_headers,
+                                    SelectUnionMode::UNION_ALL,
+                                    settings[Setting::use_variant_as_common_type]);
+                                addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, child_headers, query_context);
+
+                                auto union_step = std::make_unique<UnionStep>(std::move(child_headers), max_threads_execute_query);
+                                QueryPlan union_plan;
+                                union_plan.unitePlans(std::move(union_step), std::move(child_plans));
+
+                                query_plan = std::move(union_plan);
+                                till_stage = max_child_stage;
+                            }
+                        }
+                    }
+                    else if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))

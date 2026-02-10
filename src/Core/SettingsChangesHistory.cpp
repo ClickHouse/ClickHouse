@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
+            {"parallel_replicas_allow_merge_tables", false, false, "Allow usage of Merge tables with parallel replicas"},
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"use_parquet_metadata_cache", true, true, "Enables cache of parquet file metadata."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
