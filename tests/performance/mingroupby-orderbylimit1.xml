@@ -33,14 +33,14 @@
         create table mingroupby_orderbylimit1_{aggregationscale_all}_tuple
         Engine=MergeTree order by tuple() AS
         select toUInt64( number % {aggregationscale_all} ) key, toUInt64(1) value
-        from numbers(2000000);
+        from numbers(3700000);
     </create_query>
     
     <create_query>
         create table mingroupby_orderbylimit1_{aggregationscale_all}_key_value
         Engine=MergeTree order by (key,value) AS
         select toUInt64( number % {aggregationscale_all} ) key, toUInt64(1) value
-        from numbers(2000000);
+        from numbers(3700000);
     </create_query>
     
     <query tag='UsingGroupbyMinTuple'>
@@ -58,13 +58,13 @@
     <query tag='UsingOrderbyLimit1Tuple'>
          SELECT key, value
          FROM mingroupby_orderbylimit1_{aggregationscale_small}_tuple
-         order by key, value limit 1 by key format Null;
+         order by key, value limit 100 by key format Null;
      </query>
 
     <query tag='UsingOrderbyLimit1KV'>
          SELECT key, value
          FROM mingroupby_orderbylimit1_{aggregationscale_small}_key_value
-         order by key, value limit 1 by key format Null;
+         order by key, value limit 100 by key format Null;
      </query>
     
      <drop_query> DROP TABLE IF EXISTS mingroupby_orderbylimit1_{aggregationscale_all}_tuple </drop_query>

@@ -8,8 +8,8 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM (SELECT rand()           FROM zeros(2000000000)) </query>
-    <query>SELECT count() FROM (SELECT rand64()         FROM zeros(2000000000)) </query>
-    <query>SELECT count() FROM (SELECT randUniform(0, 1) FROM zeros(500000000)) </query>
-    <query>SELECT count() FROM (SELECT generateUUIDv4() FROM zeros(500000000)) </query>
+    <query>SELECT count() FROM (SELECT rand()           FROM zeros(5000000000)) </query>
+    <query>SELECT count() FROM (SELECT rand64()         FROM zeros(5000000000)) </query>
+    <query>SELECT count() FROM (SELECT randUniform(0, 1) FROM zeros(3300000000)) </query>
+    <query>SELECT count() FROM (SELECT generateUUIDv4() FROM zeros(3300000000)) </query>
 </test>

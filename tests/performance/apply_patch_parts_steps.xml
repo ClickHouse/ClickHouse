@@ -15,7 +15,7 @@
         SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
     </create_query>
 
-    <fill_query>INSERT INTO test_lwu_steps SELECT number, number, number, number FROM numbers_mt(50000000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_steps SELECT number, number, number, number FROM numbers_mt(99000000) SETTINGS max_insert_threads=8</fill_query>
     <fill_query>OPTIMIZE TABLE test_lwu_steps FINAL</fill_query>
 
     <fill_query>UPDATE test_lwu_steps SET a = 'foo' || randomPrintableASCII(3) WHERE id % 100 = 0</fill_query>

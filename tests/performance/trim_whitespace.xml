@@ -32,7 +32,7 @@
     </substitutions>
 
     <query>SELECT {func} FROM whitespaces FORMAT Null</query>
-    <query>SELECT {func_slow} FROM whitespaces LIMIT 10000000 FORMAT Null</query>
+    <query>SELECT {func_slow} FROM whitespaces LIMIT 13000000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS whitespaces</drop_query>
 </test>

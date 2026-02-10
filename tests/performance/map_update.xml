@@ -1,22 +1,22 @@
 <test>
     <query>
         WITH (range(10), range(10))::Map(String, UInt64) AS m1, (range(3), range(3))::Map(String, UInt64) AS m2
-        SELECT count() FROM numbers(1200000)
+        SELECT count() FROM numbers(810000)
         WHERE NOT ignore(mapUpdate(materialize(m1), materialize(m2)))
     </query>
     <query>
         WITH (range(10), range(10))::Map(String, UInt64) AS m1, (range(3), range(3))::Map(String, UInt64) AS m2
-        SELECT count() FROM numbers(1200000)
+        SELECT count() FROM numbers(810000)
         WHERE NOT ignore(mapUpdate(materialize(m1), m2))
     </query>
     <query>
         WITH (range(100), range(100))::Map(String, UInt64) AS m1, (range(30), range(30))::Map(String, UInt64) AS m2
-        SELECT count() FROM numbers(120000)
+        SELECT count() FROM numbers(81000)
         WHERE NOT ignore(mapUpdate(materialize(m1), materialize(m2)))
     </query>
     <query>
         WITH (range(100), range(100))::Map(String, UInt64) AS m1, (range(30), range(30))::Map(String, UInt64) AS m2
-        SELECT count() FROM numbers(120000)
+        SELECT count() FROM numbers(81000)
         WHERE NOT ignore(mapUpdate(materialize(m1), m2))
     </query>
 </test>

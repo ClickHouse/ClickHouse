@@ -17,5 +17,5 @@
        </substitution>
     </substitutions>
 
-    <query short="{buckets} &lt; 10">SELECT {hash_func}(number, {buckets}) FROM numbers(50000000) FORMAT Null</query>
+    <query short="{buckets} &lt; 10">SELECT {hash_func}(number, {buckets}) FROM numbers(2900000) FORMAT Null</query>
 </test>

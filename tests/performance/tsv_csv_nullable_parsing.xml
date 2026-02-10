@@ -3,8 +3,8 @@
 <create_query>CREATE TABLE IF NOT EXISTS table_tsv (s Nullable(String)) ENGINE = File('TSV')</create_query>
 <create_query>CREATE TABLE IF NOT EXISTS table_csv (s Nullable(String)) ENGINE = File('CSV')</create_query>
 
-<fill_query>INSERT INTO table_tsv SELECT number % 2 ? 'Some text' : NULL FROM numbers(5000000) FORMAT TSV</fill_query>
-<fill_query>INSERT INTO table_csv SELECT number % 2 ? 'Some text' : NULL FROM numbers(5000000) FORMAT CSV</fill_query>
+<fill_query>INSERT INTO table_tsv SELECT number % 2 ? 'Some text' : NULL FROM numbers(12000000) FORMAT TSV</fill_query>
+<fill_query>INSERT INTO table_csv SELECT number % 2 ? 'Some text' : NULL FROM numbers(12000000) FORMAT CSV</fill_query>
 
 <query>SELECT * FROM table_tsv FORMAT Null</query>
 <query>SELECT * FROM table_csv FORMAT Null</query>

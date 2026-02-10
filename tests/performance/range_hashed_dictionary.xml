@@ -54,15 +54,15 @@
     <fill_query>
         INSERT INTO simple_key_range_hashed_dictionary_source_table
         SELECT key, key, range_start * 2, range_start * 2 + 1 FROM
-            (SELECT number as key FROM numbers(10000)) as keys,
-            (SELECT number as range_start FROM numbers(1000)) as ranges;
+            (SELECT number as key FROM numbers(11000)) as keys,
+            (SELECT number as range_start FROM numbers(1100)) as ranges;
     </fill_query>
 
     <fill_query>
         INSERT INTO complex_key_range_hashed_dictionary_source_table
         SELECT key, toString(key), key, range_start * 2, range_start * 2 + 1 FROM
-            (SELECT number as key FROM numbers(10000)) as keys,
-            (SELECT number as range_start FROM numbers(1000)) as ranges;
+            (SELECT number as key FROM numbers(11000)) as keys,
+            (SELECT number as range_start FROM numbers(1100)) as ranges;
     </fill_query>
 
     <substitutions>

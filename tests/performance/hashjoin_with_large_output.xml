@@ -39,7 +39,7 @@
         )
         engine = Memory();
     </create_query>
-    <fill_query>insert into test_left SELECT toString(number % 20), toString(number) from system.numbers limit 10000;</fill_query>
+    <fill_query>insert into test_left SELECT toString(number % 20), toString(number) from system.numbers limit 6600;</fill_query>
     <fill_query>
         insert into test_right
         SELECT
@@ -53,7 +53,7 @@
         toString(number * 10000 + 6),
         toString(number * 10000 + 7),
         toString(number * 10000 + 8)
-        from system.numbers limit 10000;
+        from system.numbers limit 6600;
     </fill_query>
 
     <query>

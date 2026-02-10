@@ -1,6 +1,6 @@
 <test>
-    <query>SELECT mapPopulateSeries(range(number), range(number)) FROM numbers(2300) FORMAT Null;</query>
-    <query>SELECT mapPopulateSeries(range(number), range(number), 5000) FROM numbers(2300) FORMAT Null;</query>
-    <query>SELECT mapPopulateSeries(map(0, 0, number, 5)) FROM numbers(2300) FORMAT Null;</query>
-    <query>SELECT mapPopulateSeries(map(0, 0, number, 5), 5000) FROM numbers(2300) FORMAT Null;</query>
+    <query>SELECT mapPopulateSeries(range(number), range(number)) FROM numbers(13000) FORMAT Null;</query>
+    <query>SELECT mapPopulateSeries(range(number), range(number), 5000) FROM numbers(13000) FORMAT Null;</query>
+    <query>SELECT mapPopulateSeries(map(0, 0, number, 5)) FROM numbers(13000) FORMAT Null;</query>
+    <query>SELECT mapPopulateSeries(map(0, 0, number, 5), 5000) FROM numbers(13000) FORMAT Null;</query>
 </test>

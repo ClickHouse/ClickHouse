@@ -46,7 +46,7 @@
             toInt64(x)   i64,
             toFloat32(x) f32,
             toFloat64(x) f64
-        FROM numbers_mt(120000000)
+        FROM numbers_mt(100000000)
         SETTINGS max_threads = 4
         ;
     </create_query>

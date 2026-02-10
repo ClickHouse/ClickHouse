@@ -40,12 +40,12 @@
         WHERE (number IN
         (
             SELECT sum(number)
-            FROM numbers(51000000)
+            FROM numbers(19000000)
             GROUP BY bitAnd(number, 15)
         )) OR (number IN
         (
             SELECT sum(number)
-            FROM numbers(51000000)
+            FROM numbers(19000000)
             GROUP BY bitAnd(number, 17)
         ))
     </query>

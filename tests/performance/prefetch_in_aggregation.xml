@@ -3,8 +3,8 @@
     <substitution>
       <name>size</name>
       <values>
-        <value>10000000</value>
-        <value>50000000</value>
+        <value>2700000</value>
+        <value>13000000</value>
       </values>
     </substitution>
     <substitution>

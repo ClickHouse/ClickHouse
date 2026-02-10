@@ -19,16 +19,16 @@
     <fill_query>SYSTEM STOP MERGES test_lwu_join_2</fill_query>
 
     <!-- Create parts with intersecting block numbers -->
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
-    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(5500000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>INSERT INTO test_lwu_join_2 SELECT number, rand(), rand(), randomPrintableASCII(8), randomPrintableASCII(8), FROM numbers_mt(3100000) SETTINGS max_insert_threads=8</fill_query>
 
     <fill_query>UPDATE test_lwu_join_2 SET uint_1p = rand() WHERE id % 100 = 0</fill_query>
     <fill_query>UPDATE test_lwu_join_2 SET uint_10p = rand() WHERE id % 10 = 0</fill_query>

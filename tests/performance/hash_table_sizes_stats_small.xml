@@ -7,20 +7,20 @@
         <substitution>
             <name>size</name>
             <values>
-                <value>12500000</value>
-                <value>5000000</value>
-                <value>7500000</value>
+                <value>25000000</value>
                 <value>10000000</value>
-                <value>12500000</value>
                 <value>15000000</value>
-                <value>3500000</value>
-                <value>4000000</value>
-                <value>4500000</value>
-                <value>5000000</value>
-                <value>7500000</value>
+                <value>20000000</value>
+                <value>25000000</value>
+                <value>30000000</value>
+                <value>7000000</value>
+                <value>8000000</value>
+                <value>9000000</value>
                 <value>10000000</value>
-                <value>12500000</value>
                 <value>15000000</value>
+                <value>20000000</value>
+                <value>25000000</value>
+                <value>30000000</value>
             </values>
         </substitution>
     </substitutions>

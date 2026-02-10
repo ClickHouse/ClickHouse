@@ -1,9 +1,9 @@
 <test>
-    <query>SELECT count() FROM zeros(3600000) WHERE NOT ignore(randomStringUTF8(10))</query>
-    <query>SELECT count() FROM zeros(360000) WHERE NOT ignore(randomStringUTF8(100))</query>
-    <query>SELECT count() FROM zeros(36000) WHERE NOT ignore(randomStringUTF8(1000))</query>
-    <query>SELECT count() FROM zeros(3600) WHERE NOT ignore(randomStringUTF8(10000))</query>
-    <query>SELECT count() FROM zeros(3600000) WHERE NOT ignore(randomStringUTF8(rand() % 10))</query>
-    <query>SELECT count() FROM zeros(360000) WHERE NOT ignore(randomStringUTF8(rand() % 100))</query>
-    <query>SELECT count() FROM zeros(36000) WHERE NOT ignore(randomStringUTF8(rand() % 1000))</query>
+    <query>SELECT count() FROM zeros(2500000) WHERE NOT ignore(randomStringUTF8(10))</query>
+    <query>SELECT count() FROM zeros(250000) WHERE NOT ignore(randomStringUTF8(100))</query>
+    <query>SELECT count() FROM zeros(25000) WHERE NOT ignore(randomStringUTF8(1000))</query>
+    <query>SELECT count() FROM zeros(2500) WHERE NOT ignore(randomStringUTF8(10000))</query>
+    <query>SELECT count() FROM zeros(2500000) WHERE NOT ignore(randomStringUTF8(rand() % 10))</query>
+    <query>SELECT count() FROM zeros(250000) WHERE NOT ignore(randomStringUTF8(rand() % 100))</query>
+    <query>SELECT count() FROM zeros(25000) WHERE NOT ignore(randomStringUTF8(rand() % 1000))</query>
 </test>

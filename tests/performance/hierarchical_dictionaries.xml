@@ -66,14 +66,14 @@
                     id > first_level_start, (id % first_level_start) + 1,
                     0) as parent_id
         FROM system.numbers
-        LIMIT 1000000;
+        LIMIT 430000;
     </fill_query>
 
     <query>
-        SELECT {func}('hierarchical_flat_dictionary', number + 1) FROM numbers(1000000) FORMAT Null;
+        SELECT {func}('hierarchical_flat_dictionary', number + 1) FROM numbers(430000) FORMAT Null;
     </query>
     <query>
-        SELECT {func}('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(1000000) FORMAT Null;
+        SELECT {func}('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(430000) FORMAT Null;
     </query>
 
     <drop_query>DROP DICTIONARY IF EXISTS hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary;</drop_query>

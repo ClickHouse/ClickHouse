@@ -30,12 +30,12 @@
             number % {ratio} = 0 ? rand(1) : 0,
             number % {ratio} = 0 ? rand(2) : 0,
             number % {ratio} = 0 ? randomPrintableASCII(64, 3) : ''
-        FROM numbers(50000000)
+        FROM numbers(100000000)
     </fill_query>
 
-    <query>SELECT str, COUNT(DISTINCT id) as i FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY i DESC LIMIT 10</query>
-    <query>SELECT str, COUNT(DISTINCT u8) as u FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY u DESC LIMIT 10</query>
-    <query>SELECT str, COUNT(DISTINCT u64) as u FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY u DESC LIMIT 10</query>
+    <query>SELECT str, COUNT(DISTINCT id) as i FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY i DESC LIMIT 100</query>
+    <query>SELECT str, COUNT(DISTINCT u8) as u FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY u DESC LIMIT 100</query>
+    <query>SELECT str, COUNT(DISTINCT u64) as u FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY u DESC LIMIT 100</query>
 
 
     <drop_query>DROP TABLE IF EXISTS test_{serialization}_{ratio}</drop_query>

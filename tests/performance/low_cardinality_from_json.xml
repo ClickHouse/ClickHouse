@@ -63,11 +63,11 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT 'fixed_string_json' FROM zeros(350000) WHERE NOT ignore(JSONExtract(materialize({string_json}), {low_cardinality_tuple_fixed_string})) FORMAT Null </query>
-    <query>SELECT 'string_json' FROM zeros(350000) WHERE NOT ignore(JSONExtract(materialize({string_json}), {low_cardinality_tuple_string})) FORMAT Null </query>
-    <query>SELECT 'int8_json' FROM zeros(350000) WHERE NOT ignore(JSONExtract(materialize({int_json}), {low_cardinality_tuple_int8})) FORMAT Null </query>
-    <query>SELECT 'int16_json' FROM zeros(350000) WHERE NOT ignore(JSONExtract(materialize({int_json}), {low_cardinality_tuple_int16})) FORMAT Null </query>
-    <query>SELECT 'int32_json' FROM zeros(350000) WHERE NOT ignore(JSONExtract(materialize({int_json}), {low_cardinality_tuple_int32})) FORMAT Null </query>
-    <query>SELECT 'int64_json' FROM zeros(350000) WHERE NOT ignore(JSONExtract(materialize({int_json}), {low_cardinality_tuple_int64})) FORMAT Null </query>
-    <query>SELECT 'uuid_json' FROM zeros(350000) WHERE NOT ignore(JSONExtract(materialize({uuid_json}), {low_cardinality_tuple_uuid})) FORMAT Null </query>
+    <query>SELECT 'fixed_string_json' FROM zeros(630000) WHERE NOT ignore(JSONExtract(materialize({string_json}), {low_cardinality_tuple_fixed_string})) FORMAT Null </query>
+    <query>SELECT 'string_json' FROM zeros(630000) WHERE NOT ignore(JSONExtract(materialize({string_json}), {low_cardinality_tuple_string})) FORMAT Null </query>
+    <query>SELECT 'int8_json' FROM zeros(630000) WHERE NOT ignore(JSONExtract(materialize({int_json}), {low_cardinality_tuple_int8})) FORMAT Null </query>
+    <query>SELECT 'int16_json' FROM zeros(630000) WHERE NOT ignore(JSONExtract(materialize({int_json}), {low_cardinality_tuple_int16})) FORMAT Null </query>
+    <query>SELECT 'int32_json' FROM zeros(630000) WHERE NOT ignore(JSONExtract(materialize({int_json}), {low_cardinality_tuple_int32})) FORMAT Null </query>
+    <query>SELECT 'int64_json' FROM zeros(630000) WHERE NOT ignore(JSONExtract(materialize({int_json}), {low_cardinality_tuple_int64})) FORMAT Null </query>
+    <query>SELECT 'uuid_json' FROM zeros(630000) WHERE NOT ignore(JSONExtract(materialize({uuid_json}), {low_cardinality_tuple_uuid})) FORMAT Null </query>
 </test>

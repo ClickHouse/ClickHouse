@@ -1,11 +1,11 @@
 <test>
     <create_query>CREATE TABLE data(k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
 
-    <fill_query>INSERT INTO data SELECT number, 1 from numbers(30000000)</fill_query>
+    <fill_query>INSERT INTO data SELECT number, 1 from numbers(100000000)</fill_query>
 
     <query tag='count_10M' short='1'>SELECT count() FROM data</query>
-    <query>SELECT count(k) FROM (SELECT k FROM data, numbers(60) _a)</query>
-    <query>SELECT count(k) FROM (SELECT toNullable(k) as k FROM data, numbers(60) _a)</query>
+    <query>SELECT count(k) FROM (SELECT k FROM data, numbers(600) _a)</query>
+    <query>SELECT count(k) FROM (SELECT toNullable(k) as k FROM data, numbers(600) _a)</query>
 
     <drop_query>DROP TABLE IF EXISTS data</drop_query>
 </test>

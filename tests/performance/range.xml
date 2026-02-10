@@ -1,4 +1,4 @@
 <test>
-    <query>SELECT range(number % 100)       FROM numbers(24000000) FORMAT Null</query>
-    <query>SELECT range(0, number % 100, 1) FROM numbers(24000000) FORMAT Null</query>
+    <query>SELECT range(number % 100)       FROM numbers(12000000) FORMAT Null</query>
+    <query>SELECT range(0, number % 100, 1) FROM numbers(12000000) FORMAT Null</query>
 </test>

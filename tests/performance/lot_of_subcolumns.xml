@@ -14,7 +14,7 @@
             ENGINE = MergeTree ORDER BY id PARTITION BY id % 100
     </create_query>
 
-    <fill_query>INSERT INTO lot_of_arrays(id) SELECT number FROM numbers(1600)</fill_query>
+    <fill_query>INSERT INTO lot_of_arrays(id) SELECT number FROM numbers(2400)</fill_query>
     <fill_query>OPTIMIZE TABLE lot_of_arrays FINAL</fill_query>
 
     <query>SELECT nested.arr0 FROM lot_of_arrays WHERE id > 10 FORMAT Null</query>

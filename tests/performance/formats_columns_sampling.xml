@@ -24,7 +24,7 @@
 
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
 
-    <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
+    <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 450000</fill_query>
 
     <query>SELECT WatchID FROM table_{format} FORMAT Null</query>
 

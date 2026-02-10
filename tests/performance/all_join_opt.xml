@@ -2,8 +2,8 @@
     <create_query>CREATE TABLE test (a Int64, b String, c LowCardinality(String)) ENGINE = MergeTree() ORDER BY a</create_query>
     <create_query>CREATE TABLE test1 (a Int64, b String, c LowCardinality(String)) ENGINE = MergeTree() ORDER BY a</create_query>
 
-    <fill_query>INSERT INTO test SELECT number % 10000, number % 10000, number % 10000 FROM numbers(27000000)</fill_query>
-    <fill_query>INSERT INTO test1 SELECT number % 1000 , number % 1000, number % 1000 FROM numbers(270000)</fill_query>
+    <fill_query>INSERT INTO test SELECT number % 10000, number % 10000, number % 10000 FROM numbers(16000000)</fill_query>
+    <fill_query>INSERT INTO test1 SELECT number % 1000 , number % 1000, number % 1000 FROM numbers(160000)</fill_query>
 
     <!-- test for hash join -->
     <query tag='INNER'>SELECT MAX(test1.a) FROM test INNER JOIN test1 on test.b = test1.b settings join_algorithm='hash'</query>

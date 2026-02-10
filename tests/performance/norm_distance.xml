@@ -48,7 +48,7 @@
                     rand(n*10+140), rand(n*10+141), rand(n*10+142), rand(n*10+143), rand(n*10+144), rand(n*10+145), rand(n*10+146), rand(n*10+147), rand(n*10+148), rand(n*10+149)
                 ] AS v
             FROM system.numbers
-            LIMIT 5000000
+            LIMIT 2300000
         );
     </fill_query>
 
@@ -70,8 +70,8 @@
 
     <!-- Arrays -->
     <query>SELECT sum(dist) FROM (SELECT {norm}Norm(v) AS dist FROM vecs_{element_type})</query>
-    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT {norm}Distance(a, v) AS dist FROM vecs_{element_type})</query>
-    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT cosineDistance(a, v) AS dist FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 100) AS a SELECT sum(dist) FROM (SELECT {norm}Distance(a, v) AS dist FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 100) AS a SELECT sum(dist) FROM (SELECT cosineDistance(a, v) AS dist FROM vecs_{element_type})</query>
 
     <drop_query>DROP TABLE vecs_{element_type}</drop_query>
 

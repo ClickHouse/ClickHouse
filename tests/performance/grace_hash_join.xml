@@ -16,6 +16,6 @@
         </substitution>
     </substitutions>
 
-    <query short='numbers'>SELECT sum(n) FROM (SELECT number * 2 AS n FROM numbers_mt(1200000)) AS lhs JOIN (SELECT number * 3 AS n FROM numbers_mt(1200000)) AS rhs USING (n) SETTINGS {settings} FORMAT Null</query>
-    <query short='numbers_hashed'>SELECT sum(n) FROM (SELECT intHash64(number * 2) AS n FROM numbers_mt(1200000)) AS lhs JOIN (SELECT intHash64(number * 3) AS n FROM numbers_mt(1200000)) AS rhs USING (n) SETTINGS {settings} FORMAT Null</query>
+    <query short='numbers'>SELECT sum(n) FROM (SELECT number * 2 AS n FROM numbers_mt(5500000)) AS lhs JOIN (SELECT number * 3 AS n FROM numbers_mt(5500000)) AS rhs USING (n) SETTINGS {settings} FORMAT Null</query>
+    <query short='numbers_hashed'>SELECT sum(n) FROM (SELECT intHash64(number * 2) AS n FROM numbers_mt(5500000)) AS lhs JOIN (SELECT intHash64(number * 3) AS n FROM numbers_mt(5500000)) AS rhs USING (n) SETTINGS {settings} FORMAT Null</query>
 </test>

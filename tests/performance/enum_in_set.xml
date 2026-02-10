@@ -9,7 +9,7 @@
     ORDER BY tuple()
     SETTINGS index_granularity = 8192
     </create_query>
-    <fill_query>INSERT INTO iso_3166_1_alpha_2 SELECT (rand(number) % 256) - 128 FROM numbers(50000000)</fill_query>
+    <fill_query>INSERT INTO iso_3166_1_alpha_2 SELECT (rand(number) % 256) - 128 FROM numbers(100000000)</fill_query>
     <fill_query>OPTIMIZE TABLE iso_3166_1_alpha_2 FINAL</fill_query>
 
     <query>SELECT count() FROM iso_3166_1_alpha_2 WHERE c NOT IN ('CU', 'BN', 'VI', 'US', 'AQ', 'AG', 'AR', 'AM', 'AW', 'AU', 'AT', 'AZ', 'BS', 'BH', 'BD', 'BB', 'BY', 'BE') FORMAT Null SETTINGS max_threads = 1</query>

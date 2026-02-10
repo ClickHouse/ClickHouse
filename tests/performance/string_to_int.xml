@@ -3,7 +3,7 @@
     <create_query>CREATE TABLE numeric_strings(num String) ENGINE Memory</create_query>
 
     <fill_query>
-        INSERT INTO numeric_strings SELECT number FROM numbers(50000000)
+        INSERT INTO numeric_strings SELECT number FROM numbers(85000000)
     </fill_query>
 
     <query>SELECT count(num::Int64) FROM numeric_strings FORMAT Null</query>

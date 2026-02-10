@@ -14,7 +14,7 @@
 </substitutions>
     
 
-<fill_query>INSERT INTO function file(data.{format}) SELECT WatchID, Title, EventTime, RefererCategories, RefererRegions FROM test.hits LIMIT 25000 SETTINGS engine_file_truncate_on_insert=1</fill_query>
+<fill_query>INSERT INTO function file(data.{format}) SELECT WatchID, Title, EventTime, RefererCategories, RefererRegions FROM test.hits LIMIT 71000 SETTINGS engine_file_truncate_on_insert=1</fill_query>
 
 <query>DESC file(data.{format}) SETTINGS schema_inference_use_cache_for_file=0</query>
 
