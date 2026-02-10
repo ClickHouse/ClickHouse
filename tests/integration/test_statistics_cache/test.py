@@ -351,13 +351,8 @@ def test_drop_statistics_means_no_load_and_bypass_still_loads():
     _query(ch1,
            "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 "
            "SETTINGS use_statistics_cache=0, log_comment='drop-bypass' FORMAT Null")
-    _assert_load(ch1, "drop-bypass")
-
-    _wait_hit(
-        ch1, "drop-hit",
-        "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 "
-        "SETTINGS use_statistics_cache=1, log_comment='drop-hit' FORMAT Null"
-    )
+    # after optimization, there is no load after `drop statistics`
+    _assert_hit(ch1, "drop-bypass")
 
 def test_per_replica_cache_and_restart_needed():
     table = _create_rep(0)

@@ -183,6 +183,7 @@ namespace Setting
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
+    extern const SettingsBool ignore_format_null_for_explain;
 }
 
 namespace ServerSetting
@@ -1972,7 +1973,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                 ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
-        if (boost::iequals(format_name, "Null"))
+        const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
+        if (boost::iequals(format_name, "Null") && !(ast->as<ASTExplainQuery>() && ignore_null_for_explain))
             res.null_format = true;
     }
 
@@ -2219,6 +2221,10 @@ void executeQuery(
             format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
                 ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
+
+            const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
+            if (boost::iequals(format_name, "Null") && ast->as<ASTExplainQuery>() && ignore_null_for_explain)
+                format_name = context->getDefaultFormat();
 
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
