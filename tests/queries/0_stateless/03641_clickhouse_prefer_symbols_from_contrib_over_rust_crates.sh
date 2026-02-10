@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan
+# Tags: long, no-msan, no-parallel
+# Memory limits: 10 GiB
 
 # FIXME: Note, this is not a queries test at all, move it somewhere else
 

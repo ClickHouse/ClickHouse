@@ -29,22 +29,23 @@ FORMAT Vertical
 ```text
 Row 1:
 ──────
-database:                   test
-table:                      kafka
-consumer_id:                ClickHouse-instance-test-kafka-1caddc7f-f917-4bb1-ac55-e28bd103a4a0
-assignments.topic:          ['system_kafka_cons']
-assignments.partition_id:   [0]
-assignments.current_offset: [18446744073709550615]
-exceptions.time:            []
-exceptions.text:            []
-last_poll_time:             2006-11-09 18:47:47
-num_messages_read:          4
-last_commit_time:           2006-11-10 04:39:40
-num_commits:                1
-last_rebalance_time:        1970-01-01 00:00:00
-num_rebalance_revocations:  0
-num_rebalance_assignments:  1
-is_currently_used:          1
-rdkafka_stat:               {...}
-
+database:                      test
+table:                         kafka
+consumer_id:                   ClickHouse-instance-test-kafka-1caddc7f-f917-4bb1-ac55-e28bd103a4a0
+assignments.topic:             ['system_kafka_cons']
+assignments.partition_id:      [0]
+assignments.current_offset:    [18446744073709550615]
+exceptions.time:               []
+exceptions.text:               []
+last_poll_time:                2006-11-09 18:47:47
+num_messages_read:             4
+last_commit_time:              2006-11-10 04:39:40
+num_commits:                   1
+last_rebalance_time:           1970-01-01 00:00:00
+num_rebalance_revocations:     0
+num_rebalance_assignments:     1
+is_currently_used:             1
+rdkafka_stat:                  {...}
+dependencies:                  [['test.mv2','test.target2'],['test.mv1','test.target1']]
+missing_dependencies:          []
 ```

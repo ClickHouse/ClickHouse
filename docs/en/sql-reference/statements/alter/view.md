@@ -135,7 +135,6 @@ CREATE TABLE test.events_by_day
 ENGINE = SummingMergeTree
 PRIMARY KEY (event_type, ts)
 ORDER BY (event_type, ts, browser)
-SETTINGS index_granularity = 8192
 
 -- !!! The columns' definition is unchanged but it does not matter, we are not querying
 -- MATERIALIZED VIEW, we are querying TO (storage) table.

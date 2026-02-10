@@ -1,4 +1,9 @@
 Negative tests
+Test unlimited tokens
+1
+2
+1
+2
 Test singular aliases
 Test what happens when hasAnyTokens/All is called on a column without index
 -- We expected that the default tokenizer is used
@@ -68,15 +73,17 @@ SELECT id FROM tab WHERE hasAllTokens('a b', 'a b');
 SELECT id FROM tab WHERE hasAllTokens('a b', 'a c');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c');
--- Test search without needle on non-empty columns (all are expected to match)
+-- Test search without needle on non-empty columns (all are expected to match nothing)
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
-3
-SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
-3
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']); -- matches nothing
 0
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, ''); -- TODO currently this goes through the default tokenizer and matches everything
-3
+SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, '');
+0
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['','']);
+0
 -- { echoOn }
 SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
 1
@@ -132,7 +139,7 @@ FixedString input columns
 [1,2,3,4]
 [1,2,3,4,5]
 [3,4,5]
-[1,2,3,4,5]
+[]
 [3,4,5]
 [1,2,3,4]
 [1,2,3,4,5]
@@ -143,7 +150,7 @@ FixedString input columns
 [2,3]
 [3]
 [3,4,5]
-[1,2,3,4,5]
+[]
 [4,5]
 [2,3]
 [3]
@@ -250,113 +257,113 @@ Combination with the tokens function
 Text index analysis
 hasAnyTokens is used during index analysis
 Text index overload 1 should choose none for non-existent term
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Text index overload 2 should choose none for non-existent term
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 2/4
 Granules: 2048/4096
 Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 2/4
 Granules: 2048/4096
 Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 3/4
 Granules: 3072/4096
 Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 3/4
 Granules: 3072/4096
 Text index should choose all 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 4/4
 Granules: 4096/4096
 hasAllTokens is used during index analysis
 Text index overload 1 should choose none for non-existent term
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Text index overload 2 should choose none for non-existent term
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 Text index overload 1 should choose none if any term does not exists in dictionary
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Text index overload 2 should choose none if any term does not exists in dictionary
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Text index should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 2/4
 Granules: 2048/4096
 Text index should choose none
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Text index should choose none
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Text index should choose 3 parts and 3072 granules out of 4 parts and 4096 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 3/4
 Granules: 3072/4096
 Text index should choose none
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 0/4
 Granules: 0/4096
 Chooses mixed granules inside part
 Text index should choose 50% of granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/1
 Granules: 512/1024
 Text index should choose all granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/1
 Granules: 1024/1024
 Text index should choose 25% of granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Parts: 1/1
 Granules: 256/1024
 Test hasAnyTokens and hasAllTokens on a non-indexed FixedString column

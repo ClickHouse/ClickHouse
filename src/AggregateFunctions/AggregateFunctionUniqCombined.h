@@ -96,8 +96,8 @@ public:
     {
         if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
         {
-            StringRef value = columns[0]->getDataAt(row_num);
-            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+            auto value = columns[0]->getDataAt(row_num);
+            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
         }
         else
         {

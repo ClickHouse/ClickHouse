@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-random-merge-tree-settings
+# add_minmax_index_for_numeric_columns=0: Changes teh number of files and bytes read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS small_table"
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE small_table (a UInt64 default 0, n UInt64) ENGINE = MergeTree() PARTITION BY tuple() ORDER BY (a) SETTINGS min_bytes_for_wide_part = 0"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE small_table (a UInt64 default 0, n UInt64) ENGINE = MergeTree() PARTITION BY tuple() ORDER BY (a) SETTINGS min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns=0"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO small_table (n) SELECT * from system.numbers limit 100000;"
 $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE small_table FINAL;"

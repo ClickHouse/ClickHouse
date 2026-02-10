@@ -378,6 +378,8 @@ void ThreadFuzzer::setup() const
     #    define GLIBC_SYMVER "GLIBC_2.17"
     #elif (defined(__S390X__) || defined(__s390x__))
     #    define GLIBC_SYMVER "GLIBC_2.2"
+    #elif defined(__e2k__)
+    #    define GLIBC_SYMVER "GLIBC_2.0"
     #else
     #    error Your platform is not supported.
     #endif

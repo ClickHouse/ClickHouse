@@ -81,6 +81,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/map)";
         else if (type.starts_with("Variant")) /// "Variant(T1, T2, ...)", "Variant(UInt8, String)", ...
             result += "`](/sql-reference/data-types/variant)";
+        else if (type.starts_with("Geometry"))
+            result += "`](/sql-reference/data-types/geo)";
         else if (type.starts_with("LowCardinality")) /// "LowCardinality(T)", "LowCardinality(UInt8)", "LowCardinality(String)", ...
             result += "`](/sql-reference/data-types/lowcardinality)";
         else if (type.starts_with("Nullable")) /// "Nullable(T)", "Nullable(UInt8)", "Nullable(String)", ...
@@ -89,6 +91,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/aggregatefunction)";
         else if (type.starts_with("SimpleAggregateFunction")) /// "SimpleAggregateFunction(agg_func, T)", "SimpleAggregateFunction(any, UInt8)", ...
             result += "`](/sql-reference/data-types/simpleaggregatefunction)";
+        else if (type == "Geo")
+            result += "`](/sql-reference/data-types/geo)";
         else if (type == "Point")
             result += "`](/sql-reference/data-types/geo#point)";
         else if (type == "Ring")
@@ -129,6 +133,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
     result += "\n";
     return result;
 }
+}
 
 template <typename Type>
 String argumentsOrParametersAsString(const Type & arguments_or_parameters, const FunctionDocumentation::Syntax & syntax)
@@ -146,8 +151,6 @@ String argumentsOrParametersAsString(const Type & arguments_or_parameters, const
     return result;
 }
 
-}
-
 String FunctionDocumentation::argumentsAsString() const
 {
     return argumentsOrParametersAsString(arguments, syntax);
@@ -155,9 +158,7 @@ String FunctionDocumentation::argumentsAsString() const
 
 String FunctionDocumentation::parametersAsString() const
 {
-    /// TODO Replace dummy parameters by actual parameters
-    Parameters dummy_parameters;
-    return argumentsOrParametersAsString(dummy_parameters, syntax);
+    return argumentsOrParametersAsString(parameters, syntax);
 }
 
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
@@ -237,6 +238,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},
         {Category::Geo, "Geo"},
+        {Category::GeoPolygon, "Geo Polygon"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
         {Category::Financial, "Financial"},
@@ -277,5 +279,4 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
-
 }

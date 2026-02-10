@@ -12,6 +12,8 @@ CREATE TABLE t64
     t_u64 UInt64 Codec(T64('bit'), LZ4)
 ) ENGINE MergeTree() ORDER BY tuple();
 
+-- { echoOn }
+
 INSERT INTO t64 SELECT number AS x, x, x, x, x, x, x, x FROM numbers(1);
 INSERT INTO t64 SELECT number AS x, x, x, x, x, x, x, x FROM numbers(2);
 INSERT INTO t64 SELECT 42 AS x, x, x, x, x, x, x, x FROM numbers(4);

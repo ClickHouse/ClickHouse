@@ -24,7 +24,7 @@ Returns the gamma function.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT tgamma(5);", "24"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTGamma>(documentation);
 }

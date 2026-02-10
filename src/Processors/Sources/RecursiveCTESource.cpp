@@ -38,7 +38,7 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<TableNode *> collectTableNodesWithStorage(const StoragePtr & storage, IQueryTreeNode * root)
+std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::string & temporary_table_name, IQueryTreeNode * root)
 {
     std::vector<TableNode *> result;
 
@@ -51,7 +51,7 @@ std::vector<TableNode *> collectTableNodesWithStorage(const StoragePtr & storage
         nodes_to_process.pop_back();
 
         auto * table_node = subtree_node->as<TableNode>();
-        if (table_node && table_node->getStorageID() == storage->getStorageID())
+        if (table_node && table_node->getTemporaryTableName() == temporary_table_name)
             result.push_back(table_node);
 
         for (auto & child : subtree_node->getChildren())
@@ -77,7 +77,9 @@ public:
         chassert(recursive_cte_union_node_typed.hasRecursiveCTETable());
 
         auto & recursive_cte_table = recursive_cte_union_node_typed.getRecursiveCTETable();
-        recursive_table_nodes = collectTableNodesWithStorage(recursive_cte_table->storage, recursive_cte_union_node.get());
+
+        const auto & cte_name = recursive_cte_union_node_typed.getCTEName();
+        recursive_table_nodes = collectTableNodesWithTemporaryTableName(cte_name, recursive_cte_union_node.get());
         if (recursive_table_nodes.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION query {} is not recursive", recursive_cte_union_node->formatASTForErrorMessage());
 

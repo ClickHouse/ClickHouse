@@ -55,7 +55,7 @@ public:
     /// Set initial progress values on initialization of the format, before it starts writing the data.
     void setProgress(Progress progress);
 
-    InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
+    InputPort & getPort(PortKind kind);
 
     /// Compatibility with old interface.
     /// TODO: separate formats and processors.

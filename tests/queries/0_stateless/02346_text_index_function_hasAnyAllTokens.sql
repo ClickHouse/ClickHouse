@@ -1,8 +1,8 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, long
 
 SET enable_analyzer = 1;
+SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
-SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -36,9 +36,14 @@ SELECT id FROM tab WHERE hasAnyTokens(message, materialize(['b'])); -- { serverE
 SELECT id FROM tab WHERE hasAllTokens(message, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAllTokens(message, materialize('b')); -- { serverError ILLEGAL_COLUMN }
 SELECT id FROM tab WHERE hasAllTokens(message, materialize(['b'])); -- { serverError ILLEGAL_COLUMN }
--- Supports a max of 64 needles
-SELECT id FROM tab WHERE hasAnyTokens(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm']); -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasAnyTokens(message, 'a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr ss tt uu vv ww xx yy zz aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll mmm'); -- { serverError BAD_ARGUMENTS }
+
+Select 'Test unlimited tokens';
+
+SELECT id FROM tab WHERE hasAnyTokens(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm', 'nnn', 'ooo', 'ppp', 'qqq', 'rrr', 'sss', 'ttt', 'uuu', 'vvv', 'www', 'xxx', 'yyy', 'zzz', 'aaaa', 'bbbb', 'cccc', 'dddd', 'eeee', 'ffff', 'gggg', 'hhhh', 'iiii', 'jjjj', 'kkkk', 'llll', 'mmmm', 'nnnn', 'oooo', 'pppp', 'qqqq', 'rrrr', 'ssss', 'tttt', 'uuuu', 'vvvv', 'wwww', 'xxxx', 'yyyy', 'zzzz', 'aaaaa', 'bbbbb', 'ccccc', 'ddddd', 'eeeee', 'fffff', 'ggggg', 'hhhhh', 'iiiii', 'jjjjj', 'kkkkk', 'lllll', 'mmmmm', 'nnnnn', 'ooooo', 'ppppp', 'qqqqq', 'rrrrr', 'sssss', 'ttttt', 'uuuuu', 'vvvvv', 'wwwww', 'xxxxx', 'yyyyy', 'zzzzz', 'aaaaaa', 'bbbbbb', 'cccccc', 'dddddd', 'eeeeee', 'ffffff', 'gggggg', 'hhhhhh', 'iiiiii', 'jjjjjj', 'kkkkkk', 'llllll', 'mmmmmm', 'nnnnnn', 'oooooo', 'pppppp', 'qqqqqq', 'rrrrrr', 'ssssss', 'tttttt', 'uuuuuu', 'vvvvvv', 'wwwwww', 'xxxxxx', 'yyyyyy', 'zzzzzz', 'aaaaaaa', 'bbbbbbb', 'ccccccc', 'ddddddd', 'eeeeeee', 'fffffff', 'ggggggg', 'hhhhhhh', 'iiiiiii', 'jjjjjjj', 'kkkkkkk', 'lllllll', 'mmmmmmm', 'nnnnnnn', 'ooooooo', 'ppppppp', 'qqqqqqq', 'rrrrrrr', 'sssssss', 'ttttttt', 'uuuuuuu', 'vvvvvvv', 'wwwwwww', 'xxxxxxx', 'yyyyyyy', 'zzzzzzz', 'aaaaaaaa', 'bbbbbbbb', 'cccccccc', 'dddddddd', 'eeeeeeee', 'ffffffff', 'gggggggg', 'hhhhhhhh', 'iiiiiiii', 'jjjjjjjj', 'kkkkkkkk', 'llllllll', 'mmmmmmmm', 'nnnnnnnn', 'oooooooo', 'pppppppp', 'qqqqqqqq', 'rrrrrrrr', 'ssssssss', 'tttttttt', 'uuuuuuuu', 'vvvvvvvv', 'wwwwwwww', 'xxxxxxxx', 'yyyyyyyy', 'zzzzzzzz', 'aaaaaaaaa', 'bbbbbbbbb', 'ccccccccc', 'ddddddddd', 'eeeeeeeee', 'fffffffff', 'ggggggggg', 'hhhhhhhhh', 'iiiiiiiii', 'jjjjjjjjj', 'kkkkkkkkk', 'lllllllll', 'mmmmmmmmm', 'nnnnnnnnn', 'ooooooooo', 'ppppppppp', 'qqqqqqqqq', 'rrrrrrrrr', 'sssssssss', 'ttttttttt', 'uuuuuuuuu', 'vvvvvvvvv', 'wwwwwwwww', 'xxxxxxxxx', 'yyyyyyyyy', 'zzzzzzzzz', 'aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc']);
+SELECT id FROM tab WHERE hasAnyTokens(message, 'a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr ss tt uu vv ww xx yy zz aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll mmm nnn ooo ppp qqq rrr sss ttt uuu vvv www xxx yyy zzz aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp qqqq rrrr ssss tttt uuuu vvvv wwww xxxx yyyy zzzz aaaaa bbbbb ccccc ddddd eeeee fffff ggggg hhhhh iiiii jjjjj kkkkk lllll mmmmm nnnnn ooooo ppppp qqqqq rrrrr sssss ttttt uuuuu vvvvv wwwww xxxxx yyyyy zzzzz aaaaaa bbbbbb cccccc dddddd eeeeee ffffff gggggg hhhhhh iiiiii jjjjjj kkkkkk llllll mmmmmm nnnnnn oooooo pppppp qqqqqq rrrrrr ssssss tttttt uuuuuu vvvvvv wwwwww xxxxxx yyyyyy zzzzzz aaaaaaa bbbbbbb ccccccc ddddddd eeeeeee fffffff ggggggg hhhhhhh iiiiiii jjjjjjj kkkkkkk lllllll mmmmmmm nnnnnnn ooooooo ppppppp qqqqqqq rrrrrrr sssssss ttttttt uuuuuuu vvvvvvv wwwwwww xxxxxxx yyyyyyy zzzzzzz aaaaaaaa bbbbbbbb cccccccc dddddddd eeeeeeee ffffffff gggggggg hhhhhhhh iiiiiiii jjjjjjjj kkkkkkkk llllllll mmmmmmmm nnnnnnnn oooooooo pppppppp qqqqqqqq rrrrrrrr ssssssss tttttttt uuuuuuuu vvvvvvvv wwwwwwww xxxxxxxx yyyyyyyy zzzzzzzz aaaaaaaaa bbbbbbbbb ccccccccc ddddddddd eeeeeeeee fffffffff ggggggggg hhhhhhhhh iiiiiiiii jjjjjjjjj kkkkkkkkk lllllllll mmmmmmmmm nnnnnnnnn ooooooooo ppppppppp qqqqqqqqq rrrrrrrrr sssssssss ttttttttt uuuuuuuuu vvvvvvvvv wwwwwwwww xxxxxxxxx yyyyyyyyy zzzzzzzzz aaaaaaaaaa bbbbbbbbbb cccccccccc');
+
+SELECT id FROM tab WHERE hasAllTokens(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'aaa', 'bbb', 'ccc', 'ddd', 'eee', 'fff', 'ggg', 'hhh', 'iii', 'jjj', 'kkk', 'lll', 'mmm', 'nnn', 'ooo', 'ppp', 'qqq', 'rrr', 'sss', 'ttt', 'uuu', 'vvv', 'www', 'xxx', 'yyy', 'zzz', 'aaaa', 'bbbb', 'cccc', 'dddd', 'eeee', 'ffff', 'gggg', 'hhhh', 'iiii', 'jjjj', 'kkkk', 'llll', 'mmmm', 'nnnn', 'oooo', 'pppp', 'qqqq', 'rrrr', 'ssss', 'tttt', 'uuuu', 'vvvv', 'wwww', 'xxxx', 'yyyy', 'zzzz', 'aaaaa', 'bbbbb', 'ccccc', 'ddddd', 'eeeee', 'fffff', 'ggggg', 'hhhhh', 'iiiii', 'jjjjj', 'kkkkk', 'lllll', 'mmmmm', 'nnnnn', 'ooooo', 'ppppp', 'qqqqq', 'rrrrr', 'sssss', 'ttttt', 'uuuuu', 'vvvvv', 'wwwww', 'xxxxx', 'yyyyy', 'zzzzz', 'aaaaaa', 'bbbbbb', 'cccccc', 'dddddd', 'eeeeee', 'ffffff', 'gggggg', 'hhhhhh', 'iiiiii', 'jjjjjj', 'kkkkkk', 'llllll', 'mmmmmm', 'nnnnnn', 'oooooo', 'pppppp', 'qqqqqq', 'rrrrrr', 'ssssss', 'tttttt', 'uuuuuu', 'vvvvvv', 'wwwwww', 'xxxxxx', 'yyyyyy', 'zzzzzz', 'aaaaaaa', 'bbbbbbb', 'ccccccc', 'ddddddd', 'eeeeeee', 'fffffff', 'ggggggg', 'hhhhhhh', 'iiiiiii', 'jjjjjjj', 'kkkkkkk', 'lllllll', 'mmmmmmm', 'nnnnnnn', 'ooooooo', 'ppppppp', 'qqqqqqq', 'rrrrrrr', 'sssssss', 'ttttttt', 'uuuuuuu', 'vvvvvvv', 'wwwwwww', 'xxxxxxx', 'yyyyyyy', 'zzzzzzz', 'aaaaaaaa', 'bbbbbbbb', 'cccccccc', 'dddddddd', 'eeeeeeee', 'ffffffff', 'gggggggg', 'hhhhhhhh', 'iiiiiiii', 'jjjjjjjj', 'kkkkkkkk', 'llllllll', 'mmmmmmmm', 'nnnnnnnn', 'oooooooo', 'pppppppp', 'qqqqqqqq', 'rrrrrrrr', 'ssssssss', 'tttttttt', 'uuuuuuuu', 'vvvvvvvv', 'wwwwwwww', 'xxxxxxxx', 'yyyyyyyy', 'zzzzzzzz', 'aaaaaaaaa', 'bbbbbbbbb', 'ccccccccc', 'ddddddddd', 'eeeeeeeee', 'fffffffff', 'ggggggggg', 'hhhhhhhhh', 'iiiiiiiii', 'jjjjjjjjj', 'kkkkkkkkk', 'lllllllll', 'mmmmmmmmm', 'nnnnnnnnn', 'ooooooooo', 'ppppppppp', 'qqqqqqqqq', 'rrrrrrrrr', 'sssssssss', 'ttttttttt', 'uuuuuuuuu', 'vvvvvvvvv', 'wwwwwwwww', 'xxxxxxxxx', 'yyyyyyyyy', 'zzzzzzzzz', 'aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc']);
+SELECT id FROM tab WHERE hasAllTokens(message, 'a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr ss tt uu vv ww xx yy zz aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll mmm nnn ooo ppp qqq rrr sss ttt uuu vvv www xxx yyy zzz aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp qqqq rrrr ssss tttt uuuu vvvv wwww xxxx yyyy zzzz aaaaa bbbbb ccccc ddddd eeeee fffff ggggg hhhhh iiiii jjjjj kkkkk lllll mmmmm nnnnn ooooo ppppp qqqqq rrrrr sssss ttttt uuuuu vvvvv wwwww xxxxx yyyyy zzzzz aaaaaa bbbbbb cccccc dddddd eeeeee ffffff gggggg hhhhhh iiiiii jjjjjj kkkkkk llllll mmmmmm nnnnnn oooooo pppppp qqqqqq rrrrrr ssssss tttttt uuuuuu vvvvvv wwwwww xxxxxx yyyyyy zzzzzz aaaaaaa bbbbbbb ccccccc ddddddd eeeeeee fffffff ggggggg hhhhhhh iiiiiii jjjjjjj kkkkkkk lllllll mmmmmmm nnnnnnn ooooooo ppppppp qqqqqqq rrrrrrr sssssss ttttttt uuuuuuu vvvvvvv wwwwwww xxxxxxx yyyyyyy zzzzzzz aaaaaaaa bbbbbbbb cccccccc dddddddd eeeeeeee ffffffff gggggggg hhhhhhhh iiiiiiii jjjjjjjj kkkkkkkk llllllll mmmmmmmm nnnnnnnn oooooooo pppppppp qqqqqqqq rrrrrrrr ssssssss tttttttt uuuuuuuu vvvvvvvv wwwwwwww xxxxxxxx yyyyyyyy zzzzzzzz aaaaaaaaa bbbbbbbbb ccccccccc ddddddddd eeeeeeeee fffffffff ggggggggg hhhhhhhhh iiiiiiiii jjjjjjjjj kkkkkkkkk lllllllll mmmmmmmmm nnnnnnnnn ooooooooo ppppppppp qqqqqqqqq rrrrrrrrr sssssssss ttttttttt uuuuuuuuu vvvvvvvvv wwwwwwwww xxxxxxxxx yyyyyyyyy zzzzzzzzz aaaaaaaaaa bbbbbbbbbb cccccccccc');
 
 SELECT 'Test singular aliases';
 
@@ -92,11 +97,12 @@ SELECT id FROM tab WHERE hasAllTokens('a b', 'a c');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c');
 
--- Test search without needle on non-empty columns (all are expected to match)
+-- Test search without needle on non-empty columns (all are expected to match nothing)
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']); -- matches nothing
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, ''); -- TODO currently this goes through the default tokenizer and matches everything
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']);
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, '');
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['','']);
 -- { echoOff }
 
 DROP TABLE tab;
@@ -223,7 +229,7 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['cdef', 'defg']); --
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['efgh', 'cdef', 'defg']); --search for either cdefg or defgh
 
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg'); -- TODO currently returns all rows in table
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efghi');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefg');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefgh');
@@ -236,7 +242,7 @@ SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['cdef', 'defg']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['efgh', 'cdef', 'defg']);
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg'); -- TODO currently returns all rows in table
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efghi');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefg');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefgh');
@@ -719,7 +725,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+    INDEX idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree
 ORDER BY (id)

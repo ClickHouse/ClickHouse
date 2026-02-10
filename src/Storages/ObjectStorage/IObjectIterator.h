@@ -1,5 +1,5 @@
 #pragma once
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Logger.h>

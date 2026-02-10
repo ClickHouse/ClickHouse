@@ -6,8 +6,10 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Common/Scheduler/ResourceGuard.h>
+#include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
+#include <Interpreters/BlobStorageLog.h>
 #include <hdfs/hdfs.h>
 
 
@@ -44,7 +46,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
         fs = createHDFSFS(builder.get());
 
         /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
-        fout = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), flags, 0, replication_, 0);
+        fout = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), flags, 0, static_cast<int16_t>(replication_), 0);
 
         if (fout == nullptr)
         {
@@ -88,10 +90,13 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(
         int replication_,
         const WriteSettings & write_settings_,
         size_t buf_size_,
-        int flags_)
+        int flags_,
+        BlobStorageLogWriterPtr blob_log_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, replication_, write_settings_, flags_))
+    , hdfs_uri(hdfs_uri_)
     , filename(hdfs_file_path_)
+    , blob_log(std::move(blob_log_))
 {
 }
 
@@ -101,18 +106,40 @@ void WriteBufferFromHDFS::nextImpl()
     if (!offset())
         return;
 
+    Stopwatch stopwatch;
+
     size_t bytes_written = 0;
 
     while (bytes_written != offset())
         bytes_written += impl->write(working_buffer.begin() + bytes_written, offset() - bytes_written);
+
+    total_bytes_written += bytes_written;
+    total_time_microseconds += stopwatch.elapsedMicroseconds();
 }
 
 
 void WriteBufferFromHDFS::sync()
 {
+    Stopwatch stopwatch;
     impl->sync();
+    total_time_microseconds += stopwatch.elapsedMicroseconds();
 }
 
+void WriteBufferFromHDFS::finalizeImpl()
+{
+    if (blob_log)
+    {
+        blob_log->addEvent(
+            BlobStorageLogElement::EventType::Upload,
+            /* bucket */ hdfs_uri,
+            /* remote_path */ filename,
+            /* local_path */ {},
+            /* data_size */ total_bytes_written,
+            /* elapsed_microseconds */ total_time_microseconds,
+            /* error_code */ 0,
+            /* error_message */ {});
+    }
+}
 
 WriteBufferFromHDFS::~WriteBufferFromHDFS()
 {

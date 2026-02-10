@@ -129,7 +129,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
 
-    for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
+    for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
     {
         auto value_override = getKeyValueFromASTImpl(*it, /* fallback_to_ast_value */ complex_args != nullptr, context);
 
@@ -152,7 +152,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)), {});
+        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
 
     return collection_copy;

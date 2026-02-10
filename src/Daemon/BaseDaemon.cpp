@@ -233,6 +233,11 @@ void BaseDaemon::closeFDs()
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
+
+    /// Remember the original working directory before any chdir calls below.
+    /// This is needed to correctly resolve relative config paths later.
+    original_working_directory = fs::current_path();
+
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
@@ -435,7 +440,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         && CrashWriter::initialized())
     {
         LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
+        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
         {
             if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {

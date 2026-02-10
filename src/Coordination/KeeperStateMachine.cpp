@@ -58,6 +58,7 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 IKeeperStateMachine::IKeeperStateMachine(
@@ -146,15 +147,13 @@ void KeeperStateMachine<Storage>::init()
         }
         catch (...)
         {
-            LOG_FATAL(
-                log,
-                "Failure to load from latest snapshot with index {}: {}",
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery. Problematic "
+                "snapshot can be removed but it will lead to data loss",
                 latest_log_index,
-                getCurrentExceptionMessage(true, true, false));
-            LOG_FATAL(
-                log, "Manual intervention is necessary for recovery. Problematic snapshot can be removed but it will lead to data loss");
-            abort();
-        }
+                getCurrentExceptionMessage(/* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true));
+            }
     }
 
     auto last_committed_idx = keeper_context->lastCommittedIndex();
@@ -460,7 +459,7 @@ std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const Keeper
 }
 
 template<typename Storage>
-void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession& request_for_session)
+void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & request_for_session)
 {
     LockGuardWithStats<false> lock(storage_mutex);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
@@ -480,7 +479,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
 {
     ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
 
-    const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest&>(*request_for_session.request);
+    const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest &>(*request_for_session.request);
     const int64_t session_id = request_for_session.session_id;
     const int64_t zxid = request_for_session.zxid;
 
@@ -497,7 +496,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
     if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, true))
         return bad_request(ZNOAUTH);
 
-    KeeperDispatcher& dispatcher = *keeper_context->getDispatcher();
+    KeeperDispatcher & dispatcher = *keeper_context->getDispatcher();
     if (!dispatcher.reconfigEnabled())
         return bad_request(ZUNIMPLEMENTED);
     if (request.version != -1)
@@ -965,6 +964,8 @@ template<typename Storage>
 void KeeperStateMachine<Storage>::shutdownStorage()
 {
     LockGuardWithStats<false> lock(storage_mutex);
+    if (!storage)
+        return;
     storage->finalize();
 }
 
@@ -989,7 +990,7 @@ KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
 }
 
 template<typename Storage>
-uint64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
+int64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
 {
     return storage->getZXID();
 }

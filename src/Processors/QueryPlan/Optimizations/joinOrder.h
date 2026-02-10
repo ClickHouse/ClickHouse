@@ -70,7 +70,8 @@ struct QueryGraph
     std::unordered_map<JoinActionRef, size_t> pinned;
 };
 
+struct QueryPlanOptimizationSettings;
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph);
+DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
 
 }

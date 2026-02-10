@@ -3,7 +3,7 @@ from praktika import Workflow
 from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
-from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
+from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
 ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
 
@@ -16,6 +16,7 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
             "_debug, parallel",
             "_binary, parallel",
             "_asan, distributed plan, parallel",
+            "_tsan, parallel",
         )
     )
 ]
@@ -38,7 +39,6 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.pr_body.set_dependency([JobNames.STYLE_CHECK]),
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
@@ -56,6 +56,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
+        JobConfigs.lightweight_functional_tests_job,
         JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
@@ -69,6 +70,10 @@ workflow = Workflow.Config(
                 else []
             )
             for j in JobConfigs.functional_tests_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_jobs_azure
         ],
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
@@ -113,6 +118,15 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        # macOS smoke tests on GitHub-hosted runners (no AWS credentials)
+        # Explicit dependency on darwin builds since artifact-based requires was removed
+        *[
+            job.set_dependency(
+                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+                + [j.name for j in JobConfigs.special_build_jobs if "darwin" in j.name]
+            )
+            for job in JobConfigs.macos_smoke_test_jobs
+        ],
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -122,6 +136,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        ArtifactConfigs.parser_memory_profiler,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
@@ -133,13 +148,13 @@ workflow = Workflow.Config(
     enable_merge_ready_status=True,
     enable_gh_summary_comment=True,
     enable_commit_status_on_failure=False,
-    enable_flaky_tests_catalog=True,
+    enable_open_issues_check=True,
+    enable_slack_feed=True,
     pre_hooks=[
-        can_be_trusted,
+        can_be_tested,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
     ],
     workflow_filter_hooks=[should_skip_job],
@@ -154,6 +169,7 @@ workflow = Workflow.Config(
             0
         ].name,  # plain integration test job, no old analyzer, no dist plan
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+        "build": "Build (amd_binary)",
     },
 )
 

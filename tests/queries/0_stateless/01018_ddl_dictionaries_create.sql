@@ -100,25 +100,6 @@ EXISTS DICTIONARY memory_db.dict2;
 
 SELECT database, name FROM system.dictionaries WHERE database='memory_db' AND name LIKE 'dict2';
 
-SELECT '=DICTIONARY in Lazy DB';
-
-DROP DATABASE IF EXISTS lazy_db;
-
-CREATE DATABASE lazy_db ENGINE = Lazy(1);
-
-CREATE DICTIONARY lazy_db.dict3
-(
-  key_column UInt64 DEFAULT 0 INJECTIVE,
-  second_column UInt8 DEFAULT 1 EXPRESSION rand() % 222,
-  third_column String DEFAULT 'qqq'
-)
-PRIMARY KEY key_column, second_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
-LIFETIME(MIN 1 MAX 10)
-LAYOUT(COMPLEX_KEY_HASHED()); --{serverError UNSUPPORTED_METHOD}
-
-DROP DATABASE IF EXISTS lazy_db;
-
 SELECT '=DROP DATABASE WITH DICTIONARY';
 
 DROP DATABASE IF EXISTS db_01018;

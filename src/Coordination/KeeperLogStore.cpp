@@ -60,6 +60,13 @@ nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_ent
     return changelog.getLogEntriesBetween(start, end);
 }
 
+nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
+KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes)
+{
+    std::lock_guard lock(changelog_lock);
+    return changelog.getLogEntriesBetween(start, end, batch_size_hint_in_bytes);
+}
+
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
 {
     std::lock_guard lock(changelog_lock);

@@ -29,9 +29,8 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextPtr context_)
-        : context(context_)
-        , is_not_null(FunctionFactory::instance().get("isNotNull", context))
+    explicit FunctionCoalesce(ContextPtr context)
+        : is_not_null(FunctionFactory::instance().get("isNotNull", context))
         , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
         , if_function(FunctionFactory::instance().get("if", context))
         , multi_if_function(FunctionFactory::instance().get("multiIf", context))
@@ -53,6 +52,22 @@ public:
         for (size_t i = 0; i + 1 < number_of_arguments; ++i)
             args.push_back(i);
         return args;
+    }
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
+    {
+        /// coalesce() is identity when its first argument cannot be NULL, so it preserves ordering and thus monotonic.
+        /// For Nullable types, coalesce() substitutes NULLs with other arguments and is not
+        /// monotonic in general. We treat it as monotonic only when the analyzed range is guaranteed to not contain
+        /// NULLs. NULLs always represented as POSITIVE_INFINITY and they will always be at the end of ordering.
+        /// So, we do not need to check left.isNull().
+        bool is_nullable_or_lc_nullable = type.isNullable() || type.isLowCardinalityNullable();
+        if (is_nullable_or_lc_nullable && right.isNull())
+            return {};
+
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !is_nullable_or_lc_nullable };
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -169,7 +184,6 @@ public:
     }
 
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr is_not_null;
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;
@@ -220,7 +234,7 @@ SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCoalesce>(documentation, FunctionFactory::Case::Insensitive);
 }

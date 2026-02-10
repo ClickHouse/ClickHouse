@@ -59,6 +59,10 @@ ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
     result.add({"average_latency",
                 std::make_shared<DataTypeFloat64>(),
                 "Average latency across all operations in (session_id, parent_path, operation) group, in microseconds."});
+
+    result.add({"component",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                "Component that caused the event."});
     return result;
 }
 
@@ -74,6 +78,7 @@ void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) cons
     columns[i++]->insert(count);
     errors->dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
+    columns[i++]->insert(component.view());
 }
 
 void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
@@ -91,6 +96,7 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
             .session_id = entry_key.session_id,
             .parent_path = entry_key.parent_path,
             .operation = entry_key.operation,
+            .component = entry_key.component,
             .count = entry_stats.count,
             .errors = std::move(entry_stats.errors),
             .total_latency_microseconds = entry_stats.total_latency_microseconds,
@@ -99,15 +105,23 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
     }
 }
 
-void AggregatedZooKeeperLog::observe(Int64 session_id, Int32 operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
+void AggregatedZooKeeperLog::observe(
+    Int64 session_id,
+    Int32 operation,
+    const std::filesystem::path & path,
+    UInt64 latency_microseconds,
+    Coordination::Error error,
+    StaticString component)
 {
     std::lock_guard lock(stats_mutex);
-    stats[EntryKey{.session_id = session_id, .operation = operation, .parent_path = path.parent_path()}].observe(latency_microseconds, error);
-}
 
-bool AggregatedZooKeeperLog::EntryKey::operator==(const EntryKey & other) const
-{
-    return session_id == other.session_id && operation == other.operation && parent_path == other.parent_path;
+    EntryKey entry_key{
+        .session_id = session_id,
+        .operation = operation,
+        .parent_path = path.parent_path(),
+        .component = component
+    };
+    stats[std::move(entry_key)].observe(latency_microseconds, error);
 }
 
 size_t AggregatedZooKeeperLog::EntryKeyHash::operator()(const EntryKey & entry_key) const
@@ -116,6 +130,9 @@ size_t AggregatedZooKeeperLog::EntryKeyHash::operator()(const EntryKey & entry_k
     hash.update(entry_key.session_id);
     hash.update(entry_key.operation);
     hash.update(entry_key.parent_path);
+    auto component_view = entry_key.component.view();
+    if (!component_view.empty())
+        hash.update(component_view);
     return hash.get64();
 }
 

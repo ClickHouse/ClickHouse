@@ -1,11 +1,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Formats/StructureToCapnProtoSchema.h>
 #include <Formats/StructureToProtobufSchema.h>
@@ -93,8 +91,8 @@ public:
                 "Number of arguments for function {} doesn't match: passed {}, expected 1 or 2",
                 getName(), arguments.size());
 
-        String structure = arguments[0].column->getDataAt(0).toString();
-        String message_name = arguments.size() == 2 ? arguments[1].column->getDataAt(0).toString() : "Message";
+        String structure{arguments[0].column->getDataAt(0)};
+        String message_name = arguments.size() == 2 ? std::string{arguments[1].column->getDataAt(0)} : "Message";
         auto columns_list = parseColumnsListFromString(structure, context);
         auto col_res = ColumnString::create();
         auto & data = assert_cast<ColumnString &>(*col_res).getChars();
@@ -175,7 +173,7 @@ message MessageName
     };
     FunctionDocumentation::IntroducedIn structureToProtobufSchema_introduced_in = {23, 8};
     FunctionDocumentation::Category structureToProtobufSchema_category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation structureToProtobufSchema_documentation = {structureToProtobufSchema_description, structureToProtobufSchema_syntax, structureToProtobufSchema_arguments, structureToProtobufSchema_returned_value, structureToProtobufSchema_examples, structureToProtobufSchema_introduced_in, structureToProtobufSchema_category};
+    FunctionDocumentation structureToProtobufSchema_documentation = {structureToProtobufSchema_description, structureToProtobufSchema_syntax, structureToProtobufSchema_arguments, {}, structureToProtobufSchema_returned_value, structureToProtobufSchema_examples, structureToProtobufSchema_introduced_in, structureToProtobufSchema_category};
 
     factory.registerFunction(StructureToProtobufSchema::name,
         [](ContextPtr context){ return std::make_shared<FunctionStructureToFormatSchema>(Impl::Protobuf, std::move(context)); },

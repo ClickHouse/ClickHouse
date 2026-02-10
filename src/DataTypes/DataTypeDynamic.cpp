@@ -134,12 +134,12 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
     if (pos == end)
         return {subcolumn_name, {}};
 
-    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 }
 
-std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
+std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto [type_subcolumn_name, subcolumn_nested_name] = splitSubcolumnName(subcolumn_name);
     /// Check if requested subcolumn is a valid data type.
@@ -187,21 +187,21 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                 if (local_discriminators[i] == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value.data, value.size);
+                    ReadBufferFromMemory buf(value);
                     auto type = decodeDataType(buf);
                     if (type->getName() == subcolumn_type_name)
                     {
                         subcolumn_type->getDefaultSerialization()->deserializeBinary(*subcolumn, buf, format_settings);
-                        null_map.push_back(0);
+                        null_map.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
-                        null_map.push_back(1);
+                        null_map.push_back(static_cast<UInt8>(1));
                     }
                 }
                 else
                 {
-                    null_map.push_back(1);
+                    null_map.push_back(static_cast<UInt8>(1));
                 }
             }
 
@@ -221,7 +221,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     }
     else if (!subcolumn_nested_name.empty())
     {
-        res = getSubcolumnData(subcolumn_nested_name, *res, throw_if_null);
+        res = getSubcolumnData(subcolumn_nested_name, *res, initial_array_level, throw_if_null);
         if (!res)
             return nullptr;
     }

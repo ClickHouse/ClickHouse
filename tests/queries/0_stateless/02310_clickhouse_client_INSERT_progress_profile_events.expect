@@ -33,6 +33,8 @@ send "yes | head -n10000000 | \$CLICKHOUSE_CLIENT --progress --query \"insert in
 expect "Progress: "
 send "\3"
 expect "bash) "
+send "\r"
+expect "bash) "
 
 send "exit\r"
 expect eof

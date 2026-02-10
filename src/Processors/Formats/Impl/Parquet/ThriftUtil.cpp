@@ -45,7 +45,12 @@ size_t deserializeThriftStruct(T & out, const char * buf, size_t limit)
         /// TMemoryBuffer promises to not write to the buffer (in OBSERVE mode),
         /// so it should be ok to const_cast.
         uint8_t * cast_buf = const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(buf));
-        auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>(cast_buf, uint32_t(limit));
+
+        /// Set max message size to avoid 'apache::thrift::transport::TTransportException: MaxMessageSize reached' on big files
+        /// Similar to https://github.com/ClickHouse/arrow/blob/5cfccd8ea65f33d4517e7409815d761c7650b45d/cpp/src/parquet/thrift_internal.h#L437
+        static auto configuration = std::make_shared<apache::thrift::TConfiguration>(/*maxMessageSize=*/ std::numeric_limits<int>::max());
+
+        auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>(cast_buf, uint32_t(limit), apache::thrift::transport::TMemoryBuffer::OBSERVE, configuration);
         apache::thrift::protocol::TCompactProtocolT<apache::thrift::transport::TMemoryBuffer> proto(trans);
         uint32_t bytes_read = out.read(&proto);
         chassert(size_t(bytes_read + trans->available_read()) == limit);

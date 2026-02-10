@@ -186,7 +186,7 @@ public:
             GeneratorJSONPath<JSONParser> generator_json_path(res);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view json = json_column.column->getDataAt(i).toView();
+                std::string_view json = json_column.column->getDataAt(i);
                 document_ok = json_parser.parse(json, document);
 
                 bool added_to_column = false;
@@ -367,7 +367,7 @@ public:
         if (isColumnNullable(dest))
         {
             ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
-            col_null.getNullMapData().push_back(0);
+            col_null.getNullMapData().push_back(false);
             col_str = assert_cast<ColumnString *>(&col_null.getNestedColumn());
         }
         else

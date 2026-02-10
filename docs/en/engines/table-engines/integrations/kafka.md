@@ -49,6 +49,7 @@ SETTINGS
     [kafka_poll_timeout_ms = 0,]
     [kafka_poll_max_batch_size = 0,]
     [kafka_flush_interval_ms = 0,]
+    [kafka_consumer_reschedule_ms = 0,]
     [kafka_thread_per_consumer = 0,]
     [kafka_handle_error_mode = 'default',]
     [kafka_commit_on_select = false,]
@@ -80,6 +81,7 @@ Optional parameters:
 - `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
 - `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
 - `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
+- `kafka_consumer_reschedule_ms` — Reschedule interval when Kafka stream processing is stalled (e.g., when no messages are available to consume). This setting controls the delay before the consumer retries polling. Must not exceed `kafka_consumers_pool_ttl_ms`. Default: `500` milliseconds.
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
 - `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
@@ -127,7 +129,7 @@ Do not use this method in new projects. If possible, switch old projects to the 
 
 ```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
-      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
 ```
 
 </details>

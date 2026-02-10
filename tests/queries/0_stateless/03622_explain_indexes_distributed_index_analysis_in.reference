@@ -1,0 +1,137 @@
+10	20
+IN (1000-element set)
+{
+  "Type": "PrimaryKey",
+  "Keys": [
+    "key"
+  ],
+  "Condition": "(key in 1000-element set)",
+  "Initial Parts": 10,
+  "Selected Parts": 10,
+  "Initial Granules": 10,
+  "Selected Granules": 10,
+  "Distributed": [
+    {
+      "Address": "127.0.0.1:9000",
+      "Parts send": 9,
+      "Parts received": 9,
+      "Granules send": 9,
+      "Granules received": 9
+    },
+    {
+      "Address": "127.0.0.2:9000",
+      "Parts send": 1,
+      "Parts received": 1,
+      "Granules send": 1,
+      "Granules received": 1
+    }
+  ]
+}
+GLOBAL IN (1000-element set)
+{
+  "Type": "PrimaryKey",
+  "Keys": [
+    "key"
+  ],
+  "Condition": "(key in 1000-element set)",
+  "Initial Parts": 10,
+  "Selected Parts": 10,
+  "Initial Granules": 10,
+  "Selected Granules": 10,
+  "Distributed": [
+    {
+      "Address": "127.0.0.1:9000",
+      "Parts send": 9,
+      "Parts received": 9,
+      "Granules send": 9,
+      "Granules received": 9
+    },
+    {
+      "Address": "127.0.0.2:9000",
+      "Parts send": 1,
+      "Parts received": 1,
+      "Granules send": 1,
+      "Granules received": 1
+    }
+  ]
+}
+IN (10-element set)
+{
+  "Type": "PrimaryKey",
+  "Keys": [
+    "key"
+  ],
+  "Condition": "(key in 10-element set)",
+  "Initial Parts": 10,
+  "Selected Parts": 1,
+  "Initial Granules": 10,
+  "Selected Granules": 1,
+  "Distributed": [
+    {
+      "Address": "127.0.0.1:9000",
+      "Parts send": 9,
+      "Parts received": 0,
+      "Granules send": 9,
+      "Granules received": 0
+    },
+    {
+      "Address": "127.0.0.2:9000",
+      "Parts send": 1,
+      "Parts received": 1,
+      "Granules send": 1,
+      "Granules received": 1
+    }
+  ]
+}
+GLOBAL IN (10-element set)
+{
+  "Type": "PrimaryKey",
+  "Keys": [
+    "key"
+  ],
+  "Condition": "(key in 10-element set)",
+  "Initial Parts": 10,
+  "Selected Parts": 1,
+  "Initial Granules": 10,
+  "Selected Granules": 1,
+  "Distributed": [
+    {
+      "Address": "127.0.0.1:9000",
+      "Parts send": 9,
+      "Parts received": 0,
+      "Granules send": 9,
+      "Granules received": 0
+    },
+    {
+      "Address": "127.0.0.2:9000",
+      "Parts send": 1,
+      "Parts received": 1,
+      "Granules send": 1,
+      "Granules received": 1
+    }
+  ]
+}
+0	explain indexes=?, json=? select * from (select * from test_1m) where key in (select key from test_1m where (key % ?) = ?)
+0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, equals(modulo(key, _CAST(?..)), _CAST(?..)), ?)
+0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, in(key, (SELECT __table1.key AS key FROM default.test_1m AS __table1 WHERE (__table1.key % ?) = ?)), ?)
+0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, equals(modulo(key, _CAST(?..)), _CAST(?..)), ?)
+1	explain indexes=?, json=? select * from (select * from test_1m) where key in (select key from test_1m where (key % ?) = ?)
+0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, equals(modulo(key, _CAST(?..)), _CAST(?..)), ?)
+1	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, in(key, (SELECT __table1.key AS key FROM default.test_1m AS __table1 WHERE (__table1.key % ?) = ?)), ?)
+1	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, equals(modulo(key, _CAST(?..)), _CAST(?..)), ?)
+1	SELECT `__table1`.`key` AS `key` FROM `default`.`test_1m` AS `__table1` WHERE (`__table1`.`key` % ?) = ?
+0	explain indexes=?, json=? select * from (select * from test_1m) where key global in (select key from test_1m where (key % ?) = ?)
+0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, equals(modulo(key, _CAST(?..)), _CAST(?..)), ?)
+0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, globalIn(key, `?`), ?)
+1	explain indexes=?, json=? select * from (select * from test_1m) where key global in (select key from test_1m where (key % ?) = ?)
+1	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, equals(modulo(key, _CAST(?..)), _CAST(?..)), ?)
+1	SELECT `__table1`.`key` AS `key` FROM `default`.`test_1m` AS `__table1` WHERE (`__table1`.`key` % ?) = ?
+1	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, globalIn(key, `?`), ?)
+0	explain indexes=?, json=? select * from (select * from test_1m) where key in (select * from numbers(?..))
+0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, in(key, (SELECT __table1.number AS number FROM numbers(?..) AS __table1)), ?)
+1	explain indexes=?, json=? select * from (select * from test_1m) where key in (select * from numbers(?..))
+1	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, in(key, (SELECT __table1.number AS number FROM numbers(?..) AS __table1)), ?)
+0	explain indexes=?, json=? select * from (select * from test_1m) where key global in (select * from numbers(?..))
+0	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, globalIn(key, `?`), ?)
+1	explain indexes=?, json=? select * from (select * from test_1m) where key global in (select * from numbers(?..))
+1	SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, globalIn(key, `?`), ?)

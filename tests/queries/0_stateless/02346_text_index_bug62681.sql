@@ -1,10 +1,10 @@
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     str String,
-    INDEX text_idx str TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
+    INDEX text_idx str TYPE text(tokenizer = ngrams(3)),
     INDEX set_idx str TYPE set(10) GRANULARITY 1
 )
 ENGINE = MergeTree
@@ -20,7 +20,7 @@ OPTIMIZE TABLE tab FINAL;
 -- sum up .idx files for data_compressed_bytes
 -- note that `du` rounds to nearest 4KB so it is not accurate here
 -- also note that different runs of db might all show up, only sum up one set
-SELECT 
+SELECT
     database,
     table,
     name,
@@ -40,7 +40,7 @@ SELECT
     secondary_indices_compressed_bytes > 150,
     secondary_indices_uncompressed_bytes > 100,
     secondary_indices_marks_bytes
-FROM system.parts 
+FROM system.parts
 WHERE database = currentDatabase() AND table = 'tab' AND active = 1 AND partition = 'tuple()'
 FORMAT Vertical;
 

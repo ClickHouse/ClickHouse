@@ -82,7 +82,7 @@ bool ColumnLazy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for {}", getName());
 }
 
-StringRef ColumnLazy::getDataAt(size_t) const
+std::string_view ColumnLazy::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -152,12 +152,12 @@ void ColumnLazy::popBack(size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method popBack is not supported for {}", getName());
 }
 
-const char * ColumnLazy::deserializeAndInsertFromArena(const char *)
+void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for {}", getName());
 }
 
-const char * ColumnLazy::skipSerializedInArena(const char *) const
+void ColumnLazy::skipSerializedInArena(ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
 }
@@ -211,6 +211,19 @@ ColumnPtr ColumnLazy::filter(const Filter & filt, ssize_t result_size_hint) cons
         new_columns[i] = captured_columns[i]->filter(filt, result_size_hint);
 
     return ColumnLazy::create(new_columns);
+}
+
+void ColumnLazy::filter(const Filter & filt)
+{
+    if (captured_columns.empty())
+    {
+        s = countBytesInFilter(filt);
+        return;
+    }
+
+    const size_t column_size = captured_columns.size();
+    for (size_t i = 0; i < column_size; ++i)
+        captured_columns[i]->filter(filt);
 }
 
 void ColumnLazy::expand(const Filter &, bool)

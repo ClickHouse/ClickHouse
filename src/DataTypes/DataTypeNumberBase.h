@@ -30,6 +30,7 @@ public:
     Field getDefault() const override;
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     bool isParametric() const override { return false; }
     bool haveSubtypes() const override { return false; }

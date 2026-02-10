@@ -76,7 +76,7 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }

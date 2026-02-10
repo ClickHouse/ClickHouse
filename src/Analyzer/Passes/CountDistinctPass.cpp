@@ -55,7 +55,7 @@ public:
         /// Check that query single projection node is `countDistinct` function
         auto & projection_node = projection_nodes[0];
         auto * function_node = projection_node->as<FunctionNode>();
-        if (!function_node)
+        if (!function_node || function_node->hasWindow())
             return;
 
         auto lower_function_name = Poco::toLower(function_node->getFunctionName());
@@ -64,7 +64,7 @@ public:
 
         /// Check that `countDistinct` function has single COLUMN argument
         auto & count_distinct_arguments_nodes = function_node->getArguments().getNodes();
-        if (count_distinct_arguments_nodes.size() != 1 && count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
+        if (count_distinct_arguments_nodes.size() != 1 || count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
         auto & count_distinct_argument_column = count_distinct_arguments_nodes[0];

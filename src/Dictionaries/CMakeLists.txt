@@ -14,7 +14,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
         CacheDictionary.cpp
         RangeHashedDictionary.cpp
         DirectDictionary.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
+        PROPERTIES COMPILE_FLAGS -g1)
 endif()
 
 extract_into_parent_list(clickhouse_dictionaries_sources dbms_sources

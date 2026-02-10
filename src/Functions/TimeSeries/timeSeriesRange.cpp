@@ -279,7 +279,7 @@ public:
                     if (null_map && (*null_map)[offset])
                         continue;
                 }
-                TimestampType timestamp = start_timestamp + j * step;
+                TimestampType timestamp = static_cast<TimestampType>(start_timestamp + j * step);
                 res_timestamps->insert(timestamp);
                 if constexpr (with_values)
                     res_values->insertFrom(*values, offset);
@@ -325,7 +325,7 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:0
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesRange<false>>(documentation);
 }
@@ -365,7 +365,7 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesRange<true>>(documentation);
 }

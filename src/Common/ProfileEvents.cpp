@@ -1,4 +1,5 @@
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
@@ -7,6 +8,9 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/iter_find.hpp>
 
 #include <cfloat>
 #include <random>
@@ -20,6 +24,7 @@
     M(SelectQuery, "Same as Query, but only for SELECT queries.", ValueType::Number) \
     M(InsertQuery, "Same as Query, but only for INSERT queries.", ValueType::Number) \
     M(InitialQuery, "Same as Query, but only counts initial queries (see is_initial_query).", ValueType::Number) \
+    M(InitialSelectQuery, "Same as InitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(QueriesWithSubqueries, "Count queries with all subqueries", ValueType::Number) \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries", ValueType::Number) \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries", ValueType::Number) \
@@ -31,6 +36,8 @@
     M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
     M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \
+    M(FailedInitialQuery, "Number of failed initial queries.", ValueType::Number) \
+    M(FailedInitialSelectQuery, "Same as FailedInitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedQuery, "Number of total failed queries, both internal and user queries.", ValueType::Number) \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
@@ -91,9 +98,14 @@
     M(IcebergMetadataFilesCacheMisses, "Number of times iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the iceberg metadata cache.", ValueType::Number) \
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
+    M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
+    M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
+    M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataUpdateMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
+    M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
+    M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
@@ -107,11 +119,10 @@
     M(TextIndexReadSparseIndexBlocks, "Number of times a sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
-    M(TextIndexBloomFilterTrueNegatives, "Number of times a token has been filtered by bloom filter.", ValueType::Number) \
-    M(TextIndexBloomFilterTruePositives, "Number of times a token has passed the bloom filter and has been found in the dictionary.", ValueType::Number) \
-    M(TextIndexBloomFilterFalsePositives, "Number of times a token has passed the bloom filter and has not been found in the dictionary.", ValueType::Number) \
     M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
+    M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
+    M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
@@ -132,6 +143,7 @@
     M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Microseconds) \
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
+    M(FilterPartsByVirtualColumnsMicroseconds, "Total time spent in filterPartsByVirtualColumns function.", ValueType::Microseconds) \
     \
     M(GlobalThreadPoolExpansions, "Counts the total number of times new threads have been added to the global thread pool. This metric indicates the frequency of expansions in the global thread pool to accommodate increased processing demands.", ValueType::Number) \
     M(GlobalThreadPoolShrinks, "Counts the total number of times the global thread pool has shrunk by removing threads. This occurs when the number of idle threads exceeds max_thread_pool_free_size, indicating adjustments in the global thread pool size in response to decreased thread utilization.", ValueType::Number) \
@@ -261,6 +273,10 @@
     M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.", ValueType::Number) \
     M(ReplicatedCoveredPartsInZooKeeperOnStart, "For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.", ValueType::Number) \
     \
+    M(QuorumParts, "Number of data parts written with quorum. It counts as one part for sync insert and maybe up to async inserts count for insert which flushes async inserts.", ValueType::Number) \
+    M(QuorumWaitMicroseconds, "Total time spent waiting for quorum during inserts.", ValueType::Microseconds) \
+    M(QuorumFailedInserts, "Number of inserts failed due to quorum not reaching.", ValueType::Number) \
+    \
     M(InsertedRows, "Number of rows INSERTed to all tables.", ValueType::Number) \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.", ValueType::Bytes) \
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Number) \
@@ -273,7 +289,10 @@
     M(DistributedDelayedInserts, "Number of times the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.", ValueType::Number) \
     M(DistributedRejectedInserts, "Number of times the INSERT of a block to a Distributed table was rejected with 'Too many bytes' exception due to high number of pending bytes.", ValueType::Number) \
     M(DistributedDelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.", ValueType::Milliseconds) \
-    M(DuplicatedInsertedBlocks, "Number of times the INSERTed block to a ReplicatedMergeTree table was deduplicated.", ValueType::Number) \
+    M(DuplicatedInsertedBlocks, "Number of the synchronous inserts to a *MergeTree table was deduplicated.", ValueType::Number) \
+    M(SelfDuplicatedAsyncInserts, "Number of async inserts in the INSERTed block to a ReplicatedMergeTree table was self deduplicated.", ValueType::Number) \
+    M(DuplicatedAsyncInserts, "Number of async inserts in the INSERTed block to a ReplicatedMergeTree table was deduplicated.", ValueType::Number) \
+    M(DuplicationElapsedMicroseconds, "Total time spent checking for duplication of INSERTed blocks to *MergeTree tables.", ValueType::Microseconds) \
     \
     M(ZooKeeperInit, "Number of times connection with ZooKeeper has been established.", ValueType::Number) \
     M(ZooKeeperTransactions, "Number of ZooKeeper operations, which include both read and write operations as well as multi-transactions.", ValueType::Number) \
@@ -364,6 +383,11 @@
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
     M(FilteringMarksWithPrimaryKeyMicroseconds, "Time spent filtering parts by PK.", ValueType::Microseconds) \
     M(FilteringMarksWithSecondaryKeysMicroseconds, "Time spent filtering parts by skip indexes.", ValueType::Microseconds) \
+    M(DistributedIndexAnalysisMicroseconds, "Total time spent during distributed index analysis", ValueType::Microseconds) \
+    M(DistributedIndexAnalysisScheduledReplicas, "Number of replicas (local replica will be accounted once) to which distributed index analysis has been scheduled", ValueType::Number) \
+    M(DistributedIndexAnalysisFailedReplicas, "Number of times distributed index analysis failed on one of replicas", ValueType::Number) \
+    M(DistributedIndexAnalysisParts, "Number of parts send for distributed index analysis", ValueType::Number) \
+    M(DistributedIndexAnalysisMissingParts, "Number of missing parts during distributed index analysis that will be resolved locally", ValueType::Number) \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
@@ -391,6 +415,8 @@
     M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageExecuteMilliseconds, "Total busy time spent for execution of vertical stage of background merges", ValueType::Milliseconds) \
+    M(MergeTextIndexStageTotalMilliseconds, "Total time spent for text index stage of background merges", ValueType::Milliseconds) \
+    M(MergeTextIndexStageExecuteMilliseconds, "Total busy time spent for execution of text index stage of background merges", ValueType::Milliseconds) \
     M(MergeProjectionStageTotalMilliseconds, "Total time spent for projection stage of background merges", ValueType::Milliseconds) \
     M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges", ValueType::Milliseconds) \
     M(MergePrewarmStageTotalMilliseconds, "Total time spent for prewarm stage of background merges", ValueType::Milliseconds) \
@@ -728,8 +754,11 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.", ValueType::Number) \
     M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.", ValueType::Number) \
     M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)", ValueType::Microseconds) \
+    M(CachedReadBufferWaitReadBufferMicroseconds, "Time spend waiting for internal read buffer (includes cache waiting)", ValueType::Microseconds) \
+    M(CachedReadBufferPredownloadedFromSourceMicroseconds, "Time reading from filesystem cache source for predownload (from remote filesystem, etc)", ValueType::Microseconds) \
     M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache", ValueType::Microseconds) \
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)", ValueType::Bytes) \
+    M(CachedReadBufferPredownloadedFromSourceBytes, "Bytes read from filesystem cache source for predownload (from remote fs, etc)", ValueType::Bytes) \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache", ValueType::Bytes) \
     M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
@@ -746,11 +775,14 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
+    M(FilesystemCacheEvictionSkippedMovingFileSegments, "Number of file segments skipped for eviction because of being in moving state", ValueType::Number) \
     M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts", ValueType::Number) \
     M(FilesystemCacheEvictionReusedIterator, "Number of filesystem cache iterator reusing", ValueType::Number) \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time", ValueType::Microseconds) \
     M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time", ValueType::Microseconds) \
-    M(FilesystemCacheLockCacheMicroseconds, "Lock filesystem cache time", ValueType::Microseconds) \
+    M(FilesystemCachePriorityWriteLockMicroseconds, "Lock filesystem cache time for write to priority queue", ValueType::Microseconds) \
+    M(FilesystemCachePriorityReadLockMicroseconds, "Lock filesystem cache time for read in priority queue", ValueType::Microseconds) \
+    M(FilesystemCacheStateLockMicroseconds, "Lock filesystem cache time for state lock", ValueType::Microseconds) \
     M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time", ValueType::Microseconds) \
     M(FilesystemCacheReserveAttempts, "Filesystem cache space reservation attempt", ValueType::Number) \
     M(FilesystemCacheEvictMicroseconds, "Filesystem cache eviction time", ValueType::Microseconds) \
@@ -758,11 +790,13 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time", ValueType::Microseconds) \
     M(FilesystemCacheBackgroundEvictedFileSegments, "Number of file segments evicted by background thread", ValueType::Number) \
     M(FilesystemCacheBackgroundEvictedBytes, "Number of bytes evicted by background thread", ValueType::Number) \
+    M(FilesystemCacheCheckCorrectness, "Number of times FileCache::assertCacheCorrectness was called", ValueType::Number) \
+    M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
     M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache", ValueType::Microseconds) \
     M(FileSegmentLockMicroseconds, "Lock file segment time", ValueType::Microseconds) \
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \
-    M(FileSegmentUseMicroseconds, "File segment use() time", ValueType::Microseconds) \
+    M(FileSegmentIncreasePriorityMicroseconds, "File segment increase priority time", ValueType::Microseconds) \
     M(FileSegmentRemoveMicroseconds, "File segment remove() time", ValueType::Microseconds) \
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time", ValueType::Microseconds) \
     M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock", ValueType::Number) \
@@ -797,12 +831,6 @@ The server successfully detected this situation and will download merged part fr
     M(ThreadpoolReaderSubmitReadSynchronouslyMicroseconds, "How much time we spent reading synchronously", ValueType::Microseconds) \
     M(ThreadpoolReaderSubmitLookupInCacheMicroseconds, "How much time we spent checking if content is cached", ValueType::Microseconds) \
     M(AsynchronousReaderIgnoredBytes, "Number of bytes ignored during asynchronous reading", ValueType::Bytes) \
-    \
-    M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)", ValueType::Microseconds) \
-    M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file", ValueType::Microseconds) \
-    M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache", ValueType::Microseconds) \
-    M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent pre-downloading data to cache (pre-downloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)", ValueType::Microseconds) \
-    M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment", ValueType::Bytes) \
     \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)", ValueType::Number) \
     \
@@ -847,6 +875,22 @@ The server successfully detected this situation and will download merged part fr
     M(MetadataFromKeeperBackgroundCleanupTransactions, "Number of times old transaction idempotency token was cleaned up by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupErrors, "Number of times an error was encountered in background cleanup task", ValueType::Number) \
     \
+    M(BlobKillerThreadRuns, "Number of BlobKiller thread executes", ValueType::Number) \
+    M(BlobKillerThreadLockedBlobs, "Number of blobs returned from metadata storage", ValueType::Number) \
+    M(BlobKillerThreadRemoveTasks, "Number of remove tasks created by BlobKiller", ValueType::Number) \
+    M(BlobKillerThreadRemovedBlobs, "Number of blobs removed by BlobKiller", ValueType::Number) \
+    M(BlobKillerThreadRecordedBlobs, "Number of blobs which removal by BlobKiller was recorded in metadata storage", ValueType::Number) \
+    M(BlobKillerThreadLockBlobsErrors, "Number of blobs lock errors occurred during BlobKiller execution", ValueType::Number) \
+    M(BlobKillerThreadRemoveBlobsErrors, "Number of blobs removal errors occurred during BlobKiller execution", ValueType::Number) \
+    M(BlobKillerThreadRecordBlobsErrors, "Number of blobs recording errors occurred during BlobKiller execution", ValueType::Number) \
+    M(BlobCopierThreadRuns, "Number of BlobCopier thread executes", ValueType::Number) \
+    M(BlobCopierThreadLockedBlobs, "Number of blobs returned from metadata storage", ValueType::Number) \
+    M(BlobCopierThreadReplicatedBlobs, "Number of blobs replicated by BlobCopier", ValueType::Number) \
+    M(BlobCopierThreadRecordedBlobs, "Number of blobs which replication by BlobCopier was recorded in metadata storage", ValueType::Number) \
+    M(BlobCopierThreadLockBlobsErrors, "Number of blobs lock errors occurred during BlobCopier execution", ValueType::Number) \
+    M(BlobCopierThreadReplicateBlobsErrors, "Number of blobs replication errors occurred during BlobCopier execution", ValueType::Number) \
+    M(BlobCopierThreadRecordBlobsErrors, "Number of blobs recording errors occurred during BlobCopier execution", ValueType::Number) \
+    \
     M(SharedMergeTreeMetadataCacheHintLoadedFromCache, "Number of times metadata cache hint was found without going to Keeper", ValueType::Number) \
     \
     M(KafkaRebalanceRevocations, "Number of partition revocations (the first stage of consumer group rebalance)", ValueType::Number) \
@@ -862,6 +906,7 @@ The server successfully detected this situation and will download merged part fr
     M(KafkaCommits, "Number of successful commits of consumed offsets to Kafka (normally should be the same as KafkaBackgroundReads)", ValueType::Number) \
     M(KafkaCommitFailures, "Number of failed commits of consumed offsets to Kafka (usually is a sign of some data duplication)", ValueType::Number) \
     M(KafkaConsumerErrors, "Number of errors reported by librdkafka during polls", ValueType::Number) \
+    M(KafkaMVNotReady, "Number of failed attempts to stream data to a materialized view that is not ready", ValueType::Number) \
     M(KafkaWrites, "Number of writes (inserts) to Kafka tables ", ValueType::Number) \
     M(KafkaRowsWritten, "Number of rows inserted into Kafka tables", ValueType::Number) \
     M(KafkaProducerFlushes, "Number of explicit flushes to Kafka producer", ValueType::Number) \
@@ -910,6 +955,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperGetRequest, "Number of get requests", ValueType::Number) \
     M(KeeperListRequest, "Number of list requests", ValueType::Number) \
     M(KeeperExistsRequest, "Number of exists requests", ValueType::Number) \
+    M(KeeperSetWatchesRequest, "Number of set watches requests", ValueType::Number) \
+    M(KeeperAddWatchRequest, "Number of add watches requests", ValueType::Number) \
+    M(KeeperRemoveWatchRequest, "Number of remove watches requests", ValueType::Number) \
+    M(KeeperCheckWatchRequest, "Number of remove watches requests", ValueType::Number) \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
@@ -923,7 +972,6 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueProcessedFiles, "Number of files which were processed", ValueType::Number) \
     M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
     M(ObjectStorageQueuePullMicroseconds, "Time spent to read file data", ValueType::Microseconds) \
-    M(ObjectStorageQueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses", ValueType::Microseconds) \
     M(ObjectStorageQueueFailedToBatchSetProcessing, "Number of times batched set processing request failed", ValueType::Number) \
     M(ObjectStorageQueueTrySetProcessingRequests, "The number of times we tried to make set processing request", ValueType::Number) \
     M(ObjectStorageQueueTrySetProcessingSucceeded, "The number of times we successfully set file as processing", ValueType::Number) \
@@ -935,7 +983,9 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueReadBytes, "Number of read bytes (not equal to the number of actually inserted bytes)", ValueType::Number) \
     M(ObjectStorageQueueExceptionsDuringRead, "Number of exceptions during read in S3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueExceptionsDuringInsert, "Number of exceptions during insert in S3(Azure)Queue", ValueType::Number) \
+    M(ObjectStorageQueueMovedObjects, "Number of objects moved as part of after_processing = move", ValueType::Number) \
     M(ObjectStorageQueueRemovedObjects, "Number of objects removed as part of after_processing = delete", ValueType::Number) \
+    M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
     M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number) \
@@ -1051,6 +1101,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerCachedReadBufferCacheWrittenBytes, "Distributed Cache server event. The number of bytes written to cache in distributed cache while reading from filesystem cache", ValueType::Number) \
     M(DistrCacheServerCachedReadBufferCacheReadBytes, "Distributed Cache server event. The number of bytes read from cache in distributed cache while reading from filesystem cache", ValueType::Number) \
     M(DistrCacheServerCachedReadBufferObjectStorageReadBytes, "Distributed Cache server event. The number of bytes read from object storage in distributed cache while reading from filesystem cache", ValueType::Number) \
+    M(DistrCacheServerCachedReadBufferCachePredownloadBytes, "Distributed Cache server event. The number of bytes read from object storage for predownload in distributed cache while reading from filesystem cache", ValueType::Number) \
     M(DistrCacheServerSkipped, "Distributed Cache server event. The number of times distributed cache server was skipped because of previous failed connection attempts", ValueType::Number) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
@@ -1101,7 +1152,7 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeOutdatedPartsHTTPRequest, "How many HTTP requests were send to confirm outdated parts", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsHTTPResponse, "How many HTTP responses were send to confirm outdated parts", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsKillRequest, "How many ZooKeeper requests were used to remove condemned parts", ValueType::Number) \
-    M(SharedMergeTreeCondemnedPartsLockConfict, "How many times we failed to acquite lock because of conflict", ValueType::Number) \
+    M(SharedMergeTreeCondemnedPartsLockConflict, "How many times we failed to acquite lock because of conflict", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsRemoved, "How many condemned parts were removed", ValueType::Number) \
     M(SharedMergeTreePartsKillerRuns, "How many times parts killer has been running", ValueType::Number) \
     M(SharedMergeTreePartsKillerMicroseconds, "How much time does parts killer main thread takes", ValueType::Microseconds) \
@@ -1122,6 +1173,13 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds, "Time of tryUpdateDiskMetadataCacheForPart in scheduleDataProcessingJob", ValueType::Number) \
     M(SharedMergeTreeLoadChecksumAndIndexesMicroseconds, "Time of loadColumnsChecksumsIndexes only for SharedMergeTree", ValueType::Number)                                                                                                                                                                                                             \
     \
+    M(SharedMergeTreeSnapshotPartsCleanRequest, "How many times SnapshotCleanerThread decides to clean a part", ValueType::Number) \
+    M(SharedMergeTreeSnapshotPartsCleanerParts, "How long time SnapshotCleanerThread tries to clean a part", ValueType::Number) \
+    M(SharedMergeTreeSnapshotPartsRemoved, "How many times SnapshotCleanerThread successfully clean a part", ValueType::Number) \
+    M(SharedMergeTreeSnapshotPartsCleanerRuns, "How many times SnapshotCleanerThread runs", ValueType::Number) \
+    M(SharedMergeTreeSnapshotPartsCleanerMicroseconds, "How long time SnapshotCleanerThread has run", ValueType::Number) \
+    M(SharedMergeTreeSnapshotPartsCleanerPartsMicroseconds, "How long time SnapshotCleanerThread takes to clean parts", ValueType::Number) \
+    \
     M(SharedMergeTreeDataPartsFetchAttempt, "How many times we tried to fetch data parts", ValueType::Number) \
     M(SharedMergeTreeDataPartsFetchFromPeer, "How many times we fetch data parts from peer", ValueType::Number) \
     M(SharedMergeTreeDataPartsFetchFromPeerMicroseconds, "Data parts fetch from peer microseconds", ValueType::Number) \
@@ -1131,6 +1189,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
     M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
+    M(KeeperChangelogWrittenBytes, "Number of bytes written to the changelog in Keeper", ValueType::Bytes) \
+    M(KeeperChangelogFileSyncMicroseconds, "Time spent in fsync for Keeper changelog (uncompressed logs only)", ValueType::Microseconds) \
+    M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \
+    M(KeeperSnapshotFileSyncMicroseconds, "Time spent in fsync for Keeper snapshot files", ValueType::Microseconds) \
     \
     M(StorageConnectionsCreated, "Number of created connections for storages", ValueType::Number) \
     M(StorageConnectionsReused, "Number of reused connections for storages", ValueType::Number) \
@@ -1214,6 +1276,11 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
     M(ParquetDecodingTaskBatches, "Task groups sent to a thread pool by parquet reader", ValueType::Number) \
+    M(ParquetPrefetcherReadRandomRead, "The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher", ValueType::Number) \
+    M(ParquetPrefetcherReadSeekAndRead, "The total number of reads with ReadMode::SeekAndRead by DB::Parquet::Prefetcher", ValueType::Number) \
+    M(ParquetPrefetcherReadEntireFile, "The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher", ValueType::Number) \
+    M(ParquetRowsFilterExpression, "The total number of rows that were passed through filter", ValueType::Number) \
+    M(ParquetColumnsFilterExpression, "The total number of columns that were passed through filter", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     \
@@ -1246,8 +1313,18 @@ The server successfully detected this situation and will download merged part fr
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
     \
+    M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
+    M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \
+    \
     M(S3CachedCredentialsProvidersReused, "Total number of reused credentials provider from the cache", ValueType::Number) \
     M(S3CachedCredentialsProvidersAdded, "Total number of newly added credentials providers to the cache", ValueType::Number) \
+    \
+    M(RuntimeFiltersCreated, "Number of distinct JOIN Runtime Filters created within a query", ValueType::Number) \
+    M(RuntimeFilterBlocksProcessed, "Number of blocks processed by JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterBlocksSkipped, "Number of blocks skipped by JOIN Runtime Filters without processing due to filter being dynamically disabled because of poor filtering ratio", ValueType::Number) \
+    M(RuntimeFilterRowsChecked, "Number of rows checked by JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterRowsPassed, "Number of rows that passed (not filtered out by) JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
@@ -1311,7 +1388,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
-    , trace_profile_events(src.trace_profile_events)
+    , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
 {
 }
@@ -1343,29 +1420,53 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
-const char * getName(Event event)
+static const std::array<std::string_view, END> names =
 {
-    static const char * strings[] =
-    {
-    #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
-        APPLY_FOR_EVENTS(M)
-    #undef M
-    };
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
+    APPLY_FOR_EVENTS(M)
+#undef M
+};
 
-    return strings[event];
+const std::string_view & getName(Event event)
+{
+    return names[event];
 }
 
-const char * getDocumentation(Event event)
+static const std::array<std::string_view, END> docs =
 {
-    static const char * strings[] =
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
+    APPLY_FOR_EVENTS(M)
+#undef M
+};
+
+const std::string_view & getDocumentation(Event event)
+{
+    return docs[event];
+}
+
+/// Get ProfileEvent by its name
+Event getByName(std::string_view name)
+{
+    static std::unordered_map<std::string_view, Event> map =
     {
-    #define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) {#NAME, ProfileEvents::NAME},
         APPLY_FOR_EVENTS(M)
-    #undef M
+#undef M
     };
 
-    return strings[event];
+    return map.at(name);
 }
+
+void Counters::setTraceProfileEvents(const String & events_list)
+{
+    for (auto it = boost::make_split_iterator(events_list, boost::first_finder(",", boost::is_equal()));
+        it != decltype(it)();
+        ++it)
+    {
+        setTraceProfileEvent(getByName(std::string_view(*it)));
+    }
+}
+
 
 ValueType getValueType(Event event)
 {
@@ -1450,7 +1551,7 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     if (os_cpu_virtual_time_microseconds <= os_cpu_busy_time_threshold || os_cpu_wait_microseconds <= 0)
         return 0;
 
-    return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
+    return static_cast<double>(os_cpu_wait_microseconds) / static_cast<double>(os_cpu_virtual_time_microseconds);
 }
 
 void Counters::increment(Event event, Count amount)
@@ -1460,8 +1561,10 @@ void Counters::increment(Event event, Count amount)
 
     do
     {
-        send_to_trace_log |= current->trace_profile_events;
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        send_to_trace_log |= current->counters[event].should_trace;
+        send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
+
         current = current->parent;
     } while (current != nullptr);
 
@@ -1505,7 +1608,8 @@ CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
     memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
 }
 
-CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)
+/// NO_SANITIZE_UNDEFINED - Hardware perf event counters can overflow, prevent exception in ubsan build
+NO_SANITIZE_UNDEFINED CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)
 {
     init();
     for (Event i = Event(0); i < Counters::num_counters; ++i)

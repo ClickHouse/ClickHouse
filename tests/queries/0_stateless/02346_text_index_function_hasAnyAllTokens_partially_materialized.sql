@@ -1,4 +1,4 @@
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 SET parallel_replicas_local_plan = 1; -- this setting may skip index analysis when false
 SET use_skip_indexes_on_data_read = 0;
 SET mutations_sync = 2; -- want synchronous materialize
@@ -84,7 +84,7 @@ VALUES
     (2, 'abc def bar#'),
     (3, 'abc baz foo');
 
-ALTER TABLE tab ADD INDEX  idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1;
+ALTER TABLE tab ADD INDEX  idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha');
 
 INSERT INTO tab(id, message)
 VALUES

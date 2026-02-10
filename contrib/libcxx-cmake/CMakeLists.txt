@@ -79,6 +79,7 @@ set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
 target_include_directories(cxx SYSTEM BEFORE PRIVATE $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/src>)
 target_include_directories(cxx SYSTEM BEFORE PUBLIC  $<$<COMPILE_LANGUAGE:CXX>:$<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>>)
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
+target_compile_definitions(cxx PUBLIC -D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1)
 
 # Enable capturing stack traces for all exceptions.
 target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)

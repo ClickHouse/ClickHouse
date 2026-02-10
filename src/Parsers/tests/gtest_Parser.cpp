@@ -49,12 +49,12 @@ TEST_P(ParserTest, parseQuery)
     {
         if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_THROW(parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0), DB::Exception);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            EXPECT_THROW(parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0), DB::Exception); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         }
         else
         {
             ASTPtr ast;
-            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
@@ -94,7 +94,7 @@ TEST_P(ParserTest, parseQuery)
     }
     else
     {
-        ASSERT_THROW(parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0), DB::Exception);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        ASSERT_THROW(parseQuery(*parser, input_text.data(), input_text.data() + input_text.size(), 0, 0, 0), DB::Exception); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
 }
 

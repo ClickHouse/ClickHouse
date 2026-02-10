@@ -100,6 +100,8 @@ public:
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
+    NameSet grabDroppedIndices() { return std::move(dropped_indices); }
+
     NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
 
     NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
@@ -138,7 +140,7 @@ public:
 
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
-        bool hasSecondaryIndex(const String & name) const;
+        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
         bool hasProjection(const String & name) const;
         bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
@@ -177,8 +179,8 @@ private:
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+    static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
@@ -251,6 +253,7 @@ private:
     NameSet materialized_indices;
     NameSet materialized_projections;
     NameSet materialized_statistics;
+    NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

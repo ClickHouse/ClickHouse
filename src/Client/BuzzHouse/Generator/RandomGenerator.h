@@ -33,7 +33,7 @@ private:
 
     std::uniform_int_distribution<int64_t> ints64;
 
-    std::uniform_int_distribution<uint64_t> uints64;
+    std::uniform_int_distribution<uint64_t> uints64, full_range;
 
     std::uniform_real_distribution<double> zero_one;
 
@@ -80,23 +80,23 @@ private:
         "C328FF",
         "AAC328"};
 
-    const DB::Strings jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
+    const DB::Strings jcols{"", "_", ".", "1", "叫", "c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
     pcg64_fast generator;
 
-    RandomGenerator(const uint64_t in_seed, const uint32_t min_string_length, const uint32_t max_string_length)
+    RandomGenerator(const uint64_t in_seed, const uint32_t min_string_length, const uint32_t max_string_length, const bool limited)
         : seed(in_seed ? in_seed : randomSeed())
-        , ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
-        , uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max())
+        , ints8(limited ? -50 : std::numeric_limits<int8_t>::min(), limited ? 50 : std::numeric_limits<int8_t>::max())
+        , uints8(limited ? 0 : std::numeric_limits<uint8_t>::min(), limited ? 100 : std::numeric_limits<uint8_t>::max())
         , digits(static_cast<uint8_t>('0'), static_cast<uint8_t>('9'))
         , hex_digits_dist(0, 15)
-        , ints16(std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max())
-        , uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max())
-        , ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
+        , ints16(limited ? -50 : std::numeric_limits<int16_t>::min(), limited ? 50 : std::numeric_limits<int16_t>::max())
+        , uints16(limited ? 0 : std::numeric_limits<uint16_t>::min(), limited ? 100 : std::numeric_limits<uint16_t>::max())
+        , ints32(limited ? -50 : std::numeric_limits<int32_t>::min(), limited ? 50 : std::numeric_limits<int32_t>::max())
         , time_hours(-999, 999)
         , second_offsets(-10, 80)
-        , uints32(std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max())
+        , uints32(limited ? 0 : std::numeric_limits<uint32_t>::min(), limited ? 100 : std::numeric_limits<uint32_t>::max())
         , dist1(UINT32_C(1), UINT32_C(10))
         , dist2(UINT32_C(1), UINT32_C(100))
         , dist3(UINT32_C(1), UINT32_C(1000))
@@ -109,8 +109,9 @@ public:
         , minutes(0, 59)
         , subseconds(0, UINT32_C(1000000000))
         , strlens(min_string_length, max_string_length)
-        , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
-        , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
+        , ints64(limited ? -50 : std::numeric_limits<int64_t>::min(), limited ? 50 : std::numeric_limits<int64_t>::max())
+        , uints64(limited ? 0 : std::numeric_limits<uint64_t>::min(), limited ? 100 : std::numeric_limits<uint64_t>::max())
+        , full_range(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
         , generator(seed)
     {
@@ -143,6 +144,8 @@ public:
     uint64_t nextRandomUInt64();
 
     int64_t nextRandomInt64();
+
+    uint64_t nextInFullRange();
 
     uint32_t nextStrlen();
 
@@ -181,19 +184,19 @@ public:
         {
             return max_val;
         }
-        if (tmp <= always_on_prob + always_off_prob + 0.01)
+        if (tmp <= always_on_prob + always_off_prob + 0.001)
         {
             if constexpr (std::is_unsigned_v<T>)
             {
-                return (tmp <= always_on_prob + always_off_prob + 0.003) ? 0 : std::numeric_limits<T>::max();
+                return (tmp <= always_on_prob + always_off_prob + 0.0003) ? 0 : std::numeric_limits<T>::max();
             }
             if constexpr (std::is_signed_v<T>)
             {
-                return (tmp <= always_on_prob + always_off_prob + 0.005) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
+                return (tmp <= always_on_prob + always_off_prob + 0.0005) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
             }
             if constexpr (std::is_floating_point_v<T>)
             {
-                if (tmp <= always_on_prob + always_off_prob + 0.003)
+                if (tmp <= always_on_prob + always_off_prob + 0.0003)
                 {
                     return std::numeric_limits<T>::min();
                 }

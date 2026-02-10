@@ -18,5 +18,9 @@ JOIN (SELECT 0 c0) tw ON abs(tx.c0)
 SETTINGS query_plan_convert_join_to_in = 0
 ;
 
-
 {% endfor %}
+
+SET query_plan_convert_join_to_in = 1;
+
+SELECT 1 FROM (SELECT 1 c0) tx JOIN (SELECT 1 c0) ty ON tx.c0 = ty.c0 SETTINGS query_plan_use_new_logical_join_step = 0;
+SELECT 1 FROM (SELECT 1 c0) tx JOIN (SELECT 1 c0) ty ON tx.c0 = ty.c0 SETTINGS query_plan_use_new_logical_join_step = 1;

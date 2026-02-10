@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace Setting
@@ -49,7 +50,7 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_rows;
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsString temporary_files_codec;
-    extern const SettingsUInt64 temporary_files_buffer_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const SettingsUInt64 join_to_sort_maximum_table_rows;
@@ -63,6 +64,7 @@ namespace Setting
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
 namespace QueryPlanSerializationSetting
@@ -92,7 +94,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_bytes;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
-    extern const QueryPlanSerializationSettingsUInt64 temporary_files_buffer_size;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const QueryPlanSerializationSettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_maximum_table_rows;
@@ -105,6 +107,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool allow_dynamic_type_in_join_keys;
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
     extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
+    extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings)
@@ -152,6 +155,10 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     allow_dynamic_type_in_join_keys = query_settings[Setting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
+
+    if (temporary_files_buffer_size > 1_GiB)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
+    use_hash_table_stats_for_join_reordering = query_settings[Setting::use_hash_table_stats_for_join_reordering];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -198,7 +205,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     allow_dynamic_type_in_join_keys = settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
-
+    use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -245,7 +252,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys] = allow_dynamic_type_in_join_keys;
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
-
+    settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 }
 
 String toString(const JoinActionRef & node)

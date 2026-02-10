@@ -50,7 +50,7 @@ void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, Contex
         res_columns[1]->insert(it->first.toString());
         Array changes;
         for (const auto & change : it->second)
-            changes.push_back(Tuple{change.name, toString(change.previous_value), toString(change.new_value), change.reason});
+            changes.push_back(Tuple{change.name, fieldToString(change.previous_value), fieldToString(change.new_value), change.reason});
         res_columns[2]->insert(changes);
     }
 
@@ -61,7 +61,7 @@ void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, Contex
         res_columns[1]->insert(it->first.toString());
         Array changes;
         for (const auto & change : it->second)
-            changes.push_back(Tuple{change.name, toString(change.previous_value), toString(change.new_value), change.reason});
+            changes.push_back(Tuple{change.name, fieldToString(change.previous_value), fieldToString(change.new_value), change.reason});
         res_columns[2]->insert(changes);
     }
 }

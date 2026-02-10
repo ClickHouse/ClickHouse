@@ -25,6 +25,7 @@ namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+    extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
 }
 
 namespace ErrorCodes
@@ -65,7 +66,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
     const ASTPtr & partition_by,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool is_table_function)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
@@ -80,12 +82,19 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         context_,
         /* if_not_updated_before */ false);
 
+    // For tables need to update configuration on each read
+    // because data can be changed after previous update
+    update_configuration_on_read_write = !is_table_function;
+
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration() && !configuration->partition_strategy)
+    if (sample_path.empty()
+        && context_->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->isDataLakeConfiguration()
+        && !configuration->partition_strategy)
         sample_path = getPathSample(context_);
 
     /// Not grabbing the file_columns because it is not necessary to do it here.
@@ -101,7 +110,13 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns,
+        context_,
+        /* format_settings */std::nullopt,
+        configuration->partition_strategy_type,
+        sample_path));
+
     setInMemoryMetadata(metadata);
 
     /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
@@ -164,7 +179,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTPtr settings_temporary_storage = nullptr;
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -226,6 +241,16 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /*ignore_archive_globs=*/false,
         /*skip_object_metadata=*/true);
 
+    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
+    {
+        iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
+            std::move(iterator),
+            configuration->format,
+            object_storage,
+            local_context
+        );
+    }
+
     std::vector<std::string> ids_of_hosts;
     for (const auto & shard : cluster->getShardsInfo())
     {
@@ -254,6 +279,17 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         });
 
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+}
+
+void StorageObjectStorageCluster::updateConfigurationIfNeeded(ContextPtr context)
+{
+    if (update_configuration_on_read_write)
+    {
+        configuration->update(
+            object_storage,
+            context,
+            /* if_not_updated_before */false);
+    }
 }
 
 }

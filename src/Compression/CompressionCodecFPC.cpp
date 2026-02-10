@@ -33,7 +33,7 @@ public:
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -74,7 +74,7 @@ CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_l
     : float_width(float_width_)
     , compression_level(compression_level_)
 {
-    setCodecDescription("FPC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(compression_level))});
+    setCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
 UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -96,7 +96,7 @@ UInt8 getFloatByteWidth(const IDataType & column_type)
                 "Codec 'FPC' is not applicable for {} because the data type is not Float*",
                 column_type.getName());
 
-    return column_type.getSizeOfValueInMemory();
+    return static_cast<UInt8>(column_type.getSizeOfValueInMemory());
 }
 
 }
@@ -121,7 +121,7 @@ void registerCodecFPC(CompressionCodecFactory & factory)
             if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "1st argument of codec 'FPC' must be unsigned integer");
 
-            level = literal->value.safeGet<UInt8>();
+            level = static_cast<UInt8>(literal->value.safeGet<UInt8>());
             if (level < 1 || level > CompressionCodecFPC::MAX_COMPRESSION_LEVEL)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec 'FPC' level must be between {} and {}",
                                 1, static_cast<int>(CompressionCodecFPC::MAX_COMPRESSION_LEVEL));
@@ -243,7 +243,7 @@ class FPCOperation
 
 public:
     FPCOperation(std::span<std::byte> destination, UInt8 compression_level)
-        : dfcm_predictor(1u << compression_level), fcm_predictor(1u << compression_level), chunk{}, result{destination}
+        : dfcm_predictor(1u << compression_level), fcm_predictor(1u << compression_level), chunk{}, result{destination}, result_initial_pointer{result.data()}
     {
     }
 
@@ -261,7 +261,7 @@ public:
         return initial_size - result.size();
     }
 
-    void decode(std::span<const std::byte> values, size_t decoded_size) &&
+    UInt32 decode(std::span<const std::byte> values, size_t decoded_size) &&
     {
         size_t read_bytes = 0;
 
@@ -273,6 +273,8 @@ public:
             read_bytes += decodeChunk(values.subspan(read_bytes), chunk_view);
             exportChunk(chunk_view);
         }
+
+        return static_cast<UInt32>(result.data() - result_initial_pointer);
     }
 
 private:
@@ -455,6 +457,8 @@ private:
     std::array<TUInt, CHUNK_SIZE> chunk{};
 
     std::span<std::byte> result{};
+    /// Pointer to the start of the result buffer (used to calculate the final size)
+    std::span<std::byte>::const_pointer result_initial_pointer{};
 };
 
 }
@@ -479,7 +483,7 @@ UInt32 CompressionCodecFPC::doCompressData(const char * source, UInt32 source_si
     throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with codec 'FPC'. File has incorrect float width");
 }
 
-void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < HEADER_SIZE)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress FPC-encoded data. File has wrong header");
@@ -495,11 +499,9 @@ void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_si
     switch (compressed_float_width)
     {
         case sizeof(Float64):
-            FPCOperation<UInt64>(destination, compressed_level).decode(src, uncompressed_size);
-            break;
+            return FPCOperation<UInt64>(destination, compressed_level).decode(src, uncompressed_size);
         case sizeof(Float32):
-            FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
-            break;
+            return FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
         default:
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress FPC-encoded data. File has incorrect float width");
     }

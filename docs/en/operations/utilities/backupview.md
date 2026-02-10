@@ -7,7 +7,7 @@ doc_type: 'reference'
 
 # clickhouse_backupview {#clickhouse_backupview}
 
-Python module to help analyzing backups made by the [BACKUP](/operations/backup) command.
+Python module to help analyzing backups made by the [BACKUP](/operations/backup/overview) command.
 The main motivation was to allows getting some information from a backup without actually restoring it.
 
 This module provides functions to
