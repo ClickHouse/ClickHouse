@@ -1,8 +1,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Functions/IFunction.h>
@@ -36,14 +38,19 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{1}; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto ngram_input_argument_type = WhichDataType(arguments[0].type);
+        DataTypePtr input_type = arguments[0].type;
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(input_type.get()))
+            input_type = nullable->getNestedType();
+
+        auto ngram_input_argument_type = WhichDataType(input_type);
         if (!ngram_input_argument_type.isStringOrFixedString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} first argument type should be String or FixedString. Actual {}",
+                "Function {} first argument type should be String, FixedString, Nullable(String) or Nullable(FixedString). Actual {}",
                 getName(),
                 arguments[0].type->getName());
 
@@ -73,11 +80,17 @@ public:
         auto result_column_string = ColumnString::create();
 
         auto input_column = arguments[0].column;
+        const NullMap * null_map = nullptr;
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(input_column.get()))
+        {
+            input_column = col_nullable->getNestedColumnPtr();
+            null_map = &col_nullable->getNullMapData();
+        }
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-            executeImpl(extractor, *column_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(extractor, *column_string, *result_column_string, *column_offsets, null_map, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-            executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets, null_map, input_rows_count);
 
         return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
     }
@@ -90,6 +103,7 @@ private:
         StringColumnType & input_data_column,
         ResultStringColumnType & result_data_column,
         ColumnArray::ColumnOffsets & offsets_column,
+        const NullMap * null_map,
         size_t input_rows_count) const
     {
         size_t current_tokens_size = 0;
@@ -99,18 +113,20 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            auto data = input_data_column.getDataAt(i);
-
-            size_t cur = 0;
-            size_t token_start = 0;
-            size_t token_length = 0;
-
-            while (cur < data.size() && extractor.nextInString(data.data(), data.size(), cur, token_start, token_length))
+            if (!(null_map && (*null_map)[i]))
             {
-                result_data_column.insertData(data.data() + token_start, token_length);
-                ++current_tokens_size;
-            }
+                auto data = input_data_column.getDataAt(i);
 
+                size_t cur = 0;
+                size_t token_start = 0;
+                size_t token_length = 0;
+
+                while (cur < data.size() && extractor.nextInString(data.data(), data.size(), cur, token_start, token_length))
+                {
+                    result_data_column.insertData(data.data() + token_start, token_length);
+                    ++current_tokens_size;
+                }
+            }
             offsets_data[i] = current_tokens_size;
         }
     }

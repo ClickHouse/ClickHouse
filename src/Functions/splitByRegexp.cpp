@@ -163,6 +163,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return SplitByRegexpImpl::getNumberOfArguments(); }
     bool isVariadic() const override { return SplitByRegexpImpl::isVariadic(); }
+    bool useDefaultImplementationForNulls() const override { return false; }
     /// ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return SplitByRegexpImpl::getArgumentsThatAreAlwaysConstant(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override

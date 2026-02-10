@@ -1,10 +1,17 @@
+#include <string_view>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionTokens.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
@@ -26,8 +33,26 @@ constexpr size_t arg_tokenizer = 1;
 
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer = arguments.size() < 2 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenExtractor::getExternalName()
-                                                                                    : arguments[arg_tokenizer].column->getDataAt(0);
+    const auto tokenizer = [&arguments]() -> std::string_view
+    {
+        if (arguments.size() >= 2 && arguments[arg_tokenizer].column != nullptr)
+        {
+            const DB::IColumn* column = arguments[arg_tokenizer].column.get();
+
+            if (const auto* column_const = checkAndGetColumn<ColumnConst>(column))
+                column = column_const->getDataColumn().getPtr().get();
+
+            if (const auto* column_nullable = checkAndGetColumn<ColumnNullable>(column))
+            {
+                if (column_nullable->isNullAt(0))
+                    return SplitByNonAlphaTokenExtractor::getExternalName();
+                column = column_nullable->getNestedColumn().getPtr().get();
+            }
+            
+            return arguments[arg_tokenizer].column->getDataAt(0);
+        }
+        return SplitByNonAlphaTokenExtractor::getExternalName();
+    }();
 
     FieldVector params;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -83,10 +108,19 @@ public:
 
     String getName() const override { return name; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_input = arguments[arg_value].column;
+        const NullMap * null_map = nullptr;
+
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col_input.get()))
+        {
+            col_input = col_nullable->getNestedColumnPtr();
+            null_map = &col_nullable->getNullMapData();
+        }
+
         auto col_result = ColumnString::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
 
@@ -99,11 +133,11 @@ public:
             /// This leads to an error while executing this function multi-threaded because that state is not protected.
             /// To avoid this case, a clone of the sparse gram token extractor will be used.
             auto sparse_gram_extractor = token_extractor->clone();
-            executeWithTokenizer(*sparse_gram_extractor, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            executeWithTokenizer(*sparse_gram_extractor, std::move(col_input), *col_offsets, null_map, input_rows_count, *col_result);
         }
         else
         {
-            executeWithTokenizer(*token_extractor, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            executeWithTokenizer(*token_extractor, std::move(col_input), *col_offsets, null_map, input_rows_count, *col_result);
         }
 
         return ColumnArray::create(std::move(col_result), std::move(col_offsets));
@@ -114,13 +148,14 @@ private:
         const ITokenExtractor & extractor,
         ColumnPtr col_input,
         ColumnArray::ColumnOffsets & col_offsets,
+        const NullMap * null_map,
         size_t input_rows_count,
         ColumnString & col_result) const
     {
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            executeImpl(extractor, *column_string, col_offsets, input_rows_count, col_result);
+            executeImpl(extractor, *column_string, col_offsets, null_map, input_rows_count, col_result);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            executeImpl(extractor, *column_fixed_string, col_offsets, input_rows_count, col_result);
+            executeImpl(extractor, *column_fixed_string, col_offsets, null_map, input_rows_count, col_result);
     }
 
     template <typename StringColumnType>
@@ -128,6 +163,7 @@ private:
         const ITokenExtractor & extractor,
         const StringColumnType & column_input,
         ColumnArray::ColumnOffsets & column_offsets_input,
+        const NullMap * null_map,
         size_t input_rows_count,
         ColumnString & column_result) const
     {
@@ -137,15 +173,17 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view input = column_input.getDataAt(i);
-
-            forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+            if (!(null_map && (*null_map)[i]))
             {
-                column_result.insertData(token_start, token_len);
-                ++tokens_count;
-                return false;
-            });
+                std::string_view input = column_input.getDataAt(i);
 
+                forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+                {
+                    column_result.insertData(token_start, token_len);
+                    ++tokens_count;
+                    return false;
+                });
+            }
             offsets_data[i] = tokens_count;
         }
     }
@@ -189,6 +227,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
 
     static FunctionOverloadResolverPtr create(ContextPtr)
@@ -198,14 +237,40 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        auto is_string_or_fixed_string_nullable = [](const IDataType & type)
+        {
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+                return isStringOrFixedString(nullable_type->getNestedType());
+            return isStringOrFixedString(type);
+        };
+
+        auto is_string_nullable_string_or_nothing = [](const IDataType & type)
+        {
+            if (isStringOrNullableString(type) || isNothing(type))
+                return true;
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+                return isNothing(nullable_type->getNestedType());
+            return false;
+        };
+
+        auto is_column_const_or_nullable_nothing = [](const IColumn & column)
+        {
+            if (isColumnConst(column))
+                return true;
+            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
+                if (checkAndGetColumn<ColumnNothing>(&nullable_column->getNestedColumn()) != nullptr)
+                    return true;
+            return false;
+        };
+
         FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
+            {"value", is_string_or_fixed_string_nullable, nullptr, "String or FixedString"}};
 
         FunctionArgumentDescriptors optional_args;
 
         if (arguments.size() > 1)
         {
-            optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String");
+            optional_args.emplace_back("tokenizer", is_string_nullable_string_or_nothing, is_column_const_or_nullable_nothing, "String");
             validateFunctionArguments(name, {arguments[arg_value], arguments[arg_tokenizer]}, mandatory_args, optional_args);
 
             if (arguments.size() == 3)

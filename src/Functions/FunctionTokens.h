@@ -75,6 +75,7 @@ public:
     String getName() const override { return name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isVariadic() const override { return Generator::isVariadic(); }
 
@@ -96,8 +97,19 @@ public:
 
         const auto & array_argument = arguments[generator.strings_argument_position];
 
-        const ColumnString * col_str = checkAndGetColumn<ColumnString>(array_argument.column.get());
-        const ColumnConst * col_str_const = checkAndGetColumnConstStringOrFixedString(array_argument.column.get());
+        const auto * column = array_argument.column->getPtr().get();
+        const NullMap * null_map = nullptr;
+
+        if (const auto * col_const = checkAndGetColumn<ColumnConst>(column))
+            column = &col_const->getDataColumn();
+
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column)) {
+            column = col_nullable->getNestedColumnPtr().get();
+            null_map = &col_nullable->getNullMapData();
+        }
+
+        const ColumnString * col_str = checkAndGetColumn<ColumnString>(column);
+        const ColumnConst * col_str_const = checkAndGetColumnConstStringOrFixedString(column);
 
         auto col_res = ColumnArray::create(ColumnString::create());
 
@@ -124,6 +136,13 @@ public:
             ColumnString::Offset current_dst_strings_offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                /// For NULL values, produce empty array
+                if (null_map && (*null_map)[i])
+                {
+                    res_offsets.push_back(current_dst_offset);
+                    continue;
+                }
+
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
                 Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
@@ -189,12 +208,21 @@ static inline std::optional<size_t> extractMaxSplits(
     return std::nullopt;
 }
 
+static inline bool isStringOrNullableString(const IDataType & type)
+{
+    if (isString(type))
+        return true;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return isString(*nullable->getNestedType());
+    return false;
+}
+
 static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
     const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     FunctionArgumentDescriptors mandatory_args{
         {"separator", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
-        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String or Nullable(String)"}
     };
 
     FunctionArgumentDescriptors optional_args{
@@ -207,7 +235,7 @@ static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
 static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     FunctionArgumentDescriptors mandatory_args{
-        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+        {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrNullableString), nullptr, "String or Nullable(String)"},
     };
 
     FunctionArgumentDescriptors optional_args{
