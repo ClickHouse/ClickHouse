@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
+            {"text_index_brute_force_apply", false, false, "New setting to enable brute-force intersection algorithm for text index queries."},
+            {"text_index_brute_force_density_threshold", 0.2, 0.2, "New setting to control the density threshold for switching to brute-force algorithm in text index."},
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
