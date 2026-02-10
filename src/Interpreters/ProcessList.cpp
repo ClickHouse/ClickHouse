@@ -309,9 +309,9 @@ ProcessList::EntryPtr ProcessList::insert(
             processes.end(),
             query);
 
-        increaseQueryKindAmount(query_kind);
-
         CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
+
+        increaseQueryKindAmount(query_kind);
 
         res = std::make_shared<Entry>(*this, process_it);
 
