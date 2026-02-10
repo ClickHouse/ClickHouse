@@ -31,14 +31,6 @@
              It is useful for debugging shutdown issues -->
         <!-- <shutdown_level>trace</shutdown_level> -->
 
-        <!-- Startup console level is used to set the console logger level at server startup.
-             It is useful for debugging startup issues.
-             The console logger level will be reset to the default level after the server is fully initialized -->
-        <!-- <startup_console_log_level>trace</startup_console_log_level> -->
-       <!-- Shutdown console log level is used to set the console logger level at server Shutdown.
-             It is useful for debugging shutdown issues -->
-        <!-- <shutdown_console_log_level>trace</shutdown_console_log_level> -->
-
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <!-- Rotation policy
@@ -419,7 +411,7 @@
     -->
     <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
     <concurrent_threads_soft_limit_ratio_to_cores>2</concurrent_threads_soft_limit_ratio_to_cores>
-    <concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler>
+    <concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>1000</max_concurrent_queries>
@@ -878,11 +870,6 @@
 
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
-
-    <!-- Background profile of settings. This profile is used by background operations (e.g. Merge, Mutate). 
-         Default profile name is 'background', which can be changed via the following setting. If such profile is not configured, system_profile is used.
-    -->
-    <!-- <background_profile>background</background_profile> -->
 
     <!-- Buffer profile of settings.
          This settings are used by Buffer storage to flush data to the underlying table.
@@ -1499,16 +1486,6 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </aggregated_zookeeper_log>
 
-    <!--
-    <zookeeper_log>
-        <database>system</database>
-        <table>zookeeper_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <ttl>event_date + INTERVAL 30 DAY</ttl>
-        <duration_threshold_microseconds>0</duration_threshold_microseconds>
-    </zookeeper_log>
-    -->
-
     <!-- ZooKeeper connection log.
     -->
     <zookeeper_connection_log>
@@ -1678,7 +1655,7 @@
     <!-- <throw_on_unknown_workload>true</throw_on_unknown_workload> -->
 
     <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
-         Ensures more fair CPU resource distribution. (Enabled by default)
+         Ensures more fair CPU resource distribution.
     -->
     <!--
     <cpu_slot_preemption>true</cpu_slot_preemption>

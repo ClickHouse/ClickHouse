@@ -97,7 +97,6 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 }
@@ -593,20 +592,7 @@ void IcebergMetadata::createInitial(
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 
-    try
-    {
-        writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
-    }
-    catch (const Exception & e)
-    {
-        /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
-        /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
-        /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
-        if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
-            && e.message().find("PreconditionFailed") != String::npos)
-            return;
-        throw;
-    }
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
 
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
@@ -931,7 +917,6 @@ void IcebergMetadata::addDeleteTransformers(
     ObjectInfoPtr object_info,
     QueryPipelineBuilder & builder,
     const std::optional<FormatSettings> & format_settings,
-    FormatParserSharedResourcesPtr parser_shared_resources,
     ContextPtr local_context) const
 {
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
@@ -942,7 +927,7 @@ void IcebergMetadata::addDeleteTransformers(
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
-            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context); });
+            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
@@ -986,7 +971,7 @@ void IcebergMetadata::addDeleteTransformers(
                 local_context,
                 local_context->getSettingsRef()[DB::Setting::max_block_size],
                 format_settings,
-                parser_shared_resources,
+                nullptr,
                 nullptr,
                 true,
                 compression_method);

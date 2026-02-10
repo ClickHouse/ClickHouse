@@ -1,11 +1,7 @@
 #pragma once
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdocumentation-html"
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
-
-#include <map>
 
 namespace DB
 {
@@ -316,4 +312,3 @@ private:
 };
 
 }
-#pragma clang diagnostic pop

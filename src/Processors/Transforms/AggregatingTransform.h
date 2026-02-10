@@ -146,7 +146,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -193,8 +193,7 @@ private:
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
-    /// If we aggregate partitioned data merging is not needed.
-    bool skip_merging = false;
+    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;

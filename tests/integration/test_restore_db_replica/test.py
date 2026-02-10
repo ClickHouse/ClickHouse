@@ -258,7 +258,6 @@ def test_query_after_restore_db_replica(
     )
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-    assert node_1.wait_for_log_line(f"{exclusive_database_name}): All tables are created successfully")
 
     if need_restart:
         node_1.restart_clickhouse()
@@ -275,7 +274,6 @@ def test_query_after_restore_db_replica(
     )
 
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-    assert node_2.wait_for_log_line(f"{exclusive_database_name}): All tables are created successfully")
     assert zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica2")
 
     if exists_table:
@@ -347,9 +345,7 @@ def test_query_after_restore_db_replica(
     )
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-    assert node_1.wait_for_log_line(f"{exclusive_database_name}): All tables are created successfully")
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-    assert node_2.wait_for_log_line(f"{exclusive_database_name}): All tables are created successfully")
 
     if need_restart:
         node_1.restart_clickhouse()

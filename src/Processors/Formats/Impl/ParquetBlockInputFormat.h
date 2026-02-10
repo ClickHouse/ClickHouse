@@ -2,7 +2,6 @@
 #include "config.h"
 #if USE_PARQUET
 
-#include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -76,7 +75,6 @@ struct ParquetBucketSplitter : public IBucketSplitter
 class ParquetBlockInputFormat : public IInputFormat
 {
 public:
-
     ParquetBlockInputFormat(
         ReadBuffer & buf,
         SharedHeader header,

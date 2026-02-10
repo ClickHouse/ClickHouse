@@ -4,7 +4,6 @@
 
 #if USE_SQLITE
 #include <Core/ExternalResultDescription.h>
-#include <DataTypes/IDataType.h>
 #include <Processors/ISource.h>
 
 #include <sqlite3.h>
@@ -34,7 +33,7 @@ private:
 
     Chunk generate() override;
 
-    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx, const IDataType & data_type);
+    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx);
 
     String query_str;
     UInt64 max_block_size;

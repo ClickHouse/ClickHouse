@@ -70,7 +70,7 @@ BlockIO InterpreterDropQuery::execute()
 {
     BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    ASTs drops = drop.getRewrittenASTsOfSingleTable(query_ptr);
+    ASTs drops = drop.getRewrittenASTsOfSingleTable();
     for (const auto & drop_query_ptr : drops)
     {
         current_query_ptr = drop_query_ptr;
@@ -128,19 +128,16 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 
 BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
-    if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
-
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
-    if (query.isTemporary() || table_id.database_name.empty())
+    if (query.temporary || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
         query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
-    if (query.isTemporary())
+    if (query.temporary)
     {
         if (query.if_exists)
             return {};
@@ -331,6 +328,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
+    if (kind == ASTDropQuery::Kind::Detach)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
+
     auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
     auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
     if (resolved_id)
@@ -580,15 +580,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         for (const auto & table_id : tables_to_truncate)
         {
-            /// Passing by references here is fine:
-            /// query: Outlives runner
-            /// table_context: Outlives runner
-            /// mutex_for_uuids: Outlives runner
-            /// uuids_to_wait: Outlives runner
-            runner.enqueueAndKeepTrack([this, table_id, &query, &table_context, &mutex_for_uuids, &uuids_to_wait]()
+            runner.enqueueAndKeepTrack([&, table_id]()
             {
                 // Create a proper AST for a single-table TRUNCATE query.
-                auto sub_query_ptr = make_intrusive<ASTDropQuery>();
+                auto sub_query_ptr = std::make_shared<ASTDropQuery>();
                 auto & sub_query = sub_query_ptr->as<ASTDropQuery &>();
                 sub_query.kind = ASTDropQuery::Kind::Truncate;
                 sub_query.if_exists = true;
@@ -597,8 +592,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 sub_query.setDatabase(table_id.database_name);
                 sub_query.setTable(table_id.table_name);
                 // Optionally, add these nodes to sub_query->children if needed:
-                sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.database_name));
-                sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.table_name));
+                sub_query.children.push_back(std::make_shared<ASTIdentifier>(table_id.database_name));
+                sub_query.children.push_back(std::make_shared<ASTIdentifier>(table_id.table_name));
 
                 DatabasePtr dummy_db;
                 UUID table_uuid = UUIDHelpers::Nil;
@@ -683,7 +678,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
         else if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.getDatabase(), drop.getTable());
     }
-    else if (!drop.isTemporary())
+    else if (!drop.temporary)
     {
         /// It can be view or table.
         if (drop.kind == ASTDropQuery::Kind::Drop)
@@ -704,7 +699,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.
-        auto drop_query = make_intrusive<ASTDropQuery>();
+        auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->setDatabase(target_table_id.database_name);
         drop_query->setTable(target_table_id.table_name);
         drop_query->kind = kind;
@@ -743,7 +738,7 @@ bool InterpreterDropQuery::supportsTransactions() const
     auto & drop = query_ptr->as<ASTDropQuery &>();
 
     return drop.cluster.empty()
-            && !drop.isTemporary()
+            && !drop.temporary
             && drop.kind == ASTDropQuery::Kind::Truncate
             && drop.table;
 }

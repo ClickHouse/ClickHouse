@@ -8,6 +8,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/sleep.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -124,7 +125,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
         catch (...)
         {
             tryLogCurrentException(log, fmt::format("Error on initialization of {}", database->getDatabaseName()));
-            queue_updated_event->tryWait(5000);
+            sleepForSeconds(5);
         }
     }
 

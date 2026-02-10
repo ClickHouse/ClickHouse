@@ -76,7 +76,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+    extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
@@ -180,9 +182,13 @@ static std::optional<String> getStatisticFilename(const String & statistic_name,
     return stream_name ? std::make_optional(*stream_name + STATS_FILE_SUFFIX) : std::nullopt;
 }
 
-String getNewStatisticFilename(const String & statistic_name, const MergeTreeSettings & storage_settings, const IDataPartStorage & data_part_storage)
+String getNewStatisticFilename(const String & statistic_name, const MergeTreeSettings & storage_settings)
 {
-    return replaceFileNameToHashIfNeeded(escapeForFileName(statistic_name), storage_settings, &data_part_storage) + STATS_FILE_SUFFIX;
+    auto filename = escapeForFileName(statistic_name);
+    if (storage_settings[MergeTreeSetting::replace_long_file_name_to_hash] && filename.size() > storage_settings[MergeTreeSetting::max_file_name_length])
+        filename = sipHash128String(filename);
+
+    return filename + STATS_FILE_SUFFIX;
 }
 
 /** Split mutation commands into two parts:
@@ -320,16 +326,7 @@ static void splitAndModifyMutationCommands(
                         mutated_columns.emplace(command.column_name);
 
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
-                    {
-                        /// We need to keep the clear command so we also clear dependent indices
-                        if (command.clear)
-                        {
-                            for_interpreter.push_back(command);
-                            for_file_renames.push_back(command); /// For packed parts
-                        }
-                        else
-                            dropped_columns.emplace(command.column_name);
-                    }
+                        dropped_columns.emplace(command.column_name);
                 }
             }
         }
@@ -388,25 +385,10 @@ static void splitAndModifyMutationCommands(
 
                     /// StorageMergeTree does not have metadata version
                     if (part->storage.supportsReplication())
-                    {
-                        /// When part has higher metadata version than the table, it means the part was fetched from another replica
-                        /// that already processed an ALTER ADD COLUMN. The column will be added to this replica's table schema
-                        /// once the ALTER is processed locally. We should keep the column in the output part.
-                        if (part_metadata_version > table_metadata_version)
-                        {
-                            LOG_WARNING(log, "Part {} with metadata version {} contains column {} that is absent "
-                                             "in table {} with metadata version {}. The column was likely added via ALTER on another replica "
-                                             "and will be kept in the output part", part->name, part_metadata_version, column.name,
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                        }
-                        else
-                        {
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                            "in table {} with metadata version {}",
-                                            part->name, part_metadata_version, column.name,
-                                            part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                        }
-                    }
                 }
 
                 for_interpreter.emplace_back(
@@ -1000,9 +982,8 @@ static NameToNameVector collectFilesForRenames(
             {
                 for (const auto & extension : extensions)
                 {
-                    const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
-                    const String filename = index_filename + substream + extension;
-                    const String filename_mrk = index_filename + substream + mrk_extension;
+                    const String filename = INDEX_FILE_PREFIX + command.column_name + substream + extension;
+                    const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + substream + mrk_extension;
 
                     if (source_part->checksums.has(filename))
                     {
@@ -1070,7 +1051,12 @@ static NameToNameVector collectFilesForRenames(
                     if (!stream_from)
                         return;
 
-                    String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
+                    String stream_to;
+
+                    if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_to.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+                        stream_to = sipHash128String(full_stream_to);
+                    else
+                        stream_to = full_stream_to;
 
                     if (stream_from != stream_to)
                     {
@@ -1085,7 +1071,7 @@ static NameToNameVector collectFilesForRenames(
                 /// If we rename a column with statistics, we should also rename the stat file.
                 if (auto filename = getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *source_part))
                 {
-                    auto new_filename = getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *source_part->storage.getSettings(), source_part->getDataPartStorage());
+                    auto new_filename = getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *source_part->storage.getSettings());
                     add_rename(*filename, new_filename);
                 }
             }
@@ -1491,9 +1477,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                     continue;
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                squashed_chunk = Squashing::squash(
-                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
-                    projection_squashes[i].getHeader());
+                squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
             }
 
             if (squashed_chunk)
@@ -1559,9 +1543,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
     // Write the last block
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        auto squashed_chunk = Squashing::squash(
-            projection_squashes[i].flush(),
-            projection_squashes[i].getHeader());
+        auto squashed_chunk = Squashing::squash(projection_squashes[i].flush());
         if (squashed_chunk)
             writeTempProjectionPart(i, std::move(squashed_chunk));
     }
@@ -1703,11 +1685,8 @@ private:
         NameSet entries_to_hardlink;
         NameSet removed_indices;
         NameSet removed_stats;
-        NameSet removed_projections;
         /// A stat file need to be renamed iff the column is renamed.
         NameToNameMap renamed_stats;
-
-        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
 
         for (const auto & command : ctx->for_file_renames)
         {
@@ -1720,24 +1699,17 @@ private:
                 auto current_removed_stats = MutationHelpers::getRemovedStatistics(ctx->metadata_snapshot, command);
                 std::move(current_removed_stats.begin(), current_removed_stats.end(), std::inserter(removed_stats, removed_stats.end()));
             }
-            else if (command.type == MutationCommand::DROP_COLUMN)
-            {
-                removed_stats.insert(command.column_name);
-            }
-            else if (command.type == MutationCommand::RENAME_COLUMN && is_full_part_storage)
+            else if (command.type == MutationCommand::RENAME_COLUMN)
             {
                 if (auto filename = MutationHelpers::getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *ctx->source_part))
                 {
-                    String new_filename = MutationHelpers::getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *ctx->source_part->storage.getSettings(), ctx->source_part->getDataPartStorage());
+                    String new_filename = MutationHelpers::getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *ctx->source_part->storage.getSettings());
                     renamed_stats[*filename] = std::move(new_filename);
                 }
             }
-            else if (command.type == MutationCommand::DROP_PROJECTION)
-            {
-                removed_projections.insert(command.column_name);
-            }
         }
 
+        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
         bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
@@ -1753,8 +1725,9 @@ private:
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
-            bool need_recalculate = ctx->materialized_indices.contains(idx.name)
-                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot));
+            bool need_recalculate =
+                ctx->materialized_indices.contains(idx.name)
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name));
 
             if (need_recalculate)
             {
@@ -1762,7 +1735,7 @@ private:
             }
             else
             {
-                auto prefix = getIndexFileName(idx.name, idx.escape_filenames);
+                auto prefix = fmt::format("{}{}.", INDEX_FILE_PREFIX, idx.name);
                 auto it = ctx->source_part->checksums.files.upper_bound(prefix);
                 while (it != ctx->source_part->checksums.files.end())
                 {
@@ -1799,6 +1772,13 @@ private:
                     ctx->existing_indices_stats_checksums.addFile(*stat_filename, checksum);
                 }
             }
+        }
+
+        NameSet removed_projections;
+        for (const auto & command : ctx->for_file_renames)
+        {
+            if (command.type == MutationCommand::DROP_PROJECTION)
+                removed_projections.insert(command.column_name);
         }
 
         bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
@@ -2537,7 +2517,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    ASTPtr indices_recalc_expr_list = make_intrusive<ASTExpressionList>();
+    ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
 
@@ -2549,8 +2529,8 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             continue;
         }
 
-        bool need_recalculate = ctx->materialized_indices.contains(index.name)
-            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot));
+        bool need_recalculate
+            = ctx->materialized_indices.contains(index.name) || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name));
 
         if (need_recalculate)
         {

@@ -1678,73 +1678,54 @@ enum SQLTableFunc {
     TFcluster = 4;
     TFclusterAllReplicas = 5;
     TFdeltaLake = 6;
-    TFdeltaLakeAzure = 7;
-    TFdeltaLakeAzureCluster = 8;
-    TFdeltaLakeCluster = 9;
-    TFdeltaLakeLocal = 10;
-    TFdeltaLakeLocalCluster = 11;
-    TFdeltaLakeS3 = 12;
-    TFdeltaLakeS3Cluster = 13;
-    TFdictionary = 14;
-    TFexecutable = 15;
-    TFfile = 16;
-    TFfileCluster = 17;
-    TFformat = 18;
-    TFfuzzJSON = 19;
-    TFfuzzQuery = 20;
-    TFgcs = 21;
-    TFgenerateRandom = 22;
-    TFgenerateSeries = 23;
-    TFhdfs = 24;
-    TFhdfsCluster = 25;
-    TFhudi = 26;
-    TFhudiCluster = 27;
-    TFiceberg = 28;
-    TFicebergAzure = 29;
-    TFicebergAzureCluster = 30;
-    TFicebergCluster = 31;
-    TFicebergLocal = 32;
-    TFicebergLocalCluster = 33;
-    TFicebergS3 = 34;
-    TFicebergS3Cluster = 35;
-    TFinput = 36;
-    TFjdbc = 37;
-    TFloop = 38;
-    TFmerge = 39;
-    TFmergeTreeAnalyzeIndexes = 40;
-    TFmergeTreeAnalyzeIndexesUUID = 41;
-    TFmergeTreeIndex = 42;
-    TFmergeTreeProjection = 43;
-    TFmongodb = 44;
-    TFmysql = 45;
-    TFnull = 46;
-    TFnumbers = 47;
-    TFodbc = 48;
-    TFpaimon = 49;
-    TFpaimonAzure = 50;
-    TFpaimonAzureCluster = 51;
-    TFpaimonCluster = 52;
-    TFpaimonLocal = 53;
-    TFpaimonS3 = 54;
-    TFpaimonS3Cluster = 55;
-    TFpostgresql = 56;
-    TFprometheusQuery = 57;
-    TFprometheusQueryRange = 58;
-    TFredis = 59;
-    TFremote = 60;
-    TFremoteSecure = 61;
-    TFs3 = 62;
-    TFs3Cluster = 63;
-    TFsqlite = 64;
-    TFtimeSeriesData = 65;
-    TFtimeSeriesMetrics = 66;
-    TFtimeSeriesSelector = 67;
-    TFtimeSeriesTags = 68;
-    TFurl = 69;
-    TFurlCluster = 70;
-    TFvalues = 71;
-    TFview = 72;
-    TFytsaurus = 73;
+    TFdeltaLakeCluster = 7;
+    TFdictionary = 8;
+    TFexecutable = 9;
+    TFfile = 10;
+    TFfileCluster = 11;
+    TFformat = 12;
+    TFfuzzJSON = 13;
+    TFfuzzQuery = 14;
+    TFgcs = 15;
+    TFgenerateSeries = 16;
+    TFgenerateRandom = 17;
+    TFhdfs = 18;
+    TFhdfsCluster = 19;
+    TFhudi = 20;
+    TFhudiCluster = 21;
+    TFiceberg = 22;
+    TFicebergCluster = 23;
+    TFinput = 24;
+    TFjdbc = 25;
+    TFloop = 26;
+    TFmerge = 27;
+    TFmergeTreeIndex = 28;
+    TFmergeTreeProjection = 29;
+    TFmongodb = 30;
+    TFmysql = 31;
+    TFnull = 32;
+    TFnumbers = 33;
+    TFodbc = 34;
+    TFpaimon = 35;
+    TFpaimonCluster = 36;
+    TFpostgresql = 37;
+    TFprometheusQuery = 38;
+    TFprometheusQueryRange = 39;
+    TFredis = 40;
+    TFremote = 41;
+    TFremoteSecure = 42;
+    TFs3 = 43;
+    TFs3Cluster = 44;
+    TFsqlite = 45;
+    TFtimeSeriesData = 46;
+    TFtimeSeriesMetrics = 47;
+    TFtimeSeriesSelector = 48;
+    TFtimeSeriesTags = 49;
+    TFurl = 50;
+    TFurlCluster = 51;
+    TFvalues = 52;
+    TFview = 53;
+    TFytsaurus = 54;
 }
 
 message Database {
@@ -1781,7 +1762,7 @@ message Function {
 }
 
 message Cluster {
-    optional string cluster = 1;
+    required string cluster = 1;
 }
 
 message Storage {
@@ -2542,8 +2523,7 @@ enum InOutFormat {
 }
 
 message UsingExpr {
-    required ExprColumn column = 1;
-    repeated ExprColumn other_columns = 2;
+    repeated ExprColumn columns = 1;
 }
 
 message JoinConstraint {
@@ -2709,31 +2689,49 @@ message MongoDBFunc {
     optional Expr structure = 6;
 }
 
-message ObjectStoreFunc {
+message S3Func {
     enum FName {
         gcs = 1;
         s3 = 2;
-        azureBlobStorage = 3;
-        deltaLake = 4;
-        deltaLakeS3 = 5;
-        deltaLakeAzure = 6;
-        deltaLakeLocal = 7;
-        iceberg = 8;
-        icebergS3 = 9;
-        icebergAzure = 10;
-        icebergLocal = 11;
-        paimon = 12;
-        paimonS3 = 13;
-        paimonAzure = 14;
-        paimonCluster = 15;
-        paimonLocal = 16;
+        deltaLakeS3 = 3;
+        icebergS3 = 4;
+        gcsCluster = 5; /// Add as an alignment
+        s3Cluster = 6;
+        deltaLakeS3Cluster = 7;
+        icebergS3Cluster = 8;
     }
-    optional bool cluster_func = 1;
-    required FName fname = 2;
-    optional Cluster cluster = 3;
-    required string credential = 4;
-    repeated KeyValuePair params = 5;
-    optional SettingValues setting_values = 6;
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string credential = 3;
+    repeated KeyValuePair params = 4;
+    optional SettingValues setting_values = 5;
+}
+
+message AzureBlobStorageFunc {
+    enum FName {
+        azureBlobStorage = 1;
+        deltaLakeAzure = 2;
+        icebergAzure = 3;
+        deltaLakeAzureCluster = 4;
+        azureBlobStorageCluster = 5;
+        icebergAzureCluster = 6;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string credential = 3;
+    repeated KeyValuePair params = 4;
+    optional SettingValues setting_values = 5;
+}
+
+message LocalFunc {
+    enum FName {
+        deltaLakeLocal = 1;
+        icebergLocal = 2;
+    }
+    required FName fname = 1;
+    required string credential = 2;
+    repeated KeyValuePair params = 3;
+    optional SettingValues setting_values = 4;
 }
 
 message URLFunc {
@@ -2780,12 +2778,6 @@ message MergeTreeProjectionFunc {
     required Projection proj = 2;
 }
 
-message MergeTreeAnalyzeIndexesFunc {
-    required ExprSchemaTable est = 1;
-    optional Expr pred = 2;
-    optional string part = 3;
-}
-
 message GenerateRandomFunc {
     required Expr structure = 1;
     optional uint64 random_seed = 2;
@@ -2812,7 +2804,7 @@ message TableFunction {
         MySQLFunc mysql = 5;
         PostgreSQLFunc postgresql = 6;
         SQLiteFunc sqite = 7;
-        ObjectStoreFunc object_func = 8;
+        S3Func s3 = 8;
         MergeFunc merge = 9;
         ClusterFunc cluster = 10;
         MergeTreeIndexFunc mtindex = 11;
@@ -2820,14 +2812,15 @@ message TableFunction {
         GenerateRandomFunc grandom = 13;
         ValuesStatement values = 14;
         ExprSchemaTable dictionary = 15;
-        URLFunc url = 16;
-        RedisFunc redis = 17;
-        MongoDBFunc mongodb = 18;
-        MergeTreeProjectionFunc mtproj = 19;
-        Expr nullf = 20;
-        ArrowFlightFunc flight = 21;
-        MergeTreeAnalyzeIndexesFunc mtanindex = 22;
-        SQLTableFuncCall func = 23;
+        AzureBlobStorageFunc azure = 16;
+        LocalFunc local = 17;
+        URLFunc url = 18;
+        RedisFunc redis = 19;
+        MongoDBFunc mongodb = 20;
+        MergeTreeProjectionFunc mtproj = 21;
+        Expr nullf = 22;
+        ArrowFlightFunc flight = 23;
+        SQLTableFuncCall func = 24;
     }
 }
 
@@ -3013,11 +3006,6 @@ enum DatabaseEngineValues {
     DLazy = 5;
     DOrdinary = 6;
     DDataLakeCatalog = 7;
-    DPostgreSQL = 8;
-    DMySQL = 9;
-    DSQLite = 10;
-    DBackup = 11;
-    DMaterializedPostgreSQL = 12;
 }
 
 message BackupDisk {
@@ -3037,7 +3025,6 @@ message DatabaseEngineParam {
 message DatabaseEngine {
     required DatabaseEngineValues engine = 1;
     repeated DatabaseEngineParam params = 2;
-    optional SettingValues setting_values = 3;
 }
 
 message CreateDatabase {
@@ -3046,7 +3033,8 @@ message CreateDatabase {
     optional string uuid = 3;
     optional Cluster cluster = 4;
     required DatabaseEngine dengine = 5;
-    optional string comment = 6;
+    optional SettingValues setting_values = 6;
+    optional string comment = 7;
 }
 
 message CreateFunction {
@@ -3240,17 +3228,17 @@ enum CompressionCodec {
     COMP_LZ4 = 3;
     COMP_LZ4HC = 4;
     COMP_ZSTD = 5;
-    COMP_Delta = 6;
-    COMP_DoubleDelta = 7;
-    COMP_GCD = 8;
-    COMP_Gorilla = 9;
-    COMP_FPC = 10;
-    COMP_T64 = 11;
-    COMP_AES_128_GCM_SIV = 12;
-    COMP_AES_256_GCM_SIV = 13;
-    /// COMP_ZSTD_QAT = 14;
-    /// COMP_DEFLATE_QPL = 15;
-    /// COMP_SZ3 = 16;
+    COMP_ZSTD_QAT = 6;
+    COMP_DEFLATE_QPL = 7;
+    COMP_Delta = 8;
+    COMP_DoubleDelta = 9;
+    COMP_GCD = 10;
+    COMP_Gorilla = 11;
+    COMP_FPC = 12;
+    COMP_T64 = 13;
+    //COMP_SZ3 = 14;
+    COMP_AES_128_GCM_SIV = 14;
+    COMP_AES_256_GCM_SIV = 15;
 }
 
 message IndexKeyVal {
@@ -3313,7 +3301,6 @@ message IndexDef {
 message ProjectionDef {
     required Projection proj = 1;
     required Select select = 2;
-    optional SettingValues setting_values = 3;
 }
 
 message ConstraintDef {
@@ -3361,55 +3348,42 @@ enum TableEngineValues {
     AggregatingMergeTree = 5;
     CollapsingMergeTree = 6;
     VersionedCollapsingMergeTree = 7;
-    GraphiteMergeTree = 8;
-    File = 9;
-    Null = 10;
-    Set = 11;
-    Join = 12;
-    Memory = 13;
-    StripeLog = 14;
-    Log = 15;
-    TinyLog = 16;
-    EmbeddedRocksDB = 17;
-    Buffer = 18;
-    MySQL = 19;
-    PostgreSQL = 20;
-    SQLite = 21;
-    MongoDB = 22;
-    Redis = 23;
-    S3 = 24;
-    S3Queue = 25;
-    Hudi = 26;
-    DeltaLakeS3 = 27;
-    DeltaLakeAzure = 28;
-    DeltaLakeLocal = 29;
-    IcebergS3 = 30;
-    IcebergAzure = 31;
-    IcebergLocal = 32;
-    Merge = 33;
-    Distributed = 34;
-    Dictionary = 35;
-    GenerateRandom = 36;
-    AzureBlobStorage = 37;
-    AzureQueue = 38;
-    URL = 39;
-    KeeperMap = 40;
-    ExternalDistributed = 41;
-    MaterializedPostgreSQL = 42;
-    ArrowFlight = 43;
-    Alias = 44;
-    TimeSeries = 45;
-    HDFS = 46;
-    Hive = 47;
-    JDBC = 48;
-    Kafka = 49;
-    NATS = 50;
-    ODBC = 51;
-    RabbitMQ = 52;
-    YTsaurus = 53;
-    Executable = 54;
-    ExecutablePool = 55;
-    FileLog = 56;
+    File = 8;
+    Null = 9;
+    Set = 10;
+    Join = 11;
+    Memory = 12;
+    StripeLog = 13;
+    Log = 14;
+    TinyLog = 15;
+    EmbeddedRocksDB = 16;
+    Buffer = 17;
+    MySQL = 18;
+    PostgreSQL = 19;
+    SQLite = 20;
+    MongoDB = 21;
+    Redis = 22;
+    S3 = 23;
+    S3Queue = 24;
+    Hudi = 25;
+    DeltaLakeS3 = 26;
+    DeltaLakeAzure = 27;
+    DeltaLakeLocal = 28;
+    IcebergS3 = 29;
+    IcebergAzure = 30;
+    IcebergLocal = 31;
+    Merge = 32;
+    Distributed = 33;
+    Dictionary = 34;
+    GenerateRandom = 35;
+    AzureBlobStorage = 36;
+    AzureQueue = 37;
+    URL = 38;
+    KeeperMap = 39;
+    ExternalDistributed = 40;
+    MaterializedPostgreSQL = 41;
+    ArrowFlight = 42;
+    Alias = 43;
 }
 
 enum TableEngineOption {
@@ -3651,19 +3625,17 @@ message TopSelect {
 message CheckTable {
     required ExprSchemaTable est = 1;
     optional SinglePartitionExpr single_partition = 2;
-    optional SettingValues setting_values = 3;
-    optional OutFormat format = 4;
+    optional bool single_result = 3;
+    optional SettingValues setting_values = 4;
 }
 
 message DescribeStatement {
-    optional bool paren = 1;
     oneof desc_oneof {
-        TableOrFunction tof = 2;
-        ExplainQuery sel = 3;
-        SQLTableFuncCall stf = 4;
+        TableOrFunction tof = 1;
+        ExplainQuery sel = 2;
+        SQLTableFuncCall stf = 3;
     }
-    optional SettingValues setting_values = 5;
-    optional OutFormat format = 6;
+    optional SettingValues setting_values = 4;
 }
 
 message DeduplicateExpr {
@@ -3683,7 +3655,6 @@ message OptimizeTable {
     optional DeduplicateExpr dedup = 6;
     optional bool cleanup = 7;
     optional SettingValues setting_values = 8;
-    optional OutFormat format = 9;
 }
 
 message Exchange {
@@ -4004,7 +3975,7 @@ message AlterItem {
         /// For views
         SelectParen modify_query = 49;
         RefreshableView refresh = 50;
-        /// For tables, views and databases
+        // For tables, views and databases
         string comment = 51;
     }
 }
@@ -4055,60 +4026,61 @@ enum FailPoint {
     replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault = 5;
     use_delayed_remote_source = 6;
     cluster_discovery_faults = 7;
-    stripe_log_sink_write_fallpoint = 8;
-    smt_commit_merge_mutate_zk_fail_after_op = 9;
-    smt_commit_merge_mutate_zk_fail_before_op = 10;
-    smt_commit_write_zk_fail_after_op = 11;
-    smt_commit_write_zk_fail_before_op = 12;
-    smt_commit_merge_change_version_before_op = 13;
-    smt_merge_mutate_intention_freeze_in_destructor = 14;
-    smt_add_part_sleep_after_add_before_commit = 15;
-    smt_sleep_in_constructor = 16;
-    meta_in_keeper_create_metadata_failure = 17;
-    smt_insert_retry_timeout = 18;
-    smt_insert_fake_hardware_error = 19;
-    smt_sleep_after_hardware_in_insert = 20;
-    smt_throw_keeper_exception_after_successful_insert = 21;
-    smt_lightweight_snapshot_fail = 22;
-    object_storage_queue_fail_commit = 23;
-    smt_dont_merge_first_part = 24;
-    smt_sleep_in_schedule_data_processing_job = 25;
-    cache_warmer_stall = 26;
-    file_cache_dynamic_resize_fail_to_evict = 27;
-    check_table_query_delay_for_part = 28;
-    dummy_failpoint = 29;
-    prefetched_reader_pool_failpoint = 30;
-    shared_set_sleep_during_update = 31;
-    smt_outdated_parts_exception_response = 32;
-    object_storage_queue_fail_in_the_middle_of_file = 33;
-    replicated_merge_tree_insert_retry_pause = 34;
-    finish_set_quorum_failed_parts = 35;
-    finish_clean_quorum_failed_parts = 36;
-    dummy_pausable_failpoint = 37;
-    execute_query_calling_empty_set_result_func_on_exception = 38;
-    receive_timeout_on_table_status_response = 39;
-    keepermap_fail_drop_data = 40;
-    lazy_pipe_fds_fail_close = 41;
-    infinite_sleep = 42;
-    stop_moving_part_before_swap_with_active = 43;
-    replicated_merge_tree_all_replicas_stale = 44;
-    zero_copy_lock_zk_fail_before_op = 45;
-    zero_copy_lock_zk_fail_after_op = 46;
-    plain_object_storage_write_fail_on_directory_create = 47;
-    plain_object_storage_write_fail_on_directory_move = 48;
-    zero_copy_unlock_zk_fail_before_op = 49;
-    zero_copy_unlock_zk_fail_after_op = 50;
-    plain_rewritable_object_storage_azure_not_found_on_init = 51;
-    storage_merge_tree_background_clear_old_parts_pause = 52;
-    database_replicated_startup_pause = 53;
-    parallel_replicas_wait_for_unused_replicas = 54;
-    plain_object_storage_copy_fail_on_file_move = 55;
-    plain_object_storage_copy_temp_source_file_fail_on_file_move = 56;
-    plain_object_storage_copy_temp_target_file_fail_on_file_move = 57;
-    slowdown_parallel_replicas_local_plan_read = 58;
-    iceberg_writes_cleanup = 59;
-    smt_commit_exception_before_op = 60;
-    //keeper_leader_sets_invalid_digest = 61; The server aborts legitimately, can't be used
+    replicated_sends_failpoint = 8;
+    stripe_log_sink_write_fallpoint = 9;
+    smt_commit_merge_mutate_zk_fail_after_op = 10;
+    smt_commit_merge_mutate_zk_fail_before_op = 11;
+    smt_commit_write_zk_fail_after_op = 12;
+    smt_commit_write_zk_fail_before_op = 13;
+    smt_commit_merge_change_version_before_op = 14;
+    smt_merge_mutate_intention_freeze_in_destructor = 15;
+    smt_add_part_sleep_after_add_before_commit = 16;
+    smt_sleep_in_constructor = 17;
+    meta_in_keeper_create_metadata_failure = 18;
+    smt_insert_retry_timeout = 19;
+    smt_insert_fake_hardware_error = 20;
+    smt_sleep_after_hardware_in_insert = 21;
+    smt_throw_keeper_exception_after_successful_insert = 22;
+    smt_lightweight_snapshot_fail = 23;
+    object_storage_queue_fail_commit = 24;
+    smt_dont_merge_first_part = 25;
+    smt_sleep_in_schedule_data_processing_job = 26;
+    cache_warmer_stall = 27;
+    file_cache_dynamic_resize_fail_to_evict = 28;
+    check_table_query_delay_for_part = 29;
+    dummy_failpoint = 30;
+    prefetched_reader_pool_failpoint = 31;
+    shared_set_sleep_during_update = 32;
+    smt_outdated_parts_exception_response = 33;
+    object_storage_queue_fail_in_the_middle_of_file = 34;
+    replicated_merge_tree_insert_retry_pause = 35;
+    finish_set_quorum_failed_parts = 36;
+    finish_clean_quorum_failed_parts = 37;
+    dummy_pausable_failpoint = 38;
+    execute_query_calling_empty_set_result_func_on_exception = 39;
+    receive_timeout_on_table_status_response = 40;
+    keepermap_fail_drop_data = 41;
+    lazy_pipe_fds_fail_close = 42;
+    infinite_sleep = 43;
+    stop_moving_part_before_swap_with_active = 44;
+    replicated_merge_tree_all_replicas_stale = 45;
+    zero_copy_lock_zk_fail_before_op = 46;
+    zero_copy_lock_zk_fail_after_op = 47;
+    plain_object_storage_write_fail_on_directory_create = 48;
+    plain_object_storage_write_fail_on_directory_move = 49;
+    zero_copy_unlock_zk_fail_before_op = 50;
+    zero_copy_unlock_zk_fail_after_op = 51;
+    plain_rewritable_object_storage_azure_not_found_on_init = 52;
+    storage_merge_tree_background_clear_old_parts_pause = 53;
+    database_replicated_startup_pause = 54;
+    parallel_replicas_wait_for_unused_replicas = 55;
+    plain_object_storage_copy_fail_on_file_move = 56;
+    plain_object_storage_copy_temp_source_file_fail_on_file_move = 57;
+    plain_object_storage_copy_temp_target_file_fail_on_file_move = 58;
+    slowdown_parallel_replicas_local_plan_read = 59;
+    iceberg_writes_cleanup = 60;
+    smt_commit_exception_before_op = 61;
+    //keeper_leader_sets_invalid_digest = 62; The server aborts legitimately, can't be used
 }
 
 message SystemCommand {
@@ -4326,17 +4298,17 @@ message ShowStatement {
         ShowDictionaries dictionaries = 5;
         ShowIndex indexes = 6;
         bool processlist = 7;
-        bool grants = 8; /// bool is used here
+        bool grants = 8;// bool is used here
         bool users = 9;
-        bool roles = 10; /// bool is used here
-        bool profiles = 11; /// bool is used here
+        bool roles = 10; // bool is used here
+        bool profiles = 11; // bool is used here
         ExprSchemaTable policies = 12;
         bool quotas = 13;
-        bool quota = 14; /// bool is used here
+        bool quota = 14; // bool is used here
         bool access = 15;
         Cluster cluster = 16;
         bool clusters = 17;
-        bool settings = 18; /// bool is used here
+        bool settings = 18; // bool is used here
         string setting = 19;
         bool filesystem_caches = 20;
         bool engines = 21;

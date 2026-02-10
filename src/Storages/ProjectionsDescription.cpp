@@ -87,7 +87,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
-    other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
 
@@ -252,45 +251,17 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
 
+    if (!projection_definition->query)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "QUERY is required for projection");
+
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
 
-    if (projection_definition->index)
-    {
-        chassert(projection_definition->type);
-        result.index = ProjectionIndexFactory::instance().get(*projection_definition);
-        result.index->fillProjectionDescription(result, projection_definition->index, columns, query_context);
-        if (projection_definition->with_settings)
-            result.loadSettings(projection_definition->with_settings->changes);
-        return result;
-    }
-
     if (projection_definition->with_settings)
         result.loadSettings(projection_definition->with_settings->changes);
 
-    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
-
-    /// When positional arguments were enabled and resolved (e.g., GROUP BY 1, 2 -> GROUP BY b, a),
-    /// update definition_ast to store the resolved column names instead of positional references.
-    /// This ensures the table can be re-attached on server restart even with the default setting
-    /// (enable_positional_arguments_for_projections = false).
-    if (query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections])
-    {
-        if (auto resolved_group_by = result.query_ast->as<ASTSelectQuery &>().groupBy())
-        {
-            auto & proj_query = result.definition_ast->as<ASTProjectionDeclaration &>().query->as<ASTProjectionSelectQuery &>();
-            proj_query.setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, resolved_group_by->clone());
-        }
-    }
-
-    return result;
-}
-
-void ProjectionDescription::fillProjectionDescriptionByQuery(
-    ProjectionDescription & result, const ASTProjectionSelectQuery & query, const ColumnsDescription & columns, ContextPtr query_context)
-{
-    auto projection_order_by = query.orderBy();
+    auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
@@ -333,7 +304,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         /// Aggregate projections cannot hold parent part offset.
         can_hold_parent_part_offset = false;
 
-        if (projection_order_by)
+        if (query.orderBy())
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
@@ -343,16 +314,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             if (group_expression_list->children.size() == 1)
             {
                 result.key_size = 1;
-                order_expression = make_intrusive<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
+                order_expression = std::make_shared<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
             }
             else
             {
-                auto function_node = make_intrusive<ASTFunction>();
+                auto function_node = std::make_shared<ASTFunction>();
                 function_node->name = "tuple";
                 function_node->arguments = group_expression_list->clone();
                 result.key_size = function_node->arguments->children.size();
                 for (auto & child : function_node->arguments->children)
-                    child = make_intrusive<ASTIdentifier>(child->getColumnName());
+                    child = std::make_shared<ASTIdentifier>(child->getColumnName());
                 function_node->children.push_back(function_node->arguments);
                 order_expression = function_node;
             }
@@ -372,8 +343,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -414,6 +385,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     metadata.setColumns(ColumnsDescription(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
+    return result;
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
@@ -425,12 +397,12 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 {
     ProjectionDescription result;
 
-    auto select_query = make_intrusive<ASTProjectionSelectQuery>();
-    ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
+    auto select_query = std::make_shared<ASTProjectionSelectQuery>();
+    ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
     for (const auto & column : minmax_columns)
     {
-        select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
-        select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
     }
 
     auto primary_key_asts = primary_key.expression_list_ast->children;
@@ -527,14 +499,6 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
 Block ProjectionDescription::calculate(
     const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
-    if (index)
-        return index->calculate(*this, block, starting_offset, context, perm_ptr);
-    return calculateByQuery(block, starting_offset, context, perm_ptr);
-}
-
-Block ProjectionDescription::calculateByQuery(
-    const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
-{
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
@@ -561,7 +525,7 @@ Block ProjectionDescription::calculateByQuery(
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
+            makeASTOperator("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
     /// Only keep required columns
@@ -743,7 +707,7 @@ std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
 ExpressionActionsPtr
 ProjectionsDescription::getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const
 {
-    ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
+    ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & projection : projections)
         for (const auto & projection_expr : projection.query_ast->children)
             combined_expr_list->children.push_back(projection_expr->clone());

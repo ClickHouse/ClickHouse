@@ -102,7 +102,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "no_sign_request",
     "partition_strategy",
     "partition_columns_in_data_file",
-    "storage_class_name",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -153,7 +152,7 @@ StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const
     };
 }
 
-ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */, CredentialsConfigurationCallback refresh_credentials_callback) /// NOLINT
+ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
 {
     assertInitialized();
 
@@ -165,14 +164,6 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-
-    auto client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
-    {
-        if (!refresh_credentials_callback)
-            return nullptr;
-        auto new_client = getClient(url, *s3_settings, context_, /* for_disk_s3 */false, /*opt_disk_name*/ {}, refresh_credentials_callback);
-        return new_client;
-    };
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
@@ -180,8 +171,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         *s3_capabilities,
         /*key_generator=*/nullptr,
         "StorageS3",
-        false,
-        client_refresher);
+        false);
 }
 
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -351,7 +341,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
     ASTs key_value_asts;
-    if (auto first_key_value_arg_it = getFirstKeyValueArgument(args);
+    if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
         first_key_value_arg_it != args.end())
     {
         key_value_asts = ASTs(first_key_value_arg_it, args.end());
@@ -701,13 +691,13 @@ static void addStructureAndFormatToArgsIfNeededS3(
         /// at the end of arguments to override existed format and structure with "auto" values.
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
-            ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
             auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
         if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
         {
-            ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
             args.push_back(structure_equal_func);
         }
@@ -721,7 +711,7 @@ static void addStructureAndFormatToArgsIfNeededS3(
         size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
 
         ASTs key_value_asts;
-        auto first_key_value_arg_it = getFirstKeyValueArgument(args);
+        auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
         if (first_key_value_arg_it != args.end())
         {
             key_value_asts = ASTs(first_key_value_arg_it, args.end());
@@ -737,12 +727,12 @@ static void addStructureAndFormatToArgsIfNeededS3(
                 ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", max_number_of_arguments, count);
         }
 
-        auto format_literal = make_intrusive<ASTLiteral>(format_);
-        auto structure_literal = make_intrusive<ASTLiteral>(structure_);
+        auto format_literal = std::make_shared<ASTLiteral>(format_);
+        auto structure_literal = std::make_shared<ASTLiteral>(structure_);
 
         bool format_in_key_value = false;
         bool structure_in_key_value = false;
-        for (auto it = first_key_value_arg_it; it != args.end(); ++it)
+        for (auto * it = first_key_value_arg_it; it != args.end(); ++it)
         {
             const auto & arg = *it;
             const auto * function_ast = arg->as<ASTFunction>();
@@ -993,7 +983,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     initializeFromParsedArguments(std::move(parsed_arguments));
     if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
     {
-        String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
+        String path = object_storage_disk->getObjectsKeyPrefix();
         fs::path root = path;
         setPathForRead(String(root / suffix));
         keys = {String(root / suffix)};
@@ -1020,3 +1010,4 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
 }
 
 #endif
+

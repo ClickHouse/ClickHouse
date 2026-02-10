@@ -1,16 +1,19 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
-#include <Disks/IDisk.h>
 
+#include <Disks/IDisk.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Storages/PartitionCommands.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <Common/filesystemHelpers.h>
 
+#include <Common/filesystemHelpers.h>
 #include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
+
 
 namespace DB
 {
@@ -190,16 +193,17 @@ MetadataStorageFromPlainObjectStorageTransaction::MetadataStorageFromPlainObject
 {
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::commit(const TransactionCommitOptionsVariant &)
+const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
 {
+    return metadata_storage;
 }
 
-TransactionCommitOutcomeVariant MetadataStorageFromPlainObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant &)
+std::optional<StoredObjects> MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
 {
-    return true;
+    return metadata_storage.getStorageObjectsIfExist(path);
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path, bool /*if_exists*/, bool /*should_remove_objects*/)
+void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
     if (metadata_storage.object_metadata_cache)
     {
@@ -211,19 +215,21 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
 
     auto object_key = getKeyForPath(object_storage->getCommonKeyPrefix(), path);
     metadata_storage.object_storage->removeObjectIfExists(StoredObject(object_key.serialize()));
-    objects_to_remove.push_back(StoredObject(object_key.serialize()));
+}
+
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string & path)
+{
+    unlinkFile(path);
+    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
 {
     for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-    {
         metadata_storage.object_storage->removeObjectIfExists(StoredObject(it->path()));
-        objects_to_remove.push_back(StoredObject(it->path()));
-    }
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
+void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path)
 {
     /// TODO: Implement recursive listing.
     removeDirectory(path);
@@ -232,11 +238,6 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std
 ObjectStorageKey MetadataStorageFromPlainObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)
 {
     return getKeyForPath(object_storage->getCommonKeyPrefix(), path);
-}
-
-StoredObjects MetadataStorageFromPlainObjectStorageTransaction::getSubmittedForRemovalBlobs()
-{
-    return objects_to_remove;
 }
 
 }

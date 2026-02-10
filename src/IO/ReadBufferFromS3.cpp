@@ -65,8 +65,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_,
-    std::optional<size_t> file_size_,
-    const S3CredentialsRefreshCallback & credentials_refresh_callback_)
+    std::optional<size_t> file_size_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -78,7 +77,6 @@ ReadBufferFromS3::ReadBufferFromS3(
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
-    , credentials_refresh_callback(credentials_refresh_callback_)
 {
     file_size = file_size_;
 }
@@ -194,19 +192,17 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
-        const auto file_size_str = file_size.has_value() ? toString(*file_size) : "Unknown";
         stop_reason = fmt::format(
-            "EOF (read offset: {}/{}, expected file size: {}, restricted seek: {})",
-            offset.load(), read_until_position.load(), file_size_str, restricted_seek);
+            "EOF (read offset: {}/{}, file size: {}, restricted seek: {})",
+            offset.load(), read_until_position.load(),
+            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
 
         release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
         /// We could get EOF only if read_until_position is not set,
         /// otherwise we'd quit before impl->next().
-        chassert(!read_until_position,
-                 fmt::format("Cannot read all data. Key: {}, size: {}, expected size: {}, position: {}/{}",
-                             key, getObjectSizeFromS3(), file_size_str, offset.load(), read_until_position.load()));
+        chassert(!read_until_position);
         return false;
     }
 
@@ -294,16 +290,6 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
-        if (s3_exception->isAccessTokenExpiredError() && credentials_refresh_callback)
-        {
-            auto new_client = credentials_refresh_callback();
-            if (new_client)
-            {
-                client_ptr = std::move(new_client);
-                return true;
-            }
-        }
-
         /// It doesn't make sense to retry Access Denied or No Such Key
         if (!s3_exception->isRetryableError())
         {
@@ -391,13 +377,10 @@ std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
     if (file_size)
         return file_size;
 
-    file_size = getObjectSizeFromS3();
-    return file_size;
-}
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
 
-size_t ReadBufferFromS3::getObjectSizeFromS3() const
-{
-    return S3::getObjectSize(*client_ptr, bucket, key, version_id);
+    file_size = object_size;
+    return file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()

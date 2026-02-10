@@ -12,7 +12,7 @@ import pytest
 from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_queue_common import (
     run_query,
     random_str,
@@ -75,7 +75,6 @@ def started_cluster():
                 "configs/keeper_retries.xml",
             ],
             stay_alive=True,
-            cpu_limit=8
         )
         cluster.add_instance(
             "instance2",
@@ -470,7 +469,6 @@ def test_failure_in_the_middle(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_loading_retries": 10000,
-            "polling_max_timeout_ms": 100,
         },
     )
     values = []
@@ -490,54 +488,53 @@ def test_failure_in_the_middle(started_cluster):
         f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
     )
 
-    try:
-        create_mv(node, table_name, dst_table_name, format=format)
+    create_mv(node, table_name, dst_table_name, format=format)
 
-        def check_failpoint():
-            return node.contains_in_log(
-                f"StorageS3Queue (default.{table_name}): Got an error while pulling chunk: Code: 1002. DB::Exception: Failed to read file. Processed rows:"
-            )
-
-        for _ in range(120):
-            if check_failpoint():
-                break
-            time.sleep(1)
-
-        assert check_failpoint()
-
-        node.query("SYSTEM FLUSH LOGS")
-        assert 0 == int(
-            node.query(
-                f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
-            )
+    def check_failpoint():
+        return node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Got an error while pulling chunk: Code: 1002. DB::Exception: Failed to read file. Processed rows:"
         )
 
-        for _ in range(20):
-            if 0 < int(
-                node.query(
-                    f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
-                )
-            ):
-                break
-            time.sleep(1)
+    for _ in range(40):
+        if check_failpoint():
+            break
+        time.sleep(1)
 
-        assert 0 < int(
+    assert check_failpoint()
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
+        )
+    )
+
+    for _ in range(20):
+        if 0 < int(
             node.query(
                 f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
             )
-        )
-    finally:
+        ):
+            break
+        sleep(1)
+
+    assert 0 < int(
         node.query(
-            f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
+            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
         )
+    )
 
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     assert 0 == get_count()
 
+    node.query(
+        f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
+    )
+
     processed = False
-    for _ in range(50):
+    for _ in range(40):
         node.query("SYSTEM FLUSH LOGS")
         processed = int(
             node.query(
@@ -796,9 +793,9 @@ def test_shutdown_order(started_cluster):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 5,
-            "polling_max_timeout_ms": 100,
-            "polling_min_timeout_ms": 100,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
         },
     )
 
@@ -809,7 +806,7 @@ def test_shutdown_order(started_cluster):
             file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
             s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
             node.query(
-                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(50000)"
+                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(5000000)"
             )
 
     insert()
@@ -826,8 +823,6 @@ def test_shutdown_order(started_cluster):
 
     node.restart_clickhouse()
 
-    node.query(f"SYSTEM FLUSH LOGS system.text_log")
-
     def check_in_text_log(message, logger_name):
         return int(
             node.query(
@@ -838,9 +833,6 @@ def test_shutdown_order(started_cluster):
     assert 0 == check_in_text_log(
         "Failed to process data", f"StorageS3Queue(default.{table_name})"
     )
-
-    node.query(f"SYSTEM FLUSH LOGS system.s3queue_log")
-
     assert 0 == int(
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
@@ -1388,143 +1380,3 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
                 assert False
             except NoNodeError:
                 pass
-
-
-def test_metadata_cache_exact_size_tracking(started_cluster):
-    node = started_cluster.instances["instance"]
-    mode = "unordered"
-    # Clear the cache, there is no drop cache command for now
-    node.restart_clickhouse()
-
-    table_name = f"test_cache_exact_{mode}_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
-    files_path = f"{table_name}_data"
-
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        mode,
-        files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-            "metadata_cache_size_bytes": 100000,
-            "metadata_cache_size_elements": 100,
-            "processing_threads_num": 1,
-        },
-    )
-
-    # Process 1 file first to measure exact sizeof(FileStatus)
-    generate_random_files(
-        started_cluster, files_path, 1, start_ind=0, row_num=5
-    )
-    create_mv(node, table_name, dst_table_name)
-
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    for _ in range(60):
-        if 5 == get_count():
-            break
-        time.sleep(1)
-
-    assert 5 == get_count()
-
-    cache_size_bytes_str = node.query(
-        f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
-    ).strip()
-
-    cache_size_elements_str = node.query(
-        f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
-    ).strip()
-
-    if not cache_size_bytes_str or not cache_size_elements_str:
-        logging.warning("Cache metrics not available, skipping size verification")
-        return
-
-    cache_size_bytes = int(cache_size_bytes_str)
-    cache_size_elements = int(cache_size_elements_str)
-
-    assert cache_size_elements == 1, f"Expected 1 cache element, got {cache_size_elements}"
-
-    # Measure exact sizeof(FileStatus) for this platform
-    sizeof_file_status = cache_size_bytes
-    logging.info(f"sizeof(FileStatus) = {sizeof_file_status} bytes")
-
-    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields
-    if is_arm():
-        assert 200 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status} on ARM"
-    else:
-        assert 250 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status} on x64"
-
-    # Process 19 more files
-    files_to_generate = 19
-    generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=1, row_num=5
-    )
-
-    expected_rows = 100  # 20 files * 5 rows
-    for _ in range(60):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-
-    assert expected_rows == get_count(), f"Expected {expected_rows} rows, got {get_count()}"
-
-    cache_size_bytes = int(
-        node.query(
-            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
-        ).strip()
-    )
-    cache_size_elements = int(
-        node.query(
-            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
-        ).strip()
-    )
-
-    logging.info(
-        f"Cache metrics: {cache_size_elements} elements, {cache_size_bytes} bytes"
-    )
-
-    assert cache_size_elements == 20, f"Expected 20 cache elements, got {cache_size_elements}"
-
-    # Verify exact total size = sizeof(FileStatus) * number_of_files
-    expected_total_size = sizeof_file_status * 20
-    assert cache_size_bytes == expected_total_size, (
-        f"Cache size {cache_size_bytes} doesn't match expected {expected_total_size} (sizeof(FileStatus) * 20)"
-    )
-
-    # Test that ALTER immediately evicts cache entries
-    size_for_10_files = sizeof_file_status * 10
-    node.query(
-        f"""
-        ALTER TABLE {table_name}
-        MODIFY SETTING
-            metadata_cache_size_bytes = {size_for_10_files},
-            metadata_cache_size_elements = 10
-        """
-    )
-
-    new_cache_size_bytes = int(
-        node.query(
-            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeBytes'"
-        ).strip()
-    )
-    new_cache_size_elements = int(
-        node.query(
-            f"SELECT value FROM system.metrics WHERE metric = 'ObjectStorageQueueMetadataCacheSizeElements'"
-        ).strip()
-    )
-
-    logging.info(
-        f"After eviction - Cache metrics: {new_cache_size_elements} elements, {new_cache_size_bytes} bytes"
-    )
-
-    assert new_cache_size_elements <= 10, (
-        f"Cache elements {new_cache_size_elements} should be evicted to <= 10"
-    )
-    assert new_cache_size_bytes <= size_for_10_files, (
-        f"Cache size {new_cache_size_bytes} should be evicted to <= {size_for_10_files}"
-    )
-

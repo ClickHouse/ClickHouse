@@ -10,18 +10,15 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
 
+#include "Common/Exception.h"
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/FailPoint.h>
-#include <Common/thread_local_rng.h>
 #include <Core/Defines.h>
 
-#include <Loggers/OwnFormattingChannel.h>
-#include <Loggers/OwnPatternFormatter.h>
-
-#include <filesystem>
 #include <string>
-#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -73,14 +70,8 @@ void setUpConfig(const std::string & file_name)
                 <type>object_storage</type>
                 <object_storage_type>local_blob_storage</object_storage_type>
                 <path>local_blob_storage_dir/</path>
-                <metadata_path>metadata_storage_dir</metadata_path>
                 <metadata_type>local</metadata_type>
                 <use_fake_transaction>false</use_fake_transaction>
-                <data_background_cleanup>
-                    <enabled>true</enabled>
-                    <interval_sec>1</interval_sec>
-                    <metadata_request_size>100</metadata_request_size>
-                </data_background_cleanup>
             </local_object_storage_disk>
         </disks>
     </storage_configuration>
@@ -133,57 +124,44 @@ public:
         auto config = config_processor.loadConfig(false);
         getContext().context->setConfig(config.configuration);
 
-        String test_log_level = "none";
-        if (const char * test_log_level_env = std::getenv("TEST_LOG_LEVEL")) // NOLINT(concurrency-mt-unsafe)
-            test_log_level = test_log_level_env;
-
-        Poco::AutoPtr<OwnPatternFormatter> pf(new OwnPatternFormatter(/*color_=*/true));
-        Poco::AutoPtr<DB::OwnFormattingChannel> channel(new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr)));
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel(test_log_level);
-
         DB::registerDisks(/*global_skip_access_check*/ true);
+    }
+
+    static void removeAll()
+    {
+         for (const auto & [_, disk] : initialized_disks)
+         {
+            std::vector<String> file_names;
+            disk->listFiles(".", file_names);
+
+            for (const auto & name : file_names)
+                disk->removeRecursive(name);
+         }
+    }
+
+    std::set<std::string> listAllBlobs(DB::DiskPtr disk)
+    {
+        DB::ObjectStoragePtr object_storage = disk->getObjectStorage();
+
+        DB::RelativePathsWithMetadata children;
+        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
+        object_storage->listObjects(common_key_prefix, children, /* max_keys */ 0);
+
+        std::set<std::string> blobs;
+        for (const auto & child : children)
+            blobs.insert(child->relative_path);
+        return blobs;
     }
 
     static void TearDownTestSuite()
     {
-        DB::clearDiskRegistry();
-    }
-
-    void SetUp() override
-    {
-        thread_local_rng.seed(42);
-    }
-
-    void TearDown() override
-    {
+        removeAll();
         for (const auto & [_, disk] : initialized_disks)
             disk->shutdown();
-
         initialized_disks.clear();
 
-        fs::remove_all("./local_blob_storage_dir");
-        fs::remove_all("./metadata_storage_dir");
-    }
-
-    void waitBlobsCount(DB::DiskPtr disk, size_t needed_count)
-    {
-        for (size_t i = 0; i < 100; ++i)
-        {
-            DB::ObjectStoragePtr object_storage = disk->getObjectStorage();
-
-            DB::RelativePathsWithMetadata children;
-            auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
-            object_storage->listObjects(common_key_prefix, children, /* max_keys */ 0);
-            std::cout << "Blobs count: " << children.size() << ", needed: " << needed_count << std::endl;
-
-            if (children.size() == needed_count)
-                return;
-
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-
-        FAIL();
+        // other tests may also register disks, so we need to clear the registry
+        DB::clearDiskRegistry();
     }
 
     std::string getTestName()
@@ -215,6 +193,11 @@ public:
         return disk;
     }
 
+    void TearDown() override
+    {
+        removeAll();
+    }
+
 private:
     static DB::DisksMap initialized_disks;
 };
@@ -227,9 +210,9 @@ TEST_F(DiskObjectStorageTest, CreateDisk)
     auto disk = getDiskObjectStorage();
     EXPECT_TRUE(disk->isDisk());
     EXPECT_EQ(disk->getName(), "local_object_storage_disk");
-    EXPECT_EQ(disk->getPath(), "metadata_storage_dir");
+    EXPECT_EQ(disk->getPath(), "./disks/local_object_storage_disk/");
 
-    waitBlobsCount(disk, 0);
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
 TEST_F(DiskObjectStorageTest, WriteListReadFile)
@@ -255,11 +238,10 @@ TEST_F(DiskObjectStorageTest, WriteListReadFile)
 
     EXPECT_EQ(disk->getFileSize(file_name), file_content.size());
 
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     disk->removeFile(file_name);
-
-    waitBlobsCount(disk, 0);
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
 TEST_F(DiskObjectStorageTest, WriteFileTxCommit)
@@ -281,7 +263,7 @@ TEST_F(DiskObjectStorageTest, WriteFileTxCommit)
 
     EXPECT_TRUE(disk->existsFile(file_name));
 
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, WriteFileTxUndo)
@@ -302,7 +284,7 @@ TEST_F(DiskObjectStorageTest, WriteFileTxUndo)
     tx->undo();
 
     EXPECT_FALSE(disk->existsFile(file_name));
-    waitBlobsCount(disk, 0);
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
 TEST_F(DiskObjectStorageTest, RewriteFile)
@@ -320,7 +302,7 @@ TEST_F(DiskObjectStorageTest, RewriteFile)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -338,7 +320,7 @@ TEST_F(DiskObjectStorageTest, RewriteFile)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), rewrite_file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, RewriteFileUndo)
@@ -356,7 +338,7 @@ TEST_F(DiskObjectStorageTest, RewriteFileUndo)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -374,7 +356,7 @@ TEST_F(DiskObjectStorageTest, RewriteFileUndo)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, RewriteFileTxCommitFail)
@@ -392,7 +374,7 @@ TEST_F(DiskObjectStorageTest, RewriteFileTxCommitFail)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -410,7 +392,7 @@ TEST_F(DiskObjectStorageTest, RewriteFileTxCommitFail)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
@@ -428,7 +410,7 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -448,7 +430,7 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
 
     EXPECT_TRUE(disk->existsFile(new_file_name));
     EXPECT_EQ(readAll(*disk->readFile(new_file_name, {})), rewrite_file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxUndo)
@@ -466,7 +448,7 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxUndo)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -487,7 +469,7 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxUndo)
     EXPECT_FALSE(disk->existsFile(new_file_name));
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxCommitFail)
@@ -505,7 +487,7 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxCommitFail)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -527,7 +509,7 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxCommitFail)
     EXPECT_FALSE(disk->existsFile(new_file_name));
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFile)
@@ -545,7 +527,7 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFile)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -569,7 +551,7 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFile)
     EXPECT_TRUE(disk->existsFile(new_file_name));
     EXPECT_EQ(readAll(*disk->readFile(new_file_name, {})), rewrite_file_content);
 
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxUndo)
@@ -587,7 +569,7 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxUndo)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -610,7 +592,7 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxUndo)
 
     EXPECT_FALSE(disk->existsFile(new_file_name));
 
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxCommitFail)
@@ -628,7 +610,7 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxCommitFail)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -652,7 +634,7 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxCommitFail)
 
     EXPECT_FALSE(disk->existsFile(new_file_name));
 
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, TruncateFileToZero)
@@ -674,7 +656,7 @@ TEST_F(DiskObjectStorageTest, TruncateFileToZero)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     {
         auto tx = disk->createTransaction();
@@ -687,7 +669,7 @@ TEST_F(DiskObjectStorageTest, TruncateFileToZero)
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), "");
 
-    waitBlobsCount(disk, 0);
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
 TEST_F(DiskObjectStorageTest, TruncateFileToZeroInsideTx)
@@ -714,7 +696,7 @@ TEST_F(DiskObjectStorageTest, TruncateFileToZeroInsideTx)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), "");
-    waitBlobsCount(disk, 0);
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
 TEST_F(DiskObjectStorageTest, TruncateFileToNotZero)
@@ -740,12 +722,12 @@ TEST_F(DiskObjectStorageTest, TruncateFileToNotZero)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content + appended_file_content);
-    waitBlobsCount(disk, 2);
+    EXPECT_EQ(listAllBlobs(disk).size(), 2);
 
     disk->truncateFile(file_name, file_content.size());
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
 
-    waitBlobsCount(disk, 1);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }

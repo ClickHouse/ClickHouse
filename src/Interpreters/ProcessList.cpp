@@ -23,7 +23,6 @@
 namespace CurrentMetrics
 {
     extern const Metric Query;
-    extern const Metric QueryNonInternal;
 }
 
 namespace DB
@@ -55,7 +54,6 @@ namespace Setting
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
-    extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
@@ -66,7 +64,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -272,7 +269,7 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
+            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
@@ -281,15 +278,9 @@ ProcessList::EntryPtr ProcessList::insert(
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
                     .compression_codec = settings[Setting::temporary_files_codec],
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
-                    .metrics = {}, /// Metrics are set by child scopes
                 };
-
-                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
-
-                if (user_process_list.user_temp_data_on_disk)
-                    query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                        user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
+                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
+                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
 
             /// Set query-level memory trackers
@@ -304,22 +295,7 @@ ProcessList::EntryPtr ProcessList::insert(
                 thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
                 thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
                 thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
-
-                /// Set up tracing of profile events
-                if (settings[Setting::trace_profile_events])
-                {
-                    const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
-                    if (!list_of_events_to_trace.empty())
-                    {
-                        /// Trace specific profile events
-                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
-                    }
-                    else
-                    {
-                        /// Trace all profile events
-                        thread_group->performance_counters.setTraceAllProfileEvents();
-                    }
-                }
+                thread_group->performance_counters.setTraceProfileEvents(settings[Setting::trace_profile_events]);
             }
 
             thread_group->memory_tracker.setDescription("Query");
@@ -358,9 +334,9 @@ ProcessList::EntryPtr ProcessList::insert(
             increaseQueryKindAmount(query_kind);
         }
 
-        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
+        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
-        res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
+        res = std::make_shared<Entry>(*this, process_it);
 
         (*process_it)->setUserProcessList(&user_process_list);
         (*process_it)->setProcessListEntry(res);
@@ -398,7 +374,6 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
-    if (registered_in_cancellation_checker)
     {
         /// We need to block the overcommit tracker here to avoid lock inversion because OvercommitTracker takes a lock on the ProcessList::mutex.
         /// When task is added, we lock the ProcessList::mutex, and then the CancellationChecker mutex.
@@ -493,9 +468,6 @@ QueryStatus::QueryStatus(
     , num_queries_increment(CurrentMetrics::Query)
     , is_internal(is_internal_)
 {
-    if (!is_internal)
-        num_non_internal_queries_increment.emplace(CurrentMetrics::QueryNonInternal);
-
     /// We have to pass `query_settings_` to this constructor because we can't use `context_->getSettings().max_execution_time` here:
     /// a QueryStatus is created with `ProcessList::mutex` locked (see ProcessList::insert) and calling `context_->getSettings()`
     /// would lock the context's lock too, whereas holding two those locks simultaneously is not good.
@@ -878,12 +850,10 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
             .compression_codec = settings[Setting::temporary_files_codec],
             .buffer_size = settings[Setting::temporary_files_buffer_size],
-            .metrics = {}, /// Metrics are set by child scopes
         };
 
-        if (auto shared_temp_data = global_context->getSharedTempDataOnDisk())
-            user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(shared_temp_data),
-                std::move(temporary_data_on_disk_settings));
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
+            std::move(temporary_data_on_disk_settings));
     }
 }
 

@@ -214,10 +214,7 @@ Default value: empty string.
 
 ### `keeper_path` {#keeper_path}
 
-Path to the queue metadata in ZooKeeper. If not specified explicitly, ClickHouse builds the path from `s3queue_default_zookeeper_path`, the database UUID, and the table UUID. Absolute values (starting with `/`) are used as provided, while relative values are appended to the configured prefix. Macros such as `{database}` or `{uuid}` are expanded before the engine connects to ZooKeeper.
-
-To target an auxiliary ZooKeeper cluster, prefix the value with the configured name, for example `analytics_keeper:/clickhouse/queue/orders`. The name must exist in `<auxiliary_zookeepers>`; otherwise the engine reports `Unknown auxiliary ZooKeeper name ...`. The full string (including the prefix) is preserved in `SHOW CREATE TABLE` so the statement can be replicated verbatim.
-
+The path in ZooKeeper can be specified as a table engine setting or default path can be formed from the global configuration-provided path and table UUID.
 Possible values:
 
 - String.
@@ -437,13 +434,13 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 ## Introspection {#introspection}
 
-For introspection use `system.s3queue_metadata_cache` stateless table and `system.s3queue_log` persistent table.
+For introspection use `system.s3queue` stateless table and `system.s3queue_log` persistent table.
 
-1. `system.s3queue_metadata_cache`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
+1. `system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
 ```sql
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE system.s3queue_metadata_cache
+│ CREATE TABLE system.s3queue
 (
     `database` String,
     `table` String,
@@ -465,7 +462,7 @@ Example:
 ```sql
 
 SELECT *
-FROM system.s3queue_metadata_cache
+FROM system.s3queue
 
 Row 1:
 ──────
@@ -479,7 +476,7 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue_metadata_cache`, but for `processed` and `failed` files.
+2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue`, but for `processed` and `failed` files.
 
 The table has the following structure:
 
@@ -504,7 +501,8 @@ Query id: 0ad619c3-0f2a-4ee4-8b40-c73d86e04314
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
-ORDER BY (event_date, event_time) │
+ORDER BY (event_date, event_time)
+SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

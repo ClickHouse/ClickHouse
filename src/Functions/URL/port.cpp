@@ -115,7 +115,7 @@ private:
                 return default_port;
             ++p;
         }
-        return static_cast<UInt16>(port);
+        return port;
     }
 };
 
