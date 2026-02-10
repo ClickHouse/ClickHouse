@@ -10,6 +10,10 @@
 namespace DB
 {
 
+/// Maximum allowed timeout is 1 year in milliseconds.
+/// This prevents overflow in chrono calculations and ensures reasonable behavior.
+static constexpr Int64 MAX_TIMEOUT_MS = 365LL * 24 * 60 * 60 * 1000;
+
 struct CancellationChecker::QueryToTrack
 {
     QueryToTrack(QueryStatusPtr query_, UInt64 timeout_, UInt64 endtime_, OverflowMode overflow_mode_)
