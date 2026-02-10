@@ -2886,6 +2886,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             {
                 left_table_expression = {};
                 auto left_plan = std::move(left_table_expression_query_plan);
+                left_table_expression_query_plan = {}; // NOLINT(bugprone-use-after-move, hicpp-invalid-access-moved)
                 const auto & array_join_map = planner_context->getArrayJoinResultToSource();
                 if (!array_join_map.empty())
                     left_plan = wrapLeftPlanWithArrayJoinFromMap(std::move(left_plan), array_join_map, planner_context);
