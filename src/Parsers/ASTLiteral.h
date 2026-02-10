@@ -1,9 +1,12 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/TokenIterator.h>
 #include <Common/FieldVisitorDump.h>
+#include <DataTypes/IDataType.h>
+
+#include <optional>
 
 
 namespace DB
@@ -13,20 +16,20 @@ namespace DB
 class ASTLiteral : public ASTWithAlias
 {
 public:
-    explicit ASTLiteral(Field value_)
-        : value(std::move(value_))
-    {
-    }
+    explicit ASTLiteral(Field value_) : value(std::move(value_)) {}
 
     // This methond and the custom_type are only used for Apache Gluten,
-    explicit ASTLiteral(Field value_, DataTypePtr & type_)
-        : value(std::move(value_))
+    explicit ASTLiteral(Field value_, DataTypePtr & type_) : value(std::move(value_))
     {
         custom_type = type_;
     }
 
     Field value;
     DataTypePtr custom_type;
+
+    /// For ConstantExpressionTemplate
+    std::optional<TokenIterator> begin;
+    std::optional<TokenIterator> end;
 
     /*
      * The name of the column corresponding to this literal. Only used to

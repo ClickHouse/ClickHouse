@@ -14,7 +14,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -22,7 +21,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Storages/AlterCommands.h>
@@ -36,9 +34,6 @@
 
 #include <boost/range/algorithm_ext/push_back.hpp>
 
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 namespace DB
 {
@@ -141,29 +136,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
     }
 
-#if CLICKHOUSE_CLOUD
-    if (database->getEngineName() == "Shared" && SharedDatabaseCatalog::instance().shouldReplicateQuery(getContext(), query_ptr))
-    {
-        return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
-    }
-#endif
-
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
-
-#if CLICKHOUSE_CLOUD
-    if (alter.isUnlockSnapshot())
-    {
-        ContextPtr context = getContext();
-        auto & backups_worker = context->getBackupsWorker();
-        backups_worker.unlockSnapshot(query_ptr, context);
-        return res;
-    }
-#endif
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
@@ -193,7 +171,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         {
             partition_commands.emplace_back(std::move(*partition_command));
         }
-        else if (auto mut_command = MutationCommand::parse(*command_ast))
+        else if (auto mut_command = MutationCommand::parse(command_ast))
         {
             if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
@@ -202,7 +180,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
-                    mut_command = MutationCommand::parse(*new_alter_command);
+                    mut_command = MutationCommand::parse(new_alter_command);
                     if (!mut_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
@@ -231,57 +209,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                                                          "to execute ALTERs of different types (replicated and non replicated) in single query");
     }
 
-    /// Check for conflicts between RENAME COLUMN and UPDATE/DELETE operations.
-    /// If a column is both renamed and used in UPDATE/DELETE in the same ALTER, we must fail early
-    /// to ensure atomicity - otherwise RENAME would succeed but UPDATE/DELETE would fail,
-    /// leaving the table in an unexpected state. See issue #70678.
-    if (!alter_commands.empty() && mutation_commands.hasNonEmptyMutationCommands())
-    {
-        NameSet columns_to_rename;
-        for (const auto & command : alter_commands)
-            if (command.type == AlterCommand::RENAME_COLUMN)
-                columns_to_rename.insert(command.column_name);
-
-        if (!columns_to_rename.empty())
-        {
-            /// Check UPDATE columns
-            NameSet updated_columns = mutation_commands.getAllUpdatedColumns();
-            for (const auto & column_name : columns_to_rename)
-            {
-                if (updated_columns.contains(column_name))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot UPDATE column {} and RENAME it in the same ALTER query. "
-                        "Please split into separate ALTER statements.",
-                        backQuote(column_name));
-            }
-
-            /// Check DELETE/UPDATE predicates for references to renamed columns
-            for (const auto & command : mutation_commands)
-            {
-                if (command.predicate)
-                {
-                    auto identifiers = IdentifiersCollector::collect(command.predicate);
-                    for (const auto * identifier : identifiers)
-                    {
-                        auto column_name = IdentifierSemantic::getColumnName(*identifier);
-                        if (column_name && columns_to_rename.contains(*column_name))
-                        {
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Cannot use column {} in {} predicate and RENAME it in the same ALTER query. "
-                                "Please split into separate ALTER statements.",
-                                backQuote(*column_name),
-                                command.type == MutationCommand::DELETE ? "DELETE" : "UPDATE");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
     {
-        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
-            && table_id.getDatabaseName() != DatabaseCatalog::SYSTEM_DATABASE)
+        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
@@ -379,14 +309,6 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-#if CLICKHOUSE_CLOUD
-    bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(database->getEngineName());
-    if (managed_by_shared_catalog && !getContext()->getClientInfo().is_shared_catalog_internal)
-    {
-        return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
-    }
-#endif
-
     if (!alter_commands.empty())
     {
         /// Only ALTER SETTING and ALTER COMMENT is supported.
@@ -407,7 +329,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
                     database->applySettingsChanges(command.settings_changes, getContext());
                     break;
                 case AlterCommand::MODIFY_DATABASE_COMMENT:
-                    database->alterDatabaseComment(command, getContext());
+                    database->alterDatabaseComment(command);
                     break;
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter command");
@@ -570,11 +492,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_TTL, database, table);
             break;
         }
-        case ASTAlterCommand::REWRITE_PARTS:
-        {
-            required_access.emplace_back(AccessType::ALTER_REWRITE_PARTS, database, table);
-            break;
-        }
         case ASTAlterCommand::RESET_SETTING: [[fallthrough]];
         case ASTAlterCommand::MODIFY_SETTING:
         {
@@ -660,8 +577,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MODIFY_DATABASE_COMMENT, database, table);
             break;
         }
-        case ASTAlterCommand::NO_TYPE:
-            break;
+        case ASTAlterCommand::NO_TYPE: break;
         case ASTAlterCommand::MODIFY_COMMENT:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COMMENT, database, table);

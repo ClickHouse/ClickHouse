@@ -9,6 +9,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
+#include <base/StringRef.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
@@ -47,14 +48,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -151,7 +152,7 @@ private:
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,
-            ContainerType<std::string_view>,
+            ContainerType<StringRef>,
             ContainerType<Array>>
             maps;
         std::unique_ptr<Arena> string_arena;

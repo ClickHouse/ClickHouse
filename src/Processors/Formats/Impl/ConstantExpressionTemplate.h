@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
-#include <Parsers/IAST_fwd.h>
-#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/TokenIterator.h>
+#include <Parsers/IAST_fwd.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -27,8 +26,7 @@ class ConstantExpressionTemplate : boost::noncopyable
 {
     struct TemplateStructure : boost::noncopyable
     {
-        TemplateStructure(LiteralsInfo & replaced_literals,
-                          TokenIterator expression_begin, TokenIterator expression_end,
+        TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
                           ASTPtr & expr, const IDataType & result_type, bool null_as_default_, ContextPtr context);
 
         static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default);
@@ -67,7 +65,6 @@ public:
                                                      TokenIterator expression_begin,
                                                      TokenIterator expression_end,
                                                      const ASTPtr & expression_,
-                                                     const LiteralTokenMap & token_map,
                                                      ContextPtr context,
                                                      bool * found_in_cache = nullptr,
                                                      const String & salt = {});

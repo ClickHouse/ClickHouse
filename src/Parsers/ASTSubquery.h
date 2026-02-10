@@ -21,7 +21,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTSubquery>(*this);
+        auto clone = std::make_shared<ASTSubquery>(*this);
         clone->cloneChildren();
         return clone;
     }

@@ -20,7 +20,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
-#include <Common/setThreadName.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
@@ -77,7 +76,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = static_cast<char>(std::toupper(str[0]));
+            str[0] = std::toupper(str[0]);
         return str;
     }
 
@@ -255,7 +254,7 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     }
 }
 
-void RestorerFromBackup::schedule(std::function<void()> && task_, ThreadName thread_name_)
+void RestorerFromBackup::schedule(std::function<void()> && task_, const char * thread_name_)
 {
     if (exception_caught)
         return;
@@ -407,7 +406,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
 {
     schedule(
         [this, table_name_in_backup, skip_if_inner_table, partitions]() { findTableInBackupImpl(table_name_in_backup, skip_if_inner_table, partitions); },
-        ThreadName::RESTORE_FIND_TABLE);
+        "Restore_FindTbl");
 }
 
 void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions)
@@ -510,7 +509,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
 {
     schedule(
         [this, database_name_in_backup, except_table_names]() { findDatabaseInBackupImpl(database_name_in_backup, except_table_names); },
-        ThreadName::RESTORE_FIND_TABLE);
+        "Restore_FindDB");
 }
 
 void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names)
@@ -700,7 +699,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             {
                 if (create.is_dictionary)
                     flags |= AccessType::CREATE_DICTIONARY;
-                else if (create.is_ordinary_view || create.is_materialized_view)
+                else if (create.is_ordinary_view || create.is_materialized_view || create.is_live_view)
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
@@ -766,7 +765,7 @@ void RestorerFromBackup::createAndCheckDatabase(const String & database_name)
 {
     schedule(
         [this, database_name]() { createAndCheckDatabaseImpl(database_name); },
-        ThreadName::RESTORE_MAKE_DATABASE);
+        "Restore_MakeDB");
 }
 
 void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name)
@@ -783,7 +782,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
             return;
 
-        boost::intrusive_ptr<ASTCreateQuery> create_database_query;
+        std::shared_ptr<ASTCreateQuery> create_database_query;
         {
             std::lock_guard lock{mutex};
             const auto & database_info = database_infos.at(database_name);
@@ -792,7 +791,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
             if (database_info.is_predefined_database)
                 return;
 
-            create_database_query = boost::static_pointer_cast<ASTCreateQuery>(database_info.create_database_query->clone());
+            create_database_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(database_info.create_database_query->clone());
         }
 
         /// Generate a new UUID for a database.
@@ -809,10 +808,10 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         if (shared_catalog && engine_name == "Replicated")
         {
-            auto engine = make_intrusive<ASTFunction>();
+            auto engine = std::make_shared<ASTFunction>();
 
             engine->name = "Shared";
-            engine->setNoEmptyArgs(true);
+            engine->no_empty_args = true;
 
             create.storage->set(create.storage->engine, engine);
         }
@@ -820,9 +819,9 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         {
             // Change engine to Replicated
             auto engine = makeASTFunction("Replicated",
-                    make_intrusive<ASTLiteral>("/clickhouse/databases/{uuid}"),
-                    make_intrusive<ASTLiteral>("{shard}"),
-                    make_intrusive<ASTLiteral>("{replica}")
+                    std::make_shared<ASTLiteral>("/clickhouse/databases/{uuid}"),
+                    std::make_shared<ASTLiteral>("{shard}"),
+                    std::make_shared<ASTLiteral>("{replica}")
                 );
 
             create.storage->set(create.storage->engine, engine);
@@ -960,7 +959,6 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 "Table {} in backup doesn't have dependencies and dependent tables as it expected to. It's a bug",
                 table_id);
 
-        LOG_TRACE(log, "Excluding dependency {}", table_id.getQualifiedName().getFullName());
         return true; /// Exclude this dependency.
     };
 
@@ -1004,7 +1002,7 @@ void RestorerFromBackup::createAndCheckTable(const QualifiedTableName & table_na
 {
     schedule(
         [this, table_name]() { createAndCheckTableImpl(table_name); },
-        ThreadName::RESTORE_MAKE_TABLE);
+        "Restore_MakeTbl");
 }
 
 void RestorerFromBackup::createAndCheckTableImpl(const QualifiedTableName & table_name)
@@ -1021,7 +1019,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         if (restore_settings.create_table == RestoreTableCreationMode::kMustExist)
             return;
 
-        boost::intrusive_ptr<ASTCreateQuery> create_table_query;
+        std::shared_ptr<ASTCreateQuery> create_table_query;
         DatabasePtr database;
 
         {
@@ -1032,7 +1030,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
             if (table_info.is_predefined_table)
                 return;
 
-            create_table_query = boost::static_pointer_cast<ASTCreateQuery>(table_info.create_table_query->clone());
+            create_table_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(table_info.create_table_query->clone());
             database = table_info.database;
         }
 
@@ -1051,7 +1049,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 boost::replace_first(storage->engine->name, "Replicated", "Shared");
             else if (create_table_query->is_materialized_view_with_inner_table())
             {
-                storage = create_table_query->targets->getInnerEngine(ViewTarget::To);
+                storage = create_table_query->targets->getInnerEngine(ViewTarget::To).get();
                 if (storage != nullptr && storage->engine != nullptr)
                     boost::replace_first(storage->engine->name, "Replicated", "Shared");
             }
@@ -1196,7 +1194,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
 
     schedule(
         [this, table_name, storage, data_path_in_backup, partitions]() { insertDataToTableImpl(table_name, storage, data_path_in_backup, partitions); },
-        ThreadName::RESTORE_TABLE_DATA);
+        "Restore_TblData");
 }
 
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
@@ -1252,7 +1250,7 @@ void RestorerFromBackup::runDataRestoreTasks()
             break;
 
         for (auto & task : tasks_to_run)
-            schedule(std::move(task), ThreadName::RESTORE_TABLE_TASK);
+            schedule(std::move(task), "Restore_TblTask");
 
         waitFutures();
     }

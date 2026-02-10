@@ -4,7 +4,6 @@ sidebar_label: 'Visual Interfaces'
 sidebar_position: 28
 slug: /interfaces/third-party/gui
 title: 'Visual Interfaces from Third-party Developers'
-doc_type: 'reference'
 ---
 
 # Visual interfaces from third-party developers
@@ -43,23 +42,6 @@ Features:
 - No Signup or Credentials Needed: All functionality is accessible directly in the browser, keeping it frictionless and secure.
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
-
-### DataStoria {#datastoria}
-
-[DataStoria](https://github.com/FrankChen021/datastoria) is an AI-powered web console application that manages multiple ClickHouse clusters in one place.
-
-Features:
-
-- **AI-Powered Intelligence**: Use natural language to explore data, optimize and fix SQL queries, and visualize your data.
-- **Official ClickHouse Agent Skills Integration**: Leverage [official best practices](https://github.com/ClickHouse/agent-skills) to ask AI for database optimizations and suggestions.
-- **Smart Error Diagnostics**: Pinpoint syntax errors instantly with precise line and column highlighting, and get AI-powered fix suggestions with one click.
-- **System Table Inspection**: Dive deep into `system.query_log`, `system.query_views_log`, `system.zookeeper`, `system.ddl_distributed_queue`, `system.part_log`, and `system.processes` with a powerful visualization dashboard and filters to quickly understand your cluster.
-- **One-Click Explain**: Instantly understand query execution plans with visual AST and pipeline views.
-- **Dependency Graph**: Visualize table relationships and trace data flows through Materialized Views, Distributed tables, and external systems.
-- **Cluster Monitoring**: Monitor all nodes with real-time metrics, merge operations, replication status, query performance, and more.
-- **Privacy & Security**: All SQL queries run directly from your browser to your ClickHouse server, ensuring complete privacy.
-
-[DataStoria documentation](https://docs.datastoria.app).
 
 ### DataPup {#datapup}
 
@@ -335,19 +317,6 @@ Features:
 - No extra agents or components required on the ClickHouse side.
 
 [Telescope Source Code](https://github.com/iamtelescope/telescope) · [Live Demo](https://demo.iamtelescope.net)
-
-### ClickLens {#clicklens}
-
-[ClickLens](https://ntk148v.github.io/clicklens/) is a modern, powerful, and user-friendly web interface for managing and monitoring ClickHouse databases. It provides a comprehensive suite of tools for developers, analysts, and administrators to interact with their ClickHouse clusters efficiently. ClickHouse is an incredible analytical database, but managing it via CLI or basic tools can be challenging. ClickLens bridges the gap by offering:
-
-- Discover - Flexible, Kibana-like data exploration for any table
-- SQL Console - Write, execute, and analyze queries with syntax highlighting and streaming results
-- Real-time Monitoring - Keep an eye on your cluster's health, query performance, and resource usage
-- Schema Explorer - Navigate databases, tables, columns, parts, and more
-- Access Control - Manage users and roles directly from the UI
-- Native RBAC - Your UI permissions are derived directly from your ClickHouse grants
-
-[ClickLens Source Code](https://github.com/ntk148v/clicklens)
 
 ## Commercial {#commercial}
 

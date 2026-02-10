@@ -5,7 +5,6 @@ sidebar_label: 'Dynamic'
 sidebar_position: 62
 slug: /sql-reference/data-types/dynamic
 title: 'Dynamic'
-doc_type: 'guide'
 ---
 
 # Dynamic

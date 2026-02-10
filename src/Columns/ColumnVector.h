@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 /** A template for columns that use a simple array to store.
@@ -104,9 +103,6 @@ public:
 
     void popBack(size_t n) override
     {
-        if (n > size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, this->getName(), size());
-
         data.resize_assume_reserved(data.size() - n);
     }
 
@@ -169,10 +165,6 @@ public:
 
 #endif
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-        int direction, int nan_direction_hint) const override;
-
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -213,7 +205,7 @@ public:
         res = (*this)[n];
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     UInt64 get64(size_t n) const override;
 
@@ -261,8 +253,6 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    void filter(const IColumn::Filter & filt) override;
-
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
@@ -286,9 +276,9 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
-        return std::string_view(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool isDefaultAt(size_t n) const override { return data[n] == T{}; }

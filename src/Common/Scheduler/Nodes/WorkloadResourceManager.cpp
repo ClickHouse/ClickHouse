@@ -5,8 +5,10 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/Priority.h>
 
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
@@ -60,7 +62,7 @@ WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
     , resource_name(getEntityName(resource_entity))
     , unit(getResourceUnit(resource_entity_))
 {
-    scheduler.start(ThreadName::WORKLOAD_RESOURCE_MANAGER);
+    scheduler.start("Sch." + resource_name);
 }
 
 WorkloadResourceManager::Resource::~Resource()
@@ -123,13 +125,13 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Removing workload '{}' with children in resource '{}'",
         info.name, resource_name);
 
-    executeInSchedulerThread([&, n = std::move(node)]
+    executeInSchedulerThread([&]
     {
         if (!info.parent.empty())
-            node_for_workload[info.parent]->detachUnifiedChild(n);
+            node_for_workload[info.parent]->detachUnifiedChild(node);
         else
         {
-            chassert(n == root_node);
+            chassert(node == root_node);
             scheduler.removeChild(root_node.get());
             root_node.reset();
         }
@@ -137,10 +139,6 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
         node_for_workload.erase(info.name);
 
         updateCurrentVersion();
-
-        // Note: `n` is intentionally destroyed here, in the scheduler thread,
-        // to avoid a data race between the destructor and the scheduler thread
-        // that may still process activations for this node.
     });
 }
 

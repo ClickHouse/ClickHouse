@@ -3,7 +3,6 @@ description: 'Documentation for cluster discovery in ClickHouse'
 sidebar_label: 'Cluster discovery'
 slug: /operations/cluster-discovery
 title: 'Cluster discovery'
-doc_type: 'guide'
 ---
 
 # Cluster discovery

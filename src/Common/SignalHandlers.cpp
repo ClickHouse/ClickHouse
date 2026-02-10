@@ -4,10 +4,10 @@
 #include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
-#include <Common/FramePointers.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
+#include <base/getThreadId.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -18,7 +18,6 @@
 #include <Poco/Environment.h>
 
 #include <thread>
-#include <unistd.h>
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
@@ -35,17 +34,9 @@ extern const int CANNOT_SEND_SIGNAL;
 
 extern const char * GIT_HASH;
 
-static const std::vector<FramePointers> empty_stack;
-
-/// Current exception stack trace captured in terminate_handler.
-thread_local FramePointers terminate_current_exception_trace;
-thread_local size_t terminate_current_exception_trace_size = 0;
+static const std::vector<StackTrace::FramePointers> empty_stack;
 
 using namespace DB;
-
-
-static std::atomic_bool is_crashed = false;
-bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
 
 
 void call_default_signal_handler(int sig)
@@ -107,9 +98,6 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-    if (sig != SIGTSTP)
-        is_crashed.store(true, std::memory_order_relaxed);
-
     char buf[signal_pipe_buf_size];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
     WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
@@ -124,11 +112,6 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
-#if defined(OS_LINUX)
-    writeBinary(static_cast<UInt8>(terminate_current_exception_trace_size), out);
-    for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
-        writePODBinary(terminate_current_exception_trace[i], out);
-#endif
     out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
@@ -165,29 +148,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     std::string log_message;
 
     if (std::current_exception())
-    {
-        std::string exception_message = getCurrentExceptionMessage(true);
-        log_message = "Terminate called for uncaught exception:\n" + exception_message;
-
-        try
-        {
-            throw;
-        }
-        catch (const std::exception & e)
-        {
-            const auto * stack_trace_frames = e.get_stack_trace_frames();
-            const size_t stack_trace_size = e.get_stack_trace_size();
-            __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
-            terminate_current_exception_trace_size = std::min(stack_trace_size, FRAMEPOINTER_CAPACITY);
-            for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
-                terminate_current_exception_trace[i] = stack_trace_frames[i];
-        }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
-    }
+        log_message = "Terminate called for uncaught exception:\n" + getCurrentExceptionMessage(true);
     else
-    {
         log_message = "Terminate called without an active exception";
-    }
 
     /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
     /// And the buffer should not be too small because our exception messages can be large.
@@ -357,11 +320,9 @@ void SignalListener::run()
             siginfo_t info{};
             ucontext_t * context{};
             StackTrace stack_trace(NoCapture{});
-            std::vector<FramePointers> thread_frame_pointers;
+            std::vector<StackTrace::FramePointers> thread_frame_pointers;
             UInt32 thread_num{};
             ThreadStatus * thread_ptr{};
-            FramePointers exception_trace{};
-            UInt8 exception_trace_size{};
 
             readPODBinary(info, in);
             readPODBinary(context, in);
@@ -370,13 +331,8 @@ void SignalListener::run()
             readVectorBinary(thread_frame_pointers, in);
             readBinary(thread_num, in);
             readPODBinary(thread_ptr, in);
-#if defined(OS_LINUX)
-            readBinary(exception_trace_size, in);
-            for (size_t i = 0; i < exception_trace_size; ++i)
-                readPODBinary(exception_trace[i], in);
-#endif
 
-            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr, exception_trace, exception_trace_size);
+            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
         }
     }
 }
@@ -407,11 +363,9 @@ void SignalListener::onFault(
     const siginfo_t & info,
     ucontext_t * context,
     const StackTrace & stack_trace,
-    const std::vector<FramePointers> & thread_frame_pointers,
+    const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
     UInt32 thread_num,
-    DB::ThreadStatus * thread_ptr,
-    const FramePointers & exception_trace,
-    size_t exception_trace_size) const
+    DB::ThreadStatus * thread_ptr) const
 try
 {
     ThreadStatus thread_status;
@@ -421,10 +375,9 @@ try
     /// in case of double fault.
 
     LOG_FATAL(log, "########## Short fault info ############");
-    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
+    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
               VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
-              thread_num, sig,
-              info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
+              thread_num, sig);
 
     std::string signal_description = "Unknown signal";
 
@@ -436,7 +389,8 @@ try
 
     LOG_FATAL(log, "Signal description: {}", signal_description);
 
-    String error_message = signalToErrorMessage(sig, info, *context);
+    String error_message;
+    error_message = signalToErrorMessage(sig, info, *context);
     LOG_FATAL(log, fmt::runtime(error_message));
 
     String bare_stacktrace_str;
@@ -503,7 +457,7 @@ try
 
     /// In case it's a scheduled job write all previous jobs origins call stacks
     std::for_each(thread_frame_pointers.rbegin(), thread_frame_pointers.rend(),
-        [this](const FramePointers & frame_pointers)
+        [this](const StackTrace::FramePointers & frame_pointers)
         {
             if (size_t size = std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())
             {
@@ -560,16 +514,7 @@ try
 
     /// Write crash to system.crash_log table if available.
     if (collectCrashLog)
-    {
-        const std::optional<UInt64> fault_address = getFaultAddress(sig, info);
-        const String fault_access_type = getFaultMemoryAccessType(sig, *context);
-        const String si_code_description = getSignalCodeDescription(sig, info.si_code);
-
-        collectCrashLog(
-            sig, info.si_code, thread_num, query_id, query,
-            stack_trace, fault_address, fault_access_type, si_code_description,
-            exception_trace, exception_trace_size);
-    }
+        collectCrashLog(sig, thread_num, query_id, stack_trace);
 
     Context::getGlobalContextInstance()->handleCrash();
 
@@ -583,7 +528,7 @@ try
     if (std::string_view(VERSION_OFFICIAL).contains("official build"))
     {
         /// Approximate support period, upper bound.
-        if (time(nullptr) - makeDate(DateLUT::instance(), static_cast<UInt8>(2000 + VERSION_MAJOR), static_cast<UInt8>(VERSION_MINOR), 1) < (365 + 30) * 86400)
+        if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
         {
             LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
         }

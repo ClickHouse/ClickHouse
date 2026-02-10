@@ -35,7 +35,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/replaceForPositionalArguments.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -110,6 +109,7 @@ namespace Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
+    extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
@@ -612,7 +612,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
         AggregateFunctionProperties properties;
         aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
         aggregate.function
-            = AggregateFunctionFactory::instance().get(node.name, node.getNullsAction(), types, aggregate.parameters, properties);
+            = AggregateFunctionFactory::instance().get(node.name, node.nulls_action, types, aggregate.parameters, properties);
 
         descriptions.push_back(aggregate);
     }
@@ -797,7 +797,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
     for (const ASTPtr & ast : syntax->window_function_asts)
     {
         const ASTFunction & function_node = typeid_cast<const ASTFunction &>(*ast);
-        assert(function_node.isWindowFunction());
+        assert(function_node.is_window_function);
 
         WindowFunctionDescription window_function;
         window_function.function_node = &function_node;
@@ -837,7 +837,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
         AggregateFunctionProperties properties;
         window_function.aggregate_function = AggregateFunctionFactory::instance().get(
             window_function.function_node->name,
-            window_function.function_node->getNullsAction(),
+            window_function.function_node->nulls_action,
             window_function.argument_types,
             window_function.function_parameters,
             properties);
@@ -1204,14 +1204,14 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
             original_right_column_names.push_back(pr.first);
 
         auto right_columns = storage->getRightSampleBlock().getColumnsWithTypeAndName();
-        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns, getContext());
+        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
         return storage->getJoinLocked(analyzed_join, getContext(), original_right_column_names);
     }
 
     joined_plan = buildJoinedPlan(getContext(), getPreparedSets(), join_element, *analyzed_join, query_options);
 
     const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader()->getColumnsWithTypeAndName();
-    std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns, getContext());
+    std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
     if (right_convert_actions)
     {
         auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(*right_convert_actions));
@@ -1552,7 +1552,7 @@ void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAG & before_a
     ExpressionActionsChainSteps::Step & step = chain.addStep(before_aggregation.getNamesAndTypesList());
     step.required_output = std::move(required_output);
 
-    step.actions()->dag = ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position, getContext());
+    step.actions()->dag = ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position);
 }
 
 void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node)
@@ -1562,9 +1562,9 @@ void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(Expression
         // Skip window function columns here -- they are calculated after
         // other SELECT expressions by a special step.
         // Also skipping lambda functions because they can't be explicitly evaluated.
-        if (function->isWindowFunction() || function->name == "lambda")
+        if (function->is_window_function || function->name == "lambda")
             return;
-        if (function->computeAfterWindowFunctions())
+        if (function->compute_after_window_functions)
         {
             for (auto & arg : function->arguments->children)
                 appendSelectSkipWindowExpressions(step, arg);
@@ -1725,8 +1725,8 @@ void SelectQueryExpressionAnalyzer::validateOrderByKeyType(const DataTypePtr & k
                 "its a JSON path subcolumn) or casting this column to a specific data type. "
                 "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
 
-        if (!type.isComparable())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable", type.getName());
+        if (!getContext()->getSettingsRef()[Setting::allow_not_comparable_types_in_order_by] && !type.isComparable())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable. Set setting allow_not_comparable_types_in_order_by = 1 in order to allow it", type.getName());
     };
 
     check(*key_type);
@@ -1936,7 +1936,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     bool first_stage_,
     bool second_stage_,
     bool only_types,
-    const FilterDAGInfoPtr & row_policy_info_,
+    const FilterDAGInfoPtr & filter_info_,
     const FilterDAGInfoPtr & additional_filter,
     const Block & source_header)
     : first_stage(first_stage_)
@@ -2034,10 +2034,10 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 columns_for_additional_filter.begin(), columns_for_additional_filter.end());
         }
 
-        if (storage && row_policy_info_)
+        if (storage && filter_info_)
         {
-            row_policy_info = row_policy_info_;
-            row_policy_info->do_remove_column = true;
+            filter_info = filter_info_;
+            filter_info->do_remove_column = true;
         }
 
         if (prewhere_dag_and_flags = query_analyzer.appendPrewhere(chain, !first_stage); prewhere_dag_and_flags)
@@ -2084,15 +2084,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    auto dag = before_where->dag.clone();
-                    /// We could have subcolumns used in the WHERE that are not present in before_where_sample.
-                    /// ExpressionActions doesn't know anything about sybcolumns, so we have to extract them beforehand.
-                    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(before_where_sample, dag.getRequiredColumnsNames(), context);
-                    if (!extracting_subcolumns_dag.getNodes().empty())
-                        dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(dag));
-
                     ExpressionActions(
-                        std::move(dag),
+                        before_where->dag.clone(),
                         ExpressionActionsSettings(context->getSettingsRef())).execute(before_where_sample);
 
                     auto & column_elem
@@ -2160,7 +2153,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                         actual_header.getColumnsWithTypeAndName(),
                         expected_header.getColumnsWithTypeAndName(),
                         ActionsDAG::MatchColumnsMode::Name,
-                        context,
                         true);
 
                     auto & step = chain.lastStep(query_analyzer.aggregated_columns);
@@ -2227,7 +2219,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     auto * ast = child->as<ASTOrderByElement>();
                     ASTPtr order_expression = ast->children.at(0);
                     if (auto * function = order_expression->as<ASTFunction>();
-                        function && (function->isWindowFunction() || function->computeAfterWindowFunctions()))
+                        function && (function->is_window_function || function->compute_after_window_functions))
                         continue;
                     const String & column_name = order_expression->getColumnName();
                     chain.getLastStep().addRequiredOutput(column_name);
@@ -2384,9 +2376,9 @@ std::string ExpressionAnalysisResult::dump() const
         ss << "prewhere_info " << prewhere_info->dump() << "\n";
     }
 
-    if (row_policy_info)
+    if (filter_info)
     {
-        ss << "filter_info " << row_policy_info->dump() << "\n";
+        ss << "filter_info " << filter_info->dump() << "\n";
     }
 
     if (before_aggregation)
