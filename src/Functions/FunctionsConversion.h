@@ -85,6 +85,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
+    extern const SettingsBool cast_keep_nullable;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
     extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
@@ -134,6 +135,7 @@ struct FunctionConvertSettings
     const bool input_format_ipv6_default_on_conversion_error;
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
@@ -149,6 +151,7 @@ struct FunctionConvertSettings
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
+        , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
@@ -2514,7 +2517,8 @@ struct ConvertImplFromDynamicToColumn
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert)
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+        bool throw_on_null = false)
     {
         /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
         /// and construct the result based on discriminators.
@@ -2612,6 +2616,9 @@ struct ConvertImplFromDynamicToColumn
             auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
             {
+                if (throw_on_null)
+                    throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                        "Cannot convert NULL value to non-Nullable type");
                 res->insertDefault();
             }
             else if (global_discr == shared_variant_discr)
@@ -3049,7 +3056,9 @@ private:
                 return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 
-            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
+            return ConvertImplFromDynamicToColumn::execute(
+                arguments, result_type, input_rows_count, nested_convert,
+                settings.cast_keep_nullable && !result_type->isNullable() && !result_type->canBeInsideNullable());
         }
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
@@ -5569,10 +5578,13 @@ private:
             return wrapper(args, result_type, nullptr, args[0].column->size());
         };
 
-        return [nested_convert]
+        bool keep_nullable = settings.cast_keep_nullable;
+        return [nested_convert, keep_nullable]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
-            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
+            return ConvertImplFromDynamicToColumn::execute(
+                arguments, result_type, input_rows_count, nested_convert,
+                keep_nullable && !result_type->isNullable() && !result_type->canBeInsideNullable());
         };
     }
 
