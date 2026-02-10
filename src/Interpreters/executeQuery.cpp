@@ -1172,6 +1172,13 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             || !catalog.getLoadingDependents(table_id).empty())
             continue;
 
+        /// DETACH TABLE requires DROP TABLE privilege, and ATTACH TABLE requires CREATE TABLE.
+        /// Skip if the user doesn't have these privileges.
+        auto access = context->getAccess();
+        if (!access->isGranted(AccessType::DROP_TABLE, table_id.getDatabaseName(), table_id.getTableName())
+            || !access->isGranted(AccessType::CREATE_TABLE, table_id.getDatabaseName(), table_id.getTableName()))
+            continue;
+
         auto uuid = table->getStorageID().uuid;
         table.reset();
 
@@ -1179,16 +1186,26 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         auto detach_query = fmt::format("DETACH TABLE {}", full_name);
         auto attach_query = fmt::format("ATTACH TABLE {}", full_name);
 
+        try
         {
-            auto detach = executeQuery(detach_query, context, QueryFlags{.internal = true}).second;
-            executeTrivialBlockIO(detach, context);
+            {
+                auto detach = executeQuery(detach_query, context, QueryFlags{.internal = true}).second;
+                executeTrivialBlockIO(detach, context);
+            }
+
+            database->waitDetachedTableNotInUse(uuid);
+
+            {
+                auto attach = executeQuery(attach_query, context, QueryFlags{.internal = true}).second;
+                executeTrivialBlockIO(attach, context);
+            }
         }
-
-        database->waitDetachedTableNotInUse(uuid);
-
+        catch (...)
         {
-            auto attach = executeQuery(attach_query, context, QueryFlags{.internal = true}).second;
-            executeTrivialBlockIO(attach, context);
+            /// The DETACH/ATTACH may fail for various reasons
+            /// (e.g., a concurrent query interfered).
+            /// Since this is a testing-only feature, we just skip this table.
+            tryLogCurrentException("reattachTablesUsedInQuery", "", LogsLevel::warning);
         }
     }
 }
