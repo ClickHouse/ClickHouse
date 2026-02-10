@@ -6,7 +6,9 @@ import subprocess
 import sys
 import time
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 # Ensure local invocations can import praktika without requiring PYTHONPATH
 _repo_dir = str(Path(__file__).resolve().parents[2])
@@ -29,6 +31,11 @@ REPO_DIR = _repo_dir
 TEMP_DIR = f"{REPO_DIR}/ci/tmp"
 DEFAULT_TIMEOUT = 1200
 DEFAULT_READY_TIMEOUT = 1200
+
+# Grafana dashboard base URL (same link for all; when split into two dashboards, add a second base)
+GRAFANA_KEEPER_STRESS_BASE = (
+    "https://grafana.clickhouse-prd.com/d/keeper-stress-dashboard/keeper-stress-tests-dashboard"
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -65,7 +72,7 @@ def _abort(job_name, results, stopwatch, status=None, info=None):
 def set_default_env():
     """Defaults for keeper stress (env and pytest)."""
     for k, v in {
-        "KEEPER_INCLUDE_IDS": "CHA-01,CHA-01-REPLAY",
+        "KEEPER_INCLUDE_IDS": "CHA-01",
         "KEEPER_DURATION": "1200",
         "KEEPER_FAULTS": "false",
         "KEEPER_MATRIX_BACKENDS": "default,rocks",
@@ -227,6 +234,54 @@ def validate_metrics_jsonl(metrics_path):
     print(f"metrics file {p} is valid")
     return True
 
+def _grafana_params(commit_sha, from_iso, to_iso, scenario_filter=None):
+    """Build common Grafana dashboard query params for the current run."""
+    params = {
+        "orgId": "1",
+        "from": from_iso,
+        "to": to_iso,
+        "timezone": "utc",
+        "var-commit_sha": commit_sha or "",
+        "var-backend": "$__all",
+    }
+    if scenario_filter:
+        # Dashboard allows multiple var-scenario; pass as list for multi-value
+        params["var-scenario"] = scenario_filter if isinstance(scenario_filter, list) else [scenario_filter]
+    return params
+
+
+def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None):
+    """
+    Add clickable Grafana dashboard links to the result (job report and GH summary).
+    Uses current run's commit_sha and time window. When the dashboard is split
+    into two, assign each link to the appropriate base URL.
+    """
+    base = GRAFANA_KEEPER_STRESS_BASE
+    start_ts = stop_watch.start_time
+    end_ts = start_ts + stop_watch.duration
+    start_iso = datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    end_iso = datetime.fromtimestamp(end_ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    # Optional: var-scenario from KEEPER_INCLUDE_IDS (e.g. CHA-01-REPLAY[default|t3])
+    if scenario_filter is None:
+        include_ids = os.environ.get("KEEPER_INCLUDE_IDS", "").strip()
+        if include_ids:
+            scenario_filter = [s.strip() for s in include_ids.split(",") if s.strip()]
+
+    # 1. This run: exact time window and commit
+    p1 = _grafana_params(commit_sha, start_iso, end_iso, scenario_filter)
+    result.set_clickable_label(
+        "Grafana: This run",
+        f"{base}?{urlencode(p1, doseq=True)}",
+    )
+    # 2. Historical: last 30d
+    p2 = _grafana_params(commit_sha, "now-30d", "now", scenario_filter)
+    result.set_clickable_label(
+        "Grafana: Historical (30d)",
+        f"{base}?{urlencode(p2, doseq=True)}",
+    )
+
+
 def collect_failure_artifacts(pytest_ok):
     """Collect debug artifact file paths on failure. Returns list of paths."""
     files = []
@@ -344,12 +399,18 @@ def main():
 
     Shell.run("docker system prune -af --volumes || true; docker network prune -f || true")
 
-    Result.create_from(
+    result = Result.create_from(
         name=job_name,
         results=results,
         stopwatch=stop_watch,
         files=files_to_attach,
-    ).complete_job()
+    )
+    _add_grafana_links(
+        result,
+        commit_sha=env.get("COMMIT_SHA"),
+        stop_watch=stop_watch,
+    )
+    result.complete_job()
 
 
 if __name__ == "__main__":
