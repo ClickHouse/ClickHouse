@@ -96,7 +96,7 @@ void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 t
     LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, capped_timeout);
     const auto now = std::chrono::steady_clock::now();
     const UInt64 end_time = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() + capped_timeout;
-    query_set.emplace(query, timeout, end_time, overflow_mode);
+    query_set.emplace(query, capped_timeout, end_time, overflow_mode);
     cond_var.notify_all();
 }
 
