@@ -34,6 +34,15 @@ struct PartDataVersionColumn
     static const DataTypePtr type;
 };
 
+/// Virtual column for hybrid row-column storage.
+/// Stores serialized row data for efficient reading of multiple columns.
+struct RowDataColumn
+{
+    static const String name;
+    static const DataTypePtr type;
+    static const ASTPtr codec;
+};
+
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection);
 
 }

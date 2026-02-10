@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Storages/MergeTree/RowDataSerializer.h>
 #include <Formats/MarkInCompressedFile.h>
 
 
@@ -107,6 +108,10 @@ private:
     /// in our index_granularity array.
     void shiftCurrentMark(const Granules & granules_written);
 
+    /// Write hybrid row data for the block if hybrid storage is enabled.
+    /// This serializes all non-key columns into the __row column.
+    void writeHybridRowData(const Block & block, const Granules & granules);
+
     /// Change rows in the last mark in index_granularity to new_rows_in_last_mark.
     /// Flush all marks from last_non_written_marks to disk and increment current mark if already written rows
     /// (rows_written_in_last_granule) equal to new_rows_in_last_mark.
@@ -149,6 +154,12 @@ private:
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
+
+    /// Hybrid storage support
+    bool hybrid_storage_enabled = false;
+    std::unique_ptr<RowDataSerializer> row_data_serializer;
+    NamesAndTypesList non_key_columns;
+    SerializationPtr row_column_serialization;
 };
 
 }

@@ -2980,6 +2980,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 {
     auto & result = getAnalysisResult();
 
+    /// Transfer hybrid storage reading flag to reader settings
+    reader_settings.use_hybrid_row_reading = use_hybrid_row_reading;
+
     if (enable_remove_parts_from_snapshot_optimization)
     {
         /// Do not keep data parts in snapshot.

@@ -750,6 +750,10 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "Persisted mask created by lightweight delete that show whether row exists or is deleted");
     desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "Persisted original number of block that was assigned at insert");
     desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "Persisted original number of row in block that was assigned at insert");
+    /// NOTE: __row (RowDataColumn) is NOT added as a persistent virtual column here.
+    /// It's an internal column for hybrid storage that is managed by the writer/reader directly.
+    /// Adding it as a virtual column would cause errors because the system would expect it
+    /// to exist in all parts, but it only exists when hybrid storage is enabled.
 
     return desc;
 }

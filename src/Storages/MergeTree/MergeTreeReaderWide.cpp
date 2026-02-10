@@ -2,7 +2,9 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -10,6 +12,8 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -27,6 +31,12 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool enable_hybrid_storage;
+    extern const MergeTreeSettingsUInt64 hybrid_storage_max_row_size;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
@@ -65,6 +75,9 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     {
         for (size_t i = 0; i < columns_to_read.size(); ++i)
             addStreams(columns_to_read[i], serializations[i]);
+
+        /// Initialize hybrid storage if enabled
+        initHybridStorage();
     }
     catch (...)
     {
@@ -163,6 +176,14 @@ size_t MergeTreeReaderWide::readRows(
 
         if (num_columns == 0)
             return max_rows_to_read;
+
+        /// Check if we should use hybrid row-based reading
+        if (use_hybrid_row_reading)
+        {
+            return readRowsFromHybridStorage(
+                from_mark, current_task_last_mark, continue_reading,
+                max_rows_to_read, rows_offset, res_columns);
+        }
 
         prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
@@ -597,6 +618,184 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+}
+
+void MergeTreeReaderWide::initHybridStorage()
+{
+    /// Check if hybrid storage should be used. Two modes:
+    /// 1. Query plan optimization enabled it (settings.use_hybrid_row_reading)
+    /// 2. Local decision based on column selection ratio (shouldUseHybridRowReading)
+    use_hybrid_row_reading = settings.use_hybrid_row_reading || shouldUseHybridRowReading();
+
+    if (!use_hybrid_row_reading)
+        return;
+
+    /// Verify that the part actually has __row column
+    if (!hasRowColumn())
+    {
+        use_hybrid_row_reading = false;
+        return;
+    }
+
+    /// Initialize the row data serializer
+    RowDataSerializer::Settings serializer_settings;
+    serializer_settings.max_row_size = (*storage_settings)[MergeTreeSetting::hybrid_storage_max_row_size];
+    serializer_settings.enable_checksum = true;
+    row_data_serializer = std::make_unique<RowDataSerializer>(serializer_settings);
+
+    /// Add stream for the __row column
+    NameAndTypePair row_column(RowDataColumn::name, RowDataColumn::type);
+    auto row_serialization = RowDataColumn::type->getDefaultSerialization();
+    addStreams(row_column, row_serialization);
+}
+
+size_t MergeTreeReaderWide::readRowsFromHybridStorage(
+    size_t from_mark,
+    size_t current_task_last_mark,
+    bool continue_reading,
+    size_t max_rows_to_read,
+    size_t rows_offset,
+    Columns & res_columns)
+{
+    /// Get the __row column stream and read the serialized row data
+    NameAndTypePair row_column(RowDataColumn::name, RowDataColumn::type);
+    auto row_serialization = RowDataColumn::type->getDefaultSerialization();
+
+    /// Create a column to hold the __row data
+    ColumnPtr row_data_column = RowDataColumn::type->createColumn(*row_serialization);
+
+    /// Set up cache for the __row column
+    auto & cache = caches[RowDataColumn::name];
+    auto & deserialize_states_cache = deserialize_states_caches[RowDataColumn::name];
+
+    /// Read the __row column data
+    readData(
+        row_column,
+        row_serialization,
+        row_data_column,
+        from_mark,
+        continue_reading,
+        current_task_last_mark,
+        max_rows_to_read,
+        rows_offset,
+        cache,
+        deserialize_states_cache);
+
+    size_t rows_read = row_data_column->size();
+    if (rows_read == 0)
+        return 0;
+
+    /// Get the non-key columns info for deserialization
+    auto all_non_key_columns = getNonKeyColumnsInRowData();
+    auto non_key_serializations = getNonKeySerializations();
+
+    /// Build a mapping from column name to position in res_columns
+    std::unordered_map<String, size_t> column_name_to_result_pos;
+    for (size_t i = 0; i < columns_to_read.size(); ++i)
+        column_name_to_result_pos[columns_to_read[i].name] = i;
+
+    /// Create mutable columns for the requested columns that exist in __row
+    NamesAndTypesList columns_to_extract;
+    std::vector<size_t> result_positions;
+
+    for (const auto & col : columns_to_read)
+    {
+        auto it = column_name_to_result_pos.find(col.name);
+        if (it != column_name_to_result_pos.end())
+        {
+            /// Check if this column is in the non-key columns (i.e., stored in __row)
+            bool in_row_data = false;
+            for (const auto & non_key_col : all_non_key_columns)
+            {
+                if (non_key_col.name == col.name)
+                {
+                    in_row_data = true;
+                    break;
+                }
+            }
+
+            if (in_row_data)
+            {
+                columns_to_extract.push_back(col);
+                result_positions.push_back(it->second);
+            }
+        }
+    }
+
+    /// Create mutable columns for extraction
+    MutableColumns mutable_columns;
+    for (const auto & col : columns_to_extract)
+    {
+        auto serialization_it = non_key_serializations.find(col.name);
+        if (serialization_it != non_key_serializations.end())
+            mutable_columns.push_back(col.type->createColumn(*serialization_it->second));
+        else
+            mutable_columns.push_back(col.type->createColumn());
+    }
+
+    /// Extract requested columns from each row
+    const auto & row_data_string_column = assert_cast<const ColumnString &>(*row_data_column);
+
+    for (size_t i = 0; i < rows_read; ++i)
+    {
+        std::string_view row_data = row_data_string_column.getDataAt(i);
+        String row_data_str(row_data.data(), row_data.size());
+
+        row_data_serializer->extractColumns(
+            row_data_str,
+            all_non_key_columns,
+            columns_to_extract,
+            non_key_serializations,
+            mutable_columns);
+    }
+
+    /// Move extracted columns to result
+    for (size_t i = 0; i < result_positions.size(); ++i)
+    {
+        size_t pos = result_positions[i];
+        res_columns[pos] = std::move(mutable_columns[i]);
+    }
+
+    /// For key columns (not in __row), we need to read them from their regular column files
+    /// This handles columns that are part of ORDER BY / PRIMARY KEY
+    NameSet columns_in_row_data;
+    for (const auto & col : columns_to_extract)
+        columns_in_row_data.insert(col.name);
+
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        const auto & column_to_read = columns_to_read[pos];
+
+        /// Skip columns that were already extracted from __row
+        if (columns_in_row_data.contains(column_to_read.name))
+            continue;
+
+        /// This is a key column - read it from its regular column file
+        bool append = res_columns[pos] != nullptr;
+        if (!append)
+            res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
+
+        auto & column = res_columns[pos];
+        auto & col_cache = caches[column_to_read.getNameInStorage()];
+        auto & col_deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+
+        readData(
+            column_to_read,
+            serializations[pos],
+            column,
+            from_mark,
+            continue_reading,
+            current_task_last_mark,
+            max_rows_to_read,
+            rows_offset,
+            col_cache,
+            col_deserialize_states_cache);
+    }
+
+    prefetched_streams.clear();
+    caches.clear();
+
+    return rows_read;
 }
 
 }

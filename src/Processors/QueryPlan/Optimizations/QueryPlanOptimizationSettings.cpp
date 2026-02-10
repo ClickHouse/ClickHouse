@@ -40,6 +40,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_expressions;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_merge_filters;
+    extern const SettingsBool query_plan_optimize_hybrid_storage;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_limit;
@@ -146,6 +147,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
     use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
     remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
+    optimize_hybrid_storage = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_hybrid_storage];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
