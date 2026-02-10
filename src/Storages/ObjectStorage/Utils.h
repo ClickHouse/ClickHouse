@@ -72,6 +72,4 @@ struct ParseFromDiskResult
 };
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
-
-
 }

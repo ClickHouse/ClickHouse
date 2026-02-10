@@ -1,5 +1,7 @@
 #include <atomic>
 #include <memory>
+#include <fmt/format.h>
+#include <Core/Settings.h>
 #include <mutex>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -28,12 +30,13 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -61,12 +64,18 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool use_parquet_metadata_cache;
+}
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -674,6 +683,7 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
     if (io_pool)
         io_pool->wait();
 }
+
 
 void ParquetBlockInputFormat::initializeIfNeeded()
 {
@@ -1395,6 +1405,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
 
 void registerInputFormatParquet(FormatFactory & factory)
 {
+    auto log = getLogger("ParquetMetadataCache");
     factory.registerFileBucketInfo(
         "Parquet",
         []
@@ -1402,8 +1413,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             return std::make_shared<ParquetFileBucketInfo>();
         }
     );
-
-    factory.registerRandomAccessInputFormat(
+    factory.registerRandomAccessInputFormatWithMetadata(
         "Parquet",
         [](ReadBuffer & buf,
            const Block & sample,
@@ -1411,31 +1421,71 @@ void registerInputFormatParquet(FormatFactory & factory)
            const ReadSettings & read_settings,
            bool is_remote_fs,
            FormatParserSharedResourcesPtr parser_shared_resources,
-           FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
+           FormatFilterInfoPtr format_filter_info,
+           const std::optional<RelativePathWithMetadata> & metadata) -> InputFormatPtr
         {
+            auto lambda_logger = getLogger("ParquetMetadataCache");
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
             if (settings.parquet.use_native_reader_v3)
             {
+                LOG_TRACE(lambda_logger, "using native reader v3 in ParquetBlockInputFormat with metadata cache");
+                ParquetMetadataCachePtr metadata_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
                 return std::make_shared<ParquetV3BlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),
                     settings,
                     std::move(parser_shared_resources),
                     std::move(format_filter_info),
-                    min_bytes_for_seek);
+                    min_bytes_for_seek,
+                    metadata_cache,
+                    metadata
+                );
             }
-            else
-            {
-                return std::make_shared<ParquetBlockInputFormat>(
-                    buf,
-                    std::make_shared<const Block>(sample),
-                    settings,
-                    std::move(parser_shared_resources),
-                    std::move(format_filter_info),
-                    min_bytes_for_seek);
-            }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Previous implementation of ParquetBlockInputFormat didn't require blob metadata for initialization");
         });
+    factory.registerRandomAccessInputFormat(
+        "Parquet",
+        [](ReadBuffer & buf,
+        const Block & sample,
+        const FormatSettings & settings,
+        const ReadSettings & read_settings,
+        bool is_remote_fs,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
+    {
+        auto lambda_logger = getLogger("ParquetMetadataCache");
+        size_t min_bytes_for_seek
+            = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+        if (settings.parquet.use_native_reader_v3)
+        {
+            LOG_TRACE(lambda_logger, "using native reader v3 in ParquetBlockInputFormat with no metadata cache");
+            return std::make_shared<ParquetV3BlockInputFormat>(
+                buf,
+                std::make_shared<const Block>(sample),
+                settings,
+                std::move(parser_shared_resources),
+                std::move(format_filter_info),
+                min_bytes_for_seek,
+                nullptr,
+                std::nullopt
+            );
+        }
+        else
+        {
+            LOG_TRACE(lambda_logger, "using arrow reader in ParquetBlockInputFormat without metadata cache");
+            return std::make_shared<ParquetBlockInputFormat>(
+                buf,
+                    std::make_shared<const Block>(sample),
+                settings,
+                std::move(parser_shared_resources),
+                std::move(format_filter_info),
+                min_bytes_for_seek
+            );
+        }
+    });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings & settings)
     {
@@ -1450,15 +1500,21 @@ void registerParquetSchemaReader(FormatFactory & factory)
             return std::make_shared<ParquetBucketSplitter>();
         });
     factory.registerSchemaReader(
-        "Parquet",
-        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
+        "Parquet", [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
+            auto lambda_logger = getLogger("ParquetMetadataCache");
             if (settings.parquet.use_native_reader_v3)
+            {
+                LOG_TRACE(lambda_logger, "using native reader v3 in ParquetSchemaReader");
                 return std::make_shared<NativeParquetSchemaReader>(buf, settings);
+            }
             else
+            {
+                LOG_TRACE(lambda_logger, "using arrow reader in ParquetSchemaReader");
                 return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
+            }
         }
-        );
+    );
 
     factory.registerAdditionalInfoForSchemaCacheGetter(
         "Parquet",
