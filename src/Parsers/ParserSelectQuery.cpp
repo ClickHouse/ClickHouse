@@ -98,6 +98,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr distinct_on_expression_list;
     ASTPtr limit_offset;
     ASTPtr limit_length;
+    ASTPtr limit_after;
+    ASTPtr limit_until;
     ASTPtr top_length;
     ASTPtr settings;
 
@@ -466,6 +468,28 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
 
+        /// LIMIT n [AFTER expr] [UNTIL expr] - only when we have limit_length (not LIMIT BY)
+        if (limit_length)
+        {
+            ParserKeyword s_after(Keyword::AFTER);
+            ParserKeyword s_until(Keyword::UNTIL);
+            if (s_after.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_after, expected))
+                    return false;
+                if (s_until.ignore(pos, expected))
+                {
+                    if (!exp_elem.parse(pos, limit_until, expected))
+                        return false;
+                }
+            }
+            else if (s_until.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_until, expected))
+                    return false;
+            }
+        }
+
         if (top_length && limit_length)
             throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
     }
@@ -605,6 +629,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, std::move(limit_after));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, std::move(limit_until));
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
     select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
     return true;

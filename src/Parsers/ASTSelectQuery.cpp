@@ -236,6 +236,21 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
             ostr << ", ";
         }
         limitLength()->format(ostr, s, state, frame);
+        if (limitAfter())
+        {
+            ostr << s.nl_or_ws << indent_str << " AFTER ";
+            limitAfter()->format(ostr, s, state, frame);
+            if (limitUntil())
+            {
+                ostr << s.nl_or_ws << indent_str << " UNTIL ";
+                limitUntil()->format(ostr, s, state, frame);
+            }
+        }
+        else if (limitUntil())
+        {
+            ostr << s.nl_or_ws << indent_str << " UNTIL ";
+            limitUntil()->format(ostr, s, state, frame);
+        }
         if (limit_with_ties)
             ostr << s.nl_or_ws << indent_str << " WITH TIES";
     }

@@ -66,6 +66,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -223,6 +224,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -2181,6 +2183,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
             bool apply_prelimit = apply_limit &&
                                   query.limitLength() && !query.limit_with_ties &&
+                                  !query.limitAfter() && !query.limitUntil() &&
                                   !hasWithTotalsInAnySubqueryInFromClause(query) &&
                                   !query.arrayJoinExpressionList().first &&
                                   !query.distinct &&
@@ -2598,6 +2601,8 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
 
     if (!query.distinct
        && !query.limit_with_ties
+       && !query.limitAfter()
+       && !query.limitUntil()
        && !query.prewhere()
        && !query.where()
        && query_info.filter_asts.empty()
@@ -3276,6 +3281,9 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
 {
     auto & query = getSelectQuery();
+    /// Do not apply preliminary LIMIT when LIMIT AFTER/UNTIL is used (effective offset is unknown).
+    if (query.limitAfter() || query.limitUntil())
+        return;
     /// If there is LIMIT
     if (query.limitLength())
     {
@@ -3392,9 +3400,44 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
 }
 
 
+static std::optional<std::pair<ActionsDAG, String>> buildLimitConditionDAG(
+    const Block & header,
+    const ASTPtr & expr,
+    ContextPtr context)
+{
+    if (!expr)
+        return std::nullopt;
+    return std::make_optional(ExpressionAnalyzer::buildFilterActionsDAG(context, header, expr));
+}
+
 void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
+    /// If there is LIMIT with AFTER or UNTIL, use LimitRangeStep
+    if (query.limitLength() && (query.limitAfter() || query.limitUntil()))
+    {
+        const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+        if (query.limit_with_ties)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
+        if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative
+            || lim_info.fractional_limit > 0 || lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional and negative LIMIT/OFFSET are not supported with LIMIT AFTER/UNTIL");
+        if (query.limitOffset())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET is not supported together with LIMIT AFTER/UNTIL");
+
+        const auto & header = query_plan.getCurrentHeader();
+        auto start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context);
+        auto end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context);
+        auto limit_range_step = std::make_unique<LimitRangeStep>(
+            header,
+            std::move(start_condition),
+            std::move(end_condition),
+            lim_info.limit_length);
+        limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
+        query_plan.addStep(std::move(limit_range_step));
+        return;
+    }
+
     /// If there is LIMIT
     if (query.limitLength())
     {
