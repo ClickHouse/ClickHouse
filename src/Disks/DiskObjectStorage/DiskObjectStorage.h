@@ -1,14 +1,16 @@
 #pragma once
 
-#include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Common/re2.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
+#include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
+#include <Disks/IDisk.h>
 
 #include <base/scope_guard.h>
 
 #include "config.h"
-
 
 namespace CurrentMetrics
 {
@@ -31,11 +33,13 @@ friend class DiskObjectStorageReservation;
 public:
     DiskObjectStorage(
         const String & name_,
+        ClusterConfigurationPtr cluster_,
         MetadataStoragePtr metadata_storage_,
-        ObjectStoragePtr object_storage_,
+        ObjectStorageRouterPtr object_storages_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         bool use_fake_transaction_ = true);
+    ~DiskObjectStorage() override;
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
@@ -44,13 +48,13 @@ public:
 
     bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
 
-    bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
+    bool supportParallelWrite() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->supportParallelWrite(); }
 
     const String & getPath() const override { return metadata_storage->getPath(); }
 
     StoredObjects getStorageObjects(const String & local_path) const override;
 
-    const std::string & getCacheName() const override { return object_storage->getCacheName(); }
+    const std::string & getCacheName() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->getCacheName(); }
 
     std::optional<UInt64> getTotalSpace() const override { return {}; }
     std::optional<UInt64> getAvailableSpace() const override { return {}; }
@@ -177,11 +181,9 @@ public:
         const std::function<void()> & cancellation_hook = {}
         ) override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     ObjectStoragePtr getObjectStorage() override;
-
-    DiskObjectStoragePtr createDiskObjectStorage() override;
 
     bool supportsCache() const override;
 
@@ -207,13 +209,13 @@ public:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
-    String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
+    String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storages->takePointingTo(cluster->getLocalLocation())->getName()); }
 
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
+    DiskObjectStoragePtr wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
@@ -243,9 +245,13 @@ private:
 
     LoggerPtr log;
 
+    ClusterConfigurationPtr cluster;
     MetadataStoragePtr metadata_storage;
-    ObjectStoragePtr object_storage;
+    ObjectStorageRouterPtr object_storages;
     DataSourceDescription data_source_description;
+
+    BlobKillerThreadPtr blob_killer;
+    BlobCopierThreadPtr blob_copier;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;

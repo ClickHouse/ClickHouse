@@ -64,6 +64,7 @@ def get_additional_envs(info, check_name: str) -> List[str]:
         azure_connection_string = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
+            strict=True,
         )
         result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
@@ -235,15 +236,27 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 stderr_log=stderr_log if stderr_log.exists() else "",
                 fuzzer_log="",
             )
-            name, description, files = log_parser.parse_failure()
-            failed_results.append(
-                Result.create_from(
-                    name=name,
-                    info=description,
-                    status=Result.StatusExtended.FAIL,
-                    files=files,
+            try:
+                name, description, files = log_parser.parse_failure()
+                failed_results.append(
+                    Result.create_from(
+                        name=name,
+                        info=description,
+                        status=Result.StatusExtended.FAIL,
+                        files=files,
+                    )
                 )
-            )
+            except Exception as e:
+                print(
+                    f"ERROR: Failed to parse failure logs: {e}\nServer logs should still be collected."
+                )
+                failed_results.append(
+                    Result.create_from(
+                        name="Parse failure error",
+                        info=f"Error parsing failure logs: {e}",
+                        status=Result.Status.FAILED,
+                    )
+                )
 
     if exit_code != 0:
         failed_results.append(

@@ -525,11 +525,13 @@ enum StartupScriptsExecutionState : CurrentMetrics::Value
 };
 
 
-static std::string getCanonicalPath(std::string && path)
+static std::string getCanonicalPath(std::string && path, const std::string & base = {})
 {
     Poco::trimInPlace(path);
     if (path.empty())
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "path configuration parameter is empty");
+    if (!base.empty() && fs::path(path).is_relative())
+        path = fs::weakly_canonical(fs::path(base) / path);
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -689,9 +691,10 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Server::options());
+        std::string app_name = (commandName() == "clickhouse-server") ? "clickhouse-server" : "clickhouse server";
         auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName());
+                                      app_name);
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -718,7 +721,7 @@ void Server::initialize(Poco::Util::Application & self)
 
 std::string Server::getDefaultCorePath() const
 {
-    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
+    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH), original_working_directory) + "cores";
 }
 
 void Server::defineOptions(Poco::Util::OptionSet & options)
@@ -783,7 +786,7 @@ int readNumber(const String & path)
 
 void sanityChecks(Server & server, const ServerSettings & server_settings)
 {
-    std::string data_path = getCanonicalPath(String(server_settings[ServerSetting::path]));
+    std::string data_path = getCanonicalPath(String(server_settings[ServerSetting::path]), server.getOriginalWorkingDirectory());
     std::string logs_path = server_settings[ServerSetting::logger_log];
 
     if (server.logger().is(Poco::Message::PRIO_TEST))
@@ -1208,6 +1211,22 @@ try
         LOG_INFO(log, "Starting root logger in level {}", logger_startup_level_setting.value);
     }
 
+    // If the startup_console_log_level is set in the config, we override the console logger level.
+    // Specific loggers can still override it.
+    std::string original_console_log_level_config = config().getString("logger.startup_console_log_level", "");
+    bool should_restore_console_log_level = false;
+    if (config().has("logger.startup_console_log_level") && !config().getString("logger.startup_console_log_level").empty())
+    {
+        /// Set the console logger level to the startup console level.
+        /// This is useful for debugging startup issues.
+        /// The console logger level will be reset to the default level after the server is fully initialized.
+        config().setString("logger.console_log_level", config().getString("logger.startup_console_log_level"));
+        Loggers::updateLevels(config(), logger());
+        should_restore_console_log_level = true;
+
+        LOG_INFO(log, "Starting console logger in level {}", config().getString("logger.startup_console_log_level"));
+    }
+
     MainThreadStatus::getInstance();
 
 #if USE_JEMALLOC
@@ -1347,8 +1366,8 @@ try
         server_settings[ServerSetting::max_thread_pool_size],
         server_settings[ServerSetting::max_thread_pool_free_size],
         server_settings[ServerSetting::thread_pool_queue_size],
-        has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns] : 0,
-        has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns] : 0);
+        has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
+        has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
 
     if (has_trace_collector)
     {
@@ -1601,7 +1620,7 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-    std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]));
+    std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
 
     /// Check that the process user id matches the owner of the data.
@@ -1832,27 +1851,31 @@ try
       */
     {
         const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
-        std::string user_files_path = user_files_path_setting.changed ? user_files_path_setting.value : String(path / "user_files/");
+        std::string user_files_path = user_files_path_setting.changed
+            ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
         const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
-        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed ? dictionaries_lib_path_setting.value : String(path / "dictionaries_lib/");
+        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
+            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
     }
 
     {
         const auto & user_scripts_path_setting = server_settings[ServerSetting::user_scripts_path];
-        std::string user_scripts_path = user_scripts_path_setting.changed ? user_scripts_path_setting.value : String(path / "user_scripts/");
+        std::string user_scripts_path = user_scripts_path_setting.changed
+            ? getCanonicalPath(String(user_scripts_path_setting.value), path_str) : String(path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
     }
 
     /// top_level_domains_lists
     {
         const auto & top_level_domains_path_setting = server_settings[ServerSetting::top_level_domains_path];
-        const std::string & top_level_domains_path = top_level_domains_path_setting.changed ? top_level_domains_path_setting.value : String(path / "top_level_domains/");
+        std::string top_level_domains_path = top_level_domains_path_setting.changed
+            ? getCanonicalPath(String(top_level_domains_path_setting.value), path_str) : String(path / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
@@ -2628,7 +2651,8 @@ try
     else
     {
         const auto & tmp_path_setting = server_settings[ServerSetting::tmp_path];
-        std::string temporary_path = tmp_path_setting.changed ? tmp_path_setting.value : String(path / "tmp/");
+        std::string temporary_path = tmp_path_setting.changed
+            ? getCanonicalPath(String(tmp_path_setting.value), path_str) : String(path / "tmp/");
         global_context->setTemporaryStoragePath(temporary_path, server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
 
@@ -2698,7 +2722,8 @@ try
 
     /// Set path for format schema files
     const auto & format_schema_path_setting = server_settings[ServerSetting::format_schema_path];
-    fs::path format_schema_path(format_schema_path_setting.changed ? fs::path(format_schema_path_setting.value) : path / "format_schemas/");
+    fs::path format_schema_path(format_schema_path_setting.changed
+        ? fs::path(getCanonicalPath(String(format_schema_path_setting.value), path_str)) : path / "format_schemas/");
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
@@ -2707,9 +2732,11 @@ try
         global_context->setGoogleProtosPath(fs::weakly_canonical(server_settings[ServerSetting::google_protos_path].value));
 
     /// Set path for filesystem caches
-    fs::path filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
-    if (!filesystem_caches_path.empty())
-        global_context->setFilesystemCachesPath(filesystem_caches_path);
+    {
+        String filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
+        if (!filesystem_caches_path.empty())
+            global_context->setFilesystemCachesPath(getCanonicalPath(std::move(filesystem_caches_path), path_str));
+    }
 
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.
@@ -2956,6 +2983,14 @@ try
                 LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
             }
 
+            // Restore the root logger level to the default level after the server is fully initialized.
+            if (should_restore_console_log_level)
+            {
+                config().setString("logger.console_log_level", original_console_log_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+            }
+
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
@@ -2999,6 +3034,17 @@ try
 
                 LOG_INFO(log, "Set root logger in level {} before shutdown", logger_shutdown_level_setting.value);
             }
+
+            if (config().has("logger.shutdown_console_log_level") && !config().getString("logger.shutdown_console_log_level").empty())
+            {
+                /// Set the root logger level to the shutdown level.
+                /// This is useful for debugging shutdown issues.
+                config().setString("logger.console_log_level", config().getString("logger.shutdown_console_log_level"));
+                Loggers::updateLevels(config(), logger());
+
+                LOG_INFO(log, "Set console logger in level {} before shutdown", config().getString("logger.shutdown_console_log_level"));
+            }
+
             LOG_DEBUG(log, "Received termination signal.");
 
             CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);

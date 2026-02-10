@@ -316,6 +316,8 @@ namespace Setting
     extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
+    extern const SettingsBool use_page_cache_for_local_disks;
+    extern const SettingsBool use_page_cache_for_object_storage;
     extern const SettingsBool use_page_cache_with_distributed_cache;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
@@ -323,7 +325,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
-    extern const SettingsString default_dictionary_database;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 
@@ -3185,7 +3186,7 @@ bool Context::isCurrentQueryKilled() const
     return false;
 }
 
-void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::optional<ColumnsDescription> column_description)
+void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::shared_ptr<ColumnsDescription> column_description)
 {
     insertion_table_info = {
         .table = std::move(db_and_table),
@@ -6914,7 +6915,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 
     std::lock_guard lock(shared->mutex);
 
-    if (std::chrono::milliseconds(getSettingsRef()[Setting::async_insert_poll_timeout_ms]) == std::chrono::milliseconds::zero())
+    if (std::chrono::milliseconds(getSettingsRef()[Setting::async_insert_poll_timeout_ms].totalMilliseconds()) == std::chrono::milliseconds::zero())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
@@ -7123,6 +7124,8 @@ ReadSettings Context::getReadSettings() const
     res.page_cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
+    res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
+    res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
     res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
     res.page_cache_block_size = settings_ref[Setting::page_cache_block_size];

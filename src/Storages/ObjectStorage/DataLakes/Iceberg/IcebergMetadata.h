@@ -82,7 +82,9 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
+    static constexpr bool supportsTotalRows() { return true; }
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    static constexpr bool supportsTotalBytes() { return true; }
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;

@@ -274,7 +274,9 @@ For queries that are completed quickly because of a LIMIT, you can set a lower '
 For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 The smaller the `max_threads` value, the less memory is consumed.
 
-The `max_threads` setting by default matches the number of hardware threads available to ClickHouse.
+The `max_threads` setting by default matches the number of hardware threads (number of CPU cores) available to ClickHouse.
+As a special case, for x86 processors with less than 32 CPU cores and SMT (e.g. Intel HyperThreading), ClickHouse uses the number of logical cores (= 2 x physical core count) by default.
+
 Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU cores.
 
 For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
@@ -863,18 +865,19 @@ When moving conditions from WHERE to PREWHERE, allow reordering them to optimize
 )", 0) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
-Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Allows you to specify the wait behavior for actions that are to be executed on replicas by [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
 - `0` — Do not wait.
 - `1` — Wait for own execution.
 - `2` — Wait for everyone.
+- `3` - Only wait for active replicas.
 
 Cloud default value: `1`.
 
 :::note
-`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
+`alter_sync` is applicable to `Replicated` and `SharedMergeTree` tables only, it does nothing to alter non `Replicated` or `Shared` tables.
 :::
 )", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
@@ -6074,6 +6077,12 @@ Use userspace page cache for remote disks that don't have filesystem cache enabl
     DECLARE(Bool, use_page_cache_with_distributed_cache, false, R"(
 Use userspace page cache when distributed cache is used.
 )", 0) \
+    DECLARE(Bool, use_page_cache_for_local_disks, false, R"(
+Use userspace page cache when reading from local disks. Used for testing, unlikely to improve performance in practice. Requires local_filesystem_read_method = 'pread' or 'read'. Doesn't disable the OS page cache; min_bytes_to_use_direct_io can be used for that. Only affects regular tables, not file() table function or File() table engine.
+)", 0) \
+    DECLARE(Bool, use_page_cache_for_object_storage, false, R"(
+    Use userspace page cache when reading from object storage table functions (s3, azure, hdfs) and table engines (S3, Azure, HDFS).
+    )", 0) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
 )", 0) \
@@ -7305,11 +7314,6 @@ Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are n
 If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
     )", 0) \
-    DECLARE(String, default_dictionary_database, "", R"(
-Database to search for external dictionaries when database name is not specified.
-An empty string means the current database. If dictionary is not found in the specified default database, ClickHouse falls back to the current database.
-
-Can be useful for migrating from XML-defined global dictionaries to SQL-defined dictionaries.)", 0) \
     DECLARE(Int64, optimize_const_name_size, 256, R"(
 Replace with scalar and use hash as a name for large constants (size is estimated by the name length).
 
@@ -7391,7 +7395,7 @@ Allows using statistics to optimize queries
     DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, false, R"(
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
 )", EXPERIMENTAL, allow_experimental_statistic) \
-    DECLARE(Bool, use_statistics_cache, false, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", EXPERIMENTAL) \
+    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
 If set to true, allow using the text index.
@@ -7512,9 +7516,9 @@ DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, enable_join_runtime_filters, false, R"(
+    DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
 Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
 )", EXPERIMENTAL) \
@@ -8007,6 +8011,17 @@ std::vector<std::string_view> Settings::getAllRegisteredNames() const
         setting_names.emplace_back(setting.getName());
     }
     return setting_names;
+}
+
+std::vector<std::string_view> Settings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+    {
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    }
+    return alias_names;
 }
 
 std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const

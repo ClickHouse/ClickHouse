@@ -176,7 +176,7 @@ def check_labels(category, info):
             info.dump()
 
     if pr_labels_to_remove or pr_labels_to_add:
-        Shell.check(cmd, verbose=True, strict=True)
+        Shell.check(cmd, verbose=True, strict=True, retries=5)
 
 
 if __name__ == "__main__":

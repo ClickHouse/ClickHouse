@@ -113,8 +113,10 @@ add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhous
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/DiskObjectStorage)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/Replication)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Cache)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Local)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Plain)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable)
@@ -752,7 +754,7 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
-    
+
     if (TARGET ch_contrib::simdcomp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdcomp)
     endif()

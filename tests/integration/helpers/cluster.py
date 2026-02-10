@@ -3315,7 +3315,7 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
-    def start(self):
+    def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
         if not os.path.exists(self.instances_dir):
@@ -3450,6 +3450,10 @@ class ClickHouseCluster:
                                     "check_not_exists",
                                     "create_if_not_exists",
                                     "remove_recursive",
+                                    "multi_watches",
+                                    "check_stat",
+                                    "try_remove",
+                                    "list_with_stat_and_data",
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
@@ -3887,7 +3891,7 @@ class ClickHouseCluster:
                 logging.debug(
                     f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
                 )
-                instance.wait_for_start(start_timeout)
+                instance.wait_for_start(start_timeout, connection_timeout=connection_timeout)
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(

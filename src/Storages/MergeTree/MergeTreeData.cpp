@@ -835,6 +835,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     {
         try
         {
+            auto parts_lock = readLockParts();
             auto stats = part.data_part->loadStatistics();
             estimator_builder.markDataPart(part.data_part);
             for (const auto & stat : stats)
@@ -2112,8 +2113,10 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
             parts_to_load.pop_back();
         }
 
+        /// Capturing by reference here is ok:
+        /// part_loading_mutex, part_select_mutex, loaded_parts, parts_to_load are created before runner, so they will outlive it
         runner.enqueueAndKeepTrack(
-            [&, part = std::move(current_part)]()
+            [this, &part_loading_mutex, &part_select_mutex, &loaded_parts, &parts_to_load, part = std::move(current_part)]()
             {
                 /// Pass a separate mutex to guard the set of parts, because this lambda
                 /// is called concurrently but with already locked @data_parts_mutex.
@@ -2249,6 +2252,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         auto & disk_parts = parts_to_load_by_disk[i];
         auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
 
+        /// Capturing by references here is ok:
+        /// expected_parts outlives runner
+        /// unexpected_disk_parts references unexpected_parts_to_load_by_disk which outlives runner
+        /// disk_parts references parts_to_load_by_disk which outlives runner
         runner.enqueueAndKeepTrack([&expected_parts, &unexpected_disk_parts, &disk_parts, this, disk_ptr]()
         {
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
@@ -2608,6 +2615,7 @@ try
     {
         try
         {
+            auto parts_lock = readLockParts();
             auto stats = data_part->loadStatistics();
             estimator_builder.markDataPart(data_part);
             for (const auto & stat : stats)
@@ -2664,7 +2672,8 @@ try
             runner.waitForAllToFinishAndRethrowFirstError();
             return;
         }
-        runner.enqueueAndKeepTrack([&]()
+        /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
+        runner.enqueueAndKeepTrack([this, &load_state, replicated]()
         {
             loadUnexpectedDataPart(load_state);
 
@@ -2749,7 +2758,8 @@ try
             outdated_unloaded_data_parts.pop_back();
         }
 
-        runner.enqueueAndKeepTrack([&, my_part = part]()
+        /// num_loaded_parts will outlive runner, so capturing by reference is ok
+        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, replicated]()
         {
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
@@ -2971,14 +2981,15 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
         columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
     }
 
-    /// Allocate runner on stack after all used local variables to make its destructor
-    /// is called first and all tasks stopped before local variables are being destroyed.
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_PREWARM_CACHE);
-
+    /// Created first, so it outlives runner
     auto enough_space = [&](const auto & cache, double ratio_to_prewarm)
     {
         return static_cast<double>(cache->sizeInBytes()) < static_cast<double>(cache->maxSizeInBytes()) * ratio_to_prewarm;
     };
+
+    /// Allocate runner on stack after all used local variables to make its destructor
+    /// is called first and all tasks stopped before local variables are being destroyed.
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_PREWARM_CACHE);
 
     for (const auto & part : data_parts)
     {
@@ -2986,7 +2997,11 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
 
         if (index_cache && !part->isIndexLoaded() && enough_space(index_cache, index_ratio_to_prewarm))
         {
-            runner.enqueueAndKeepTrack([&]
+            /// Capturing by reference here is fine:
+            /// enough_space is created before runner and outlives it
+            /// index_cache is passed as argument to the method and outlives the runner
+            /// part belongs to data_parts, which is created before runner and outlives it
+            runner.enqueueAndKeepTrack([&enough_space, &index_cache, index_ratio_to_prewarm, &part]
             {
                 /// Check again, because another task may have filled the cache while this task was waiting in the queue.
                 /// The cache still may be filled slightly more than `index_ratio_to_prewarm`, but it's ok.
@@ -2999,7 +3014,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
 
         if (mark_cache && enough_space(mark_cache, marks_ratio_to_prewarm))
         {
-            runner.enqueueAndKeepTrack([&]
+            /// Same as above, plus:
+            /// mark_cache is passed as argument to the method and outlives the runner
+            runner.enqueueAndKeepTrack([&enough_space, &mark_cache, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks]
             {
                 /// Check again, because another task may have filled the cache while this task was waiting in the queue.
                 /// The cache still may be filled slightly more than `marks_ratio_to_prewarm`, but it's ok.
@@ -3453,6 +3470,9 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
         for (const DataPartPtr & part : parts_to_remove)
         {
+            /// Passing by reference here is safe:
+            /// part is part of parts_to_remove which outlives runner
+            /// part_names_mutex is created before runner and outlives it
             runner.enqueueAndKeepTrack([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
             {
                 asMutableDeletingPart(part)->remove();
@@ -3541,6 +3561,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
         const MergeTreePartInfo & range, DataPartsVector && parts_in_range)
     {
         /// Below, range should be captured by copy to avoid use-after-scope on exception from pool
+        /// part_names_mutex is fine since it's created before runner and outlives it
         runner.enqueueAndKeepTrack(
             [this, range, &part_names_mutex, part_names_succeed, batch = std::move(parts_in_range)]
         {
@@ -8132,6 +8153,8 @@ void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
     }
 
     clear();
+
+    data.preactive_parts_cv.notify_all();
 }
 
 void MergeTreeData::Transaction::clear()
@@ -8172,13 +8195,18 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             if (part->getDataPartStorage().hasActiveTransaction())
                 part->getDataPartStorage().commitTransaction();
 
-        if (txn)
-        {
-            for (const auto & part : precommitted_parts)
-            {
-                DataPartPtr covering_part;
-                DataPartsVector covered_active_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
+        /// Collect covered parts and call addNewPartAndRemoveCovered before NOEXCEPT_SCOPE,
+        /// because lockRemovalTID inside addNewPartAndRemoveCovered can throw SERIALIZATION_ERROR.
+        std::vector<DataPartsVector> covered_parts_for_commit;
+        covered_parts_for_commit.reserve(precommitted_parts.size());
 
+        for (const auto & part : precommitted_parts)
+        {
+            DataPartPtr covering_part;
+            DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
+
+            if (txn)
+            {
                 /// outdated parts should be also collected here
                 /// the visible outdated parts should be tried to be removed
                 /// more likely the conflict happens at the removing visible outdated parts, what is right actually
@@ -8188,13 +8216,15 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                          covered_outdated_parts.size(), part->getNameWithState(), txn->tid, txn->getSnapshot(), fmt::join(getPartsNames(covered_outdated_parts), ", "));
                 data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
 
-                DataPartsVector covered_parts;
-                covered_parts.reserve(covered_active_parts.size() + covered_outdated_parts.size());
-                std::move(covered_active_parts.begin(), covered_active_parts.end(), std::back_inserter(covered_parts));
                 std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
-
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
             }
+
+            /// Call addNewPartAndRemoveCovered only if there's no covering part.
+            /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
+            if (!covering_part)
+                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
+
+            covered_parts_for_commit.push_back(std::move(covered_parts));
         }
 
         NOEXCEPT_SCOPE({
@@ -8208,6 +8238,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             size_t reduce_rows = 0;
             size_t reduce_parts = 0;
 
+            size_t part_idx = 0;
             for (const auto & part : precommitted_parts)
             {
                 DataPartPtr covering_part;
@@ -8227,8 +8258,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 }
                 else
                 {
-                    if (!txn)
-                        MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, NO_TRANSACTION_RAW);
+                    /// Use the covered parts computed before NOEXCEPT_SCOPE.
+                    /// addNewPartAndRemoveCovered was already called above (before NOEXCEPT_SCOPE).
+                    covered_parts = std::move(covered_parts_for_commit[part_idx]);
 
                     total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
                     for (const auto & covered_part : covered_parts)
@@ -8253,6 +8285,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                     data.addPartContributionToColumnAndSecondaryIndexSizes(part);
                     data.addPartContributionToUncompressedBytesInPatches(part);
                 }
+                ++part_idx;
             }
 
             data.updateSerializationHints(precommitted_parts, total_covered_parts, acquired_parts_lock);
@@ -8265,6 +8298,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
     }
 
     clear();
+
+    data.preactive_parts_cv.notify_all();
 
     return total_covered_parts;
 }
@@ -9036,6 +9071,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     PartitionCommandsResultInfo result;
     std::mutex result_mutex;
+
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_FREEZE_PART);
 
     for (const auto & part : data_parts)
@@ -9045,8 +9081,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         if (!matcher(part->info.getPartitionId()))
             continue;
 
+        /// Passing by reference here is fine. All variables outlive the runner.
         runner.enqueueAndKeepTrack(
-            [&]
+            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex]()
             {
                 LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
@@ -10455,7 +10492,7 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
     return parts_to_clear.size();
 }
 
-void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key, const MergeTreeData::MergingParams & merging_params)
+void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
 {
     /// Aggregate functions already forbidden, but SimpleAggregateFunction are not
     for (const auto & data_type : sorting_key.data_types)
@@ -10463,9 +10500,6 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key, const M
         if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
-
-    if (sorting_key.data_types.empty() && merging_params.mode != MergingParams::Mode::Ordinary)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sorting key cannot be empty for MergeTree table with {} merging mode", merging_params.mode);
 }
 
 size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList & list) const noexcept

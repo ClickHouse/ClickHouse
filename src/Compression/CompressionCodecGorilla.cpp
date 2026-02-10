@@ -434,10 +434,14 @@ UInt32 CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sou
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Gorilla-encoded data. File has wrong header");
 
-    if (bytes_to_skip >= uncompressed_size)
+    if (bytes_to_skip > uncompressed_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Gorilla-encoded data. File has wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);
+
+    /// All data is in the skip section when data_bytes_size > uncompressed_size.
+    if (bytes_to_skip == uncompressed_size)
+        return uncompressed_size;
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
     UInt32 uncompressed_size_left = uncompressed_size - bytes_to_skip;
     switch (bytes_size)

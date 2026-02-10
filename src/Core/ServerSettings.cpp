@@ -54,6 +54,14 @@ namespace
 
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
+    DECLARE(InsertDeduplicationVersions, insert_deduplication_version, InsertDeduplicationVersions::OLD_SEPARATE_HASHES, R"(
+        This setting makes it possible to migrate from the code version which makes insert deduplication for sync and async inserts totally different not transparent way to the code version where inserted data would be deduplicated across sync and async inserts.
+        The default value is `old_separate_hashes`, which means that ClickHouse will use different deduplication hashes for sync and async inserts (the same as before).
+        This value should be used as a default value to be backward compatible. All existing instances of Clickhouse should use this value to avoid breaking changes.
+        The value `compatible_double_hashes` means that ClickHouse will use two deduplication hashes: the old one for sync or async inserts and another the new one for all inserts. This value should be used to migrate existing instances to the new behavior in a safe way.
+        This value should be enabled for some time (see replicated_deduplication_window and non_replicated_deduplication_window settings) to make sure that no sync or async inserts are lost during migration.
+        Finally the value `new_unified_hash` means that ClickHouse will use the new deduplication hash for sync and async inserts. This value could be enabled on new instances of ClickHouse or on instances which already used `compatible_double_hashes` value for some time.
+    )", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -1117,6 +1125,12 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(UInt64, parts_killer_pool_size, 128, R"(
     Threads for cleanup of shared merge tree outdated threads. Only available in ClickHouse Cloud
+    )", 0) \
+    DECLARE(UInt64, snapshot_cleaner_period, 120, R"(
+    Period to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
+    )", 0) \
+    DECLARE(UInt64, snapshot_cleaner_pool_size, 128, R"(
+    Threads for cleanup of shared merge tree snapshot cleaner threads. Only available in ClickHouse Cloud
     )", 0) \
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
     Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.

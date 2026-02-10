@@ -262,10 +262,22 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
 
+    /// We must reset the task here, similarly to MergeFromLogEntryTask::finalize.
+    /// The task holds RAII guards for temporary part directories (TemporaryParts).
+    /// If checkPartChecksumsAndCommit fails with a checksum mismatch, the execution
+    /// falls back to fetching the part from another replica. The fetch may use
+    /// cloneAndLoadDataPart with the same "tmp_clone_" prefix, which would try to
+    /// register the same temporary part name in TemporaryParts — causing a
+    /// LOGICAL_ERROR if the old guard is still alive. Resetting the task here
+    /// releases these guards before the fallback fetch can run.
+    auto hardlinked_files = mutate_task->getHardlinkedFiles();
+    mutate_task->updateProfileEvents();
+    mutate_task.reset();
+
     try
     {
         transaction_ptr->renameParts();
-        storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, mutate_task->getHardlinkedFiles());
+        storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, hardlinked_files);
     }
     catch (const Exception & e)
     {
@@ -278,7 +290,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
             LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
                            "We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
-            mutate_task->updateProfileEvents();
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 
             if ((*storage.getSettings())[MergeTreeSetting::detach_not_byte_identical_parts])
@@ -306,7 +317,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
          */
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
-    mutate_task->updateProfileEvents();
     write_part_log({});
 
     return true;
