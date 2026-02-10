@@ -55,7 +55,7 @@ chcache_secret = Secret.Config(
 
 SECRETS = [
     Secret.Config(
-        name="dockerhub_robot_password",
+        name="/ci/docker/robotclickhouse-readwrite-token",
         type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
