@@ -31,8 +31,8 @@
     <fill_query>SYSTEM START MERGES mt_{parts}_parts_{uniqs}_uniqs</fill_query>
     <fill_query>OPTIMIZE TABLE mt_{parts}_parts_{uniqs}_uniqs FINAL</fill_query>
 
-    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 2800000 FORMAT Null</query>
-    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 28000000 FORMAT Null</query>
+    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 8400000 FORMAT Null</query>
+    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 84000000 FORMAT Null</query>
     <query>SELECT sum(val2) FROM mt_{parts}_parts_{uniqs}_uniqs GROUP BY val1 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS mt_{parts}_parts_{uniqs}_uniqs</drop_query>

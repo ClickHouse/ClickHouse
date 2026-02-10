@@ -48,6 +48,6 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM numbers(26000000) WHERE NOT ignore(toString({expr}))</query>
-    <query>SELECT count() FROM zeros(26000000) WHERE NOT ignore(toString({expr_zero}))</query>
+    <query>SELECT count() FROM numbers(4300000) WHERE NOT ignore(toString({expr}))</query>
+    <query>SELECT count() FROM zeros(4300000) WHERE NOT ignore(toString({expr_zero}))</query>
 </test>

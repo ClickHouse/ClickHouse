@@ -1,4 +1,4 @@
 <test>
-    <query>SELECT avg(stringJaccardIndex(randomString(100), randomString(101))) FROM numbers(1300000)</query>
-    <query>SELECT avg(stringJaccardIndexUTF8(randomStringUTF8(100), randomStringUTF8(101))) FROM numbers(6800)</query>
+    <query>SELECT avg(stringJaccardIndex(randomString(100), randomString(101))) FROM numbers(3800000)</query>
+    <query>SELECT avg(stringJaccardIndexUTF8(randomStringUTF8(100), randomStringUTF8(101))) FROM numbers(20000)</query>
 </test>

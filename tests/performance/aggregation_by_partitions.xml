@@ -11,10 +11,10 @@
         <substitution>
             <name>size</name>
             <values>
-                <!-- <value>78000</value> -->
-                <value>780000</value>
-                <value>7800000</value>
-                <value>78000000</value>
+                <!-- <value>30000</value> -->
+                <value>300000</value>
+                <value>3000000</value>
+                <value>30000000</value>
                 <!-- <value>100000000</value> -->
             </values>
         </substitution>

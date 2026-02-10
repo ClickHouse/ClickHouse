@@ -1,5 +1,5 @@
 <test>
-<query>SELECT count() FROM numbers(1500000) WHERE NOT ignore(formatReadableSize(number))</query>
-<query>SELECT count() FROM numbers(1500000) WHERE NOT ignore(formatReadableQuantity(number))</query>
-<query>SELECT count() FROM numbers(1500000) WHERE NOT ignore(formatReadableTimeDelta(number))</query>
+<query>SELECT count() FROM numbers(4100000) WHERE NOT ignore(formatReadableSize(number))</query>
+<query>SELECT count() FROM numbers(4100000) WHERE NOT ignore(formatReadableQuantity(number))</query>
+<query>SELECT count() FROM numbers(4100000) WHERE NOT ignore(formatReadableTimeDelta(number))</query>
 </test>

@@ -8,7 +8,7 @@
       <substitution>
           <name>table_size</name>
           <values>
-              <value>15000000</value>
+              <value>3700000</value>
           </values>
       </substitution>
       <substitution>

@@ -10,7 +10,7 @@
         <substitution>
             <name>elements</name>
             <values>
-                <value>1000000</value>
+                <value>200000</value>
             </values>
         </substitution>
 

@@ -1,9 +1,9 @@
 <test>
-    <query>SELECT count() FROM zeros(53000000) WHERE NOT ignore(randomString(10))</query>
-    <query>SELECT count() FROM zeros(53000000) WHERE NOT ignore(randomString(100))</query>
-    <query>SELECT count() FROM zeros(530000) WHERE NOT ignore(randomString(1000))</query>
-    <query>SELECT count() FROM zeros(53000) WHERE NOT ignore(randomString(10000))</query>
-    <query>SELECT count() FROM zeros(53000000) WHERE NOT ignore(randomString(rand() % 10))</query>
-    <query>SELECT count() FROM zeros(53000000) WHERE NOT ignore(randomString(rand() % 100))</query>
-    <query>SELECT count() FROM zeros(5300000) WHERE NOT ignore(randomString(rand() % 1000))</query>
+    <query>SELECT count() FROM zeros(120000000) WHERE NOT ignore(randomString(10))</query>
+    <query>SELECT count() FROM zeros(120000000) WHERE NOT ignore(randomString(100))</query>
+    <query>SELECT count() FROM zeros(1200000) WHERE NOT ignore(randomString(1000))</query>
+    <query>SELECT count() FROM zeros(120000) WHERE NOT ignore(randomString(10000))</query>
+    <query>SELECT count() FROM zeros(120000000) WHERE NOT ignore(randomString(rand() % 10))</query>
+    <query>SELECT count() FROM zeros(120000000) WHERE NOT ignore(randomString(rand() % 100))</query>
+    <query>SELECT count() FROM zeros(12000000) WHERE NOT ignore(randomString(rand() % 1000))</query>
 </test>
