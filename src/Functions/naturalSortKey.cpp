@@ -52,7 +52,7 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
-            executeNaturalSortKey(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            executeNaturalSortKey(col, col_res->getChars(), col_res->getOffsets(), input_rows_count);
             return col_res;
         }
         throw Exception(
@@ -60,8 +60,7 @@ public:
     }
 private:
     static void executeNaturalSortKey(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
+        const ColumnString * src,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
@@ -69,148 +68,131 @@ private:
         if (input_rows_count == 0)
             return;
 
-        res_data.reserve(data.size());
-        res_data.resize_exact(data.size());
-        res_offsets.resize(input_rows_count);
+        res_data.reserve(src->getChars().size());
+        res_offsets.reserve(input_rows_count);
 
-        const UInt8 * data_curr = data.data();
-
-        size_t data_row_curr = 0;
-        const UInt8 *  data_curr_row_end = data.data() + offsets[0];
-
-        const UInt8 * const data_end = data_curr + data.size();
-
-        UInt8 * res_curr = res_data.data();
-
-        const UInt8 * digits_start = data_curr;
-        size_t digits = 0;
-        UInt8 prev_byte = 0;
-
-        while (data_curr < data_end)
+        for (size_t row = 0; row != input_rows_count; ++row)
         {
-            const UInt8 b = *data_curr;
-            const bool is_digit = '0' <= b && b <= '9';
-            bool is_curr_row_end = data_curr == data_curr_row_end;
+            encodeString(src->getDataAt(row), res_data);
+            res_offsets.push_back(res_data.size());
+        }
+    }
 
-            if ((!is_digit || is_curr_row_end) && (digits || prev_byte == '0'))
-            {
-                if (!digits)
-                    digits = 1;
+    /**
+     * Encode the input string by replacing sequences of digits with a length prefix followed by the digits themselves.
+     * Leading zeros are trimmed.
+     */
+    static void encodeString(const std::string_view str, ColumnString::Chars & res_data)
+    {
+        if (str.empty())
+            return;
 
-                res_curr = appendNumToRes(digits_start, digits, res_data, res_curr);
-                digits = 0;
-            }
+        const UInt8 * data_curr = reinterpret_cast<const UInt8 *>(str.data());
+        const UInt8 * data_end = data_curr + str.size();
 
-            if (is_curr_row_end)
-            {
-                // Current byte is in the new row.
-                // We need to "close" the previous row and "close" all empty/null rows if any.
-                do
-                {
-                    res_offsets[data_row_curr] = res_curr - res_data.data();
-                    data_curr_row_end = data.data() + offsets[++data_row_curr];
-                    is_curr_row_end = data_curr == data_curr_row_end;
-                } while (is_curr_row_end);
-            }
+        const UInt8 * data_digits_start = data_curr;
+        const UInt8 * data_non_digits_start = data_curr;
+
+        size_t digits = 0;
+        UInt8 prev_c = 0;
+
+        for (; data_curr != data_end; ++data_curr) {
+            const UInt8 c = *data_curr;
+            const bool is_digit = '0' <= c && c <= '9';
 
             if (!is_digit)
-                *res_curr++ = b;
-            else if (digits)
-                ++digits;
+            {
+                if (digits) // End of a sequence of digits.
+                {
+                    appendNumberToResult(data_digits_start, digits, res_data);
+                    digits = 0;
+                    data_non_digits_start = data_curr;
+                }
+                else if (prev_c == '0') // End of a sequence of zeros.
+                {
+                    appendNumberToResult(data_curr - 1, 1, res_data);
+                    data_non_digits_start = data_curr;
+                }
+            }
             else
             {
-                digits_start = data_curr;
-                if (b != '0')
-                    digits = 1;
+                if (digits) // Continuation of a sequence of digits.
+                    ++digits;
+                else
+                {
+                    if (c != '0') // Start of a new sequence of digits (non-zero).
+                    {
+                        digits = 1;
+                        data_digits_start = data_curr;
+                    }
+                    if (prev_c != '0') // End of a sequence of non-digit characters.
+                        res_data.insert(data_non_digits_start, data_curr);
+                }
             }
 
-            prev_byte = b;
-            ++data_curr;
+            prev_c = c;
         }
 
-        // Handle last row if it doesn't end non-digit.
-        if (digits || prev_byte == '0')
-        {
-            if (!digits)
-                digits = 1;
-            res_curr = appendNumToRes(digits_start, digits, res_data, res_curr);
-        }
-
-        const size_t final_res_size = res_curr - res_data.data();
-
-        // Fill offsets for current (possible last) row and all remaining empty rows.
-        while (data_row_curr < input_rows_count)
-        {
-            res_offsets[data_row_curr] = final_res_size;
-            ++data_row_curr;
-        }
-
-        res_data.resize_exact(final_res_size);
+        if (digits) // String ends with a sequence of digits.
+            appendNumberToResult(data_digits_start, digits, res_data);
+        else if (prev_c == '0') // String ends with a sequence of zeros.
+            appendNumberToResult(data_curr - 1, 1, res_data);
+        else // String ends with non-digit characters.
+            res_data.insert(data_non_digits_start, data_curr);
     }
 
     /**
      * Append the encoded number (with its length prefix) to the response.
      * Returns the updated res_curr pointer.
      */
-    static UInt8 * appendNumToRes(const UInt8 * num_start, const size_t digits, ColumnString::Chars & res_data, UInt8 * res_curr)
+    static void appendNumberToResult(const UInt8 * num_start, const size_t digits, ColumnString::Chars & res_data)
     {
-        res_curr = appendDigitsPartToRes(digits, res_data, res_curr);
-
-        memcpy(res_curr, num_start, digits);
-        res_curr += digits;
-
-        return res_curr;
+        appendNumberPrefixToResult(digits, res_data);
+        res_data.insert(num_start, num_start + digits);
     }
 
     /**
      * Encode the length of the digit sequence (max supporter len is 79).
      * Returns the updated res_curr pointer.
      */
-    static UInt8 * appendDigitsPartToRes(const size_t digits, ColumnString::Chars & res_data, UInt8 * res_curr)
+    static void appendNumberPrefixToResult(const size_t digits, ColumnString::Chars & res_data)
     {
-        const size_t enc_val = digits - 1;
+        auto p = digits - 1;
 
-        constexpr UInt8 max_byte_code = '~'; // Highest printable ASCII character.
-        constexpr UInt8 min_byte_code = '0'; // Lowest printable ASCII character used for encoding.
-        constexpr size_t max_enc_size = max_byte_code - min_byte_code + 1; // Max number of digits that can be encoded in one byte.
-
-        if (enc_val < max_enc_size)
+        if (likely(p < 8))
         {
-            res_curr = ensureGrowth(res_data, res_curr, 1);
-            *res_curr++ = '0' + enc_val;
+            // 1 byte encoding: '0' ... '7' for 1..8 digits
+            res_data.push_back(static_cast<UInt8>('0' + p));
         }
-
-        return res_curr;
-    }
-
-    /**
-     * Ensure that res_data has enough capacity to accommodate needed_size more bytes.
-     * If not, it reserves additional space and returns the updated res_curr pointer.
-     * Returns the (possibly updated) res_curr pointer.
-     */
-    static UInt8 * ensureGrowth(ColumnString::Chars & res_data, UInt8 * res_curr, int needed_size)
-    {
-        const size_t new_size = res_data.size() + needed_size;
-        if (likely(new_size <= res_data.capacity()))
+        else if (p < 20)
         {
-            res_data.resize_exact(new_size);
-            return res_curr;
+            // 2 bytes encoding: '80' ... '91' for 9..20 digits
+            p += 72;
+
+            res_data.push_back(static_cast<UInt8>('0' + p / 10));
+            res_data.push_back(static_cast<UInt8>('0' + p % 10));
         }
+        else if (likely(p < 100))
+        {
+            // 3 bytes encoding: '920' ... '999' for 21..100 digits
+            p += 900;
 
-        const size_t res_curr_pos = res_curr - res_data.data();
-
-        res_data.reserve(new_size);
-        res_data.resize_exact(new_size);
-
-        return res_data.data() + res_curr_pos;
+            res_data.push_back(static_cast<UInt8>('0' + p / 100));
+            res_data.push_back(static_cast<UInt8>('0' + (p / 10) % 10));
+            res_data.push_back(static_cast<UInt8>('0' + p % 10));
+        }
+        else
+        {
+            res_data.push_back(UInt8{'9'});
+            res_data.push_back(UInt8{'9'});
+            res_data.push_back(UInt8{'9'});
+        }
     }
 };
 
 REGISTER_FUNCTION(NaturalSortKey)
 {
-    FunctionDocumentation::Description description = R"(
-The function is used for natural sorting.
-)";
+    FunctionDocumentation::Description description = "The function is used for natural sorting.";
     FunctionDocumentation::Syntax syntax = "naturalSortKey(s)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "A string to convert to natural sort key.", {"String"}}
@@ -230,7 +212,7 @@ The function is used for natural sorting.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNaturalSortKey>(documentation);
 }

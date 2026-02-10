@@ -1,8 +1,19 @@
--- SMOKE TEST
-SELECT '=== Test: SMOKE TEST ===';
+-- Test: Correct sorting for numbers only
+SELECT '=== Test: Correct Sorting for Numbers Only ===';
+
+SELECT repeat('2', num) as numStr
+FROM (
+         SELECT number + 1 AS num
+         FROM numbers(80)
+         ORDER BY cityHash64(num, 102)
+     )
+ORDER BY naturalSortKey(numStr);
+
+-- Test: Prefix generation logic
+SELECT '=== Test: Prefix Generation ===';
 
 SELECT naturalSortKey(repeat('2', number + 1))
-FROM numbers(80);
+FROM numbers(102);
 
 -- Test: Leading Zeros Preservation
 SELECT '=== Test: Leading Zeros ===';
@@ -208,12 +219,18 @@ FROM (
         '1.0.0',
         '192.168.1.2',
         '2.0.0',
-        '1.0.10'
+        '1.0.10',
+        'v10.0.0',
+        'v2.0.0',
+        'items',
+        'item1',
+        'item10',
+        'item2'
     ]) AS value
 )
 ORDER BY naturalSortKey(value);
 
--- Test: Real-wrld Patterns with few columns
+-- Test: Real-world patterns with few columns
 SELECT '=== Test: Real-world Patterns Few Columns ===';
 SELECT
     file,
