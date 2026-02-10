@@ -66,6 +66,63 @@ private:
             "groupPolygonUnion", type->getName());
     }
 
+    /// Convert a column to a vector of MultiPolygon, regardless of input geometry type.
+    std::vector<MultiPolygon<Point>> convertToMultiPolygons(ColumnPtr col) const
+    {
+        switch (input_type)
+        {
+            case InputGeometryType::Ring:
+            {
+                auto rings = ColumnToRingsConverter<Point>::convert(col);
+                std::vector<MultiPolygon<Point>> result;
+                result.reserve(rings.size());
+                for (auto & ring : rings)
+                {
+                    Polygon<Point> polygon;
+                    polygon.outer() = std::move(ring);
+                    MultiPolygon<Point> mp;
+                    mp.emplace_back(std::move(polygon));
+                    result.emplace_back(std::move(mp));
+                }
+                return result;
+            }
+            case InputGeometryType::Polygon:
+            {
+                auto polygons = ColumnToPolygonsConverter<Point>::convert(col);
+                std::vector<MultiPolygon<Point>> result;
+                result.reserve(polygons.size());
+                for (auto & polygon : polygons)
+                {
+                    MultiPolygon<Point> mp;
+                    mp.emplace_back(std::move(polygon));
+                    result.emplace_back(std::move(mp));
+                }
+                return result;
+            }
+            case InputGeometryType::MultiPolygon:
+            {
+                return ColumnToMultiPolygonsConverter<Point>::convert(col);
+            }
+        }
+        UNREACHABLE();
+    }
+
+    /// Union a multi-polygon into the aggregate state.
+    static void unionIntoState(Data & state, MultiPolygon<Point> && current)
+    {
+        if (!state.has_value)
+        {
+            state.accumulated_union = std::move(current);
+            state.has_value = true;
+        }
+        else
+        {
+            MultiPolygon<Point> new_union;
+            boost::geometry::union_(state.accumulated_union, current, new_union);
+            state.accumulated_union = std::move(new_union);
+        }
+    }
+
 public:
     explicit AggregateFunctionGroupPolygonUnion(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupPolygonUnion<Point>>(
@@ -80,50 +137,42 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & state = this->data(place);
+        auto multi_polygons = convertToMultiPolygons(columns[0]->getPtr());
+        if (row_num >= multi_polygons.size())
+            return;
+        unionIntoState(state, std::move(multi_polygons[row_num]));
+    }
 
-        MultiPolygon<Point> current_multi_polygon;
+    // Since we convert the entire column to the desired type, before doing any processing,
+    // it is more efficient to use the same converted column for each row's union, instead of computing again each time.
+    // This logic is implemented in addBatchSinglePlace, and add() is left as is for compatibility with non-vectorized execution.
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** __restrict columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        auto & state = this->data(place);
+        auto multi_polygons = convertToMultiPolygons(columns[0]->getPtr());
 
-        switch (input_type)
+        if (if_argument_pos >= 0)
         {
-            case InputGeometryType::Ring:
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
             {
-                auto rings = ColumnToRingsConverter<Point>::convert(columns[0]->getPtr());
-                if (row_num >= rings.size())
-                    return;
-                Polygon<Point> polygon;
-                polygon.outer() = std::move(rings[row_num]);
-                current_multi_polygon.emplace_back(std::move(polygon));
-                break;
+                if (flags[i] && i < multi_polygons.size())
+                    unionIntoState(state, std::move(multi_polygons[i]));
             }
-            case InputGeometryType::Polygon:
-            {
-                auto polygons = ColumnToPolygonsConverter<Point>::convert(columns[0]->getPtr());
-                if (row_num >= polygons.size())
-                    return;
-                current_multi_polygon.emplace_back(std::move(polygons[row_num]));
-                break;
-            }
-            case InputGeometryType::MultiPolygon:
-            {
-                auto multi_polygons = ColumnToMultiPolygonsConverter<Point>::convert(columns[0]->getPtr());
-                if (row_num >= multi_polygons.size())
-                    return;
-                current_multi_polygon = std::move(multi_polygons[row_num]);
-                break;
-            }
-        }
-
-        if (!state.has_value)
-        {
-            state.accumulated_union = std::move(current_multi_polygon);
-            state.has_value = true;
         }
         else
         {
-            MultiPolygon<Point> new_union;
-            boost::geometry::union_(state.accumulated_union, current_multi_polygon, new_union);
-            state.accumulated_union = std::move(new_union);
+            for (size_t i = row_begin; i < row_end && i < multi_polygons.size(); ++i)
+                unionIntoState(state, std::move(multi_polygons[i]));
         }
+
+        (void)arena;
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
