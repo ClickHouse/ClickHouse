@@ -60,7 +60,7 @@ public:
     void terminateThread();
 
     // Method to add a new task to the multiset. Returns true if the task was added.
-    [[nodiscard]] bool appendTask(const QueryStatusPtr & query, Int64 timeout, OverflowMode overflow_mode);
+    void appendTask(const QueryStatusPtr & query, Int64 timeout, OverflowMode overflow_mode);
 
     // Used when some task is done
     void appendDoneTasks(const QueryStatusPtr & query);
