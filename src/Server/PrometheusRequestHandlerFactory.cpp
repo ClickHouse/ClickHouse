@@ -39,13 +39,10 @@ namespace
     {
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::ExposeMetrics;
-        res.expose_info = config.getBool(config_prefix + ".info", true);
         res.expose_metrics = config.getBool(config_prefix + ".metrics", true);
         res.expose_asynchronous_metrics = config.getBool(config_prefix + ".asynchronous_metrics", true);
         res.expose_events = config.getBool(config_prefix + ".events", true);
         res.expose_errors = config.getBool(config_prefix + ".errors", true);
-        res.expose_histograms = config.getBool(config_prefix + ".histograms", true);
-        res.expose_dimensional_metrics = config.getBool(config_prefix + ".dimensional_metrics", true);
         parseCommonConfig(config, res);
         return res;
     }
@@ -97,23 +94,6 @@ namespace
     }
 
     /// Parses a configuration like this:
-    /// <!-- <type>query_api</type> (Implied, not actually parsed) -->
-    /// <table>db.time_series_table_name</table>
-    PrometheusRequestHandlerConfig parseQueryAPIConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-    {
-        PrometheusRequestHandlerConfig res;
-        res.type = PrometheusRequestHandlerConfig::Type::QueryAPI;
-        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
-        parseCommonConfig(config, res);
-        if (config.has(config_prefix + ".user"))
-        {
-            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
-            res.connection_config.credentials.emplace(credentials);
-        }
-        return res;
-    }
-
-    /// Parses a configuration like this:
     /// <type>expose_metrics</type>
     /// <metrics>true</metrics>
     /// <asynchronous_metrics>true</asynchronous_metrics>
@@ -132,8 +112,6 @@ namespace
             return parseRemoteWriteConfig(config, config_prefix);
         if (type == "remote_read")
             return parseRemoteReadConfig(config, config_prefix);
-        if (type == "query_api")
-            return parseQueryAPIConfig(config, config_prefix);
         throw Exception(
             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
     }
@@ -159,15 +137,14 @@ namespace
         IServer & server,
         const AsynchronousMetrics & async_metrics,
         const PrometheusRequestHandlerConfig & config,
-        bool for_keeper,
-        std::unordered_map<String, String> headers = {})
+        bool for_keeper)
     {
         if (!canBeHandled(config, for_keeper))
             return nullptr;
         auto metric_writer = createPrometheusMetricWriter(for_keeper);
-        auto creator = [&server, &async_metrics, config, metric_writer, headers_moved = std::move(headers)]() -> std::unique_ptr<PrometheusRequestHandler>
+        auto creator = [&server, &async_metrics, config, metric_writer]() -> std::unique_ptr<PrometheusRequestHandler>
         {
-            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer, headers_moved);
+            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer);
         };
         return std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
     }
@@ -229,13 +206,10 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const AsynchronousMetrics & asynchronous_metrics,
-    std::unordered_map<String, String> & common_headers)
+    const AsynchronousMetrics & asynchronous_metrics)
 {
-    auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
-
     auto parsed_config = parseExposeMetricsConfig(config, config_prefix + ".handler");
-    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
+    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false);
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
     handler->addFiltersFromConfig(config, config_prefix);
     return handler;

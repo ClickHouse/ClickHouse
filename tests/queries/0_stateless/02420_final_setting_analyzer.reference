@@ -67,23 +67,6 @@ explain syntax select left_table.id,val_left, val_middle, val_right from left_ta
                                                                              inner join right_table on middle_table.id = right_table.id
                ORDER BY left_table.id, val_left, val_middle, val_right;
 SELECT
-    left_table.id,
-    val_left,
-    val_middle,
-    val_right
-FROM left_table
-ALL INNER JOIN middle_table ON left_table.id = middle_table.id
-ALL INNER JOIN right_table ON middle_table.id = right_table.id
-ORDER BY
-    left_table.id ASC,
-    val_left ASC,
-    val_middle ASC,
-    val_right ASC
-explain syntax select left_table.id,val_left, val_middle, val_right from left_table
-                                                                             inner join middle_table on left_table.id = middle_table.id
-                                                                             inner join right_table on middle_table.id = right_table.id
-               ORDER BY left_table.id, val_left, val_middle, val_right SETTINGS enable_analyzer=0;
-SELECT
     `_--left_table.id` AS `left_table.id`,
     val_left,
     val_middle,
@@ -103,7 +86,7 @@ FROM
             id,
             val_middle
         FROM middle_table
-    ) AS middle_table ON (id AS `_--left_table.id`) = (middle_table.id AS `_--middle_table.id`)
+    ) AS middle_table ON `_--left_table.id` = `_--middle_table.id`
 ) AS `--.s`
 ALL INNER JOIN
 (
@@ -118,7 +101,6 @@ ORDER BY
     val_left ASC,
     val_middle ASC,
     val_right ASC
-SETTINGS enable_analyzer = 0
 -- extra: same with subquery
 select left_table.id,val_left, val_middle, val_right from left_table
                                                               inner join middle_table on left_table.id = middle_table.id

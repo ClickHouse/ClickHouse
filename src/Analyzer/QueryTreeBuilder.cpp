@@ -1,11 +1,10 @@
 #include <Analyzer/QueryTreeBuilder.h>
 
-#include <unordered_set>
-
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 
 #include <DataTypes/FieldToDataType.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -48,21 +47,21 @@
 
 #include <Databases/IDatabase.h>
 
+#include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
-
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsUInt64 limit;
     extern const SettingsUInt64 offset;
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -83,10 +82,12 @@ namespace
 class QueryTreeBuilder
 {
 public:
+    explicit QueryTreeBuilder(ASTPtr query_, ContextPtr context_);
 
-    QueryTreeNodePtr buildQueryTreeNode(ASTPtr query_, ContextPtr context_);
-
-    std::shared_ptr<TableFunctionNode> buildTableFunction(const ASTPtr & table_function, const ContextPtr & context) const;
+    QueryTreeNodePtr getQueryTreeNode()
+    {
+        return query_tree_node;
+    }
 
 private:
     QueryTreeNodePtr buildSelectOrUnionExpression(const ASTPtr & select_or_union_query,
@@ -124,18 +125,19 @@ private:
 
     QueryTreeNodePtr buildWindow(const ASTPtr & window_definition, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const;
+    QueryTreeNodePtr buildJoinTree(const ASTSelectQuery & select_query, const ContextPtr & context) const;
 
     ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
 
     QueryTreeNodePtr setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const;
+
+    ASTPtr query;
+    QueryTreeNodePtr query_tree_node;
 };
 
-QueryTreeNodePtr QueryTreeBuilder::buildQueryTreeNode(ASTPtr query_, ContextPtr context_)
+QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_, ContextPtr context_)
+    : query(query_->clone())
 {
-    auto query = query_->clone();
-    QueryTreeNodePtr query_tree_node;
-
     if (query->as<ASTSelectWithUnionQuery>() ||
         query->as<ASTSelectIntersectExceptQuery>() ||
         query->as<ASTSelectQuery>())
@@ -144,8 +146,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildQueryTreeNode(ASTPtr query_, ContextPtr 
         query_tree_node = buildExpressionList(query, context_);
     else
         query_tree_node = buildExpression(query, context_);
-
-    return query_tree_node;
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(const ASTPtr & select_or_union_query,
@@ -240,8 +240,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
     return union_node;
 }
 
-QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
-    const ASTPtr & select_query,
+QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_query,
     bool is_subquery,
     const std::string & cte_name,
     const ASTPtr & aliases,
@@ -307,7 +306,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
-    current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
     if (enable_order_by_all)
@@ -316,7 +314,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     auto current_context = current_query_tree->getContext();
 
-    current_query_tree->getJoinTree() = buildJoinTree(is_subquery, select_query_typed, current_context);
+    current_query_tree->getJoinTree() = buildJoinTree(select_query_typed, current_context);
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
@@ -623,14 +621,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         if (ast_literal->custom_type)
             result = std::make_shared<ConstantNode>(ast_literal->value, ast_literal->custom_type);
-        else if (context->getSettingsRef()[Setting::use_variant_as_common_type])
+        else if (context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type])
             result = std::make_shared<ConstantNode>(ast_literal->value, ast_literal->custom_type ? ast_literal->custom_type : applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
         else
             result = std::make_shared<ConstantNode>(ast_literal->value);
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {
-        if (function->isLambdaFunction() || isASTLambdaFunction(*function))
+        if (function->is_lambda_function || isASTLambdaFunction(*function))
         {
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();
@@ -672,7 +670,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
-            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
+            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node));
         }
         else
         {
@@ -687,8 +685,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             else
             {
                 auto function_node = std::make_shared<FunctionNode>(function->name);
-                function_node->setNullsAction(function->getNullsAction());
-                function_node->markAsOperator(function->isOperator());
+                function_node->setNullsAction(function->nulls_action);
 
                 if (function->parameters)
                 {
@@ -704,7 +701,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
                 }
 
-                if (function->isWindowFunction())
+                if (function->is_window_function)
                 {
                     if (function->window_definition)
                         function_node->getWindowNode() = buildWindow(function->window_definition, context);
@@ -830,50 +827,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildWindow(const ASTPtr & window_definition,
     return window_node;
 }
 
-std::shared_ptr<TableFunctionNode> QueryTreeBuilder::buildTableFunction(const ASTPtr & table_function, const ContextPtr & context) const
-{
-    auto & table_function_expression = table_function->as<ASTFunction &>();
-
-    auto node = std::make_shared<TableFunctionNode>(table_function_expression.name);
-
-    if (table_function_expression.arguments)
-    {
-        const auto & function_arguments_list = table_function_expression.arguments->as<ASTExpressionList &>().children;
-        for (const auto & argument : function_arguments_list)
-        {
-            if (!node->getSettingsChanges().empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' has arguments after SETTINGS",
-                    table_function_expression.formatForErrorMessage());
-
-            if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())
-                node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context));
-            else if (const auto * ast_set = argument->as<ASTSetQuery>())
-                node->setSettingsChanges(ast_set->changes);
-            else
-                node->getArguments().getNodes().push_back(buildExpression(argument, context));
-        }
-    }
-
-    return node;
-}
-
-QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const
+QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTSelectQuery & select_query, const ContextPtr & context) const
 {
     const auto & tables_in_select_query = select_query.tables();
     if (!tables_in_select_query)
     {
-        /** If no table is specified in SELECT query,
-          * if 'implicit_table_at_top_level' is set, we substitute it as a table,
-          * otherwise, we substitute the system.one table: SELECT * FROM system.one;
+        /** If no table is specified in SELECT query we substitute system.one table.
+          * SELECT * FROM system.one;
           */
-        if (!is_subquery)
-        {
-            String implicit_table = context->getSettingsRef()[Setting::implicit_table_at_top_level];
-            if (!implicit_table.empty())
-                return std::make_shared<IdentifierNode>(Identifier(implicit_table));
-        }
-
-        return std::make_shared<IdentifierNode>(Identifier("system.one"));
+        Identifier storage_identifier("system.one");
+        return std::make_shared<IdentifierNode>(storage_identifier);
     }
 
     auto & tables = tables_in_select_query->as<ASTTablesInSelectQuery &>();
@@ -935,53 +898,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
 
-                /// Apply column aliases from AS alias(col1, col2, ...) syntax
-                if (table_expression.column_aliases)
-                {
-                    const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
-                    Names column_alias_names;
-                    column_alias_names.reserve(column_aliases_list.children.size());
-
-                    std::unordered_set<std::string> seen_aliases;
-                    for (const auto & column_alias : column_aliases_list.children)
-                    {
-                        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
-                        if (!seen_aliases.insert(alias_name).second)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Duplicate column alias '{}' in table expression column list", alias_name);
-                        column_alias_names.push_back(alias_name);
-                    }
-
-                    if (auto * query_node = node->as<QueryNode>())
-                    {
-                        query_node->setProjectionAliasesToOverride(std::move(column_alias_names));
-                    }
-                    else if (auto * union_node = node->as<UnionNode>())
-                    {
-                        /// for UNIONs, apply aliases to the first query in the union, projection column names come from the first query (see UnionNode::computeProjectionColumns)
-                        /// we find the first QueryNode in case of nested UNIONs
-                        const auto & queries = union_node->getQueries().getNodes();
-                        QueryTreeNodePtr current = queries.empty() ? nullptr : queries[0];
-                        while (current)
-                        {
-                            if (auto * inner_query = current->as<QueryNode>())
-                            {
-                                inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
-                                break;
-                            }
-                            else if (auto * inner_union = current->as<UnionNode>())
-                            {
-                                const auto & inner_queries = inner_union->getQueries().getNodes();
-                                current = inner_queries.empty() ? nullptr : inner_queries[0];
-                            }
-                            else
-                            {
-                                break;
-                            }
-                        }
-                    }
-                }
-
                 if (table_expression_modifiers)
                 {
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -994,11 +910,31 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             }
             else if (table_expression.table_function)
             {
-                auto node = buildTableFunction(table_expression.table_function, context);
+                auto & table_function_expression = table_expression.table_function->as<ASTFunction &>();
+
+                auto node = std::make_shared<TableFunctionNode>(table_function_expression.name);
+
+                if (table_function_expression.arguments)
+                {
+                    const auto & function_arguments_list = table_function_expression.arguments->as<ASTExpressionList &>().children;
+                    for (const auto & argument : function_arguments_list)
+                    {
+                        if (!node->getSettingsChanges().empty())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' has arguments after SETTINGS",
+                                table_function_expression.formatForErrorMessage());
+
+                        if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())
+                            node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context));
+                        else if (const auto * ast_set = argument->as<ASTSetQuery>())
+                            node->setSettingsChanges(ast_set->changes);
+                        else
+                            node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                    }
+                }
 
                 if (table_expression_modifiers)
                     node->setTableExpressionModifiers(*table_expression_modifiers);
-                node->setAlias(table_expression.table_function->tryGetAlias());
+                node->setAlias(table_function_expression.tryGetAlias());
                 node->setOriginalAST(table_expression.table_function);
 
                 table_expressions.push_back(std::move(node));
@@ -1206,14 +1142,8 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
 
 QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context)
 {
-    QueryTreeBuilder builder;
-    return builder.buildQueryTreeNode(std::move(query), context);
-}
-
-std::shared_ptr<TableFunctionNode> buildTableFunctionQueryTree(ASTPtr query, ContextPtr context)
-{
-    QueryTreeBuilder builder;
-    return builder.buildTableFunction(query, context);
+    QueryTreeBuilder builder(std::move(query), context);
+    return builder.getQueryTreeNode();
 }
 
 QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const
@@ -1236,12 +1166,12 @@ QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunctio
     ASTPtr first_arg = function->arguments->children[0]->clone();
 
     auto function_node = std::make_shared<FunctionNode>(function->name);
-    function_node->setNullsAction(function->getNullsAction());
+    function_node->setNullsAction(function->nulls_action);
 
     function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[1], context)); // Separator
     function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
 
-    if (function->isWindowFunction())
+    if (function->is_window_function)
     {
         if (function->window_definition)
             function_node->getWindowNode() = buildWindow(function->window_definition, context);

@@ -7,9 +7,9 @@
 #if USE_MYSQL
 #    include <Common/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
-#    include <Dictionaries/DictionaryStructure.h>
-#    include <Dictionaries/ExternalQueryBuilder.h>
-#    include <Dictionaries/IDictionarySource.h>
+#    include "DictionaryStructure.h"
+#    include "ExternalQueryBuilder.h"
+#    include "IDictionarySource.h"
 #    include <Processors/Sources/MySQLSource.h>
 
 namespace Poco
@@ -52,13 +52,13 @@ public:
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockIO loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 

@@ -1,34 +1,33 @@
-DROP DICTIONARY IF EXISTS groups_dict;
-DROP TABLE IF EXISTS mv;
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS groups;
-DROP TABLE IF EXISTS target;
+DROP DATABASE IF EXISTS db_for_dict_03149;
+CREATE DATABASE db_for_dict_03149;
 
-CREATE TABLE users (uid Int16, name String, gid LowCardinality(String), gname LowCardinality(String))
+CREATE TABLE db_for_dict_03149.users (uid Int16, name String, gid LowCardinality(String), gname LowCardinality(String))
   ENGINE=MergeTree order by tuple();
-CREATE TABLE groups (gid LowCardinality(String), gname LowCardinality(String))
+CREATE TABLE db_for_dict_03149.groups (gid LowCardinality(String), gname LowCardinality(String))
   ENGINE=MergeTree order by tuple();
 
-CREATE TABLE target (uid Int16, name String, gid LowCardinality(String), gname LowCardinality(String))
+CREATE TABLE db_for_dict_03149.target (uid Int16, name String, gid LowCardinality(String), gname LowCardinality(String))
   ENGINE=MergeTree order by tuple();
 
-CREATE DICTIONARY groups_dict (
+CREATE DICTIONARY db_for_dict_03149.groups_dict (
     gid String, gname String
 )
 PRIMARY KEY gid, gname
 LAYOUT(COMPLEX_KEY_HASHED())
-SOURCE(CLICKHOUSE(TABLE 'groups' DATABASE currentDatabase()))
+SOURCE(CLICKHOUSE(QUERY 'select * from db_for_dict_03149.groups'))
 LIFETIME(MIN 0 MAX 0);
 
-CREATE MATERIALIZED VIEW mv to target AS
+CREATE MATERIALIZED VIEW db_for_dict_03149.mv to db_for_dict_03149.target AS
 SELECT u.uid, u.name, u.gid, u.gname
-FROM users u left join groups_dict g using gid, gname;
+FROM db_for_dict_03149.users u left join db_for_dict_03149.groups_dict g using gid, gname;
 
-INSERT INTO groups VALUES ('1', 'Group1');
+INSERT INTO db_for_dict_03149.groups VALUES ('1', 'Group1');
 
-INSERT INTO users VALUES (1231, 'John', '1', 'Group1');
-INSERT INTO users VALUES (6666, 'Ksenia', '1', 'Group1');
-INSERT INTO users VALUES (8888, 'Alice', '1', 'Group1');
-INSERT INTO users VALUES (1234, 'Test', '2', 'Group1');
+INSERT INTO db_for_dict_03149.users VALUES (1231, 'John', '1', 'Group1');
+INSERT INTO db_for_dict_03149.users VALUES (6666, 'Ksenia', '1', 'Group1');
+INSERT INTO db_for_dict_03149.users VALUES (8888, 'Alice', '1', 'Group1');
+INSERT INTO db_for_dict_03149.users VALUES (1234, 'Test', '2', 'Group1');
 
-SELECT * FROM target ORDER BY uid format PrettyCompactMonoBlock;
+SELECT * FROM db_for_dict_03149.target ORDER BY uid format PrettyCompactMonoBlock;
+
+DROP DATABASE IF EXISTS db_for_dict_03149;

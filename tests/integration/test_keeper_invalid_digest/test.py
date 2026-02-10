@@ -27,7 +27,7 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
-        cluster.shutdown(ignore_fatal=True)
+        cluster.shutdown()
 
 
 def wait_nodes():
@@ -63,13 +63,6 @@ def setup_nodes():
 
 
 def test_keeper_invalid_digest(started_cluster):
-    if (
-        node1.is_built_with_thread_sanitizer()
-        or node1.is_built_with_address_sanitizer()
-        or node1.is_built_with_memory_sanitizer()
-    ):
-        pytest.skip("doesn't fit in timeouts for stacktrace generation")
-
     try:
         # Wait for the cluster to be ready
         setup_nodes()
@@ -84,7 +77,10 @@ def test_keeper_invalid_digest(started_cluster):
         # The second node should detect the invalid digest and abort
         node1_zk.create_async("/test_invalid_digest", b"testdata")
 
-        node2.wait_for_log_line("Digest for nodes is not matching after preprocessing request of type 'Create' at log index")
+        node2.wait_for_log_line(
+            "Digest for nodes is not matching after preprocessing request of type 'Create' at log index",
+            look_behind_lines=1000,
+        )
         node2.stop_clickhouse(kill=True)
 
         def get_last_committed_log_idx():
@@ -98,8 +94,11 @@ def test_keeper_invalid_digest(started_cluster):
             )
 
         last_committed_log_idx = get_last_committed_log_idx()
-        node2.start_clickhouse(expected_to_fail=True)
-        node2.wait_for_log_line("Digest for nodes is not matching after preprocessing request of type 'Create' at log index")
+        node2.start_clickhouse()
+        node2.wait_for_log_line(
+            "Digest for nodes is not matching after preprocessing request of type 'Create' at log index",
+            look_behind_lines=1000,
+        )
         assert get_last_committed_log_idx() == last_committed_log_idx
     finally:
         # Clean up connections

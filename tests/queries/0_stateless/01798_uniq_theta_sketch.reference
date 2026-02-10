@@ -2,7 +2,7 @@ uniqTheta many agrs
 10	10	100	100	1000	1000
 17	10	10	100	100	610	610	766
 52	10	10	100	100	608	608	766
-5	10	10	100	100	609	609	765
+5	10	10	100	100	608	608	765
 9	10	10	100	100	608	608	765
 13	10	10	100	100	607	607	765
 46	10	10	100	100	607	607	765
@@ -45,25 +45,25 @@ FROM
         number % 3 AS y
     FROM numbers(10)
 )
-SELECT uniqTheta(-x)
+SELECT uniqTheta(x)
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(bitNot(x))
+SELECT uniqTheta(x)
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(bitNot(-x))
+SELECT uniqTheta(x)
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(-bitNot(-x))
+SELECT uniqTheta(x)
 FROM
 (
     SELECT number % 2 AS x

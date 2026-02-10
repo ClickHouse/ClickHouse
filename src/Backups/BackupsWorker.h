@@ -1,13 +1,10 @@
 #pragma once
 
-#include "config.h"
 #include <Backups/BackupOperationInfo.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
-
-#include <mutex>
 #include <unordered_map>
 
 
@@ -78,15 +75,11 @@ private:
     std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     struct BackupStarter;
 
-    BackupMutablePtr openBackupForWriting(
-        const BackupInfo & backup_info,
-        const BackupSettings & backup_settings,
-        std::shared_ptr<IBackupCoordination> backup_coordination,
-        const ContextPtr & context) const;
+    BackupMutablePtr openBackupForWriting(const BackupInfo & backup_info, const BackupSettings & backup_settings, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context) const;
 
     void doBackup(
         BackupMutablePtr backup,
-        const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
+        const std::shared_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
@@ -105,12 +98,8 @@ private:
 
     BackupPtr openBackupForReading(const BackupInfo & backup_info, const RestoreSettings & restore_settings, const ContextPtr & context) const;
 
-#if CLICKHOUSE_CLOUD
-    BackupMutablePtr openBackupForUnlockSnapshot(const BackupInfo & backup_info, const ContextPtr & context) const;
-#endif
-
     void doRestore(
-        const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
+        const std::shared_ptr<ASTBackupQuery> & restore_query,
         const BackupOperationID & restore_id,
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
@@ -120,8 +109,7 @@ private:
         bool on_cluster,
         const ClusterPtr & cluster);
 
-    std::shared_ptr<IBackupCoordination>
-    makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context) const;
+    std::shared_ptr<IBackupCoordination> makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context) const;
     std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(bool on_cluster, const RestoreSettings & restore_settings, const ContextPtr & context) const;
 
     /// Sends a BACKUP or RESTORE query to other hosts.
@@ -132,9 +120,8 @@ private:
     /// Run data restoring tasks which insert data to tables.
     void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
 
-    std::pair<bool, BackupStatus> addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
-                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status);
-
+    void addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
+                bool internal, QueryStatusPtr process_list_element, BackupStatus status);
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
@@ -151,7 +138,6 @@ private:
 
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;
-    const bool shutdown_wait_backups_and_restores;
     const bool remove_backup_files_after_failure;
     const bool test_randomize_order;
     const bool test_inject_sleep;

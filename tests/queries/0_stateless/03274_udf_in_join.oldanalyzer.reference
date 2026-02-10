@@ -1,7 +1,0 @@
-SELECT 1
-FROM
-(
-    SELECT 1 AS c0
-) AS v0
-ALL INNER JOIN v0 AS vx ON c0 = vx.c0
-1

@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/array/FunctionArrayMapped.h>
+#include "FunctionArrayMapped.h"
 
 
 namespace DB

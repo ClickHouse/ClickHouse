@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -13,7 +13,9 @@
 
 namespace DB
 {
+class IAST;
 class WindowViewSource;
+using ASTPtr = std::shared_ptr<IAST>;
 
 /**
  * StorageWindowView.
@@ -175,7 +177,7 @@ public:
 
     Block getInputHeader() const;
 
-    SharedHeader getOutputHeader() const;
+    const Block & getOutputHeader() const;
 
 private:
     LoggerPtr log;

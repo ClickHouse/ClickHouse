@@ -1,4 +1,4 @@
-#include <Stats.h>
+#include "Stats.h"
 #include <iostream>
 
 #include <rapidjson/document.h>
@@ -11,7 +11,7 @@ void Stats::StatsCollector::add(uint64_t microseconds, size_t requests_inc, size
     work_time += microseconds;
     requests += requests_inc;
     requests_bytes += bytes_inc;
-    sampler.insert(static_cast<double>(microseconds));
+    sampler.insert(microseconds);
 }
 
 void Stats::addRead(uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
@@ -41,9 +41,9 @@ void Stats::clear()
 std::pair<double, double> Stats::StatsCollector::getThroughput(size_t concurrency)
 {
     assert(requests != 0);
-    double seconds = static_cast<double>(work_time) / 1'000'000.0 / static_cast<double>(concurrency);
+    double seconds = work_time / 1'000'000.0 / concurrency;
 
-    return {static_cast<double>(requests) / seconds, static_cast<double>(requests_bytes) / seconds};
+    return {requests / seconds, requests_bytes / seconds};
 }
 
 double Stats::StatsCollector::getPercentile(double percent)

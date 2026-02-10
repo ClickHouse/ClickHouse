@@ -1,4 +1,4 @@
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include "AsynchronousBoundedReadBuffer.h"
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -41,7 +41,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
@@ -163,7 +162,7 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
                 /// new read until position is before the current position in the working buffer
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Attempt to set read until position before already read data ({} < {}, info: {})",
+                    "Attempt to set read until position before already read data ({} > {}, info: {})",
                     position,
                     getPosition(),
                     impl->getInfoForLog());
@@ -334,7 +333,9 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         {
             ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
             if (read_settings.enable_filesystem_read_prefetches_log)
+            {
                 appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK, -1, nullptr);
+            }
         }
 
         break;
@@ -417,14 +418,6 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of prefetch: {}", magic_enum::enum_name(state));
     }
-}
-
-size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
-{
-    if (impl->supportsReadAt())
-        return impl->readBigAt(to, n, range_begin, progress_callback);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() is not implemented for a given implementation");
 }
 
 }

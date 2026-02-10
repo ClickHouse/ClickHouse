@@ -1,13 +1,15 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
 #include <deque>
 
-#include <Parsers/IAST_fwd.h>
 #include <Common/TypePromotion.h>
 
-#include <city.h>
+#include <DataTypes/IDataType.h>
+
+#include <Parsers/IAST_fwd.h>
 
 class SipHash;
 
@@ -16,11 +18,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNSUPPORTED_METHOD;
+    extern const int UNSUPPORTED_METHOD;
 }
-
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class WriteBuffer;
 
@@ -44,7 +43,7 @@ enum class QueryTreeNodeType : uint8_t
     ARRAY_JOIN,
     CROSS_JOIN,
     JOIN,
-    UNION,
+    UNION
 };
 
 /// Convert query tree node type to string
@@ -103,12 +102,12 @@ public:
       */
     virtual DataTypePtr getResultType() const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
     virtual void convertToNullable()
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query tree node", getNodeTypeName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
     }
 
     struct CompareOptions
@@ -287,6 +286,10 @@ protected:
 
     /// Subclass must convert its internal state and its children to AST
     virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
+
+    /// This function can be used to update hash for the DataType.
+    /// It uses binary type encoding, so works faster than hash(getName()).
+    static void updateHashForType(HashState & hash_state, const DataTypePtr & type);
 
     QueryTreeNodes children;
     QueryTreeWeakNodes weak_pointers;

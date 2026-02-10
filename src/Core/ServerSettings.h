@@ -21,15 +21,11 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, GroupArrayActionWhenLimitReached) \
     M(CLASS_NAME, Float) \
-    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
-    M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, InsertDeduplicationVersions) \
-
+    M(CLASS_NAME, UInt64)
 
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_TRAIT)
 
@@ -46,8 +42,6 @@ struct ServerSettings
     ServerSettings();
     ServerSettings(const ServerSettings & settings);
     ~ServerSettings();
-
-    Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
 

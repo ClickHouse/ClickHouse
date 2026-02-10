@@ -1,12 +1,11 @@
-#include <Storages/ObjectStorage/HDFS/AsynchronousReadBufferFromHDFS.h>
+#include "AsynchronousReadBufferFromHDFS.h"
 
 #if USE_HDFS
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include "ReadBufferFromHDFS.h"
 #include <mutex>
 #include <Common/logger_useful.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/AsynchronousReader.h>
-#include <IO/ReadSettings.h>
 
 
 namespace CurrentMetrics
@@ -252,11 +251,11 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
         next_times,
         seek_times,
         sum_interval,
-        static_cast<double>(sum_interval) / static_cast<double>(next_times),
+        double(sum_interval)/next_times,
         sum_duration,
-        static_cast<double>(sum_duration) / static_cast<double>(next_times),
+        double(sum_duration)/next_times,
         sum_wait,
-        static_cast<double>(sum_wait) / static_cast<double>(next_times));
+        double(sum_wait)/next_times);
 
     finalize();
 }

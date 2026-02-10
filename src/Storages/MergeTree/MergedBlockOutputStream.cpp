@@ -21,7 +21,6 @@ namespace MergeTreeSetting
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
-    MergeTreeSettingsPtr data_settings,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
@@ -33,8 +32,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool reset_columns_,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_)
-    : IMergedBlockOutputStream(
-          std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
+    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
     , write_settings(write_settings_)
@@ -48,7 +46,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings,
         storage_settings,
-        data_part,
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
@@ -149,6 +146,20 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
             file->sync();
     }
 
+    /// TODO: this code looks really stupid. It's because DiskTransaction is
+    /// unable to see own write operations. When we merge part with column TTL
+    /// and column completely outdated we first write empty column and after
+    /// remove it. In case of single DiskTransaction it's impossible because
+    /// remove operation will not see just written files. That is why we finish
+    /// one transaction and start new...
+    ///
+    /// FIXME: DiskTransaction should see own writes. Column TTL implementation shouldn't be so stupid...
+    if (!files_to_remove_after_finish.empty())
+    {
+        part->getDataPartStorage().commitTransaction();
+        part->getDataPartStorage().beginTransaction();
+    }
+
     for (const auto & file_name : files_to_remove_after_finish)
         part->getDataPartStorage().removeFile(file_name);
 }
@@ -179,9 +190,9 @@ void MergedBlockOutputStream::finalizePart(
     bool sync,
     const NamesAndTypesList * total_columns_list,
     MergeTreeData::DataPart::Checksums * additional_column_checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_substreams).finish();
+    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_samples).finish();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
@@ -189,7 +200,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     bool sync,
     const NamesAndTypesList * total_columns_list,
     MergeTreeData::DataPart::Checksums * additional_column_checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
@@ -219,14 +230,13 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto serialization_infos = new_part->getSerializationInfos();
 
         serialization_infos.replaceData(new_serialization_infos);
-        files_to_remove_after_sync
-            = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
+        files_to_remove_after_sync = removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
 
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
-    written_files = finalizePartOnDisk(new_part, checksums, additional_columns_substreams);
+    written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -236,7 +246,13 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
 
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    auto columns_sample = writer->getColumnsSample();
+    if (additional_columns_samples)
+    {
+       for (const auto & column : *additional_columns_samples)
+            columns_sample.insert(column);
+    }
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(columns_sample);
 
     if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
     {
@@ -263,8 +279,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeMutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    MergeTreeData::DataPart::Checksums & checksums)
 {
     /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
@@ -308,22 +323,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
+                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
-            }
-
-            const auto & source_parts = new_part->getSourcePartsSet();
-            if (!source_parts.empty())
-            {
-                write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
-                {
-                    source_parts.writeBinary(buffer);
-                });
             }
         }
     }
@@ -342,7 +348,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & serialization_infos = new_part->getSerializationInfos();
-    if (serialization_infos.needsPersistence())
+    if (!serialization_infos.empty())
     {
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
@@ -354,27 +360,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         new_part->getColumns().writeText(buffer);
     });
-
-    /// Merge columns substreams from current writer and additional columns substreams
-    /// from other writers (that could be used during vertical merge).
-    /// If there are no additional columns substreams we still need to call merge
-    /// so we will keep only columns that are present in new_part->getColumns().
-    /// It may happen that new_part->getColumns() has less columns then columns substreams
-    /// from writer because of expired TTL.
-    auto columns_substreams = ColumnsSubstreams::merge(
-        writer->getColumnsSubstreams(),
-        additional_columns_substreams ? *additional_columns_substreams : ColumnsSubstreams{},
-        new_part->getColumns().getNames());
-
-    if (!columns_substreams.empty())
-    {
-        write_plain_file(IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, [&](auto & buffer)
-        {
-            columns_substreams.writeText(buffer);
-        });
-
-        new_part->setColumnsSubstreams(columns_substreams);
-    }
 
     write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {

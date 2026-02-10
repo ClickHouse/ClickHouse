@@ -1,4 +1,3 @@
--- add_minmax_index_for_numeric_columns=0: Changes the plan FOR b
 DROP TABLE IF EXISTS t_skip_index_insert;
 
 CREATE TABLE t_skip_index_insert
@@ -8,7 +7,7 @@ CREATE TABLE t_skip_index_insert
     INDEX idx_a a TYPE minmax,
     INDEX idx_b b TYPE set(3)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns=0;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
 SET enable_analyzer = 1;
 SET materialize_skip_indexes_on_insert = 0;
@@ -42,7 +41,7 @@ EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a
 
 DROP TABLE IF EXISTS t_skip_index_insert;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT count(), sum(ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'])
 FROM system.query_log

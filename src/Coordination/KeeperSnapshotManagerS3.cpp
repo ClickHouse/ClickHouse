@@ -104,8 +104,6 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         static constexpr size_t s3_max_redirects = 10;
         static constexpr size_t s3_retry_attempts = 10;
-        static constexpr bool s3_slow_all_threads_after_network_error = true;
-        static constexpr bool s3_slow_all_threads_after_retryable_error = false;
         static constexpr bool enable_s3_requests_logging = false;
 
         if (!new_uri.key.empty())
@@ -116,15 +114,9 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             auth_settings[S3AuthSetting::region],
-            RemoteHostFilter(),
-            s3_max_redirects,
-            S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
-            s3_slow_all_threads_after_network_error,
-            s3_slow_all_threads_after_retryable_error,
+            RemoteHostFilter(), s3_max_redirects, s3_retry_attempts,
             enable_s3_requests_logging,
-            /* for_disk_s3 = */ false,
-            /* opt_disk_name = */ {},
-            /* request_throttler = */ {},
+            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {},
             new_uri.uri.getScheme());
 
         client_configuration.endpointOverride = new_uri.endpoint;
@@ -285,7 +277,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
 void KeeperSnapshotManagerS3::snapshotS3Thread()
 {
-    DB::setThreadName(ThreadName::KEEPER_SNAPSHOT_S3);
+    setThreadName("KeeperS3SnpT");
 
     while (!shutdown_called)
     {

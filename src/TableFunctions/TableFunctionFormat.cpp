@@ -27,7 +27,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -53,11 +53,7 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageEngineName() const override
-    {
-        /// No underlying storage engine
-        return "";
-    }
+    const char * getStorageTypeName() const override { return "Values"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -115,7 +111,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     builder.init(Pipe(input_format));
     if (columns.hasDefaults())
     {
-        builder.addSimpleTransform([&](const SharedHeader & header)
+        builder.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns, *input_format, context);
         });
@@ -128,6 +124,9 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     std::vector<Block> blocks;
     while (reader->pull(block))
         blocks.push_back(std::move(block));
+
+    if (blocks.size() == 1)
+        return blocks[0];
 
     /// In case when data contains more then 1 block we combine
     /// them all to one big block (this is considered a rare case).
@@ -218,7 +217,7 @@ Result:
 )", ""
         },
     },
-    .category = FunctionDocumentation::Category::TableFunction
+    .category{""}
 };
 
 }

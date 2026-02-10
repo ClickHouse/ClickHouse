@@ -61,20 +61,16 @@ set(ORC_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include")
 set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
-    set(PROTOBUF_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
-    set(GRPC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
-else ()
-    set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
-    set(GRPC_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
-endif()
+set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
+
 
 add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         COMMAND ${PROTOBUF_EXECUTABLE}
         -I ${PROTO_DIR}
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
         "${PROTO_DIR}/orc_proto.proto")
+
 
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
@@ -205,9 +201,6 @@ target_link_libraries(_orc PRIVATE
 target_include_directories(_orc SYSTEM BEFORE PUBLIC
     ${ORC_INCLUDE_DIR}
     "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include")
-target_compile_options(_orc PRIVATE
-    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
-)
 target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_SOURCE_SRC_DIR}
@@ -216,13 +209,10 @@ target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_ADDITION_SOURCE_DIR}
     ${ARROW_SRC_DIR})
 
+
 # === arrow
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
-
-set(ARROW_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/cpp/src)
-configure_file(${LIBRARY_DIR}/util/config.h.cmake ${ARROW_GENERATED_SRC_DIR}/arrow/util/config.h)
-
 
 # arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 # find . \( -iname \*.cc -o -iname \*.cpp -o -iname \*.c \) | sort | awk '{print "\"${LIBRARY_DIR}" substr($1,2) "\"" }' | grep -v 'test.cc' | grep -v 'json' | grep -v 'flight' \|
@@ -459,7 +449,6 @@ SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
 
 
 add_library(_arrow ${ARROW_SRCS})
-add_library(ch_contrib::arrow ALIAS _arrow)
 
 target_link_libraries(_arrow PRIVATE
     boost::filesystem
@@ -481,11 +470,8 @@ add_dependencies(_arrow protoc)
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 
+target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
-
-# === arrow flight
-
-include(flight.cmake)
 
 # === parquet
 
@@ -583,6 +569,6 @@ endforeach ()
 
 # The library is large - avoid bloat.
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_arrow PRIVATE -g1)
-    target_compile_options (_parquet PRIVATE -g1)
+    target_compile_options (_arrow PRIVATE -g0)
+    target_compile_options (_parquet PRIVATE -g0)
 endif()

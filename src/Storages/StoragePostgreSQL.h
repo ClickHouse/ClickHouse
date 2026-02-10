@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 
 namespace Poco
@@ -36,8 +36,6 @@ public:
         const String & on_conflict = "");
 
     String getName() const override { return "PostgreSQL"; }
-
-    bool isExternalDatabase() const override { return true; }
 
     void read(
         QueryPlan & query_plan,

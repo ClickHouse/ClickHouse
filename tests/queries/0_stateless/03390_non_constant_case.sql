@@ -35,34 +35,8 @@ END = 1;
 SELECT DISTINCT caseWithExpression(1.1, toNullable(0.1), 'a', 1.1, 'b', materialize(2.1), toFixedString('c', 1), 'default' ) AS f;
 
 SELECT
-    caseWithExpression(NULL, materialize(NULL), NULL, NULL) AS f1,
+    caseWithExpression(NULL, materialize(NULL), NULL) AS f1,
     if(NULL, toDateTimeOrZero(NULL), NULL) AS f2
 FROM numbers(1);
 
 SELECT CASE number WHEN 1 THEN number + 2 ELSE number * 2 END FROM numbers(3);
-
-SELECT   caseWithExpression(
-    materialize(
-        materialize(NULL)
-    ),
-    materialize(NULL),
-    NULL,
-    NULL
-);
-
-SELECT caseWithExpression(
-    materialize(
-        assumeNotNull(
-            materialize(NULL)
-        )
-    ),
-    materialize(NULL),
-    NULL,
-    NULL
-); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SELECT caseWithExpression('C', 'A', true, 'B', false); -- { serverError BAD_ARGUMENTS }
-
-SELECT caseWithExpression(1, assumeNotNull(materialize(NULL)), 1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SELECT count() WHERE caseWithExpression(1, assumeNotNull(materialize(NULL)), 1, 1); -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }

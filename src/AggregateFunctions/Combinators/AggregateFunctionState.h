@@ -42,11 +42,6 @@ public:
         return nested_func->getStateType();
     }
 
-    DataTypePtr getNormalizedStateType() const override
-    {
-        return nested_func->getNormalizedStateType();
-    }
-
     bool isVersioned() const override
     {
         return nested_func->isVersioned();

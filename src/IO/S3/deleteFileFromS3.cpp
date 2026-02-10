@@ -5,7 +5,7 @@
 #include <Common/logger_useful.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
-#include <Common/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3/getObjectInfo.h>
 
@@ -37,9 +37,7 @@ void deleteFileFromS3(
     if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
         ProfileEvents::increment(*profile_event);
 
-    Stopwatch watch;
     auto outcome = s3_client->DeleteObject(request);
-    auto elapsed = watch.elapsedMicroseconds();
 
     auto log = getLogger("deleteFileFromS3");
 
@@ -48,13 +46,12 @@ void deleteFileFromS3(
         LOG_TRACE(log, "Writing Delete operation for blob {}", key);
         blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
                                    bucket, key,
-                                   local_path_for_blob_storage_log, file_size_for_blob_storage_log, elapsed,
-                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+                                   local_path_for_blob_storage_log, file_size_for_blob_storage_log,
+                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
     }
     else
     {
-        LOG_TEST(log, "No blob storage log, not writing blob {}", key);
+        LOG_TRACE(log, "No blob storage log, not writing blob {}", key);
     }
 
     if (outcome.IsSuccess())
@@ -142,12 +139,11 @@ void deleteFilesFromS3(
             if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
                 ProfileEvents::increment(*profile_event);
 
-            Stopwatch watch;
             auto outcome = s3_client->DeleteObjects(request);
-            auto elapsed = watch.elapsedMicroseconds();
 
             if (blob_storage_log)
             {
+                const auto * outcome_error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
                 auto time_now = std::chrono::system_clock::now();
                 LOG_TRACE(log, "Writing Delete operation for blobs [{}]", comma_separated_keys);
                 for (size_t i = first_position; i < current_position; ++i)
@@ -155,19 +151,15 @@ void deleteFilesFromS3(
                     const String & local_path_for_blob_storage_log = (i < local_paths_for_blob_storage_log.size()) ? local_paths_for_blob_storage_log[i] : empty_string;
                     size_t file_size_for_blob_storage_log = (i < file_sizes_for_blob_storage_log.size()) ? file_sizes_for_blob_storage_log[i] : 0;
 
-                    /// For the elapsed time, record the average per file.
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
                                                bucket, keys[i],
                                                local_path_for_blob_storage_log, file_size_for_blob_storage_log,
-                                               elapsed / (current_position - first_position),
-                                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage(),
-                                               time_now);
+                                               outcome_error, time_now);
                 }
             }
             else
             {
-                LOG_TEST(log, "No blob storage log, not writing blobs [{}]", comma_separated_keys);
+                LOG_TRACE(log, "No blob storage log, not writing blobs [{}]", comma_separated_keys);
             }
 
             if (outcome.IsSuccess())

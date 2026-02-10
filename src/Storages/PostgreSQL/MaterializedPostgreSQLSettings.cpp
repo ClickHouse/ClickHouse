@@ -40,11 +40,11 @@ struct MaterializedPostgreSQLSettingsImpl : public BaseSettings<MaterializedPost
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MaterializedPostgreSQLSettings##TYPE NAME = &MaterializedPostgreSQLSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MaterializedPostgreSQLSettings##TYPE NAME = &MaterializedPostgreSQLSettingsImpl ::NAME;
 
 namespace MaterializedPostgreSQLSetting
 {
-LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -94,7 +94,7 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = make_intrusive<ASTSetQuery>();
+        auto settings_ast = std::make_shared<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

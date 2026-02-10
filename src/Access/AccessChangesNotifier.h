@@ -3,7 +3,6 @@
 #include <Access/IAccessEntity.h>
 #include <base/scope_guard.h>
 #include <list>
-#include <mutex>
 #include <queue>
 #include <unordered_map>
 

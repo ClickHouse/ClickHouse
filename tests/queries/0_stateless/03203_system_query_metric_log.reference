@@ -1,16 +1,22 @@
 --Interval 1000: check that amount of events is correct
 1
+--Interval 1000: check that the delta/diff between the events is correct
+1
 --Interval 1000: check that the Query, SelectQuery and InitialQuery values are correct for the first event
 1
 --Interval 1000: check that the SleepFunctionCalls, SleepFunctionMilliseconds and ProfileEvent_SleepFunctionElapsedMicroseconds are correct
 1
 --Interval 400: check that amount of events is correct
 1
+--Interval 400: check that the delta/diff between the events is correct
+1
 --Interval 400: check that the Query, SelectQuery and InitialQuery values are correct for the first event
 1
 --Interval 400: check that the SleepFunctionCalls, SleepFunctionMilliseconds and ProfileEvent_SleepFunctionElapsedMicroseconds are correct
 1
 --Interval 123: check that amount of events is correct
+1
+--Interval 123: check that the delta/diff between the events is correct
 1
 --Interval 123: check that the Query, SelectQuery and InitialQuery values are correct for the first event
 1

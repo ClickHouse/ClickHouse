@@ -63,9 +63,9 @@ static FillColumnDescription::StepFunction getStepFunction(
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
-            return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
+            return [step, scale, &date_lut](Field & field, Int32 jumps_count) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), step * jumps_count, date_lut, utc_time_zone, scale); };
+                    field.safeGet<T>()), static_cast<Int32>(step) * jumps_count, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -102,11 +102,11 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             {
 #define DECLARE_CASE(NAME) \
                 case IntervalKind::Kind::NAME: \
-                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int64 jumps_count) \
+                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int32 jumps_count) \
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
-                        field = DecimalField<decltype(res)>(res, field_decimal.getScale()); \
+                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, field_decimal.getScale()); \
+                        field = DecimalField(res, field_decimal.getScale()); \
                     }; \
                     break;
 
@@ -120,7 +120,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
     }
     else
     {
-        return [step](Field & field, Int64 jumps_count)
+        return [step](Field & field, Int32 jumps_count)
         {
             auto shifted_step = step;
             if (jumps_count != 1)
@@ -223,13 +223,13 @@ SortDescription deduplicateSortDescription(const SortDescription & sort_descript
 }
 
 FillingTransform::FillingTransform(
-    SharedHeader header_,
+    const Block & header_,
     const SortDescription & sort_description_,
     const SortDescription & fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
     const bool use_with_fill_by_sorting_prefix_)
-    : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_, fill_description_)), true)
-    , sort_description(deduplicateSortDescription(sort_description_, *header_))
+    : ISimpleTransform(header_, transformHeader(header_, fill_description_), true)
+    , sort_description(deduplicateSortDescription(sort_description_, header_))
     , fill_description(fill_description_)
     , interpolate_description(interpolate_description_)
     , filling_row(fill_description_)
@@ -237,20 +237,17 @@ FillingTransform::FillingTransform(
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
     if (interpolate_description)
-    {
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
 
-        for (const auto & description: sort_description_)
-            if (interpolate_description->result_columns_set.contains(description.alias))
-                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
-                    description.alias);
-    }
-
-    std::vector<bool> is_fill_column(header_->columns());
+    std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
-        size_t block_position = header_->getPositionByName(fill_description[i].column_name);
+        if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].column_name))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
+                fill_description[i].column_name);
+
+        size_t block_position = header_.getPositionByName(fill_description[i].column_name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);
 
@@ -278,7 +275,7 @@ FillingTransform::FillingTransform(
     for (const auto & desc : sort_description)
     {
         if (!desc.with_fill)
-            ordinary_sort_positions.insert(header_->getPositionByName(desc.column_name));
+            ordinary_sort_positions.insert(header_.getPositionByName(desc.column_name));
     }
 
     std::unordered_set<size_t> unique_positions;
@@ -298,7 +295,7 @@ FillingTransform::FillingTransform(
             if (desc.column_name == fill_description[0].column_name)
                 break;
 
-            size_t pos = header_->getPositionByName(desc.column_name);
+            size_t pos = header_.getPositionByName(desc.column_name);
             sort_prefix_positions.push_back(pos);
 
             sort_prefix.push_back(desc);
@@ -308,7 +305,7 @@ FillingTransform::FillingTransform(
     }
 
     size_t idx = 0;
-    for (const ColumnWithTypeAndName & column : header_->getColumnsWithTypeAndName())
+    for (const ColumnWithTypeAndName & column : header_.getColumnsWithTypeAndName())
     {
         if (interpolate_description)
             if (const auto & p = interpolate_description->required_columns_map.find(column.name);
@@ -324,7 +321,7 @@ FillingTransform::FillingTransform(
 
     if (interpolate_description)
         for (const auto & name : interpolate_description->result_columns_order)
-            interpolate_column_positions.push_back(header_->getPositionByName(name));
+            interpolate_column_positions.push_back(header_.getPositionByName(name));
 
     /// check conflict in positions between interpolate and sorting prefix columns
     if (!sort_prefix_positions.empty() && !interpolate_column_positions.empty())
@@ -336,7 +333,7 @@ FillingTransform::FillingTransform(
                 throw Exception(
                     ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "The same column in ORDER BY before WITH FILL (sorting prefix) and INTERPOLATE is not allowed. Column: {}",
-                    (header_->begin() + sort_prefix_pos)->name);
+                    (header_.begin() + sort_prefix_pos)->name);
         }
     }
 }
@@ -475,10 +472,10 @@ void FillingTransform::initColumns(
     non_const_columns.reserve(input_columns.size());
 
     for (const auto & column : input_columns)
-        non_const_columns.push_back(column->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+        non_const_columns.push_back(column->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
 
     for (const auto & column : non_const_columns)
-        output_columns.push_back(column->cloneEmpty());
+        output_columns.push_back(column->cloneEmpty()->assumeMutable());
 
     initColumnsByPositions(non_const_columns, input_fill_columns, output_columns, output_fill_columns, fill_column_positions);
     initColumnsByPositions(

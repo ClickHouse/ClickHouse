@@ -4,19 +4,18 @@ description: 'SummingMergeTree inherits from the MergeTree engine. Its key featu
 sidebar_label: 'SummingMergeTree'
 sidebar_position: 50
 slug: /engines/table-engines/mergetree-family/summingmergetree
-title: 'SummingMergeTree table engine'
-doc_type: 'reference'
+title: 'SummingMergeTree'
 ---
 
-# SummingMergeTree table engine
+# SummingMergeTree
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -33,12 +32,12 @@ For a description of request parameters, see [request description](../../../sql-
 
 ### Parameters of SummingMergeTree {#parameters-of-summingmergetree}
 
-#### Columns {#columns}
+#### columns {#columns}
 
-`columns` - a tuple with the names of columns where values will be summed. Optional parameter.
-    The columns must be of a numeric type and must not be in the partition or sorting key.
+`columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
+    The columns must be of a numeric type and must not be in the primary key.
 
- If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the sorting key.
+ If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
 
 ### Query clauses {#query-clauses}
 
@@ -52,7 +51,7 @@ When creating a `SummingMergeTree` table the same [clauses](../../../engines/tab
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -63,15 +62,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `columns` have the same meaning as in `MergeTree`.
 
-- `columns` — tuple with names of columns values of which will be summed. Optional parameter. For a description, see the text above.
+- `columns` — tuple with names of columns values of which will be summarized. Optional parameter. For a description, see the text above.
 
 </details>
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 Consider the following table:
 
-```sql
+``` sql
 CREATE TABLE summtt
 (
     key UInt32,
@@ -83,44 +82,44 @@ ORDER BY key
 
 Insert data to it:
 
-```sql
-INSERT INTO summtt VALUES(1,1),(1,2),(2,1)
+``` sql
+INSERT INTO summtt Values(1,1),(1,2),(2,1)
 ```
 
 ClickHouse may sum all the rows not completely ([see below](#data-processing)), so we use an aggregate function `sum` and `GROUP BY` clause in the query.
 
-```sql
+``` sql
 SELECT key, sum(value) FROM summtt GROUP BY key
 ```
 
-```text
+``` text
 ┌─key─┬─sum(value)─┐
 │   2 │          1 │
 │   1 │          3 │
 └─────┴────────────┘
 ```
 
-## Data processing {#data-processing}
+## Data Processing {#data-processing}
 
 When data are inserted into a table, they are saved as-is. ClickHouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
 
 ClickHouse can merge the data parts so that different resulting parts of data can consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](/sql-reference/aggregate-functions/reference/sum) and `GROUP BY` clause should be used in a query as described in the example above.
 
-### Common rules for summation {#common-rules-for-summation}
+### Common Rules for Summation {#common-rules-for-summation}
 
-The values in the columns with the numeric data type are summed. The set of columns is defined by the parameter `columns`.
+The values in the columns with the numeric data type are summarized. The set of columns is defined by the parameter `columns`.
 
 If the values were 0 in all of the columns for summation, the row is deleted.
 
-If column is not in the primary key and is not summed, an arbitrary value is selected from the existing ones.
+If column is not in the primary key and is not summarized, an arbitrary value is selected from the existing ones.
 
-The values are not summed for columns in the primary key.
+The values are not summarized for columns in the primary key.
 
-### The summation in the AggregateFunction columns {#the-summation-in-the-aggregatefunction-columns}
+### The Summation in the Aggregatefunction Columns {#the-summation-in-the-aggregatefunction-columns}
 
 For columns of [AggregateFunction type](../../../sql-reference/data-types/aggregatefunction.md) ClickHouse behaves as [AggregatingMergeTree](../../../engines/table-engines/mergetree-family/aggregatingmergetree.md) engine aggregating according to the function.
 
-### Nested structures {#nested-structures}
+### Nested Structures {#nested-structures}
 
 Table can have nested data structures that are processed in a special way.
 
@@ -133,7 +132,7 @@ then this nested table is interpreted as a mapping of `key => (values...)`, and 
 
 Examples:
 
-```text
+``` text
 DROP TABLE IF EXISTS nested_sum;
 CREATE TABLE nested_sum
 (
@@ -187,10 +186,10 @@ ARRAY JOIN
 └──────┴─────────┴─────────────┴────────┘
 ```
 
-When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/sumMappedArrays.md) function for aggregation of `Map`.
+When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 
-## Related content {#related-content}
+## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

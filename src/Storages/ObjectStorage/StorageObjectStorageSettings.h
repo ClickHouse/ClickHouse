@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
@@ -39,7 +40,6 @@ class SettingsChanges;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -56,8 +56,6 @@ struct StorageObjectStorageSettings
 
     void loadFromQuery(ASTSetQuery & settings_ast);
 
-    void loadFromSettingsChanges(const SettingsChanges & changes);
-
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
@@ -67,8 +65,5 @@ private:
 };
 
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
-
-#define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
-    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 }

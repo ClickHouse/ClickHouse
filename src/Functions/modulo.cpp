@@ -56,58 +56,32 @@ struct ModuloByConstantImpl
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
         /// Modulo with too small divisor.
-        if (b == 1) [[unlikely]]
+        if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = 0;
             return;
         }
-        else
-        {
-            if constexpr (std::is_signed_v<B>)
-            {
-                if (b == -1) [[unlikely]]
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        dst[i] = 0;
-                    return;
-                }
-            }
-        }
 
         /// Modulo with too large divisor.
-        if (b > std::numeric_limits<A>::max()) [[unlikely]]
+        if (unlikely(b > std::numeric_limits<A>::max()
+            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = static_cast<ResultType>(src[i]);
             return;
         }
-        else
-        {
-            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
-            {
-                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        dst[i] = static_cast<ResultType>(src[i]);
-                    return;
-                }
-            }
-        }
 
-        if (static_cast<A>(b) == 0) [[unlikely]]
+        if (unlikely(static_cast<A>(b) == 0))
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         /// Division by min negative value.
-        if constexpr (std::is_signed_v<B>)
-        {
-            if (b == std::numeric_limits<B>::lowest()) [[unlikely]]
-                throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
-        }
+        if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
 
         /// Modulo of division by negative number is the same as the positive number.
         if (b < 0)
-            b = static_cast<B>(-b);
+            b = -b;
 
         /// Here we failed to make the SSE variant from libdivide give an advantage.
 
@@ -180,29 +154,7 @@ using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, 
 
 REGISTER_FUNCTION(Modulo)
 {
-    FunctionDocumentation::Description description = R"(
-    Calculates the remainder of the division of two values a by b.
-
-    The result type is an integer if both inputs are integers. If one of the
-    inputs is a floating-point number, the result type is Float64.
-
-    The remainder is computed like in C++. Truncated division is used for
-    negative numbers.
-
-    An exception is thrown when dividing by zero or when dividing a minimal
-    negative number by minus one.
-    )";
-    FunctionDocumentation::Syntax syntax = "modulo(a, b)";
-    FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
-    FunctionDocumentation::Argument argument2 = {"b", "The divisor (modulus)"};
-    FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = {"The remainder of a % b"};
-    FunctionDocumentation::Example example1 = {"Usage example", "SELECT modulo(5, 2)", "1"};
-    FunctionDocumentation::Examples examples = {example1};
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
-    factory.registerFunction<FunctionModulo>(documentation);
+    factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
 
@@ -222,25 +174,15 @@ using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloIm
 
 REGISTER_FUNCTION(PositiveModulo)
 {
-    FunctionDocumentation::Description description = R"(
-Calculates the remainder when dividing `x` by `y`. Similar to function
-`modulo` except that `positiveModulo` always return non-negative number.
-    )";
-    FunctionDocumentation::Syntax syntax = "positiveModulo(x, y)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "The dividend.", {"(U)Int*", "Float*", "Decimal"}},
-        {"y", "The divisor (modulus).", {"(U)Int*", "Float*", "Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {R"(
-Returns the difference between `x` and the nearest integer not greater than
-`x` divisible by `y`.
-    )"};
-    FunctionDocumentation::Examples example = {{"Usage example", "SELECT positiveModulo(-1, 10)", "9"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, categories};
-
-    factory.registerFunction<FunctionPositiveModulo>(documentation,
+    factory.registerFunction<FunctionPositiveModulo>(FunctionDocumentation
+        {
+            .description = R"(
+Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
+Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
+In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
+        )",
+            .examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);", ""}},
+            .category{"Arithmetic"}},
         FunctionFactory::Case::Insensitive);
 
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);

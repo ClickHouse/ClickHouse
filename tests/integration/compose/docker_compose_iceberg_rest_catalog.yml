@@ -13,10 +13,8 @@ services:
       - AWS_REGION=us-east-1
     ports:
       - 8080:8080
-      - 10002:10000
-      - 10003:10001
-    stop_grace_period: 5s
-    cpus: 3
+      - 10000:10000
+      - 10001:10001
   rest:
     image: tabulario/iceberg-rest:1.6.0
     ports:
@@ -34,8 +32,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-    stop_grace_period: 5s
-    cpus: 3
   # TODO: can we simply use with_minio=True instead?
   minio:
     image: minio/minio:RELEASE.2024-07-31T05-46-26Z
@@ -48,11 +44,9 @@ services:
         aliases:
           - warehouse-rest.minio
     ports:
-      - 9001
-      - 9000
+        - 9001:9001
+        - 9002:9000
     command: ["server", "/data", "--console-address", ":9001"]
-    stop_grace_period: 5s
-    cpus: 3
   # TODO: move this code to cluster.py
   mc:
     depends_on:
@@ -71,5 +65,3 @@ services:
       /usr/bin/mc policy set public minio/warehouse-rest;
       tail -f /dev/null
       "
-      stop_grace_period: 5s
-    cpus: 3

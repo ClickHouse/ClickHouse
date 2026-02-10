@@ -1,7 +1,6 @@
 services:
     openldap:
         image: bitnamilegacy/openldap:2.6.8
-        stop_grace_period: 5s
         restart: always
         environment:
             LDAP_ROOT: dc=example,dc=org
@@ -25,4 +24,3 @@ services:
             interval: 10s
             retries: 10
             timeout: 2s
-        cpus: 3

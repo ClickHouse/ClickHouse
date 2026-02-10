@@ -13,14 +13,13 @@
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <xxhash.h>
 
-#include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
-#    include <openssl/evp.h>
+#    include <openssl/md5.h>
 #endif
 
 #include <bit>
@@ -65,7 +64,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
-    extern const int OPENSSL_ERROR;
 }
 
 namespace impl
@@ -249,22 +247,12 @@ struct HalfMD5Impl
             uint64_t uint64_data;
         } buf;
 
-        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+        MD5_CTX ctx;
+        MD5_Init(&ctx);
+        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        MD5_Final(buf.char_data, &ctx);
 
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
-
-        /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t
+        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
         transformEndianness<std::endian::big>(buf.uint64_data);
         return buf.uint64_data;
     }
@@ -785,10 +773,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
@@ -1048,38 +1032,18 @@ private:
     }
 
     template <bool first>
-    void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, const IDataType * type) const
+    void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         KeyType key{};
         if constexpr (Keyed)
             key = Impl::getKey(key_cols, 0);
-
-        SerializationPtr serialization;
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             if constexpr (Keyed)
                 if (!key_cols.is_const && i != 0)
                     key = Impl::getKey(key_cols, i);
-            ToType hash;
-            if (type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            {
-                auto bytes = column->getDataAt(i);
-                hash = apply(key, bytes.data(), bytes.size());
-            }
-            else
-            {
-                /// If column doesn't support getDataAt method we use ISerialization::serializeForHashCalculation
-                /// to serialize value and calculate hash from it.
-                if (!serialization)
-                    serialization = type->getDefaultSerialization();
-                WriteBufferFromOwnString buf;
-                if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                    serialization->serializeForHashCalculation(column_const->getDataColumn(), 0, buf);
-                else
-                    serialization->serializeForHashCalculation(*column, i, buf);
-                auto bytes = buf.str();
-                hash = apply(key, bytes.data(), bytes.size());
-            }
+            StringRef bytes = column->getDataAt(i);
+            const ToType hash = apply(key, bytes.data, bytes.size);
             if constexpr (first)
                 vec_to[i] = hash;
             else
@@ -1107,7 +1071,7 @@ private:
                         key = Impl::getKey(key_cols, i);
                 const ToType hash = apply(key,
                     reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset);
+                    offsets[i] - current_offset - 1);
 
                 if constexpr (first)
                     vec_to[i] = hash;
@@ -1356,7 +1320,7 @@ private:
         else if (which.isArray()) executeArray<first>(key_cols, from_type, icolumn, vec_to);
         else if (which.isNothing()) executeNothing<first>(key_cols, icolumn, vec_to);
         else if (which.isNullable()) executeNullable<first>(key_cols, from_type, icolumn, vec_to);
-        else executeGeneric<first>(key_cols, icolumn, vec_to, from_type);
+        else executeGeneric<first>(key_cols, icolumn, vec_to);
     }
 
     /// Return a fixed random-looking magic number when input is empty.
@@ -1424,10 +1388,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -1630,10 +1590,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto arg_count = arguments.size();
@@ -1692,7 +1648,7 @@ private:
             {
                 out[i] = URLHashImpl::apply(
                     reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset);
+                    offsets[i] - current_offset - 1);
 
                 current_offset = offsets[i];
             }
@@ -1723,7 +1679,7 @@ private:
                 out[i] = URLHierarchyHashImpl::apply(
                     level_col->getUInt(i),
                     reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset);
+                    offsets[i] - current_offset - 1);
 
                 current_offset = offsets[i];
             }
@@ -1740,7 +1696,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0]);
+                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0] - 1);
             }
 
             return col_to;

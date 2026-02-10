@@ -4,7 +4,6 @@ sidebar_label: 'SAMPLE BY'
 sidebar_position: 41
 slug: /sql-reference/statements/alter/sample-by
 title: 'Manipulating Sampling-Key Expressions'
-doc_type: 'reference'
 ---
 
 # Manipulating SAMPLE BY expression
@@ -13,7 +12,7 @@ The following operations are available:
 
 ## MODIFY {#modify}
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
 ```
 
@@ -21,11 +20,12 @@ The command changes the [sampling key](../../../engines/table-engines/mergetree-
 
 ## REMOVE {#remove}
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 ```
 
 The command removes the [sampling key](../../../engines/table-engines/mergetree-family/mergetree.md) of the table.
+
 
 The commands `MODIFY` and `REMOVE` are lightweight in the sense that they only change metadata or remove files.
 

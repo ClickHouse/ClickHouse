@@ -1,22 +1,21 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DDLTask.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/Context_fwd.h>
+#include <Poco/Event.h>
 
 #include <atomic>
 #include <list>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_set>
 
 
@@ -90,15 +89,11 @@ public:
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
-    /// Returns cached ZooKeeper session (possibly expired).
-    ZooKeeperPtr getZooKeeper() const;
-    /// If necessary, creates a new session and caches it.
-    /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
-    ZooKeeperPtr getAndSetZooKeeper();
 
-    void requestToResetState();
-    void notifyHostIDsUpdated();
-    void updateHostIDs(const std::vector<HostID> & hosts);
+    /// Returns cached ZooKeeper session (possibly expired).
+    ZooKeeperPtr tryGetZooKeeper() const;
+    /// If necessary, creates a new session and caches it.
+    ZooKeeperPtr getAndSetZooKeeper();
 
 protected:
 
@@ -125,7 +120,7 @@ protected:
 
     private:
         std::unordered_set<String> set;
-        mutable SharedMutex mtx;
+        mutable std::shared_mutex mtx;
     };
 
     /// Pushes query into DDL queue, returns path to created node
@@ -152,18 +147,17 @@ protected:
     /// Most of these queries can be executed on non-leader replica, but actually they still send
     /// query via RemoteQueryExecutor to leader, so to avoid such "2-phase" query execution we
     /// execute query directly on leader.
-    bool tryExecuteQueryOnSingleReplica(
+    bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,
         StoragePtr storage,
         const String & node_path,
         const ZooKeeperPtr & zookeeper,
-        std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_single_replica_lock);
+        std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
     bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
-    void cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
     virtual bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat);
 
     /// Init task node
@@ -178,8 +172,6 @@ protected:
 
     void runMainThread();
     void runCleanupThread();
-
-    NameSet getAllHostIDsFromClusters() const;
 
     ContextMutablePtr context;
     LoggerPtr log;
@@ -206,7 +198,7 @@ protected:
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
-    std::atomic<bool> stop_flag = false;
+    std::atomic<bool> stop_flag = true;
 
     std::unique_ptr<ThreadFromGlobalPool> main_thread;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
@@ -217,8 +209,6 @@ protected:
 
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     Int64 cleanup_delay_period = 60; // minute (in seconds)
-    std::atomic_bool reset_state_requested{false};
-    std::atomic_bool host_ids_updated{false};
     /// Delete node if its age is greater than that
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
@@ -230,10 +220,6 @@ protected:
 
     std::atomic_uint64_t subsequent_errors_count = 0;
     String last_unexpected_error;
-
-    mutable std::mutex checked_host_id_set_mutex;
-    NameSet checked_host_id_set TSA_GUARDED_BY(checked_host_id_set_mutex);
-
 
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;

@@ -16,7 +16,6 @@ target_compile_options (_poco_json_pdjson
         -Wno-implicit-fallthrough
         -Wno-shorten-64-to-32
         -Wno-unreachable-code-return
-        -Wno-implicit-int-conversion
 )
 
 # Poco::JSON
@@ -35,7 +34,6 @@ target_compile_options (_poco_json
         -Wno-suggest-override
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
-        -Wno-implicit-int-conversion
 )
 
 target_include_directories (_poco_json SYSTEM PUBLIC "include")

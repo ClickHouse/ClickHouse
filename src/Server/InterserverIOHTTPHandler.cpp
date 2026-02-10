@@ -61,6 +61,8 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
+    auto & body = request.getStream();
+
     auto endpoint = server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
@@ -70,21 +72,19 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     if (compress)
     {
         CompressedWriteBuffer compressed_out(*output);
-        endpoint->processQuery(params, request.getStream(), compressed_out, response);
+        endpoint->processQuery(params, body, compressed_out, response);
         compressed_out.finalize();
     }
     else
     {
-        endpoint->processQuery(params, request.getStream(), *output, response);
+        endpoint->processQuery(params, body, *output, response);
     }
-    /// Make sure that request stream is not used after this function.
-    assert(request.getStream().use_count() == 2);
 }
 
 
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
-    DB::setThreadName(ThreadName::INTERSERVER_HANDLER);
+    setThreadName("IntersrvHandler");
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)

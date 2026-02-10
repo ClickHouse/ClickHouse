@@ -1,3 +1,0 @@
-SELECT * FROM test_1 FORMAT `Null` SETTINGS filesystem_cache_prefer_bigger_buffer_size = 1, prefetch_buffer_size = 1000000	3000000	3
-SELECT * FROM test_2 FORMAT `Null` SETTINGS filesystem_cache_prefer_bigger_buffer_size = 1, prefetch_buffer_size = 10000000	20520500	3
-SELECT * FROM test_3 FORMAT `Null` SETTINGS filesystem_cache_prefer_bigger_buffer_size = 0, prefetch_buffer_size = 1000000	384000	3

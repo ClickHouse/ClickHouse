@@ -1,4 +1,3 @@
-#include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
@@ -8,18 +7,14 @@
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
-#include <Common/MemoryWorker.h>
-#include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
-#include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Daemon/BaseDaemon.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
-#include <ranges>
 #include <string_view>
 
 #include "config.h"
@@ -28,26 +23,20 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
-#if defined(OS_LINUX)
-#    include <netinet/tcp.h>
-#endif
 
+namespace ProfileEvents
+{
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
+}
 
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
-    extern const ServerSettingsBool os_collect_psi_metrics;
-}
 
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int CANNOT_SYSCONF;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -55,62 +44,24 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
-void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
+static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
 {
+    /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
+
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-    {
-        try
-        {
-            out.emplace(filename, small_buffer_size);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
-            {
-                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
-            }
-            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            {
-                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
+        out.emplace(filename, small_buffer_size);
 }
 
-std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(const std::string & filename)
+static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename)
 {
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-    {
-        try
-        {
-            return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
-            {
-                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
-            }
-            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            {
-                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
+        return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
     return {};
 }
 
-void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+static void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
         openFileIfExists((path.value() + filename).c_str(), out);
@@ -136,17 +87,19 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/cpuinfo", cpuinfo);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/net/dev", net_dev);
-    openFileIfExists("/proc/net/tcp", net_tcp);
-    openFileIfExists("/proc/net/tcp6", net_tcp6);
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
+    openCgroupv2MetricFile("memory.current", cgroupmem_usage_in_bytes);
     openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
     if (!cgroupmem_limit_in_bytes)
+    {
         openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
+        openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
+    }
     if (!cgroupcpu_max)
     {
         openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_period_us", cgroupcpu_cfs_period);
@@ -155,38 +108,14 @@ AsynchronousMetrics::AsynchronousMetrics(
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
 
-    try
-    {
-        const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
-        LOG_INFO(getLogger("AsynchronousMetrics"),
-            "Will use cgroup reader from '{}' (cgroups version: {})",
-            cgroup_path,
-            (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
-        cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("AsynchronousMetrics"), "cgroups are not available");
-    }
-
-
     openFileIfExists("/proc/loadavg", loadavg);
     openFileIfExists("/proc/stat", proc_stat);
     openFileIfExists("/proc/uptime", uptime);
 
     openFileIfExists("/proc/meminfo", meminfo);
 
-    if (context->getServerSettings()[ServerSetting::os_collect_psi_metrics])
-    {
-        openFileIfExists("/proc/pressure/memory", memory_pressure);
-        openFileIfExists("/proc/pressure/cpu", cpu_pressure);
-        openFileIfExists("/proc/pressure/io", io_pressure);
-    }
-
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
-    /// Note, "stat" does not include SigQ
-    openFileIfExists("/proc/self/status", process_status);
 
     openSensors();
     openBlockDevices();
@@ -241,10 +170,10 @@ void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
         return;
 
     block_devices_rescan_delay.restart();
+
     block_devs.clear();
 
-    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block",
-        std::filesystem::directory_options::skip_permission_denied))
+    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
     {
         String device_name = device_dir.path().filename();
 
@@ -404,6 +333,12 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
     return values;
 }
 
+auto AsynchronousMetrics::tryGetMetricValue(const AsynchronousMetricValues & metric_values, const String & metric, size_t default_value)
+{
+    const auto it = metric_values.find(metric);
+    return it != metric_values.end() ? it->second.value : default_value;
+}
+
 namespace
 {
 
@@ -435,7 +370,7 @@ auto get_next_update_time(std::chrono::seconds update_period)
 
 void AsynchronousMetrics::run()
 {
-    DB::setThreadName(ThreadName::ASYNC_METRICS);
+    setThreadName("AsyncMetrics");
 
     while (true)
     {
@@ -480,7 +415,7 @@ Value saveJemallocMetricImpl(
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
-    auto value = Jemalloc::getValue<Value>(jemalloc_full_name.c_str());
+    auto value = getJemallocValue<Value>(jemalloc_full_name.c_str());
     values[clickhouse_full_name] = AsynchronousMetricValue(value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html");
     return value;
 }
@@ -659,24 +594,11 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 
 
 #if defined(OS_LINUX)
-
-void AsynchronousMetrics::applyCgroupCPUMetricsUpdate(
-    AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier)
-{
-    new_values["CGroupUserTime"]
-        = {static_cast<double>(delta_values.user) * multiplier,
-           "The ratio of time the CPU core was running userspace code."
-           " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
-           "stalls, branch mispredictions, running another SMT core)."};
-    new_values["CGroupSystemTime"]
-        = {static_cast<double>(delta_values.system) * multiplier, "The ratio of time the CPU core was running OS kernel (system) code."};
-}
-
 void AsynchronousMetrics::applyCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
 {
     new_values["OSUserTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.user) * multiplier,
+        = {delta_values.user * multiplier,
            "The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the "
            "host machine, not just clickhouse-server."
            " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
@@ -684,19 +606,19 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSNiceTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.nice) * multiplier,
+        = {delta_values.nice * multiplier,
            "The ratio of time the CPU core was running userspace code with higher priority. This is a system-wide metric, it includes all "
            "the processes on the host machine, not just clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSSystemTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.system) * multiplier,
+        = {delta_values.system * multiplier,
            "The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSIdleTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.idle) * multiplier,
+        = {delta_values.idle * multiplier,
            "The ratio of time the CPU core was idle (not even ready to run a process waiting for IO) from the OS kernel standpoint. This "
            "is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
            " This does not include the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
@@ -704,42 +626,42 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSIOWaitTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.iowait) * multiplier,
+        = {delta_values.iowait * multiplier,
            "The ratio of time the CPU core was not running the code but when the OS kernel did not run any other process on this CPU as "
            "the processes were waiting for IO. This is a system-wide metric, it includes all the processes on the host machine, not just "
            "clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSIrqTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.irq) * multiplier,
+        = {delta_values.irq * multiplier,
            "The ratio of time spent for running hardware interrupt requests on the CPU. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " A high number of this metric may indicate hardware misconfiguration or a very high network load."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSSoftIrqTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.softirq) * multiplier,
+        = {delta_values.softirq * multiplier,
            "The ratio of time spent for running software interrupt requests on the CPU. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " A high number of this metric may indicate inefficient software running on the system."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSStealTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.steal) * multiplier,
+        = {delta_values.steal * multiplier,
            "The ratio of time spent in other operating systems by the CPU when running in a virtualized environment. This is a system-wide "
            "metric, it includes all the processes on the host machine, not just clickhouse-server."
            " Not every virtualized environments present this metric, and most of them don't."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSGuestTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.guest) * multiplier,
+        = {delta_values.guest * multiplier,
            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel (See `man "
            "procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
            " This metric is irrelevant for ClickHouse, but still exists for completeness."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
     new_values["OSGuestNiceTime" + cpu_suffix]
-        = {static_cast<double>(delta_values.guest_nice) * multiplier,
+        = {delta_values.guest_nice * multiplier,
            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel, when a guest "
            "was set to a higher priority (See `man procfs`). This is a system-wide metric, it includes all the processes on the host "
            "machine, not just clickhouse-server."
@@ -748,338 +670,90 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "them [0..num cores]."};
 }
 
-void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
-    AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
-{
-    chassert(num_cpus_to_normalize);
-
-    new_values["CGroupUserTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.user) * multiplier / num_cpus_to_normalize,
-           "The value is similar to `CGroupUserTime` but divided by the number of available CPU cores to be measured in the [0..1] "
-           "interval regardless of the number of cores."
-           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
-    new_values["CGroupSystemTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.system) * multiplier / num_cpus_to_normalize,
-           "The value is similar to `CGroupSystemTime` but divided by the number of available CPU cores to be measured in the [0..1] "
-           "interval regardless of the number of cores."
-           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
-}
-
 void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
 {
     chassert(num_cpus_to_normalize);
 
     new_values["OSUserTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.user) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.user * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSUserTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSNiceTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.nice) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.nice * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSSystemTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.system) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSSystemTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSIdleTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.idle) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.idle * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSIdleTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSIOWaitTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.iowait) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.iowait * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSIOWaitTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSIrqTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.irq) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.irq * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of "
            "the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSSoftIrqTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.softirq) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.softirq * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSSoftIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval "
            "regardless of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSStealTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.steal) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.steal * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSStealTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSGuestTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.guest) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.guest * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSGuestTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
+           "non-uniform, and still get the average resource utilization metric."};
     new_values["OSGuestNiceTimeNormalized"]
-        = {static_cast<double>(delta_values_all_cpus.guest_nice) * multiplier / num_cpus_to_normalize,
+        = {delta_values_all_cpus.guest_nice * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSGuestNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval "
            "regardless of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."
-           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
-           "and in that case the value of this metric may exceed 1 at some moments."
-        };
-}
-
-void readPressureFile(
-    AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
-    std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
-{
-    in.rewind();
-    /// The shape of this file is:
-    /// some avg10=0.00 avg60=0.00 avg300=0.00 total=0
-    /// full avg10=0.00 avg60=0.00 avg300=0.00 total=0
-
-    /// We need the first field to capture whether it's a partial or total stall.
-    /// We also ignore the time averages as well. Recording the counter (the last field)
-    /// lets us recreate any average, with better identification of any short spikes
-    while (!in.eof())
-    {
-        String stall_type;
-        readStringUntilWhitespace(stall_type, in);
-
-        String skip;
-        // skip avg10=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip avg60=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip avg300=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-        // skip total=
-        readStringUntilEquals(skip, in);
-        ++in.position();
-
-        uint64_t counter;
-        readText(counter, in);
-
-        String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
-
-        if (!first_run)
-        {
-            uint64_t prev = prev_pressure_vals[metric_key];
-
-                uint64_t delta = counter - prev;
-            new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement."
-                "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
-        }
-
-        prev_pressure_vals[metric_key] = counter;
-        skipToNextLineOrEOF(in);
-    }
+           "non-uniform, and still get the average resource utilization metric."};
 }
 #endif
-
-const AsynchronousMetricValue *
-AsynchronousMetrics::getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name)
-{
-    if (auto it = values.find(String{name}); it != values.end())
-        return &it->second;
-    return nullptr;
-}
 
 // Warnings for pending mutations
 void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values) const
 {
     // The following warnings are base on asynchronous metrics, and they are populated into the system.warnings table
     // Warnings for part mutations
-    const auto * num_pending_mutations = getAsynchronousMetricValue(new_values, "NumberOfPendingMutations");
-    if (!num_pending_mutations)
-        return;
-
+    auto num_pending_mutations = tryGetMetricValue(new_values, "NumberOfPendingMutations");
     auto max_pending_mutations_to_warn = context->getMaxPendingMutationsToWarn();
 
-    if (num_pending_mutations->value > static_cast<double>(max_pending_mutations_to_warn))
+    if (num_pending_mutations > max_pending_mutations_to_warn)
     {
         context->addOrUpdateWarningMessage(
             Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
             PreformattedMessage::create("The number of pending mutations is more than {}.", max_pending_mutations_to_warn));
     }
-    if (num_pending_mutations->value <= static_cast<double>(max_pending_mutations_to_warn))
+    if (num_pending_mutations <= max_pending_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
-
-    const auto * num_pending_mutations_over_execution_time= getAsynchronousMetricValue(new_values, "NumberOfPendingMutationsOverExecutionTime");
-    if (!num_pending_mutations_over_execution_time)
-        return;
-
-    if (num_pending_mutations_over_execution_time->value > 0)
-    {
-        context->addOrUpdateWarningMessage(
-            Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
-            PreformattedMessage::create(
-                "There are {} pending mutations that exceed the max_pending_mutations_execution_time_to_warn threshold.",
-                num_pending_mutations_over_execution_time->value));
-    }
-    else
-    {
-        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD);
-    }
-}
-
-void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const
-{
-    double memory_resident{};
-    double memory_total{};
-
-    /// Compute the user space page cache size (in bytes) and subtract from total memory used if possible
-    double user_space_cache_bytes{};
-    if (const auto * rss = getAsynchronousMetricValue(new_values, "MemoryResident"),
-        *rss_wo_pc = getAsynchronousMetricValue(new_values, "MemoryResidentWithoutPageCache");
-        rss && rss_wo_pc && rss->value >= rss_wo_pc->value)
-    {
-        user_space_cache_bytes = rss->value - rss_wo_pc->value;
-    }
-
-    /// use cgroup memory metrics if available and > 0, otherwise fallback to OS memory metrics
-    if (const auto *cgroup_memory_total = getAsynchronousMetricValue(new_values, "CGroupMemoryTotal"),
-        *cgroup_memory_used = getAsynchronousMetricValue(new_values, "CGroupMemoryUsed");
-        cgroup_memory_total && cgroup_memory_used && (cgroup_memory_total->value > 0.0 && cgroup_memory_used->value > 0.0))
-    {
-        memory_resident = cgroup_memory_used->value;
-        memory_total = cgroup_memory_total->value;
-    }
-    else if (const auto * os_memory_used = getAsynchronousMetricValue(new_values, "MemoryResident"),
-             *os_memory_total = getAsynchronousMetricValue(new_values, "OSMemoryTotal");
-             os_memory_used && os_memory_total && (os_memory_total->value > 0.0 && os_memory_used->value > 0.0))
-    {
-        memory_resident = os_memory_used->value;
-        memory_total = os_memory_total->value;
-    }
-    else
-    {
-        /// no memory metrics available
-        return;
-    }
-
-    /// Exclude user space page cache from memory resident
-    if (user_space_cache_bytes > 0.0)
-        memory_resident = std::max(0.0, memory_resident - user_space_cache_bytes);
-
-    const double ratio = memory_resident / memory_total;
-    const double clamped_ratio = std::clamp(ratio, 0.0, 1.0);
-
-    const auto & cfg = context->getConfigRef();
-    const double mem_warn_ratio = cfg.getDouble("resource_overload_warnings.memory_overload_warn_ratio", 0.9);
-    const double mem_clear_ratio = cfg.getDouble("resource_overload_warnings.memory_overload_clear_ratio", 0.85);
-    const UInt64 min_duration = cfg.getUInt64("resource_overload_warnings.memory_overload_duration_seconds", 600);
-
-    const auto now = Clock::now();
-    const int usage_percent = static_cast<int>(std::lround(clamped_ratio * 100.0));
-
-    const auto warning_message = PreformattedMessage::create(
-        "High ClickHouse memory usage: {} of {} used ({}%) for at least {} second(s)",
-        formatReadableSizeWithDecimalSuffix(memory_resident),
-        formatReadableSizeWithDecimalSuffix(memory_total),
-        usage_percent,
-        min_duration);
-
-    if (ratio >= mem_warn_ratio)
-    {
-        if (!mem_overload_started)
-            mem_overload_started = now;
-
-        if (now - *mem_overload_started >= std::chrono::seconds{min_duration})
-            context->addOrUpdateWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD, warning_message);
-        else
-            context->removeWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD);
-    }
-    else
-    {
-        mem_overload_started.reset();
-        if (ratio <= mem_clear_ratio)
-            context->removeWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD);
-    }
-}
-
-void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
-{
-    const auto * idle_ptr = getAsynchronousMetricValue(new_values, "OSIdleTimeNormalized");
-    if (!idle_ptr)
-        return;
-
-    /// ensure that the value is always in [0.0, 1.0]
-    const double busy_time = std::clamp(1.0 - idle_ptr->value, 0.0, 1.0);
-
-    const auto & cfg = context->getConfigRef();
-    const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
-    const double cpu_clear_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_clear_ratio", 0.85);
-    const UInt64 min_duration = cfg.getUInt64("resource_overload_warnings.cpu_overload_duration_seconds", 600);
-
-    const auto now = Clock::now();
-    const int busy_percent = static_cast<int>(std::lround(busy_time * 100.0));
-    const int threshold_percent = static_cast<int>(std::lround(cpu_warn_ratio * 100.0));
-
-    const auto warning_message = PreformattedMessage::create(
-        "High CPU usage: {}% busy (>= {}%) for at least {} second(s)", busy_percent, threshold_percent, min_duration);
-
-    if (busy_time >= cpu_warn_ratio)
-    {
-        if (!cpu_overload_started)
-            cpu_overload_started = now;
-
-        if (now - *cpu_overload_started >= std::chrono::seconds{min_duration})
-            context->addOrUpdateWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD, warning_message);
-        else
-            context->removeWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD);
-    }
-    else
-    {
-        cpu_overload_started.reset();
-        if (busy_time <= cpu_clear_ratio)
-            context->removeWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD);
-    }
 }
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
@@ -1096,13 +770,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     double update_interval = 0.;
     if (first_run)
-        update_interval = static_cast<double>(update_period.count());
+        update_interval = update_period.count();
     else
-        update_interval = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count()) / 1e6;
+        update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
     new_values["AsynchronousMetricsUpdateInterval"] = { update_interval, "Metrics update interval" };
 
     /// This is also a good indicator of system responsiveness.
-    new_values["Jitter"] = { static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - update_time).count()) / 1e9,
+    new_values["Jitter"] = { std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - update_time).count() / 1e9,
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
@@ -1114,7 +788,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
+    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : getJemallocValue<uint64_t>("epoch");
     new_values["jemalloc.epoch"]
         = {epoch,
            "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
@@ -1132,13 +806,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
     saveJemallocProf<bool>(new_values, "active");
-    saveJemallocProf<bool>(new_values, "thread_active_init");
     saveAllArenasMetric<size_t>(new_values, "pactive");
     saveAllArenasMetric<size_t>(new_values, "pdirty");
     saveAllArenasMetric<size_t>(new_values, "pmuzzy");
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
-    saveJemallocMetricImpl<size_t>(new_values, "arenas.dirty_decay_ms", "jemalloc.arenas.dirty_decay_ms");
 #endif
 
     /// Process process memory usage according to OS
@@ -1198,8 +870,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 #endif
-
-    new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
 
 #if defined(OS_LINUX)
     if (loadavg)
@@ -1299,7 +969,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             }
 
             if (quota > 0 && period > 0)
-                max_cpu_cgroups = static_cast<double>(quota) / static_cast<double>(period);
+                max_cpu_cgroups = static_cast<Float64>(quota) / period;
         }
         catch (...)
         {
@@ -1320,7 +990,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryReadText(period, *cgroupcpu_cfs_period);
 
             if (quota > 0 && period > 0)
-                max_cpu_cgroups = static_cast<double>(quota) / static_cast<double>(period);
+                max_cpu_cgroups = static_cast<Float64>(quota) / period;
         }
         catch (...)
         {
@@ -1333,7 +1003,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    if (cgroupcpu_stat || cgroupcpuacct_stat)
+    const bool cgroup_cpu_metrics_present = cgroupcpu_stat || cgroupcpuacct_stat;
+    if (cgroup_cpu_metrics_present)
     {
         try
         {
@@ -1373,17 +1044,17 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                         return hz;
                     throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
                 };
-                const auto cgroup_version_specific_divisor = cgroupcpu_stat ? 1e6 : static_cast<double>(get_clock_ticks());
+                const auto cgroup_version_specific_divisor = cgroupcpu_stat ? 1e6 : get_clock_ticks();
                 const double multiplier = 1.0 / cgroup_version_specific_divisor
-                    / (static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count()) / 1e9);
+                    / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
 
-                const ProcStatValuesCPU delta_values = current_values - cgroup_values_all_cpus;
-                applyCgroupCPUMetricsUpdate(new_values, delta_values, multiplier);
+                const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
+                applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
                 if (max_cpu_cgroups > 0)
-                    applyCgroupNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
+                    applyNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
             }
 
-            cgroup_values_all_cpus = current_values;
+            proc_stat_values_all_cpus = current_values;
         }
         catch (...)
         {
@@ -1403,8 +1074,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             if (-1 == hz)
                 throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
 
-            double multiplier = 1.0 / static_cast<double>(hz) / (static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count()) / 1e9);
-            double num_cpus = 0;
+            double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
+            size_t num_cpus = 0;
 
             ProcStatValuesOther current_other_values{};
             ProcStatValuesCPU delta_values_all_cpus{};
@@ -1417,6 +1088,14 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (name.starts_with("cpu"))
                 {
+                    if (cgroup_cpu_metrics_present)
+                    {
+                        /// Skip the CPU metrics if we already have them from cgroup
+                        ProcStatValuesCPU current_values{};
+                        current_values.read(*proc_stat);
+                        continue;
+                    }
+
                     String cpu_num_str = name.substr(strlen("cpu"));
                     UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
@@ -1501,9 +1180,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 /// Also write values normalized to 0..1 by diving to the number of CPUs.
                 /// These values are good to be averaged across the cluster of non-uniform servers.
 
-                Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : static_cast<Float64>(num_cpus);
+                Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
 
-                if (num_cpus_to_normalize > 0)
+                if (num_cpus_to_normalize > 0 && !cgroup_cpu_metrics_present)
                     applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 
@@ -1516,18 +1195,21 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    if (cgroupmem_limit_in_bytes && cgroupmem_reader)
+    if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes)
     {
         try
         {
             cgroupmem_limit_in_bytes->rewind();
-            uint64_t limit = 0;
-            tryReadText(limit, *cgroupmem_limit_in_bytes);
+            cgroupmem_usage_in_bytes->rewind();
 
-            uint64_t usage = cgroupmem_reader->readMemoryUsage();
+            uint64_t limit = 0;
+            uint64_t usage = 0;
+
+            tryReadText(limit, *cgroupmem_limit_in_bytes);
+            tryReadText(usage, *cgroupmem_usage_in_bytes);
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes (excluding page cache)." };
+            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes." };
         }
         catch (...)
         {
@@ -1677,46 +1359,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-
-    if (cpu_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "CPU", cpu_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/cpu", cpu_pressure);
-        }
-    }
-
-    if (memory_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "MEM", memory_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/memory", memory_pressure);
-        }
-    }
-
-    if (io_pressure)
-    {
-        try
-        {
-            readPressureFile(new_values, "IO", io_pressure.value(), prev_pressure_vals, first_run);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/io", io_pressure);
-        }
-    }
-
     if (file_nr)
     {
         try
@@ -1770,7 +1412,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             static constexpr size_t sector_size = 512;
 
             /// Always in milliseconds according to the docs.
-            static constexpr double time_multiplier = 1e-3;
+            static constexpr double time_multiplier = 1e-6;
 
 #define BLOCK_DEVICE_EXPLANATION \
     " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
@@ -1812,13 +1454,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
                 BLOCK_DEVICE_EXPLANATION };
 
-            new_values["BlockReadTime_" + name] = { static_cast<double>(delta_values.read_ticks) * time_multiplier,
+            new_values["BlockReadTime_" + name] = { delta_values.read_ticks * time_multiplier,
                 "Time in seconds spend in read operations requested from the block device, summed across all the operations."
                 BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteTime_" + name] = { static_cast<double>(delta_values.write_ticks) * time_multiplier,
+            new_values["BlockWriteTime_" + name] = { delta_values.write_ticks * time_multiplier,
                 "Time in seconds spend in write operations requested from the block device, summed across all the operations."
                 BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardTime_" + name] = { static_cast<double>(delta_values.discard_ticks) * time_multiplier,
+            new_values["BlockDiscardTime_" + name] = { delta_values.discard_ticks * time_multiplier,
                 "Time in seconds spend in discard operations requested from the block device, summed across all the operations."
                 " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
                 BLOCK_DEVICE_EXPLANATION };
@@ -1828,10 +1470,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 " the device driver but have not yet completed. It does not include IO"
                 " requests that are in the queue but not yet issued to the device driver."
                 BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockActiveTime_" + name] = { static_cast<double>(delta_values.io_ticks) * time_multiplier,
+            new_values["BlockActiveTime_" + name] = { delta_values.io_ticks * time_multiplier,
                 "Time in seconds the block device had the IO requests queued."
                 BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockQueueTime_" + name] = { static_cast<double>(delta_values.time_in_queue) * time_multiplier,
+            new_values["BlockQueueTime_" + name] = { delta_values.time_in_queue * time_multiplier,
                 "This value counts the number of milliseconds that IO requests have waited"
                 " on this block device. If there are multiple IO requests waiting, this"
                 " value will increase as the product of the number of milliseconds times the"
@@ -1842,9 +1484,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             {
                 /// TODO Check if these values are meaningful.
 
-                new_values["BlockActiveTimePerOp_" + name] = { static_cast<double>(delta_values.io_ticks) * time_multiplier / static_cast<double>(delta_values.in_flight_ios),
+                new_values["BlockActiveTimePerOp_" + name] = { delta_values.io_ticks * time_multiplier / delta_values.in_flight_ios,
                     "Similar to the `BlockActiveTime` metrics, but the value is divided to the number of IO operations to count the per-operation time." };
-                new_values["BlockQueueTimePerOp_" + name] = { static_cast<double>(delta_values.time_in_queue) * time_multiplier / static_cast<double>(delta_values.in_flight_ios),
+                new_values["BlockQueueTimePerOp_" + name] = { delta_values.time_in_queue * time_multiplier / delta_values.in_flight_ios,
                     "Similar to the `BlockQueueTime` metrics, but the value is divided to the number of IO operations to count the per-operation time." };
             }
         }
@@ -1968,132 +1610,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    if (net_tcp || net_tcp6)
-    {
-        UInt64 total_sockets = 0;
-        UInt64 sockets_by_state[16] = {};
-        UInt64 transmit_queue_size = 0;
-        UInt64 receive_queue_size = 0;
-        UInt64 unrecovered_retransmits = 0;
-        std::unordered_set<std::string> remote_addresses;
-
-        auto process_net = [&](const char * path, auto & file)
-        {
-            try
-            {
-                file->rewind();
-                /// Header
-                skipToNextLineOrEOF(*file);
-
-                while (!file->eof())
-                {
-                    /// Line number
-                    skipWhitespaceIfAny(*file, true);
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Local address and port
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Remote address and port
-                    String remote_address_and_port;
-                    readStringUntilWhitespace(remote_address_and_port, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    if (auto pos = remote_address_and_port.find(':'); pos != std::string::npos)
-                        remote_address_and_port.resize(pos);
-                    remote_addresses.emplace(remote_address_and_port);
-
-                    /// Socket state
-                    UInt8 state = 0;
-                    char state_hex[2]{};
-                    readPODBinary(state_hex, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    state = unhex2(state_hex);
-                    if (state < 16)
-                        ++sockets_by_state[state];
-
-                    /// tx_queue:rx_queue
-                    String tx_rx_queue;
-                    readStringUntilWhitespace(tx_rx_queue, *file);
-                    skipWhitespaceIfAny(*file, true);
-                    if (auto pos = tx_rx_queue.find(':'); pos != std::string::npos)
-                    {
-                        std::string_view tx_queue = std::string_view(tx_rx_queue).substr(0, pos);
-                        std::string_view rx_queue = std::string_view(tx_rx_queue).substr(pos + 1);
-
-                        if (tx_queue.size() == 8 && rx_queue.size() == 8)
-                        {
-                            UInt32 tx_queue_size = unhexUInt<UInt32>(tx_queue.data()); // NOLINT
-                            UInt32 rx_queue_size = unhexUInt<UInt32>(rx_queue.data()); // NOLINT
-
-                            transmit_queue_size += tx_queue_size;
-                            receive_queue_size += rx_queue_size;
-                        }
-                    }
-
-                    /// tr:when
-                    skipStringUntilWhitespace(*file);
-                    skipWhitespaceIfAny(*file, true);
-
-                    /// Retransmits
-                    String retransmits_str;
-                    readStringUntilWhitespace(retransmits_str, *file);
-                    if (retransmits_str.size() == 8)
-                    {
-                        UInt32 retransmits = unhexUInt<UInt32>(retransmits_str.data());
-                        unrecovered_retransmits += retransmits;
-                    }
-
-                    skipToNextLineOrEOF(*file);
-                    ++total_sockets;
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                openFileIfExists(path, file);
-            }
-        };
-
-        if (net_tcp)
-            process_net("/proc/net/tcp", net_tcp);
-
-        if (net_tcp6)
-            process_net("/proc/net/tcp6", net_tcp6);
-
-        new_values["NetworkTCPSockets"] = { total_sockets,
-            "Total number of network sockets used on the server across TCPv4 and TCPv6, in all states." };
-
-        auto process_socket_state = [&](UInt8 state, const char * description)
-        {
-            if (state < 16 && sockets_by_state[state])
-                new_values[fmt::format("NetworkTCPSockets_{}", description)] = { sockets_by_state[state],
-                    "Total number of network sockets in the specific state on the server across TCPv4 and TCPv6." };
-        };
-
-        process_socket_state(TCP_ESTABLISHED, "ESTABLISHED");
-        process_socket_state(TCP_SYN_SENT, "SYN_SENT");
-        process_socket_state(TCP_SYN_RECV, "SYN_RECV");
-        process_socket_state(TCP_FIN_WAIT1, "FIN_WAIT1");
-        process_socket_state(TCP_FIN_WAIT2, "FIN_WAIT2");
-        process_socket_state(TCP_TIME_WAIT, "TIME_WAIT");
-        process_socket_state(TCP_CLOSE, "CLOSE");
-        process_socket_state(TCP_CLOSE_WAIT, "CLOSE_WAIT");
-        process_socket_state(TCP_LAST_ACK, "LAST_ACK");
-        process_socket_state(TCP_LISTEN, "LISTEN");
-        process_socket_state(TCP_CLOSING, "CLOSING");
-
-        new_values["NetworkTCPTransmitQueue"] = { transmit_queue_size,
-            "Total size of transmit queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPReceiveQueue"] = { receive_queue_size,
-            "Total size of receive queues of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPUnrecoveredRetransmits"] = { unrecovered_retransmits,
-            "Total size of current retransmits (unrecovered at this moment) of network sockets used on the server across TCPv4 and TCPv6." };
-        new_values["NetworkTCPSocketRemoteAddresses"] = { remote_addresses.size(),
-            "Total number of unique remote addresses of network sockets used on the server across TCPv4 and TCPv6." };
-    }
-
     if (vm_max_map_count)
     {
         try
@@ -2143,60 +1659,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    if (process_status)
-    {
-        try
-        {
-            process_status->rewind();
-
-            UInt64 signal_queue_size = 0;
-            UInt64 signal_queue_limit = 0;
-            std::array<UInt64 *, 2> signal_queue{&signal_queue_size, &signal_queue_limit};
-            while (!process_status->eof())
-            {
-                String key;
-                readStringInto(key, *process_status);
-                skipWhitespaceIfAny(*process_status, true);
-
-                String value;
-                readStringUntilNewlineInto(value, *process_status);
-
-                if (key == "SigQ:")
-                {
-                    auto parts = value
-                        | std::views::split('/')
-                        /// Convert to std::string_view
-                        | std::views::transform([](auto && range) { return std::string_view(&*range.begin(), std::ranges::distance(range)); })
-                        /// Parse numbers
-                        | std::views::transform([](auto && sv) { return parse<UInt64>(sv); });
-                    auto it = parts.begin();
-                    for (auto * signal_queue_part : signal_queue)
-                    {
-                        if (it == parts.end())
-                            throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot parse SigQ from /proc/self/status: {} {}", key, value);
-                        *signal_queue_part = *it++;
-                    }
-
-                    break;
-                }
-
-                if (*process_status->position() == '\n')
-                {
-                    skipToNextLineOrEOF(*process_status);
-                }
-            }
-            if (signal_queue_limit == 0)
-                LOG_WARNING(getLogger("AsynchronousMetrics"), "Cannot find SigQ in /proc/self/status");
-            new_values["ProcessSignalQueueSize"] = { signal_queue_size, "Size of signal queue (pending signals, timers for query profiling)" };
-            new_values["ProcessSignalQueueLimit"] = { signal_queue_limit, "Total limit of signal queue (once it reaches ProcessSignalQueueSize, you may get CANNOT_CREATE_TIMER errors)" };
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/self/status", process_status);
-        }
-    }
-
     try
     {
         for (size_t i = 0, size = thermal.size(); i < size; ++i)
@@ -2206,7 +1668,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             in.rewind();
             Int64 temperature = 0;
             readText(temperature, in);
-            new_values[fmt::format("Temperature{}", i)] = { static_cast<double>(temperature) * 0.001,
+            new_values[fmt::format("Temperature{}", i)] = { temperature * 0.001,
                 "The temperature of the corresponding device in ℃. A sensor can return an unrealistic value. Source: `/sys/class/thermal`" };
         }
     }
@@ -2246,10 +1708,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 }
 
                 if (sensor_name.empty())
-                    new_values[fmt::format("Temperature_{}", hwmon_name)] = { static_cast<double>(temperature) * 0.001,
+                    new_values[fmt::format("Temperature_{}", hwmon_name)] = { temperature * 0.001,
                         "The temperature reported by the corresponding hardware monitor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`" };
                 else
-                    new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = { static_cast<double>(temperature) * 0.001,
+                    new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = { temperature * 0.001,
                         "The temperature reported by the corresponding hardware monitor and the corresponding sensor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`" };
             }
         }
@@ -2381,13 +1843,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
-
-    for (const auto & metric : BaseDaemon::instance().getAsynchronousMetricsFromAsyncLogs())
-    {
-        new_values[fmt::format("AsyncLogging{}QueueSize", metric.first)]
-            = {static_cast<double>(metric.second), "Number of async messages queued pending for logging in this channel"};
-    }
+    new_values["OSCPUOverload"] = { getCPUOverloadMetric(), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
 
     /// Add more metrics as you wish.
 
@@ -2407,10 +1863,25 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         // These methods look at Asynchronous metrics and add,update or remove warnings
         // which later get inserted into the system.warnings table:
         processWarningForMutationStats(new_values);
-        // server resource overload warnings
-        processWarningForMemoryOverload(new_values);
-        processWarningForCPUOverload(new_values);
     }
+}
+
+double AsynchronousMetrics::getCPUOverloadMetric()
+{
+    Int64 curr_cpu_wait_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUWaitMicroseconds];
+    Int64 curr_cpu_virtual_time_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUVirtualTimeMicroseconds];
+
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds;
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds;
+
+    prev_cpu_wait_microseconds = curr_cpu_wait_microseconds;
+    prev_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds;
+
+    /// If we used less than one CPU core, we cannot detect overload.
+    if (os_cpu_virtual_time_microseconds < 1'000'000 || os_cpu_wait_microseconds <= 0)
+        return 0;
+
+    return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
 }
 
 }

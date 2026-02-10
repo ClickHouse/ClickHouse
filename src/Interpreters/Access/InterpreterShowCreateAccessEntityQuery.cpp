@@ -7,7 +7,6 @@
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
@@ -23,7 +22,6 @@
 #include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
-#include <Access/MaskingPolicy.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils.h>
 #include <Core/Defines.h>
@@ -39,7 +37,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -50,8 +47,9 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = make_intrusive<ASTCreateUserQuery>();
-        query->names = make_intrusive<ASTUserNamesWithHost>(user.getName());
+        auto query = std::make_shared<ASTCreateUserQuery>();
+        query->names = std::make_shared<ASTUserNamesWithHost>();
+        query->names->push_back(user.getName());
         query->attach = attach_mode;
 
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
@@ -72,7 +70,7 @@ namespace
 
         if (!user.settings.empty())
         {
-            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
+            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
                 query_settings = user.settings.toAST();
             else
@@ -92,7 +90,7 @@ namespace
 
         if (!user.default_database.empty())
         {
-            auto ast = make_intrusive<ASTDatabaseOrNone>();
+            auto ast = std::make_shared<ASTDatabaseOrNone>();
             ast->database_name = user.default_database;
             query->default_database = ast;
         }
@@ -103,13 +101,13 @@ namespace
 
     ASTPtr getCreateQueryImpl(const Role & role, const AccessControl * access_control, bool attach_mode)
     {
-        auto query = make_intrusive<ASTCreateRoleQuery>();
+        auto query = std::make_shared<ASTCreateRoleQuery>();
         query->names.emplace_back(role.getName());
         query->attach = attach_mode;
 
         if (!role.settings.empty())
         {
-            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
+            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
                 query_settings = role.settings.toAST();
             else
@@ -124,13 +122,13 @@ namespace
 
     ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControl * access_control, bool attach_mode)
     {
-        auto query = make_intrusive<ASTCreateSettingsProfileQuery>();
+        auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
         query->names.emplace_back(profile.getName());
         query->attach = attach_mode;
 
         if (!profile.elements.empty())
         {
-            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
+            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
                 query_settings = profile.elements.toAST();
             else
@@ -159,7 +157,7 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = make_intrusive<ASTCreateQuotaQuery>();
+        auto query = std::make_shared<ASTCreateQuotaQuery>();
         query->names.emplace_back(quota.getName());
         query->attach = attach_mode;
 
@@ -198,8 +196,8 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = make_intrusive<ASTCreateRowPolicyQuery>();
-        query->names = make_intrusive<ASTRowPolicyNames>();
+        auto query = std::make_shared<ASTCreateRowPolicyQuery>();
+        query->names = std::make_shared<ASTRowPolicyNames>();
         query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
 
@@ -279,7 +277,7 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}})));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
 }
 
 
@@ -339,10 +337,6 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
                 entities.push_back(policy);
             }
         }
-    }
-    else if (show_query.type == AccessEntityType::MASKING_POLICY)
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
     }
     else
     {
@@ -424,11 +418,6 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         case AccessEntityType::QUOTA:
         {
             res.emplace_back(AccessType::SHOW_QUOTAS);
-            return res;
-        }
-        case AccessEntityType::MASKING_POLICY:
-        {
-            res.emplace_back(AccessType::SHOW_MASKING_POLICIES);
             return res;
         }
         case AccessEntityType::MAX:

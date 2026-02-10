@@ -10,7 +10,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageLoop.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 namespace DB
 {
@@ -29,7 +29,7 @@ namespace DB
             std::string getName() const override { return name; }
         private:
             StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-            const char * getStorageEngineName() const override { return "Loop"; }
+            const char * getStorageTypeName() const override { return "Loop"; }
             ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
             void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -96,24 +96,9 @@ namespace DB
         }
     }
 
-    ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+    ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
     {
-        if (inner_table_function_ast)
-        {
-            auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
-            return inner_table_function->getActualTableStructure(context, is_insert_query);
-        }
-
-        String database_name = loop_database_name;
-        if (database_name.empty())
-            database_name = context->getCurrentDatabase();
-
-        auto database = DatabaseCatalog::instance().getDatabase(database_name);
-        auto storage = database->tryGetTable(loop_table_name, context);
-        if (!storage)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
-
-        return storage->getInMemoryMetadataPtr()->getColumns();
+        return ColumnsDescription();
     }
 
     StoragePtr TableFunctionLoop::executeImpl(
@@ -144,8 +129,7 @@ namespace DB
                     context,
                     table_name,
                     std::move(cached_columns),
-                    /*use_global_context=*/false,
-                    /*is_insert_query=*/is_insert_query);
+                    is_insert_query);
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
@@ -166,8 +150,7 @@ namespace DB
                                                                                               "0"
                                                                                               "1"
                                                                                               "2"
-                                                                                              "0"}},
-                 .category = FunctionDocumentation::Category::TableFunction
+                                                                                              "0"}}
                         }});
     }
 

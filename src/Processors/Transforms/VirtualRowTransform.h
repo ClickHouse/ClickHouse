@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Storages/KeyDescription.h>
@@ -13,7 +12,7 @@ namespace DB
 class VirtualRowTransform : public IProcessor
 {
 public:
-    explicit VirtualRowTransform(SharedHeader header_, const Block & pk_block_, ExpressionActionsPtr virtual_row_conversions_);
+    explicit VirtualRowTransform(const Block & header_, const Block & pk_block_, ExpressionActionsPtr virtual_row_conversions_);
 
     String getName() const override { return "VirtualRowTransform"; }
 

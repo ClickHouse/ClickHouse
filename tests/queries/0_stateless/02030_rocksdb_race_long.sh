@@ -16,8 +16,7 @@ echo "
 
 function read_stat_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         echo "
             SELECT * FROM system.rocksdb FORMAT Null;
         " | $CLICKHOUSE_CLIENT
@@ -26,8 +25,7 @@ function read_stat_thread()
 
 function truncate_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         sleep 3s;
         echo "
             TRUNCATE TABLE rocksdb_race;
@@ -35,10 +33,14 @@ function truncate_thread()
     done
 }
 
+# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
+export -f read_stat_thread;
+export -f truncate_thread;
+
 TIMEOUT=20
 
-read_stat_thread 2> /dev/null &
-truncate_thread 2> /dev/null &
+timeout $TIMEOUT bash -c read_stat_thread 2> /dev/null &
+timeout $TIMEOUT bash -c truncate_thread 2> /dev/null &
 
 wait
 

@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Databases/DatabaseMemory.h>
@@ -22,7 +21,6 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Utils.h>
 
 using namespace DB;

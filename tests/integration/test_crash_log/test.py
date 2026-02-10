@@ -20,7 +20,7 @@ def started_node():
         cluster.start()
         yield node
     finally:
-        cluster.shutdown(ignore_fatal=True)
+        cluster.shutdown()
 
 
 def send_signal(started_node, signal):
@@ -31,7 +31,7 @@ def send_signal(started_node, signal):
 
 def wait_for_clickhouse_stop(started_node):
     result = None
-    for attempt in range(180):
+    for attempt in range(120):
         time.sleep(1)
         pid = started_node.get_process_pid("clickhouse")
         if pid is None:
@@ -40,12 +40,16 @@ def wait_for_clickhouse_stop(started_node):
     assert result == "OK", "ClickHouse process is still running"
 
 
-def test_crash_log_synchronous(started_node):
-    started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
+def test_pkill(started_node):
+    if (
+        started_node.is_built_with_thread_sanitizer()
+        or started_node.is_built_with_address_sanitizer()
+        or started_node.is_built_with_memory_sanitizer()
+    ):
+        pytest.skip("doesn't fit in timeouts for stacktrace generation")
 
     crashes_count = 0
     for signal in ["SEGV", "4"]:
-        started_node.query("SYSTEM ENABLE FAILPOINT sleep_in_logs_flush")
         send_signal(started_node, signal)
         wait_for_clickhouse_stop(started_node)
         started_node.restart_clickhouse()
@@ -56,40 +60,14 @@ def test_crash_log_synchronous(started_node):
         )
 
 
-@pytest.mark.parametrize(
-    "failpoint",
-    [
-        "terminate_with_exception",
-        "terminate_with_std_exception",
-    ]
-)
-def test_crash_log_extra_fields(started_node, failpoint):
-    started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
-    started_node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-    started_node.query("SELECT 1", ignore_error=True)
-    wait_for_clickhouse_stop(started_node)
-    started_node.restart_clickhouse()
-
-    assert started_node.query(
-        """
-        SELECT
-            count()
-        FROM system.crash_log
-        WHERE 1
-            AND signal = 6
-            AND signal_code = -6 -- SI_TKILL
-            AND signal_description = 'Sent by tkill.'
-            AND fault_access_type = ''
-            AND fault_address IS NULL
-            AND arrayExists(x -> x LIKE '%executeQuery%', current_exception_trace_full)
-            AND query = 'SELECT 1'
-            AND length(git_hash) > 0
-            AND length(architecture) > 0
-        """
-    ).strip() == "1"
-
-
 def test_pkill_query_log(started_node):
+    if (
+        started_node.is_built_with_thread_sanitizer()
+        or started_node.is_built_with_address_sanitizer()
+        or started_node.is_built_with_memory_sanitizer()
+    ):
+        pytest.skip("doesn't fit in timeouts for stacktrace generation")
+
     for signal in ["SEGV", "4"]:
         # force create query_log if it was not created
         started_node.query("SYSTEM FLUSH LOGS")

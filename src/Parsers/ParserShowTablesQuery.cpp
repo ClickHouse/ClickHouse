@@ -36,14 +36,14 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_ilike(Keyword::ILIKE);
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_limit(Keyword::LIMIT);
-    ParserStringLiteral like_p(Highlight::string_like);
+    ParserStringLiteral like_p;
     ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
     ASTPtr database;
 
-    auto query = make_intrusive<ASTShowTablesQuery>();
+    auto query = std::make_shared<ASTShowTablesQuery>();
 
     if (!s_show.ignore(pos, expected))
         return false;
