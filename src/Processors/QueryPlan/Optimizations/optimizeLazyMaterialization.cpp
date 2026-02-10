@@ -319,15 +319,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     bool reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
 
-    /// Lazy materialization changes stream shape and column availability; disable when
-    /// read-in-order, parallel replicas, or distributed plan are used (they rely on stable schema/ordering).
-    if (reading_in_order)
-        return false;
-    if (settings.parallel_replicas_enabled && settings.max_parallel_replicas > 1)
-        return false;
-    if (settings.make_distributed_plan)
-        return false;
-
     const auto limit = limit_step->getLimit();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return false;
@@ -348,6 +339,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     for (const auto & descr : sorting_step->getSortDescription())
         required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
 
+    bool has_filter = false;
+
     auto * node = sorting_node->children.front();
     while (!node->children.empty())
     {
@@ -362,6 +355,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         {
             updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
             required_columns = getRequiredHeaderPositions(filter_step->getExpression(), *filter_step->getInputHeaders().front(), std::move(required_columns));
+            has_filter = true;
         }
         else
             return false;
@@ -371,6 +365,14 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_merge_tree)
+        return false;
+
+    if (read_from_merge_tree->getPrewhereInfo() || read_from_merge_tree->getRowLevelFilter())
+        has_filter = true;
+
+    /// Disable the case with read-in-order and no filter.
+    /// It's not likely we can optimize it more.
+    if (reading_in_order && !has_filter)
         return false;
 
     auto lazy_reading = removeUnusedColumnsFromReadingStep(*read_from_merge_tree, required_columns);
