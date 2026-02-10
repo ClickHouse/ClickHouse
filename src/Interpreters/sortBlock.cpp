@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
+#include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/iota.h>
@@ -96,6 +97,61 @@ struct PartialSortingLessImpl
 using PartialSortingLess = PartialSortingLessImpl<false>;
 using PartialSortingLessWithCollation = PartialSortingLessImpl<true>;
 
+inline bool hasNaturalSort(const SortDescription & description)
+{
+    for (const auto & desc : description)
+        if (desc.is_natural)
+            return true;
+    return false;
+}
+
+/// Comparator that uses natural (human-friendly) string comparison when description.is_natural is set.
+struct PartialSortingLessWithNatural
+{
+    const ColumnsWithSortDescriptions & columns;
+
+    explicit PartialSortingLessWithNatural(const ColumnsWithSortDescriptions & columns_) : columns(columns_) { }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    {
+        int res = 0;
+
+        for (const auto & elem : columns)
+        {
+            if (elem.column_const)
+                continue;
+
+            if (elem.description.is_natural)
+            {
+                if (!isStringLikeColumn(elem.column))
+                    throw Exception(ErrorCodes::BAD_COLLATION, "NATURAL modifier for ORDER BY applicable only to string columns");
+                res = naturalCompareAt(lhs, rhs, *elem.column, *elem.column, elem.description.nulls_direction, elem.description.collator);
+            }
+            else if (isCollationRequired(elem.description))
+            {
+                res = elem.column->compareAtWithCollation(lhs, rhs, *elem.column, elem.description.nulls_direction, *elem.description.collator);
+            }
+            else
+            {
+                res = elem.column->compareAt(lhs, rhs, *elem.column, elem.description.nulls_direction);
+            }
+
+            res *= elem.description.direction;
+
+            if (res != 0)
+                break;
+        }
+
+        return res;
+    }
+
+    ALWAYS_INLINE bool operator()(size_t lhs, size_t rhs) const
+    {
+        int res = compare(lhs, rhs);
+        return res < 0;
+    }
+};
+
 ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description)
 {
     size_t size = description.size();
@@ -141,6 +197,32 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
     if (unlikely(all_const))
         return;
+
+    /// When any column has NATURAL modifier, use comparator-based sort (getPermutation/updatePermutation are lexicographic).
+    if (hasNaturalSort(description))
+    {
+        size_t size = block.rows();
+        permutation.resize(size);
+        iota(permutation.data(), size, IColumn::Permutation::value_type(0));
+
+        PartialSortingLessWithNatural less(columns_with_sort_descriptions);
+
+        if (limit > 0 && limit < size)
+        {
+            if (stability == IColumn::PermutationSortStability::Stable)
+                std::stable_sort(permutation.begin(), permutation.end(), less);
+            else
+                std::partial_sort(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+        }
+        else
+        {
+            if (stability == IColumn::PermutationSortStability::Stable)
+                std::stable_sort(permutation.begin(), permutation.end(), less);
+            else
+                std::sort(permutation.begin(), permutation.end(), less);
+        }
+        return;
+    }
 
     /// If only one column to sort by
     if (columns_with_sort_descriptions.size() == 1)
@@ -308,8 +390,16 @@ void checkSortedWithPermutation(const Block & block, const SortDescription & des
         return;
 
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
-    bool is_collation_required = false;
+    size_t rows = block.rows();
 
+    if (hasNaturalSort(description))
+    {
+        PartialSortingLessWithNatural less(columns_with_sort_desc);
+        checkSortedWithPermutationImpl(rows, less, limit, permutation);
+        return;
+    }
+
+    bool is_collation_required = false;
     for (auto & column_with_sort_desc : columns_with_sort_desc)
     {
         if (isCollationRequired(column_with_sort_desc.description))
@@ -318,8 +408,6 @@ void checkSortedWithPermutation(const Block & block, const SortDescription & des
             break;
         }
     }
-
-    size_t rows = block.rows();
 
     if (is_collation_required)
     {
@@ -387,8 +475,15 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
         return true;
 
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
-    bool is_collation_required = false;
+    size_t rows = block.rows();
 
+    if (hasNaturalSort(description))
+    {
+        PartialSortingLessWithNatural less(columns_with_sort_desc);
+        return isAlreadySortedImpl(rows, less);
+    }
+
+    bool is_collation_required = false;
     for (auto & column_with_sort_desc : columns_with_sort_desc)
     {
         if (isCollationRequired(column_with_sort_desc.description))
@@ -397,8 +492,6 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
             break;
         }
     }
-
-    size_t rows = block.rows();
 
     if (is_collation_required)
     {
