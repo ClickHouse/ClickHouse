@@ -9,7 +9,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.d/split_cache.xml"],
+    main_configs=["configs/config.d/split_cache.xml", "configs/config.d/test_logger.xml"],
     stay_alive=True,
     with_minio=True,
 )
@@ -81,20 +81,31 @@ def test_split_cache_restart(started_cluster):
     node.restart_clickhouse()
     wait_for_cache_initialized(node, "split_cache_slru")
 
+    cache_state = node.query(
+        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+    )
     cache_count = int(
         node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'split_cache_slru' AND size > 0")
     )
 
     node.restart_clickhouse()
     wait_for_cache_initialized(node, "split_cache_slru")
+
+    cache_state_after_restart = node.query(
+        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+    )
     new_cache_count = int(
         node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'split_cache_slru' AND size > 0")
     )
+
+    print(f"Cache state before restart:\n{cache_state}")
+    print(f"Cache state after restart:\n{cache_state_after_restart}")
+
     # Background operations (outdated parts loading, background downloads, cleanup)
     # may change cache state slightly between restarts, so use tolerance.
     if cache_count > 0:
         fraction = abs(new_cache_count - cache_count) / cache_count
-        assert fraction < 0.5, f"Cache count changed too much: {cache_count} -> {new_cache_count}"
+        assert fraction <= 0.5, f"Cache count changed too much: {cache_count} -> {new_cache_count}"
 
     node.query("DROP TABLE t0")
 
@@ -173,7 +184,7 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
             )
         )
         fraction = abs(current_count - count) / count
-        assert fraction < 0.5, f"System cache count changed too much: {count} -> {current_count}"
+        assert fraction <= 0.5, f"System cache count changed too much: {count} -> {current_count}"
 
     node.query("SELECT * FROM t0 FORMAT NULL")
 

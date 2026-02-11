@@ -1211,7 +1211,7 @@ void TCPHandler::startInsertQuery(QueryState & state)
         if (state.query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
         {
             if (state.query_context->hasInsertionTableColumnsDescription())
-                sendTableColumns(state, state.query_context->getInsertionTableColumnsDescription().value());
+                sendTableColumns(state, *state.query_context->getInsertionTableColumnsDescription());
         }
     }
 

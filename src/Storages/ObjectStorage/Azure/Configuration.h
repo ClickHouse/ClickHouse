@@ -109,7 +109,7 @@ public:
 
     void check(ContextPtr context) override;
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,

@@ -16,6 +16,7 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Databases/DataLake/StorageCredentials.h>
 
 namespace DB
 {
@@ -56,6 +57,8 @@ struct StorageObjectStorageQuerySettings
 class StorageObjectStorageConfiguration
 {
 public:
+    using CredentialsConfigurationCallback = std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>>;
+
     StorageObjectStorageConfiguration() = default;
     virtual ~StorageObjectStorageConfiguration() = default;
 
@@ -134,7 +137,7 @@ public:
     virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
 
-    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
+    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }

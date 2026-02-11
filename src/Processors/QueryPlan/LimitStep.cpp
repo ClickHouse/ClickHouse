@@ -102,7 +102,7 @@ void LimitStep::serialize(Serialization & ctx) const
         serializeSortDescription(description, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
     readIntBinary(flags, ctx.in);

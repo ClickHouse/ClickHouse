@@ -199,7 +199,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
-        /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
+        /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
         auto constant_value_ast = getCachedAST(from_column);
         auto constant_type_name_ast = make_intrusive<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
@@ -208,7 +208,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     auto constant_value_ast = getCachedAST(from_field);
 
     if (isBool(constant_value_type))
-        constant_value_ast->custom_type = constant_value_type;
+        constant_value_ast->value = Field(constant_value_ast->value.safeGet<UInt64>() != 0);
 
     return constant_value_ast;
 }

@@ -77,6 +77,12 @@ public:
         if (!column_in_table || !column_in_table->type->equals(*column_name_type.type))
             return;
 
+        /// If the function result type is Nullable(Nothing), skip the optimization.
+        /// This happens when some arguments are NULL constants (e.g. from fuzzer),
+        /// and rewriting the function with cast arguments would change the result type.
+        if (function_node->getResultType()->onlyNull())
+            return;
+
         /// Apply the optimization
         const auto * qbit = checkAndGetDataType<DataTypeQBit>(qbit_node->getColumnType().get());
 

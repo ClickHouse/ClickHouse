@@ -44,6 +44,23 @@ Features:
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
 
+### DataStoria {#datastoria}
+
+[DataStoria](https://github.com/FrankChen021/datastoria) is an AI-powered web console application that manages multiple ClickHouse clusters in one place.
+
+Features:
+
+- **AI-Powered Intelligence**: Use natural language to explore data, optimize and fix SQL queries, and visualize your data.
+- **Official ClickHouse Agent Skills Integration**: Leverage [official best practices](https://github.com/ClickHouse/agent-skills) to ask AI for database optimizations and suggestions.
+- **Smart Error Diagnostics**: Pinpoint syntax errors instantly with precise line and column highlighting, and get AI-powered fix suggestions with one click.
+- **System Table Inspection**: Dive deep into `system.query_log`, `system.query_views_log`, `system.zookeeper`, `system.ddl_distributed_queue`, `system.part_log`, and `system.processes` with a powerful visualization dashboard and filters to quickly understand your cluster.
+- **One-Click Explain**: Instantly understand query execution plans with visual AST and pipeline views.
+- **Dependency Graph**: Visualize table relationships and trace data flows through Materialized Views, Distributed tables, and external systems.
+- **Cluster Monitoring**: Monitor all nodes with real-time metrics, merge operations, replication status, query performance, and more.
+- **Privacy & Security**: All SQL queries run directly from your browser to your ClickHouse server, ensuring complete privacy.
+
+[DataStoria documentation](https://docs.datastoria.app).
+
 ### DataPup {#datapup}
 
 [DataPup](https://github.com/DataPupOrg/DataPup) is a modern, AI-assisted, cross-platform database client with native ClickHouse support.

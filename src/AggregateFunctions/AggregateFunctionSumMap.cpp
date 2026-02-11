@@ -13,10 +13,9 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorSum.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/assert_cast.h>
-
-#include <map>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 
 
 namespace DB

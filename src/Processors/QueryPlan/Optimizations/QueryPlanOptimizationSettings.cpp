@@ -205,7 +205,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_size_to_preallocate_for_joins = from[Setting::max_size_to_preallocate_for_joins];
     collect_hash_table_stats_during_joins = from[Setting::collect_hash_table_stats_during_joins];
     initial_query_id = initial_query_id_;
-    lock_acquire_timeout = from[Setting::lock_acquire_timeout];
+    lock_acquire_timeout = std::chrono::milliseconds(from[Setting::lock_acquire_timeout].totalMilliseconds());
     actions_settings = std::move(actions_settings_);
 
     enable_join_runtime_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_join_runtime_filters];

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 
 

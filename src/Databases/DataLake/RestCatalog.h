@@ -81,6 +81,8 @@ public:
     String getClientId() const { return client_id; }
     String getClientSecret() const { return client_secret; }
 
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+
 private:
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
 
@@ -156,6 +158,8 @@ private:
         Poco::JSON::Object::Ptr request_body,
         const String & method = Poco::Net::HTTPRequest::HTTP_POST,
         bool ignore_result = false) const;
+
+    std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 };
 
 }

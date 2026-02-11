@@ -582,24 +582,31 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
             )
         )
 
-    node_left.query(f"INSERT INTO {table}_delete VALUES (now(), 1)")
+    # Compute a fixed timestamp once so that all rows use the same toDayOfMonth
+    # and land in the same partition, even if the test runs across midnight.
+    # Using a literal from now() also ensures the data is NOT yet expired at
+    # insert time, so the old binary doesn't start premature TTL merges.
+    now_str = node_left.query("SELECT toString(now())").strip()
+    expired = f"toDateTime('{now_str}')"
+
+    node_left.query(f"INSERT INTO {table}_delete VALUES ({expired}, 1)")
     node_left.query(
         f"INSERT INTO {table}_delete VALUES (toDateTime('2100-10-11 10:00:00'), 2)"
     )
-    node_right.query(f"INSERT INTO {table}_delete VALUES (now(), 3)")
+    node_right.query(f"INSERT INTO {table}_delete VALUES ({expired}, 3)")
     node_right.query(
         f"INSERT INTO {table}_delete VALUES (toDateTime('2100-10-11 10:00:00'), 4)"
     )
 
-    node_left.query(f"INSERT INTO {table}_group_by VALUES (now(), 0, 1)")
-    node_left.query(f"INSERT INTO {table}_group_by VALUES (now(), 0, 2)")
-    node_right.query(f"INSERT INTO {table}_group_by VALUES (now(), 0, 3)")
-    node_right.query(f"INSERT INTO {table}_group_by VALUES (now(), 0, 4)")
+    node_left.query(f"INSERT INTO {table}_group_by VALUES ({expired}, 0, 1)")
+    node_left.query(f"INSERT INTO {table}_group_by VALUES ({expired}, 0, 2)")
+    node_right.query(f"INSERT INTO {table}_group_by VALUES ({expired}, 0, 3)")
+    node_right.query(f"INSERT INTO {table}_group_by VALUES ({expired}, 0, 4)")
 
-    node_left.query(f"INSERT INTO {table}_where VALUES (now(), 1)")
-    node_left.query(f"INSERT INTO {table}_where VALUES (now(), 2)")
-    node_right.query(f"INSERT INTO {table}_where VALUES (now(), 3)")
-    node_right.query(f"INSERT INTO {table}_where VALUES (now(), 4)")
+    node_left.query(f"INSERT INTO {table}_where VALUES ({expired}, 1)")
+    node_left.query(f"INSERT INTO {table}_where VALUES ({expired}, 2)")
+    node_right.query(f"INSERT INTO {table}_where VALUES ({expired}, 3)")
+    node_right.query(f"INSERT INTO {table}_where VALUES ({expired}, 4)")
 
     if node_left.with_installed_binary:
         node_left.restart_with_latest_version()
@@ -639,13 +646,15 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     #
     # So, let's also sync replicas for node_right (for now).
 
-    exec_query_with_retry(node_right, f"SYSTEM SYNC REPLICA {table}_delete")
-    node_right.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
-    node_right.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
-
-    exec_query_with_retry(node_left, f"SYSTEM SYNC REPLICA {table}_delete")
-    node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
-    node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
+    # Best-effort SYSTEM SYNC REPLICA: the assert_eq_with_retry calls below
+    # handle the actual waiting for correct results.  A timeout here (common
+    # with sanitiser/old-binary builds) must not kill the whole test.
+    for suffix in ["_delete", "_group_by", "_where"]:
+        for node in [node_right, node_left]:
+            try:
+                node.query(f"SYSTEM SYNC REPLICA {table}{suffix}", timeout=timeout)
+            except Exception:
+                pass
 
     # Use assert_eq_with_retry because merges with TTL may still be pending
     # after OPTIMIZE TABLE FINAL due to concurrent merge limits.

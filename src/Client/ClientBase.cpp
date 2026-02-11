@@ -9,6 +9,7 @@
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -137,6 +138,7 @@ namespace Setting
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
+    extern const SettingsBool ignore_format_null_for_explain;
 }
 
 namespace ErrorCodes
@@ -751,6 +753,10 @@ try
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
                 const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
                 current_format = id.name();
+
+                const bool ignore_null_for_explain = client_context->getSettingsRef()[Setting::ignore_format_null_for_explain];
+                if (boost::iequals(current_format, "Null") && parsed_query->as<ASTExplainQuery>() && ignore_null_for_explain)
+                    current_format = default_output_format;
             }
             else if (query_with_output->out_file)
             {

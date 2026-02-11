@@ -1,6 +1,7 @@
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskSelector.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
@@ -18,6 +19,26 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
+{
+    if (disk->getDataSourceDescription().is_encrypted)
+        return unwrapEncryptedAndCacheLayers(disk->getDelegateDiskIfExists());
+
+    DiskObjectStoragePtr object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
+    MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
+
+    while (auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get()))
+        metadata_storage = cache_metadata->getUnderlying();
+
+    chassert(metadata_storage);
+    return metadata_storage;
+}
+
 }
 
 void DiskSelector::assertInitialized() const
@@ -52,18 +73,10 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
             const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
             if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
             {
-                bool same = disk->getMetadataStorage().get() == saved_disk->getMetadataStorage().get();
+                const auto unwrapped_metadata_storage_saved = unwrapEncryptedAndCacheLayers(saved_disk);
+                const auto unwrapped_metadata_storage_new = unwrapEncryptedAndCacheLayers(disk);
 
-                if (!same)
-                {
-                    /// In case of encrypted disk we cannot simply compare getMetadataStorage() since it is wrapped
-                    auto delegated_disk_or_original = disk->getDataSourceDescription().is_encrypted && disk->getDelegateDiskIfExists() ? disk->getDelegateDiskIfExists() : disk;
-                    auto delegated_saved_disk_or_original = saved_disk->getDataSourceDescription().is_encrypted && saved_disk->getDelegateDiskIfExists() ? saved_disk->getDelegateDiskIfExists() : saved_disk;
-
-                    same = delegated_disk_or_original->getMetadataStorage().get() == delegated_saved_disk_or_original->getMetadataStorage().get();
-                }
-
-                if (!same)
+                if (unwrapped_metadata_storage_saved.get() != unwrapped_metadata_storage_new.get())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
                         disk_name, saved_disk_name);

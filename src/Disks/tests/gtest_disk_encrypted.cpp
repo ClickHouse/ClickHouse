@@ -1,3 +1,7 @@
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <gtest/gtest.h>
 
 #include <Common/tests/gtest_global_context.h>
@@ -447,12 +451,18 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
 TEST_F(DiskEncryptedTest, LocalBlobs)
 {
-    auto object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
-    auto metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
-    auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator());
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    ObjectStoragePtr object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
+    DiskPtr metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
+    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator());
 
-    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", metadata_storage, object_storage, *config, "");
+    std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
+    std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
+
+    ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(std::move(cluster_registry));
+    ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", std::move(cluster), std::move(metadata_storage), std::move(object_storages), *config, "");
 
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
 

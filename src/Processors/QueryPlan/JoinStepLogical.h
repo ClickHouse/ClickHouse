@@ -103,7 +103,7 @@ public:
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
 

@@ -23,12 +23,12 @@ public:
         FileNamesGenerator & generator,
         const String & metadata_filename,
         Int64 parent_snapshot_id,
-        Int32 added_files,
-        Int32 added_records,
-        Int32 added_files_size,
-        Int32 num_partitions,
-        Int32 added_delete_files,
-        Int32 num_deleted_rows,
+        Int64 added_files,
+        Int64 added_records,
+        Int64 added_files_size,
+        Int64 num_partitions,
+        Int64 added_delete_files,
+        Int64 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt);
 

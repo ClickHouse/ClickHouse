@@ -942,8 +942,16 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// In this case we can just filter this variant and resize discriminators/offsets.
     if (auto non_empty_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
     {
-        Columns new_variants(variants.begin(), variants.end());
-        new_variants[*non_empty_discr] = variants[*non_empty_discr]->filter(filt, result_size_hint);
+        const size_t num_variants = variants.size();
+        Columns new_variants;
+        new_variants.reserve(num_variants);
+        for (size_t i = 0; i != num_variants; ++i)
+        {
+            if (i == *non_empty_discr)
+                new_variants.emplace_back(variants[i]->filter(filt, result_size_hint));
+            else
+                new_variants.emplace_back(variants[i]->cloneEmpty());
+        }
         size_t new_size = new_variants[*non_empty_discr]->size();
         ColumnPtr new_discriminators = local_discriminators->cloneResized(new_size);
         ColumnPtr new_offsets = offsets->cloneResized(new_size);
@@ -1085,7 +1093,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->permute(perm, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->assumeMutable());
+                new_variants.emplace_back(variants[i]->cloneEmpty());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1115,7 +1123,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->index(indexes, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->assumeMutable());
+                new_variants.emplace_back(variants[i]->cloneEmpty());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();

@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 
 namespace DB
@@ -36,7 +37,21 @@ struct BitWrapperFuncImpl
 };
 
 struct NameBitWrapperFunc { static constexpr auto name = "__bitWrapperFunc"; };
-using FunctionBitWrapperFunc = FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, true>;
+
+/// The result of this function is always UInt8 regardless of the argument type.
+/// Override `getReturnTypeForDefaultImplementationForDynamic` so that Dynamic arguments
+/// produce Nullable(UInt8) instead of Dynamic. This is needed for set index evaluation
+/// where the result column must be UInt8.
+class FunctionBitWrapperFunc : public FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, true>
+{
+public:
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitWrapperFunc>(); }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+};
 
 }
 

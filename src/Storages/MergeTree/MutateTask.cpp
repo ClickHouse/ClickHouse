@@ -1964,7 +1964,8 @@ private:
             ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings());
+            ctx->context->getWriteSettings(),
+            static_cast<WrittenOffsetSubstreams *>(nullptr));
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -1983,8 +1984,9 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(
-            ctx->new_data_part, ctx->need_sync, nullptr, &ctx->existing_indices_stats_checksums);
+        const auto & out = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
+        out->finalizeIndexGranularity();
+        out->finalizePart(ctx->new_data_part, ctx->need_sync, nullptr, &ctx->existing_indices_stats_checksums);
         ctx->out.reset();
     }
 
@@ -2216,7 +2218,8 @@ private:
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
-                ctx->source_part->getBytesUncompressedOnDisk());
+                ctx->source_part->getBytesUncompressedOnDisk(),
+                static_cast<WrittenOffsetSubstreams *>(nullptr));
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -2238,20 +2241,20 @@ private:
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
-            auto changed_checksums =
-                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums);
+            const auto & column_out = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
+            column_out->finalizeIndexGranularity();
+            auto changed_checksums = column_out->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
-                auto changed_columns_substreams = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->getColumnsSubstreams();
+                auto changed_columns_substreams = column_out->getColumnsSubstreams();
                 new_columns_substreams = ColumnsSubstreams::merge(changed_columns_substreams, ctx->new_data_part->getColumnsSubstreams(), ctx->new_data_part->getColumns().getNames());
                 ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
             }
 
-            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
+            column_out->finish(ctx->need_sync);
 
             ctx->out.reset();
         }

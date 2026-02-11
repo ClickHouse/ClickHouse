@@ -21,7 +21,8 @@ static void collectNullable(SQLType * tp, const uint32_t flags, ColumnPathChain 
 
         tp = lc->subtype;
     }
-    if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
+    if ((flags & collect_generated) != 0 && tp
+        && (tp->getTypeClass() == SQLTypeClass::NULLABLE || tp->getTypeClass() == SQLTypeClass::TUPLE))
     {
         next.path.emplace_back(ColumnPathChainEntry("null", &(*null_tp)));
         paths.push_back(next);
@@ -1772,18 +1773,13 @@ void StatementGenerator::addTableColumn(
     this->next_type_mask = type_mask_backup;
 }
 
-void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, IndexDef * idef)
+void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, const bool projection, IndexDef * idef)
 {
-    SQLIndex idx;
-    const uint32_t iname = t.idx_counter++;
     Expr * expr = idef->mutable_expr();
-    std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType_MAX));
-    const IndexType itpe = static_cast<IndexType>(idx_range(rg.generator));
-    auto & to_add = staged ? t.staged_idxs : t.idxs;
+    std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType::IDX_text));
+    const IndexType itpe = projection ? IndexType::IDX_basic : static_cast<IndexType>(idx_range(rg.generator));
 
     chassert(!t.cols.empty());
-    idx.iname = iname;
-    idef->mutable_idx()->set_index("i" + std::to_string(iname));
     idef->set_type(itpe);
     if (itpe == IndexType::IDX_hypothesis && rg.nextSmallNumber() < 9)
     {
@@ -1817,7 +1813,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         if (rg.nextBool())
         {
             flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-            colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 2, "", t), t, rg.pickRandomly(this->entries), expr);
+            colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 8, "", t), t, rg.pickRandomly(this->entries), expr);
             this->entries.clear();
         }
         else
@@ -1950,55 +1946,74 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         break;
         case IndexType::IDX_minmax:
         case IndexType::IDX_hypothesis:
+        case IndexType::IDX_basic:
             break;
     }
-    if (rg.nextSmallNumber() < 7)
+    if (!projection)
     {
-        uint32_t granularity = 1;
-        const uint32_t next_opt = rg.nextSmallNumber();
+        SQLIndex idx;
+        auto & to_add = staged ? t.staged_idxs : t.idxs;
+        const uint32_t iname = t.idx_counter++;
 
-        if (next_opt < 4)
+        idx.iname = iname;
+        idef->mutable_idx()->set_index("i" + std::to_string(iname));
+        if (rg.nextSmallNumber() < 7)
         {
-            granularity = rg.randomInt<uint32_t>(1, 4194304);
+            uint32_t granularity = 1;
+            const uint32_t next_opt = rg.nextSmallNumber();
+
+            if (next_opt < 4)
+            {
+                granularity = rg.randomInt<uint32_t>(1, 4194304);
+            }
+            else if (next_opt < 8)
+            {
+                granularity = UINT32_C(1) << rg.randomInt<uint32_t>(0, 20);
+            }
+            idef->set_granularity(granularity);
         }
-        else if (next_opt < 8)
-        {
-            granularity = UINT32_C(1) << rg.randomInt<uint32_t>(0, 20);
-        }
-        idef->set_granularity(granularity);
+        to_add[iname] = std::move(idx);
     }
-    to_add[iname] = std::move(idx);
 }
 
 void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef)
 {
     const uint32_t pname = t.proj_counter++;
-    const uint32_t ncols = rg.nextMediumNumber() < 91 ? 1 : (rg.nextMediumNumber() % 3) + 1;
     auto & to_add = staged ? t.staged_projs : t.projs;
 
     pdef->mutable_proj()->set_projection("p" + std::to_string(pname));
     this->inside_projection = true;
-    if (!t.cols.empty())
-    {
-        addTableRelation(rg, true, "", t);
-    }
-    generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, std::nullopt, pdef->mutable_select());
-    this->levels.clear();
-    this->inside_projection = false;
-    /// Add projection settings
     if (rg.nextBool())
     {
-        const auto & engineSettings = allTableSettings.at(t.teng);
+        ProjectionSelectDef * psdef = pdef->mutable_sel_def();
+        const uint32_t ncols = rg.nextMediumNumber() < 91 ? 1 : (rg.nextMediumNumber() % 3) + 1;
 
-        if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+        if (!t.cols.empty())
         {
-            generateSettingValues(rg, engineSettings, pdef->mutable_setting_values());
+            addTableRelation(rg, true, "", t);
         }
-        if (t.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
+        generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, std::nullopt, psdef->mutable_select());
+        this->levels.clear();
+        /// Add projection settings
+        if (rg.nextSmallNumber() < 4)
         {
-            generateHotTableSettingsValues(rg, false, pdef->mutable_setting_values());
+            const auto & engineSettings = allTableSettings.at(t.teng);
+
+            if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+            {
+                generateSettingValues(rg, engineSettings, psdef->mutable_setting_values());
+            }
+            if (t.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
+            {
+                generateHotTableSettingsValues(rg, false, psdef->mutable_setting_values());
+            }
         }
     }
+    else
+    {
+        addTableIndex(rg, t, staged, true, pdef->mutable_idx_def());
+    }
+    this->inside_projection = false;
     to_add.insert(pname);
 }
 
@@ -2395,7 +2410,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
             if (add_idx && nopt < (add_idx + 1))
             {
-                addTableIndex(rg, next, false, ndef->mutable_idx_def());
+                addTableIndex(rg, next, false, false, ndef->mutable_idx_def());
                 added_idxs++;
             }
             else if (add_proj && nopt < (add_idx + add_proj + 1))

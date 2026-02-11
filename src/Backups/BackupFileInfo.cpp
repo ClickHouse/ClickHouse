@@ -234,6 +234,8 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
         if (failed)
             break;
 
+        /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
+        /// of an exception
         runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
         {
             if (failed)

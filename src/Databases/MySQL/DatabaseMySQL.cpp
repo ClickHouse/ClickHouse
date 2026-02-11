@@ -74,7 +74,7 @@ namespace ErrorCodes
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const std::chrono::seconds lock_acquire_timeout{10};
+static const Poco::Timespan lock_acquire_timeout{10ull, 0ull};
 
 DatabaseMySQL::DatabaseMySQL(
     ContextPtr context_,

@@ -4,5 +4,6 @@
         <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
         <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+        <allow_impersonate_user>false</allow_impersonate_user>
     </access_control_improvements>
 </clickhouse>

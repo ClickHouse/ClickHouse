@@ -110,7 +110,7 @@ std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const 
     ColumnPtr index_column = column.column;
     chassert(index_column->getDataType() == column.type->getTypeId());
 
-    if (expression.getActions().empty())
+    if (!hasActions())
         return {index_column, start_row};
 
     /// Only copy if needed
@@ -143,7 +143,7 @@ std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const 
 
 String MergeTreeIndexTextPreprocessor::process(const String & input) const
 {
-    if (expression.getActions().empty())
+    if (!hasActions())
         return input;
 
     Field input_field(input);

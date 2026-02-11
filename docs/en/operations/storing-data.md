@@ -175,6 +175,26 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
+## refresh_parts_interval and table_disk {#refresh-parts-interval-and-table-disk}
+
+This setting is intended for non-Replicated MergeTree tables where parts may be written externally and metadata discovery must be refreshed from storage.
+
+The MergeTree setting `refresh_parts_interval` enables periodic refresh of the list of data parts from the underlying storage (e.g. to pick up parts written externally). The important distinction is **shared metadata across replicas** vs **replica-local metadata** (e.g. S3 with local metadata per replica): only when metadata is shared will new parts be visible to all replicas. Using object storage alone does not imply shared metadata.
+
+- **Object storage (e.g. `disk = 's3'`) does not imply shared metadata.** When metadata is stored locally per replica (the default), each replica independently manages its pointers to blobs in object storage. Changes made on one replica are not visible to others. In that case, `refresh_parts_interval` does not make new parts visible across replicas, because the metadata each replica reads is replica-local.
+
+- **Automatic part refreshing requires that the filesystem metadata be shared** (or that the table use table-owned, readonly metadata so that refresh is applicable). Setting `table_disk = true` together with a table-local disk (e.g. `SETTINGS disk = disk(type=object_storage, ...), table_disk = true`) is one way to get the correct semantics: the table owns the metadata life cycle and the storage is treated as readonly, so `refresh_parts_interval` runs and externally added parts can be discovered.
+
+- **With a globally defined disk** (e.g. `disk = 's3'` in `storage_configuration`) and default local metadata, each replica has its own metadata state. Even though blobs may be in S3, the storage is not considered shared for the purpose of `refresh_parts_interval`, and new parts created outside ClickHouse or on another replica will not be detected.
+
+For automatic part refreshing, ensure the metadata is shared or use a table-level disk with `table_disk = true` as above. Relying only on `refresh_parts_interval` with replica-local metadata will not refresh parts as expected.
+
+:::note
+`refresh_parts_interval` is not used for ReplicatedMergeTree tables.
+Replicated tables already synchronize parts through the replication mechanism.
+This setting is only applicable to non-replicated MergeTree tables where parts are written externally and metadata refresh is required.
+:::
+
 ## Dynamic Configuration {#dynamic-configuration}
 
 There is also a possibility to specify storage configuration without a predefined

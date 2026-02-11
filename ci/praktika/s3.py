@@ -130,7 +130,9 @@ class S3:
                     )
 
             except NoCredentialsError as e:
-                print(f"ERROR: Failed to upload to S3 using boto3 (no credentials): {e}")
+                print(
+                    f"ERROR: Failed to upload to S3 using boto3 (no credentials): {e}"
+                )
                 if not no_strict:
                     raise
             except ClientError as e:
@@ -182,6 +184,7 @@ class S3:
         text=False,
         metadata=None,
         if_none_matched=False,
+        if_match=None,
         no_strict=False,
     ):
         """
@@ -191,6 +194,7 @@ class S3:
         :param text:
         :param metadata:
         :param if_none_matched:
+        :param if_match: ETag value for conditional PUT (use with version checking)
         :param no_strict:
         :return:
         """
@@ -211,6 +215,8 @@ class S3:
         )
         if if_none_matched:
             command += f' --if-none-match "*"'
+        if if_match:
+            command += f' --if-match "{if_match}"'
         if metadata:
             for k, v in metadata.items():
                 command += f" --metadata {k}={v}"
@@ -436,3 +442,224 @@ class S3:
 
         print("Execute:", cmd)
         cls.run_command_with_retries(cmd, retries=3)
+
+    @classmethod
+    def copy_file_from_s3_with_version(cls, s3_path, local_path):
+        """
+        Downloads a file from S3 and returns its version from object metadata.
+        Uses a single atomic GET operation to ensure version matches the downloaded content.
+
+        :param s3_path: S3 path (with or without s3:// prefix)
+        :param local_path: Local path to save the file
+        :return: Version number from object metadata (guaranteed to match downloaded content)
+        """
+        # Use boto3 if available, otherwise AWS CLI
+        if BOTO3_AVAILABLE:
+            client = cls._get_boto3_client()
+            if client:
+                # boto3 approach: use get_object for atomic metadata+content read
+                s3_path_clean = str(s3_path).removeprefix("s3://")
+                bucket, key = s3_path_clean.split("/", maxsplit=1)
+
+                # Use get_object to atomically read metadata and content
+                # This prevents race condition where object changes between HEAD and GET
+                response = client.get_object(Bucket=bucket, Key=key)
+                version = int(response.get("Metadata", {}).get("version", "0"))
+
+                # Stream body to file
+                Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(local_path, "wb") as f:
+                    f.write(response["Body"].read())
+
+                print(f"Downloaded file from S3 with version {version} using boto3")
+                return version
+
+        # AWS CLI approach: use get-object for atomic metadata+content download
+        s3_path_clean = str(s3_path).removeprefix("s3://")
+        bucket, key = s3_path_clean.split("/", maxsplit=1)
+
+        # Use get-object to atomically download file and get metadata
+        # This prevents race condition where object changes between HEAD and GET
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        output = Shell.get_output(
+            f"aws s3api get-object --bucket {bucket} --key {key} {local_path}",
+            strict=True,
+            verbose=True,
+        )
+        metadata = json.loads(output)
+        version = int(metadata.get("Metadata", {}).get("version", "0"))
+
+        print(f"Downloaded file from S3 with version {version} using AWS CLI")
+        return version
+
+    @classmethod
+    def copy_file_to_s3_with_version(
+        cls, s3_path, local_path, version, text=True, no_strict=False
+    ):
+        """
+        Uploads a file to S3 with version tracking in object metadata.
+        Uses conditional PUT with ETag matching for concurrent write safety (optimistic locking).
+
+        IMPORTANT: Version 0 is a destructive reset operation that overwrites without conditions.
+        It MUST NOT be called concurrently - only use version 0 for initialization or when you
+        have exclusive access. For concurrent updates, always use version > 0 with the retry pattern:
+        read current version, attempt to write version+1, retry on failure.
+
+        :param s3_path: S3 path (with or without s3:// prefix)
+        :param local_path: Local file path to upload
+        :param version: Version number to set in metadata (0 = destructive reset, >0 = conditional update)
+        :param text: Whether to set content-type as text/plain
+        :param no_strict: Whether to suppress unexpected errors (returns False instead of raising exception)
+        :return: True if successful, False if concurrent write detected (object was modified by another process).
+                 On unexpected errors: raises exception if no_strict=False, returns False if no_strict=True.
+        """
+        assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
+        assert Path(
+            local_path
+        ).is_file(), f"Path [{local_path}] is not file. Only files are supported"
+
+        # Warn about version 0 usage
+        if version == 0:
+            print(
+                "WARNING: Version 0 is a destructive reset operation - ensure no concurrent writes are happening"
+            )
+
+        # Use boto3 if available, otherwise AWS CLI
+        if BOTO3_AVAILABLE:
+            client = cls._get_boto3_client()
+            if client:
+                # boto3 approach: single file with version in metadata
+                s3_path_clean = str(s3_path).removeprefix("s3://")
+                bucket, key = s3_path_clean.split("/", maxsplit=1)
+
+                try:
+                    extra_args = {
+                        "ContentType": (
+                            "text/plain" if text else "application/octet-stream"
+                        ),
+                        "Metadata": {"version": str(version)},
+                    }
+
+                    if version == 0:
+                        # DESTRUCTIVE: Version 0 overwrites without conditions (NOT safe for concurrent use)
+                        print(
+                            f"Uploading file with version 0 (destructive reset) using boto3"
+                        )
+                        client.upload_file(
+                            str(local_path), bucket, key, ExtraArgs=extra_args
+                        )
+                    else:
+                        # For version > 0, use conditional PUT with If-Match (ETag check)
+                        # First get current ETag
+                        try:
+                            head_response = client.head_object(Bucket=bucket, Key=key)
+                            current_etag = head_response.get("ETag", "").strip('"')
+                            current_version = int(
+                                head_response.get("Metadata", {}).get("version", "0")
+                            )
+
+                            # Verify we're updating from expected version
+                            if current_version != version - 1:
+                                print(
+                                    f"Version mismatch: expected {version - 1}, found {current_version} (concurrent write detected)"
+                                )
+                                return False
+
+                            # Stream file content for put_object (needed for If-Match)
+                            with open(local_path, "rb") as f:
+                                client.put_object(
+                                    Bucket=bucket,
+                                    Key=key,
+                                    Body=f,
+                                    ContentType=(
+                                        "text/plain"
+                                        if text
+                                        else "application/octet-stream"
+                                    ),
+                                    Metadata={"version": str(version)},
+                                    IfMatch=current_etag,
+                                )
+                        except ClientError as e:
+                            error_code = e.response.get("Error", {}).get("Code", "")
+                            if error_code == "PreconditionFailed":
+                                print(
+                                    f"Precondition failed: object was modified by another process"
+                                )
+                                return False
+                            raise
+
+                    print(f"Uploaded file with version {version} using boto3")
+                    StorageUsage.add_uploaded(local_path)
+                    return True
+
+                except ClientError as e:
+                    error_code = e.response.get("Error", {}).get("Code", "")
+                    if error_code == "PreconditionFailed":
+                        print("Precondition failed (concurrent write detected)")
+                        return False
+                    print(f"ERROR: Failed to upload file using boto3: {error_code}")
+                    if not no_strict:
+                        raise
+                    return False
+                except Exception as e:
+                    print(f"ERROR: Failed to upload file using boto3: {e}")
+                    if not no_strict:
+                        raise
+                    return False
+
+        # AWS CLI approach: single file with version in metadata
+        s3_path_clean = str(s3_path).removeprefix("s3://")
+        bucket, key = s3_path_clean.split("/", maxsplit=1)
+
+        try:
+            if version == 0:
+                # DESTRUCTIVE: Version 0 uploads without conditions (NOT safe for concurrent use)
+                print(
+                    f"Uploading file with version 0 (destructive reset) using AWS CLI"
+                )
+                result_uploaded = cls.put(
+                    s3_path=s3_path,
+                    local_path=local_path,
+                    metadata={"version": str(version)},
+                    no_strict=no_strict,
+                    text=text,
+                )
+                if not result_uploaded:
+                    print("Failed to put file")
+                    return False
+            else:
+                # For version > 0, use conditional PUT with If-Match (ETag check)
+                # First get current ETag and verify version
+                head_output = Shell.get_output(
+                    f"aws s3api head-object --bucket {bucket} --key {key}",
+                    strict=True,
+                    verbose=True,
+                )
+                head_data = json.loads(head_output)
+                current_etag = head_data.get("ETag", "").strip('"')
+                current_version = int(head_data.get("Metadata", {}).get("version", "0"))
+
+                # Verify we're updating from expected version
+                if current_version != version - 1:
+                    print(
+                        f"Version mismatch: expected {version - 1}, found {current_version} (concurrent write detected)"
+                    )
+                    return False
+
+                # Upload with If-Match condition
+                content_type = "text/plain" if text else "application/octet-stream"
+                command = f'aws s3api put-object --bucket {bucket} --key {key} --body {local_path} --content-type {content_type} --metadata version={version} --if-match "{current_etag}"'
+                res = cls.run_command_with_retries(command, no_strict=no_strict)
+                if not res:
+                    print("Failed to put file (precondition failed or other error)")
+                    return False
+
+            print(f"Uploaded file with version {version} using AWS CLI")
+            StorageUsage.add_uploaded(local_path)
+            return True
+
+        except Exception as e:
+            print(f"ERROR: Failed to upload file using AWS CLI: {e}")
+            if not no_strict:
+                raise
+            return False

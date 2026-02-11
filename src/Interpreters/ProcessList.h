@@ -361,10 +361,11 @@ private:
 
     ProcessList & parent;
     Container::iterator it;
+    bool registered_in_cancellation_checker = false;
 
 public:
-    ProcessListEntry(ProcessList & parent_, Container::iterator it_)
-        : parent(parent_), it(it_) {}
+    ProcessListEntry(ProcessList & parent_, Container::iterator it_, bool registered_in_cancellation_checker_)
+        : parent(parent_), it(it_), registered_in_cancellation_checker(registered_in_cancellation_checker_) {}
 
     ~ProcessListEntry();
 

@@ -1,5 +1,4 @@
 #include <string>
-#include <vector>
 #include <base/types.h>
 
 #include <AggregateFunctions/DDSketch.h>
@@ -7,6 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Common/Base64.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <gtest/gtest.h>
 

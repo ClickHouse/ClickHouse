@@ -125,11 +125,13 @@ void WriteFileOperation::undo()
     }
 }
 
-UnlinkFileOperation::UnlinkFileOperation(std::string path_, const std::string & compatible_key_prefix_, IDisk & disk_)
+UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
     : path(std::move(path_))
+    , if_exists(if_exists_)
+    , should_remove_objects(should_remove_objects_)
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
-    , outcome(std::make_shared<UnlinkMetadataFileOperationOutcome>())
+    , objects_to_remove(objects_to_remove_)
 {
 }
 
@@ -147,18 +149,19 @@ void UnlinkFileOperation::tryUnlinkMetadataFile()
         write_operation->execute();
     }
 
-    outcome->num_hardlinks = ref_count;
-}
-
-UnlinkMetadataFileOperationOutcomePtr UnlinkFileOperation::getOutcome()
-{
-    return outcome;
+    if (ref_count == 0 && should_remove_objects)
+        removed_objects.append_range(object_metadata->objects);
 }
 
 void UnlinkFileOperation::execute()
 {
     if (!disk.existsFile(path))
+    {
+        if (if_exists)
+            return;
+
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't unlink file {}", path);
+    }
 
     /// Let's update hardlink count written in serialized DiskObjectStorageMetadata before the move
     tryUnlinkMetadataFile();
@@ -180,7 +183,10 @@ void UnlinkFileOperation::undo()
 
 void UnlinkFileOperation::finalize()
 {
-    disk.removeFile(tmp_file_path.value());
+    objects_to_remove.append_range(std::move(removed_objects));
+
+    if (tmp_file_path.has_value())
+        disk.removeFile(tmp_file_path.value());
 }
 
 CreateDirectoryOperation::CreateDirectoryOperation(std::string path_, IDisk & disk_)
@@ -245,10 +251,12 @@ void RemoveDirectoryOperation::undo()
         disk.createDirectory(path);
 }
 
-RemoveRecursiveOperation::RemoveRecursiveOperation(std::string path_, const std::string & compatible_key_prefix_, IDisk & disk_)
+RemoveRecursiveOperation::RemoveRecursiveOperation(std::string path_, IMetadataTransaction::ShouldRemoveObjectsPredicate should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
     : path(path_)
+    , should_remove_objects(std::move(should_remove_objects_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
+    , objects_to_remove(objects_to_remove_)
 {
 }
 
@@ -265,6 +273,10 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
         write_operations.push_back(std::make_unique<WriteFileOperation>(leaf, object_metadata->serializeToString(), disk));
         write_operations.back()->execute();
     }
+
+    if (ref_count == 0)
+        if (!should_remove_objects || should_remove_objects(fs::relative(leaf, path)))
+            removed_objects.append_range(object_metadata->objects);
 }
 
 void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
@@ -274,13 +286,15 @@ void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
         const std::string next_to_visit = it->path();
         const int64_t path_inode = disk.stat(next_to_visit).st_ino;
         const bool is_new_path = visited_inodes.emplace(path_inode).second;
-        if (!is_new_path)
-            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Found cyclic symlink path {}", next_to_visit);
 
+        /// Hardlinks will point to the same inode for different files.
+        /// So here we need to remove file in any case.
         if (disk.existsFile(next_to_visit))
             traverseFile(next_to_visit);
-        else
+        else if (is_new_path)
             traverseDirectory(next_to_visit);
+        else
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Found cyclic symlink path {}", next_to_visit);
     }
 }
 
@@ -317,6 +331,8 @@ void RemoveRecursiveOperation::undo()
 
 void RemoveRecursiveOperation::finalize()
 {
+    objects_to_remove.append_range(std::move(removed_objects));
+
     if (temp_file_path.has_value())
         disk.removeFile(temp_file_path.value());
     else if (temp_directory_path.has_value())
@@ -386,11 +402,12 @@ void MoveDirectoryOperation::undo()
     disk.moveDirectory(path_to, path_from);
 }
 
-ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_)
+ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
     : path_from(path_from_)
     , path_to(path_to_)
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
+    , objects_to_remove(objects_to_remove_)
 {
 }
 
@@ -398,7 +415,7 @@ void ReplaceFileOperation::execute()
 {
     if (disk.existsFile(path_to))
     {
-        unlink_operation = std::make_unique<UnlinkFileOperation>(path_to, compatible_key_prefix, disk);
+        unlink_operation = std::make_unique<UnlinkFileOperation>(path_to, /*if_exists=*/false, /*should_remove_objects=*/true, compatible_key_prefix, disk, objects_to_remove);
         unlink_operation->execute();
     }
 
@@ -444,11 +461,12 @@ void WriteInlineDataOperation::undo()
         write_operation->undo();
 }
 
-RewriteFileOperation::RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix_, IDisk & disk_)
+RewriteFileOperation::RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
     : path(path_)
     , objects(std::move(objects_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
+    , objects_to_remove(objects_to_remove_)
 {
 }
 
@@ -456,7 +474,7 @@ void RewriteFileOperation::execute()
 {
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
     object_metadata.inline_data.clear();
-    object_metadata.objects = objects;
+    removed_objects = std::exchange(object_metadata.objects, objects);
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
     write_operation->execute();
@@ -466,6 +484,11 @@ void RewriteFileOperation::undo()
 {
     if (write_operation)
         write_operation->undo();
+}
+
+void RewriteFileOperation::finalize()
+{
+    objects_to_remove.append_range(std::move(removed_objects));
 }
 
 AddBlobOperation::AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix_, IDisk & disk_)
@@ -516,18 +539,13 @@ void SetReadonlyFileOperation::undo()
         write_operation->undo();
 }
 
-TruncateMetadataFileOperation::TruncateMetadataFileOperation(std::string path_, size_t target_size_, const std::string & compatible_key_prefix_, IDisk & disk_)
+TruncateMetadataFileOperation::TruncateMetadataFileOperation(std::string path_, size_t target_size_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
     : path(std::move(path_))
     , target_size(std::move(target_size_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
-    , outcome(std::make_shared<TruncateFileOperationOutcome>())
+    , objects_to_remove(objects_to_remove_)
 {
-}
-
-TruncateFileOperationOutcomePtr TruncateMetadataFileOperation::getOutcome()
-{
-    return outcome;
 }
 
 void TruncateMetadataFileOperation::execute()
@@ -548,7 +566,7 @@ void TruncateMetadataFileOperation::execute()
         object_metadata->objects.pop_back();
 
         current_size -= next_to_remove.bytes_size;
-        outcome->objects_to_remove.push_back(std::move(next_to_remove));
+        removed_objects.push_back(std::move(next_to_remove));
     }
 
     if (current_size != target_size)
@@ -562,6 +580,11 @@ void TruncateMetadataFileOperation::undo()
 {
     if (write_operation)
         write_operation->undo();
+}
+
+void TruncateMetadataFileOperation::finalize()
+{
+    objects_to_remove.append_range(removed_objects);
 }
 
 }

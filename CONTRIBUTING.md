@@ -20,3 +20,7 @@ See [ClickHouse - Lightning Fast Analytics for Everyone](https://www.vldb.org/pv
 [This](https://clickhouse.com/docs/development/developer-instruction) and [this](https://clickhouse.com/docs/development/build) document describe how to check out and compile the source code of ClickHouse.
 
 If you want to contribute to documentation, please see the [documentation repository](https://github.com/ClickHouse/clickhouse-docs).
+
+## See Also
+
+See also [ClickHouse AI Policy](AI_POLICY.md).

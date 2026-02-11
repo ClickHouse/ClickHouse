@@ -129,7 +129,7 @@ def test_write_failover(
         )
     )
 
-    is_debug_mode = False
+    first_success_request = None
     success_count = 0
 
     for request in range(request_count + debug_request_count + 1):
@@ -137,26 +137,30 @@ def test_write_failover(
         fail_request(cluster, request + 1)
 
         data = "('2020-03-01',0,'data'),('2020-03-01',1,'data')"
-        positive = request >= (
-            request_count + debug_request_count if is_debug_mode else request_count
-        )
         try:
             node.query("INSERT INTO s3_failover_test VALUES {}".format(data))
-            assert positive, "Insert query should be failed, request {}".format(request)
+
+            if first_success_request is None:
+                first_success_request = request
+
+            # INSERT must not succeed too early - all part files must have been written.
+            assert request >= request_count, (
+                "Insert query should have failed, request {} "
+                "(expected at least {} S3 requests)".format(request, request_count)
+            )
             success_count += 1
         except QueryRuntimeException as e:
-            if not is_debug_mode and positive:
-                is_debug_mode = True
-                positive = False
-
-            assert not positive, "Insert query shouldn't be failed, request {}".format(
-                request
+            # INSERT must not fail after it has already succeeded at a lower request number.
+            assert first_success_request is None, (
+                "Insert query shouldn't have failed at request {} "
+                "(first success was at request {})".format(request, first_success_request)
             )
+
             assert str(e).find("Expected Error") != -1, "Unexpected error {}".format(
                 str(e)
             )
 
-        if positive:
+        if first_success_request is not None:
             # Disable request failing.
             fail_request(cluster, 0)
 
@@ -166,9 +170,15 @@ def test_write_failover(
                 or node.query("SELECT * FROM s3_failover_test FORMAT Values") == data
             )
 
-    assert success_count == (
-        1 if is_debug_mode else debug_request_count + 1
-    ), "Insert query should be successful at least once"
+    assert first_success_request is not None, (
+        "Insert query should have succeeded at least once"
+    )
+    assert first_success_request <= request_count + debug_request_count, (
+        "Insert query succeeded too late at request {}, "
+        "expected at most {} S3 requests".format(
+            first_success_request, request_count + debug_request_count
+        )
+    )
 
 
 # Check that second data part move is ended successfully if first attempt was failed.

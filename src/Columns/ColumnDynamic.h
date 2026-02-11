@@ -5,8 +5,8 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/WeakHash.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 
 namespace DB

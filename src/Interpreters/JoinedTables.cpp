@@ -218,7 +218,19 @@ StoragePtr JoinedTables::getLeftTableStorage()
         return {};
 
     if (isLeftTableFunction())
-        return context->getQueryContext()->executeTableFunction(left_table_expression, &select_query);
+    {
+        /// For parameterized views in refreshable materialized views, use the current context's database
+        /// instead of the query context's database. This ensures unqualified parameterized view
+        /// references resolve in the correct database (MV's database, not session's database).
+        auto table_function_context = context->getQueryContext();
+        if (is_create_parameterized_view)
+        {
+            /// Temporarily set the current database to match the context we're analyzing in
+            table_function_context = Context::createCopy(table_function_context);
+            table_function_context->setCurrentDatabase(context->getCurrentDatabase());
+        }
+        return table_function_context->executeTableFunction(left_table_expression, &select_query);
+    }
 
     StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)

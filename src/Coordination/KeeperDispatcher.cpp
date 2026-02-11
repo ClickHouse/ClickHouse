@@ -979,7 +979,7 @@ void KeeperDispatcher::clusterUpdateThread()
             LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
 
             std::this_thread::sleep_for(last_command_was_leader_change
-                ? configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms]
+                ? std::chrono::milliseconds(configuration_and_settings->coordination_settings[CoordinationSetting::sleep_before_leader_change_ms].totalMilliseconds())
                 : 50ms);
         }
     }

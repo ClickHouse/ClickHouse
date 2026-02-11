@@ -1,3 +1,4 @@
+#include <memory>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 
 #if USE_AWS_S3
@@ -24,6 +25,8 @@
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskLocal.h>
+#include <Interpreters/StorageID.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -89,17 +92,18 @@ std::unique_ptr<S3::Client> getClient(
     const S3Settings & settings,
     ContextPtr context,
     bool for_disk_s3,
-    std::optional<std::string> opt_disk_name)
+    std::optional<std::string> opt_disk_name,
+    std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
 
 {
     auto url = S3::URI(endpoint);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
-    return getClient(url, settings, context, for_disk_s3, opt_disk_name);
+    return getClient(url, settings, context, for_disk_s3, opt_disk_name, refresh_credentials_callback);
 }
 
 std::unique_ptr<S3::Client>
-getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name)
+getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name, std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
 {
     const auto & auth_settings = settings.auth_settings;
     const auto & server_settings = context->getGlobalContext()->getServerSettings();
@@ -198,16 +202,32 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         /*sts_endpoint_override=*/""
     };
 
+    String access_key_id = auth_settings[S3AuthSetting::access_key_id];
+    String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
+    String session_token = auth_settings[S3AuthSetting::session_token];
+
+    if (refresh_credentials_callback)
+    {
+        auto updated_credentials = (*refresh_credentials_callback)();
+        if (updated_credentials)
+        {
+            auto s3_updated_credentials = std::static_pointer_cast<DataLake::S3Credentials>(updated_credentials);
+            access_key_id = s3_updated_credentials->getAccessKeyId();
+            secret_access_key = s3_updated_credentials->getSecretAccessKey();
+            session_token = s3_updated_credentials->getSessionToken();
+            LOG_DEBUG(getLogger("getClient"), "Got new access tokens {} {} {}", access_key_id, secret_access_key, session_token);
+        }
+    }
     return S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
-        auth_settings[S3AuthSetting::access_key_id],
-        auth_settings[S3AuthSetting::secret_access_key],
+        access_key_id,
+        secret_access_key,
         auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
         auth_settings.server_side_encryption_kms_config,
         auth_settings.getHeaders(),
         credentials_configuration,
-        auth_settings[S3AuthSetting::session_token]);
+        session_token);
 }
 
 }

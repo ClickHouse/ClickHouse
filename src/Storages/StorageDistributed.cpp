@@ -1431,6 +1431,9 @@ void StorageDistributed::initializeFromDisk()
 
     const auto & disks = data_volume->getDisks();
 
+    const auto & paths = getDataPaths();
+    std::vector<UInt64> last_increment(paths.size());
+
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_INIT);
@@ -1444,10 +1447,9 @@ void StorageDistributed::initializeFromDisk()
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    const auto & paths = getDataPaths();
-    std::vector<UInt64> last_increment(paths.size());
     for (size_t i = 0; i < paths.size(); ++i)
     {
+        /// Passing paths and last_increment are reference is fine since they are created before runner and will outlive it
         runner.enqueueAndKeepTrack([&paths, &last_increment, i]
         {
             last_increment[i] = getMaximumFileNumber(paths[i]);
@@ -1903,6 +1905,7 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
         for (const auto & node : directory_queues)
         {
+            /// Passing settings_changes as reference is fine since it will outlive the runner
             runner.enqueueAndKeepTrack([node_to_flush = node, &settings_changes]
             {
                 node_to_flush->flushAllData(settings_changes);

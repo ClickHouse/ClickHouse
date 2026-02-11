@@ -4,8 +4,8 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Common/Logger.h>
 #include <Common/ErrorCodes.h>
-
 #include <Common/logger_useful.h>
+#include <Core/SettingsEnums.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -106,18 +106,24 @@ void SelectPartitionTransform::transform(Chunk & chunk)
 }
 
 
-AddDeduplicationInfoTransform::AddDeduplicationInfoTransform(SharedHeader header_)
+AddDeduplicationInfoTransform::AddDeduplicationInfoTransform(
+    SharedHeader header_)
     : ISimpleTransform(header_, header_, true)
 {
 }
 
 
 AddDeduplicationInfoTransform::AddDeduplicationInfoTransform(
-    InsertDependenciesBuilderConstPtr insert_dependencies_, StorageIDMaybeEmpty root_view_id_, std::string user_token_, SharedHeader header_)
+    InsertDependenciesBuilderConstPtr insert_dependencies_,
+    StorageIDMaybeEmpty root_view_id_,
+    std::string user_token_,
+    InsertDeduplicationVersions unification_stage_,
+    SharedHeader header_)
     : ISimpleTransform(header_, header_, true)
     , insert_dependencies(std::move(insert_dependencies_))
     , root_view_id(std::move(root_view_id_))
     , user_token(std::move(user_token_))
+    , unification_stage(unification_stage_)
 {
 }
 
@@ -126,7 +132,7 @@ void AddDeduplicationInfoTransform::transform(Chunk & chunk)
 {
     if (!chunk.getChunkInfos().has<DeduplicationInfo>())
     {
-        auto info = DeduplicationInfo::create(false);
+        auto info = DeduplicationInfo::create(false, unification_stage);
         info->setUserToken(user_token, chunk.getNumRows());
         chunk.getChunkInfos().add(info);
     }

@@ -446,4 +446,8 @@ IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
      {"enable", DeduplicateInsertMode::ENABLE},
      {"disable", DeduplicateInsertMode::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
+    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
+     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
+     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
 }

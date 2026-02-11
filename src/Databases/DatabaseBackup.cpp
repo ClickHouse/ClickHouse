@@ -355,22 +355,26 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseBackupThreads, CurrentMetrics::DatabaseBackupThreadsActive, CurrentMetrics::DatabaseBackupThreadsScheduled);
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
 
-    const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
-
-    for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
-        std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
-            {
-                for (const auto & file : batch)
-                    process_metadata_file(file);
-            },
-            Priority{},
-            getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+        /// Note that we pass batch by value (always fine) and process_metadata_file by reference
+        /// process_metadata_file is ok since a) it outlives runner and b) it captures by reference only things that outlive runner
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
+        const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
+
+        for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
+        {
+            std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
+            runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
+                {
+                    for (const auto & file : batch)
+                        process_metadata_file(file);
+                },
+                Priority{},
+                getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;

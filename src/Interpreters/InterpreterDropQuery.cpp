@@ -580,7 +580,12 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         for (const auto & table_id : tables_to_truncate)
         {
-            runner.enqueueAndKeepTrack([&, table_id]()
+            /// Passing by references here is fine:
+            /// query: Outlives runner
+            /// table_context: Outlives runner
+            /// mutex_for_uuids: Outlives runner
+            /// uuids_to_wait: Outlives runner
+            runner.enqueueAndKeepTrack([this, table_id, &query, &table_context, &mutex_for_uuids, &uuids_to_wait]()
             {
                 // Create a proper AST for a single-table TRUNCATE query.
                 auto sub_query_ptr = make_intrusive<ASTDropQuery>();

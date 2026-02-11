@@ -42,6 +42,21 @@ public:
             engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(session_token));
     }
 
+    const String & getAccessKeyId() const
+    {
+        return access_key_id;
+    }
+
+    const String & getSecretAccessKey() const
+    {
+        return secret_access_key;
+    }
+
+    const String & getSessionToken() const
+    {
+        return session_token;
+    }
+
 private:
     std::string access_key_id;
     std::string secret_access_key;

@@ -652,7 +652,7 @@ namespace ErrorCodes
     Possible values:
     - true, false
     )", false) \
-    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, false, R"(
+    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
     If settings `min_age_to_force_merge_seconds` and
     `min_age_to_force_merge_on_partition_only` should respect setting
     `max_bytes_to_merge_at_max_space_in_pool`.

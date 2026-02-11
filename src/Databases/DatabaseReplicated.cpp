@@ -1732,7 +1732,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     {
         for (const auto & table_id : tables_to_create)
         {
-            auto task = [&]()
+            /// Note that passing references here to runner is fine:
+            /// table_id is part of tables_to_create, which is part of tables_to_create_by_level, which is alive until runner is destroyed
+            /// Same for table_name_to_metadata and make_query_context
+            auto task = [this, &table_id, &table_name_to_metadata, &make_query_context]()
             {
                 auto table_name = table_id.getTableName();
 

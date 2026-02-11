@@ -68,7 +68,7 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
 {
     UInt8 kind;
     readIntBinary(kind, ctx.in);

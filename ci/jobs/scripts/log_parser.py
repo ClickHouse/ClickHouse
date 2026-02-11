@@ -158,7 +158,7 @@ class FuzzerLogParser:
 
         if is_logical_error:
             failed_query = self.get_failed_query()
-            if failed_query:
+            if failed_query and self.fuzzer_log:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
             if format_message and "Inconsistent AST formatting" not in result_name:
                 # Replace {} placeholders with A, B, C, etc. to create a generic error pattern.
@@ -507,7 +507,7 @@ class FuzzerLogParser:
 
         if not (tables or table_files or table_finctions):
             print("WARNING: No tables found in query command")
-            return [failed_query]
+            return [failed_query + ";" if not failed_query.endswith(";") else failed_query]
 
         # Get all write commands for found tables
         commands_to_reproduce = []
@@ -528,6 +528,12 @@ class FuzzerLogParser:
             # Add table drop commands
             for table in tables:
                 commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
+
+        # Ensure all commands end with a semicolon
+        commands_to_reproduce = [
+            cmd + ";" if not cmd.endswith(";") else cmd
+            for cmd in commands_to_reproduce
+        ]
 
         return commands_to_reproduce
 

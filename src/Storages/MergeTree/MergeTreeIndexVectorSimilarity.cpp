@@ -353,13 +353,13 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
         ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
 
     size_t index_size = index->size();
-
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
     for (size_t row = 0; row < rows; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
+        /// Passing add_vector_to_index by reference is safe because it outlives the runner
         runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
     }
 

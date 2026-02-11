@@ -12,6 +12,7 @@ class MergeTreeIndexTextPreprocessor
 {
 public:
     MergeTreeIndexTextPreprocessor(const String & expression, const IndexDescription & index_description);
+    bool hasActions() const { return !expression.getActions().empty(); }
 
     /// Processes n_rows rows of input column, starting at start_row.
     /// The transformation is only applied in the range [start_row, start_row + n_rows)

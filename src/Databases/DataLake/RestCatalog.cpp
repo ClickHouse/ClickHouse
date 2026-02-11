@@ -1,7 +1,9 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Common/Logger.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Databases/DataLake/Common.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -389,30 +391,34 @@ bool RestCatalog::empty() const
 DB::Names RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
-
     DB::Names tables;
     std::mutex mutex;
 
-    auto execute_for_each_namespace = [&](const std::string & current_namespace)
     {
-        runner.enqueueAndKeepTrack(
-        [=, &tables, &mutex, this]
+        /// Ensure tables and mutex (capture by reference) outlive runner
+        DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
+
+        auto execute_for_each_namespace = [&](const std::string & current_namespace)
         {
-            auto tables_in_namespace = getTables(current_namespace);
-            std::lock_guard lock(mutex);
-            std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
-        });
-    };
+            runner.enqueueAndKeepTrack(
+            [=, &tables, &mutex, this]
+            {
+                auto tables_in_namespace = getTables(current_namespace);
+                std::lock_guard lock(mutex);
+                std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
+            });
+        };
 
-    Namespaces namespaces;
-    getNamespacesRecursive(
-        /* base_namespace */"", /// Empty base namespace means starting from root.
-        namespaces,
-        /* stop_condition */{},
-        /* execute_func */execute_for_each_namespace);
+        Namespaces namespaces;
+        getNamespacesRecursive(
+            /* base_namespace */"", /// Empty base namespace means starting from root.
+            namespaces,
+            /* stop_condition */{},
+            /* execute_func */execute_for_each_namespace);
 
-    runner.waitForAllToFinishAndRethrowFirstError();
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
     return tables;
 }
 
@@ -699,64 +705,11 @@ bool RestCatalog::getTableMetadataImpl(
         auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
         if (!config_object)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse config result");
-
-        auto storage_type = parseStorageTypeFromLocation(location);
-        switch (storage_type)
-        {
-            case StorageType::S3:
-            {
-                static constexpr auto access_key_id_str = "s3.access-key-id";
-                static constexpr auto secret_access_key_str = "s3.secret-access-key";
-                static constexpr auto session_token_str = "s3.session-token";
-                static constexpr auto storage_endpoint_str = "s3.endpoint";
-
-                std::string access_key_id;
-                std::string secret_access_key;
-                std::string session_token;
-                std::string storage_endpoint;
-                if (config_object->has(access_key_id_str))
-                    access_key_id = config_object->get(access_key_id_str).extract<String>();
-                if (config_object->has(secret_access_key_str))
-                    secret_access_key = config_object->get(secret_access_key_str).extract<String>();
-                if (config_object->has(session_token_str))
-                    session_token = config_object->get(session_token_str).extract<String>();
-                if (config_object->has(storage_endpoint_str))
-                    storage_endpoint = config_object->get(storage_endpoint_str).extract<String>();
-
-                result.setStorageCredentials(
-                    std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token));
-
-                result.setEndpoint(storage_endpoint);
-                break;
-            }
-            case StorageType::Azure:
-            {
-                /// Azure ADLS Gen2 vended credentials use SAS tokens.
-                /// The config keys follow the pattern: adls.sas-token.<account_name>
-                /// or adls.sas-token.<account_name>.dfs.core.windows.net
-                /// We look for any key starting with "adls.sas-token." and use the first one found.
-                String sas_token;
-                std::vector<std::string> names;
-                config_object->getNames(names);
-                for (const auto & name : names)
-                {
-                    if (name.starts_with("adls.sas-token."))
-                    {
-                        sas_token = config_object->get(name).extract<String>();
-                        LOG_DEBUG(log, "Found Azure SAS token with key: {}", name);
-                        break;
-                    }
-                }
-
-                if (!sas_token.empty())
-                {
-                    result.setStorageCredentials(std::make_shared<AzureCredentials>(sas_token));
-                }
-                break;
-            }
-            default:
-                break;
-        }
+        auto [parsed_credentials, parsed_endpoint] = getCredentialsAndEndpoint(config_object, location);
+        if (parsed_credentials)
+            result.setStorageCredentials(parsed_credentials);
+        if (!parsed_endpoint.empty())
+            result.setEndpoint(parsed_endpoint);
     }
 
     if (result.requiresDataLakeSpecificProperties())
@@ -957,6 +910,111 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     }
 }
 
+std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const
+{
+    auto storage_type = parseStorageTypeFromLocation(location);
+    switch (storage_type)
+    {
+        case StorageType::S3:
+        {
+            static constexpr auto access_key_id_str = "s3.access-key-id";
+            static constexpr auto secret_access_key_str = "s3.secret-access-key";
+            static constexpr auto session_token_str = "s3.session-token";
+            static constexpr auto storage_endpoint_str = "s3.endpoint";
+
+            std::string access_key_id;
+            std::string secret_access_key;
+            std::string session_token;
+            std::string storage_endpoint;
+            if (object->has(access_key_id_str))
+                access_key_id = object->get(access_key_id_str).extract<String>();
+            if (object->has(secret_access_key_str))
+                secret_access_key = object->get(secret_access_key_str).extract<String>();
+            if (object->has(session_token_str))
+                session_token = object->get(session_token_str).extract<String>();
+            if (object->has(storage_endpoint_str))
+                storage_endpoint = object->get(storage_endpoint_str).extract<String>();
+
+            LOG_DEBUG(log, "initial tokens {} {} {}", access_key_id, secret_access_key, session_token);
+            return {std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token), storage_endpoint};
+        }
+        case StorageType::Azure:
+        {
+            /// Azure ADLS Gen2 vended credentials use SAS tokens.
+            /// The config keys follow the pattern: adls.sas-token.<account_name>
+            /// or adls.sas-token.<account_name>.dfs.core.windows.net
+            /// We look for any key starting with "adls.sas-token." and use the first one found.
+            String sas_token;
+            std::vector<std::string> names;
+            object->getNames(names);
+            for (const auto & name : names)
+            {
+                if (name.starts_with("adls.sas-token."))
+                {
+                    sas_token = object->get(name).extract<String>();
+                    LOG_DEBUG(log, "Found Azure SAS token with key: {}", name);
+                    break;
+                }
+            }
+
+            if (!sas_token.empty())
+            {
+                return {std::make_shared<AzureCredentials>(sas_token), ""};
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    return {nullptr, ""};
+}
+
+ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
+{
+    return [this, storage_id] () -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update credentials in the catalog");
+
+        DB::HTTPHeaderEntries headers;
+        headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+
+        const auto & table = storage_id.getTableName();
+        auto [namespace_name, table_name] = DataLake::parseTableName(table);
+        const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
+        auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
+
+        if (buf->eof())
+        {
+            LOG_DEBUG(log, "Table doesn't exist (endpoint: {})", endpoint);
+            return nullptr;
+        }
+
+        String json_str;
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+        LOG_DEBUG(log, "Receiving table metadata {} {}", table_name, json_str);
+
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var json = parser.parse(json_str);
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
+        std::string location;
+        {
+            if (object->has("metadata-location"))
+            {
+                location = object->get("metadata-location").extract<String>();
+                LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
+            }
+            else
+            {
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot read table {}, because no 'location' in response", table_name);
+            }
+        }
+
+        auto [new_credentials, _] = getCredentialsAndEndpoint(config_object, location);
+        return new_credentials;
+    };
+}
 
 }
 

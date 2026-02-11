@@ -1,47 +1,15 @@
 #pragma once
 
-#include <memory>
-#include <Disks/IDiskTransaction.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/IDiskTransaction.h>
+
+#include <memory>
 
 namespace DB
 {
-
-
-/// Basic operation inside disk object storage transaction.
-struct IDiskObjectStorageOperation
-{
-    /// useful for operations with blobs in object storage
-    IObjectStorage & object_storage;
-    /// useful for some read operations
-    IMetadataStorage & metadata_storage;
-public:
-    IDiskObjectStorageOperation(IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_)
-        : object_storage(object_storage_)
-        , metadata_storage(metadata_storage_)
-    {}
-
-    /// Execute operation and something to metadata transaction
-    virtual void execute(MetadataTransactionPtr transaction) = 0;
-    /// Revert operation if possible
-    /// It is called if something went wrong before commit of metadata transaction
-    /// It is called in reverse order of execution of operations for all operations
-    /// even if they were not executed at all
-    virtual void undo(StoredObjects & to_remove) = 0;
-    /// Action to execute after metadata transaction successfully committed.
-    /// Useful when it's impossible to revert operation
-    /// like removal of blobs. Such implementation can lead to garbage.
-    virtual void finalize(StoredObjects & to_remove) = 0;
-    virtual ~IDiskObjectStorageOperation() = default;
-
-    virtual std::string getInfoForLog() const = 0;
-};
-
-using DiskObjectStorageOperation = std::shared_ptr<IDiskObjectStorageOperation>;
-
-using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
-
 
 /// Disk object storage transaction, actually implement some part of disk object storage
 /// logic. Works on top of non atomic operations with blobs and possibly atomic implementation
@@ -50,34 +18,25 @@ using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 /// Commit works like:
 /// 1. Execute all accumulated operations in loop.
 /// 2. Commit metadata transaction.
-/// 3. Finalize all accumulated operations in loop.
-///
-/// If something wrong happen on step 1 or 2 reverts all applied operations.
-/// If finalize failed -- nothing is reverted, garbage is left in blob storage.
 struct DiskObjectStorageTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
 protected:
-    IObjectStorage & object_storage;
-    IMetadataStorage & metadata_storage;
+    const ClusterConfigurationPtr cluster;
+    const MetadataStoragePtr metadata_storage;
+    const ObjectStorageRouterPtr object_storages;
 
     MetadataTransactionPtr metadata_transaction;
-
-    DiskObjectStorageOperations operations_to_execute;
-
-    DiskObjectStorageTransaction(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        MetadataTransactionPtr metadata_transaction_);
-
-    bool is_committed = false;
+    std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
+    std::unordered_map<Location, StoredObjects> written_blobs;
 
 public:
     DiskObjectStorageTransaction(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_);
+        ClusterConfigurationPtr cluster_,
+        MetadataStoragePtr metadata_storage_,
+        ObjectStorageRouterPtr object_storages_);
 
-    void commit(const TransactionCommitOptionsVariant & options) override;
-    void commit() override { commit(NoCommitOptions{}); }
+    void commit() override;
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
     void undo() noexcept override;
 
     void createDirectory(const std::string & path) override;
@@ -129,7 +88,6 @@ public:
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
-    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 private:
     std::unique_ptr<WriteBufferFromFileBase> writeFileImpl( /// NOLINT
         bool autocommit,
@@ -139,16 +97,20 @@ private:
         const WriteSettings & settings);
 };
 
+/// Only needed for S3 server side object copy
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>
 {
-    IObjectStorage & destination_object_storage;
-    IMetadataStorage & destination_metadata_storage;
+    ClusterConfigurationPtr source_cluster;
+    MetadataStoragePtr source_metadata_storage;
+    ObjectStorageRouterPtr source_object_storages;
 
     MultipleDisksObjectStorageTransaction(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        IObjectStorage & destination_object_storage,
-        IMetadataStorage & destination_metadata_storage);
+        ClusterConfigurationPtr source_cluster_,
+        MetadataStoragePtr source_metadata_storage_,
+        ObjectStorageRouterPtr source_object_storages_,
+        ClusterConfigurationPtr destination_cluster_,
+        MetadataStoragePtr destination_metadata_storage_,
+        ObjectStorageRouterPtr destination_object_storages_);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 };

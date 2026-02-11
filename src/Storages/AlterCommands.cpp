@@ -872,10 +872,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
         else
         {
+            /// For refreshable materialized views, allow parameterized views in the query.
+            /// This prevents the old analyzer from trying to execute table functions during analysis.
             as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
                 context,
                 false /* is_subquery */,
-                false);
+                metadata.refresh != nullptr /* is_create_parameterized_view */);
         }
 
         metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());

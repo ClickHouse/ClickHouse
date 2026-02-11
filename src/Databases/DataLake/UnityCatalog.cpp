@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Databases/DataLake/StorageCredentials.h>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -439,6 +440,30 @@ UnityCatalog::UnityCatalog(
     , auth_header("Authorization", "Bearer " + catalog_credential_)
 {
 }
+
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID &)
+{
+    return [this] () -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update credentials in the catalog");
+
+        auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, {});
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+        if (hasValueAndItsNotNone("aws_temp_credentials", object))
+        {
+            const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
+            std::string access_key_id = creds_object->get("access_key_id").extract<String>();
+            std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
+            std::string session_token = creds_object->get("session_token").extract<String>();
+
+            auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
+            return creds;
+        }
+        return nullptr;
+    };
+}
+
 
 }
 

@@ -81,7 +81,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE),
+        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,

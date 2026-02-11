@@ -66,20 +66,20 @@ VirtualColumnsDescription IStorage::createCommonVirtuals()
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
+    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const
 {
-    auto lock_holder = rwlock->getLock(type, query_id, acquire_timeout);
+    auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
     if (!lock_holder)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
             "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
-            type_str, getStorageID(), acquire_timeout.count(), rwlock->getOwnerQueryIdsDescription());
+            type_str, getStorageID(), acquire_timeout.totalMilliseconds(), rwlock->getOwnerQueryIdsDescription());
     }
     return lock_holder;
 }
 
-TableLockHolder IStorage::lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+TableLockHolder IStorage::lockForShare(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
     auto table_id = getStorageID();
@@ -92,7 +92,7 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     return result;
 }
 
-TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+TableLockHolder IStorage::tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
@@ -103,11 +103,11 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
     return result;
 }
 
-std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::chrono::milliseconds & acquire_timeout)
+std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const Poco::Timespan & acquire_timeout)
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
-    if (!lock.try_lock_for(acquire_timeout))
+    if (!lock.try_lock_for(std::chrono::milliseconds(acquire_timeout.totalMilliseconds())))
         return {};
 
     if (is_dropped || is_detached)
@@ -116,19 +116,19 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
     return lock;
 }
 
-IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+IStorage::AlterLockHolder IStorage::lockForAlter(const Poco::Timespan & acquire_timeout)
 {
     auto lock = tryLockForAlter(acquire_timeout);
     if (lock == std::nullopt)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
                         "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), acquire_timeout.count());
+                        getStorageID().getFullTableName(), acquire_timeout.totalMilliseconds());
     return std::move(*lock);
 }
 
 
-TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
     TableExclusiveLockHolder result;
     result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);

@@ -970,7 +970,7 @@ Pipe StorageLog::createReadingPipe(
 
     /// Converting to subcolumns of Nested is needed for
     /// correct reading of parts of Nested with shared offsets.
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
     auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
     all_columns = Nested::convertToSubcolumns(all_columns);
 
@@ -1282,7 +1282,7 @@ SharedHeader getHeader(
     const StorageSnapshotPtr & storage_snapshot
 )
 {
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
     auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
     all_columns = Nested::convertToSubcolumns(all_columns);
 

@@ -6,8 +6,8 @@
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/NaNUtils.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/iota.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB

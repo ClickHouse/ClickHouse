@@ -204,20 +204,7 @@ dateTrunc(unit, datetime[, timezone])
     FunctionDocumentation::Arguments arguments = {
 {"unit",
 R"(
-The type of interval to truncate the result. `unit` argument is case-insensitive.
-| Unit         | Compatibility                   |
-|--------------|---------------------------------|
-| `nanosecond` | Compatible only with DateTime64 |
-| `microsecond`| Compatible only with DateTime64 |
-| `millisecond`| Compatible only with DateTime64 |
-| `second`     |                                 |
-| `minute`     |                                 |
-| `hour`       |                                 |
-| `day`        |                                 |
-| `week`       |                                 |
-| `month`      |                                 |
-| `quarter`    |                                 |
-| `year`       |                                 |
+The type of interval to truncate the result. Possible values: `nanosecond` (only DateTime64), `microsecond` (only DateTime64), `millisecond` (only DateTime64), `second`, `minute`, `hour`, `day`, `week`, `month`, `quarter`, `year`.
 )", {"String"}},
 {"datetime", "Date and time.", {"Date", "Date32", "DateTime", "DateTime64"}},
 {"timezone", "Optional. Timezone name for the returned datetime. If not specified, the function uses the timezone of the `datetime` parameter.", {"String"}}

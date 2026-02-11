@@ -11,8 +11,8 @@
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
 #include "config.h"

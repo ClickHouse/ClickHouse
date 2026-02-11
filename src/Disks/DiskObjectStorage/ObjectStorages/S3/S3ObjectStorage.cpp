@@ -199,7 +199,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* offset */0,
         /* read_until_position */0,
         read_settings.remote_read_buffer_restrict_seek,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt);
+        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        credentials_refresh_callback);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -466,8 +467,22 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     }
     catch (DB::Exception & e)
     {
-        e.addMessage("while reading " + path);
-        throw;
+        bool updated = false;
+        if (credentials_refresh_callback)
+        {
+            auto new_client = credentials_refresh_callback();
+            if (new_client)
+            {
+                client.set(std::move(new_client));
+                object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+                updated = true;
+            }
+        }
+        if (!updated)
+        {
+            e.addMessage("while reading " + path);
+            throw;
+        }
     }
 
     ObjectMetadata result;
@@ -521,6 +536,21 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
             /// If authentication/permissions error occurs then fallthrough to copy with buffer.
             if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                 throw;
+            else
+            {
+                bool updated = false;
+                if (credentials_refresh_callback)
+                {
+                    auto new_client = credentials_refresh_callback();
+                    if (new_client)
+                    {
+                        updated = true;
+                        client.set(std::move(new_client));
+                    }
+                }
+                if (!updated)
+                    throw;
+            }
             LOG_WARNING(getLogger("S3ObjectStorage"),
                 "S3-server-side copy object from the disk {} to the disk {} can not be performed: {}\n",
                 getName(), dest_s3->getName(), exc.what());

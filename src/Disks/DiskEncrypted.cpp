@@ -443,6 +443,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
     String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
+    chassert(settings.local_fs_buffer_size != 0);
     return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 

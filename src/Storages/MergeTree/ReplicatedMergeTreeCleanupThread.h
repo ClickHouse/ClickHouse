@@ -74,6 +74,7 @@ private:
     /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica. Returns the number of removed mutations
     size_t clearOldMutations();
 
+    NodeCTimeAndVersionCache cached_stats_for_insert_deduplication_hashes;
     NodeCTimeAndVersionCache cached_block_stats_for_sync_inserts;
     NodeCTimeAndVersionCache cached_block_stats_for_async_inserts;
 

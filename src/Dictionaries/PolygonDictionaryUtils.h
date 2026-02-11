@@ -258,22 +258,25 @@ private:
         children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
 
         ThreadPool pool(CurrentMetrics::PolygonDictionaryThreads, CurrentMetrics::PolygonDictionaryThreadsActive, CurrentMetrics::PolygonDictionaryThreadsScheduled, 128);
-        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::POLYGON_DICT_LOAD);
-        for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
         {
-            auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i, x = current_min_x, y = current_min_y]() mutable
+            ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::POLYGON_DICT_LOAD);
+            for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
             {
-                for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; y += y_shift, ++j)
+                /// Capturing by reference is fine, all variables outlive runner
+                auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, depth, i, x = current_min_x, y = current_min_y]() mutable
                 {
-                    children[i * DividedCell<ReturnCell>::kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth);
-                }
-            };
-            if (depth <= kMultiProcessingDepth)
-                runner.enqueueAndKeepTrack(std::move(handle_row));
-            else
-                handle_row();
+                    for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; y += y_shift, ++j)
+                    {
+                        children[i * DividedCell<ReturnCell>::kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth);
+                    }
+                };
+                if (depth <= kMultiProcessingDepth)
+                    runner.enqueueAndKeepTrack(std::move(handle_row));
+                else
+                    handle_row();
+            }
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
-        runner.waitForAllToFinishAndRethrowFirstError();
         return std::make_unique<DividedCell<ReturnCell>>(std::move(children));
     }
 

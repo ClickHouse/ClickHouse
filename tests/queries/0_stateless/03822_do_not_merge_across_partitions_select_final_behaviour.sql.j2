@@ -1,0 +1,62 @@
+-- Tags: long
+-- long: times out in private
+
+{% for do_not_merge in [0, 1] -%}
+{% for automatic_decision in [0, 1] -%}
+
+-- Partition key is subset of the primary key
+create table t_pos(a UInt64, version UInt64) engine = ReplacingMergeTree(version) partition by a order by a;
+
+insert into t_pos values (1, 1), (2, 1), (3, 1);
+insert into t_pos values (1, 2), (2, 2), (3, 2);
+
+optimize table t_pos final;
+system stop merges t_pos;
+
+insert into t_pos values (1, 3), (2, 3), (3, 3);
+
+set max_threads=1;
+
+select '----    do_not_merge: {{ do_not_merge }}    ----    automatic_decision: {{ automatic_decision }}    ----' as separator;
+
+select trim(explain)
+from (
+    explain pipeline
+    select * from t_pos final
+)
+where explain like '%ReplacingSorted%' or explain like '%MergeTreeSelect%'
+settings do_not_merge_across_partitions_select_final = {{ do_not_merge }}, enable_automatic_decision_for_merging_across_partitions_for_final = {{ automatic_decision }};
+
+drop table t_pos;
+
+{%- endfor %}
+{%- endfor %}
+
+{% for do_not_merge in [0, 1] -%}
+{% for automatic_decision in [0, 1] -%}
+
+-- Automatic will not enable optimization
+create table t_neg(a UInt64, version UInt64) engine = ReplacingMergeTree(version) partition by a order by (version);
+
+insert into t_neg values (1, 1), (2, 1), (3, 1);
+insert into t_neg values (1, 2), (2, 2), (3, 2);
+
+optimize table t_neg final;
+system stop merges t_neg;
+
+insert into t_neg values (1, 3), (2, 3), (3, 3);
+
+select '----    do_not_merge: {{ do_not_merge }}    ----    automatic_decision: {{ automatic_decision }}    ----' as separator;
+
+select trim(explain)
+from (
+    explain pipeline
+    select * from t_neg final
+)
+where explain like '%ReplacingSorted%' or explain like '%MergeTreeSelect%'
+settings do_not_merge_across_partitions_select_final = {{ do_not_merge }}, enable_automatic_decision_for_merging_across_partitions_for_final = {{ automatic_decision }};
+
+drop table t_neg;
+
+{%- endfor %}
+{%- endfor %}

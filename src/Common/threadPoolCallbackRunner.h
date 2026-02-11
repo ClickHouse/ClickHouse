@@ -63,9 +63,25 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, T
     return schedule(std::move(task), priority); /// NOLINT
 }
 
-/// NOTE It's still not completely safe.
-/// When creating a runner on stack, you MUST make sure that it's created (and destroyed) before local objects captured by task lambda.
-
+/// ============================================================================
+/// CRITICAL SAFETY WARNING: DO NOT CAPTURE LOCAL VARIABLES BY REFERENCE!
+/// ============================================================================
+///
+/// Even though the destructor calls waitForAllToFinish(), exceptions during
+/// the enqueue loop can cause stack unwinding BEFORE the wait, resulting in
+/// stack-use-after-scope bugs when tasks access destroyed variables.
+///
+/// WRONG:  runner.enqueueAndKeepTrack([&my_lambda, ...] { my_lambda(); });
+/// RIGHT:  runner.enqueueAndKeepTrack([my_lambda, ...] { my_lambda(); });
+///
+/// WRONG:  runner.enqueueAndKeepTrack([&] { ... });  // captures everything by ref!
+/// RIGHT:  runner.enqueueAndKeepTrack([this, var1, var2] { ... });
+///
+/// For mutexes, use shared ownership:
+/// WRONG:  std::mutex m; runner.enqueueAndKeepTrack([&m] { ... });
+/// RIGHT:  auto m = std::make_shared<std::mutex>(); runner.enqueueAndKeepTrack([m] { ... });
+///
+///
 template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
 class ThreadPoolCallbackRunnerLocal final
 {
@@ -162,6 +178,18 @@ public:
         cancelScheduledTasks();
         waitForAllToFinish();
     }
+
+    /// Deleted overload: Catch std::ref() and std::reference_wrapper usage at compile-time
+    template <typename Fn>
+    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(
+        std::reference_wrapper<Fn> callback,
+        Priority priority = {},
+        std::optional<uint64_t> wait_microseconds = {}) = delete;
+    // If you hit this error, you're passing std::ref(lambda) or capturing by reference.
+    // Change [&my_lambda] to [my_lambda] (capture by value).
+    //
+    // Note: This only catches std::reference_wrapper. It does NOT catch all reference
+    // captures (e.g., [&local_var]). Use clang-tidy or code review for complete coverage.
 
     /// Adds a new task to the pool and returns it
     /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent

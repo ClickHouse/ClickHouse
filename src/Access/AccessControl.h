@@ -201,6 +201,10 @@ public:
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
 
+    /// Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).
+    void setImpersonateUserAllowed(bool allow) { allow_impersonate_user = allow; }
+    bool isImpersonateUserAllowed() const { return allow_impersonate_user; }
+
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
 
@@ -296,6 +300,7 @@ private:
     std::atomic_bool allow_beta_tier_settings = true;
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
+    std::atomic_bool allow_impersonate_user = false;
 };
 
 }

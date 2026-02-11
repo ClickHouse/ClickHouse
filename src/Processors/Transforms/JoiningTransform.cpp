@@ -333,14 +333,15 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 void FillingRightJoinSideTransform::work()
 {
     auto & input = inputs.front();
+    auto num_rows = chunk.getNumRows();
     auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (for_totals)
         join->setTotals(block);
     else
     {
-        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, block.rows());
-        stop_reading = !join->addBlockToJoin(block);
+        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
+        stop_reading = !join->addBlockToJoin(block, num_rows, true);
     }
 
     if (input.isFinished() && !join->supportParallelJoin())

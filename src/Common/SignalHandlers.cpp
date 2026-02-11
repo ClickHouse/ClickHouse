@@ -4,6 +4,7 @@
 #include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
+#include <Common/FramePointers.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -35,6 +36,10 @@ extern const int CANNOT_SEND_SIGNAL;
 extern const char * GIT_HASH;
 
 static const std::vector<FramePointers> empty_stack;
+
+/// Current exception stack trace captured in terminate_handler.
+thread_local FramePointers terminate_current_exception_trace;
+thread_local size_t terminate_current_exception_trace_size = 0;
 
 using namespace DB;
 
@@ -119,6 +124,11 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
+#if defined(OS_LINUX)
+    writeBinary(static_cast<UInt8>(terminate_current_exception_trace_size), out);
+    for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
+        writePODBinary(terminate_current_exception_trace[i], out);
+#endif
     out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
@@ -155,9 +165,29 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     std::string log_message;
 
     if (std::current_exception())
-        log_message = "Terminate called for uncaught exception:\n" + getCurrentExceptionMessage(true);
+    {
+        std::string exception_message = getCurrentExceptionMessage(true);
+        log_message = "Terminate called for uncaught exception:\n" + exception_message;
+
+        try
+        {
+            throw;
+        }
+        catch (const std::exception & e)
+        {
+            const auto * stack_trace_frames = e.get_stack_trace_frames();
+            const size_t stack_trace_size = e.get_stack_trace_size();
+            __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+            terminate_current_exception_trace_size = std::min(stack_trace_size, FRAMEPOINTER_CAPACITY);
+            for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
+                terminate_current_exception_trace[i] = stack_trace_frames[i];
+        }
+        catch (...) {} // NOLINT(bugprone-empty-catch)
+    }
     else
+    {
         log_message = "Terminate called without an active exception";
+    }
 
     /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
     /// And the buffer should not be too small because our exception messages can be large.
@@ -330,6 +360,8 @@ void SignalListener::run()
             std::vector<FramePointers> thread_frame_pointers;
             UInt32 thread_num{};
             ThreadStatus * thread_ptr{};
+            FramePointers exception_trace{};
+            UInt8 exception_trace_size{};
 
             readPODBinary(info, in);
             readPODBinary(context, in);
@@ -338,8 +370,13 @@ void SignalListener::run()
             readVectorBinary(thread_frame_pointers, in);
             readBinary(thread_num, in);
             readPODBinary(thread_ptr, in);
+#if defined(OS_LINUX)
+            readBinary(exception_trace_size, in);
+            for (size_t i = 0; i < exception_trace_size; ++i)
+                readPODBinary(exception_trace[i], in);
+#endif
 
-            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
+            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr, exception_trace, exception_trace_size);
         }
     }
 }
@@ -372,7 +409,9 @@ void SignalListener::onFault(
     const StackTrace & stack_trace,
     const std::vector<FramePointers> & thread_frame_pointers,
     UInt32 thread_num,
-    DB::ThreadStatus * thread_ptr) const
+    DB::ThreadStatus * thread_ptr,
+    const FramePointers & exception_trace,
+    size_t exception_trace_size) const
 try
 {
     ThreadStatus thread_status;
@@ -521,7 +560,16 @@ try
 
     /// Write crash to system.crash_log table if available.
     if (collectCrashLog)
-        collectCrashLog(sig, thread_num, query_id, stack_trace);
+    {
+        const std::optional<UInt64> fault_address = getFaultAddress(sig, info);
+        const String fault_access_type = getFaultMemoryAccessType(sig, *context);
+        const String si_code_description = getSignalCodeDescription(sig, info.si_code);
+
+        collectCrashLog(
+            sig, info.si_code, thread_num, query_id, query,
+            stack_trace, fault_address, fault_access_type, si_code_description,
+            exception_trace, exception_trace_size);
+    }
 
     Context::getGlobalContextInstance()->handleCrash();
 

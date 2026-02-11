@@ -1435,7 +1435,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
 
     for (const auto & item : tables_to_drop)
     {
-        auto job = [&, table_iterator = item] ()
+        auto job = [this, table_iterator = item] ()
         {
             try
             {

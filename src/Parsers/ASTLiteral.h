@@ -3,8 +3,6 @@
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTWithAlias.h>
-#include <Common/FieldVisitorDump.h>
-
 
 namespace DB
 {
@@ -12,21 +10,24 @@ namespace DB
 /// Literal (atomic) - number, string, NULL
 class ASTLiteral : public ASTWithAlias
 {
+protected:
+    struct ASTLiteralFlags
+    {
+        using ParentFlags = ASTWithAliasFlags;
+        static constexpr UInt32 RESERVED_BITS = ASTWithAliasFlags::RESERVED_BITS + 1;
+
+        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
+        UInt32 use_legacy_column_name_of_tuple : 1;
+        UInt32 unused : 30;
+    };
+
 public:
     explicit ASTLiteral(Field value_)
         : value(std::move(value_))
     {
     }
 
-    // This methond and the custom_type are only used for Apache Gluten,
-    explicit ASTLiteral(Field value_, DataTypePtr & type_)
-        : value(std::move(value_))
-    {
-        custom_type = type_;
-    }
-
     Field value;
-    DataTypePtr custom_type;
 
     /*
      * The name of the column corresponding to this literal. Only used to
@@ -37,12 +38,18 @@ public:
      */
     String unique_column_name;
 
-    /// For compatibility reasons in distributed queries,
-    /// we may need to use legacy column name for tuple literal.
-    bool use_legacy_column_name_of_tuple = false;
+    void setUseLegacyColumnNameOfTuple(bool _value)
+    {
+        flags<ASTLiteralFlags>().use_legacy_column_name_of_tuple = _value;
+    }
+
+    bool getUseLegacyColumnNameOfTuple() const
+    {
+        return flags<ASTLiteralFlags>().use_legacy_column_name_of_tuple;
+    }
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
+    String getID(char delim) const override;
 
     ASTPtr clone() const override;
 

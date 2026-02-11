@@ -73,6 +73,7 @@ def started_cluster():
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
                 "configs/keeper_retries.xml",
+                "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
             cpu_limit=8
@@ -89,6 +90,7 @@ def started_cluster():
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/remote_servers.xml",
+                "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
         )
@@ -105,6 +107,7 @@ def started_cluster():
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/remote_servers_245.xml",
+                "configs/insert_deduplication.xml",
             ],
             with_installed_binary=True,
         )
@@ -139,6 +142,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/keeper_retries.xml",
+                "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
         )
@@ -158,6 +162,7 @@ def started_cluster():
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
                 "configs/keeper_retries.xml",
+                "configs/insert_deduplication.xml",
             ],
             stay_alive=True,
         )

@@ -67,7 +67,7 @@ void generateManifestList(
     ContextPtr context,
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
-    Int32 manifest_length,
+    Int64 manifest_length,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true);
@@ -106,8 +106,8 @@ private:
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
     KeyDescription sort_description;
-    Int32 total_rows = 0;
-    Int32 total_chunks_size = 0;
+    Int64 total_rows = 0;
+    Int64 total_chunks_size = 0;
 
     void finalizeBuffers();
     void releaseBuffers();

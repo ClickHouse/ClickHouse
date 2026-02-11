@@ -10,7 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 // We start with 128 bins and grow the number of bins by 128

@@ -47,6 +47,29 @@ T checkAndGetLiteralArgument(const ASTLiteral & arg, const String & arg_name)
     return T(arg.value.safeGet<T>());
 }
 
+template <>
+bool checkAndGetLiteralArgument(const ASTLiteral & arg, const String & arg_name)
+{
+    /// Traditionally Bool literals were stored as UInt64 with value 0 or 1, but now we have proper Bool type.
+    if (arg.value.getType() == Field::Types::Which::Bool)
+        return arg.value.safeGet<bool>();
+
+    if (arg.value.getType() == Field::Types::Which::UInt64)
+    {
+        auto value = arg.value.safeGet<UInt64>();
+        return value != 0;
+    }
+
+    auto requested_type = Field::TypeToEnum<NearestFieldType<std::decay_t<bool>>>::value;
+    auto provided_type = arg.value.getType();
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Argument '{}' must be a literal with type {}, got {}",
+        arg_name,
+        fieldTypeToString(requested_type),
+        fieldTypeToString(provided_type));
+}
+
 template <typename T>
 std::optional<T> tryGetLiteralArgument(const ASTPtr & arg, const String & arg_name)
 {

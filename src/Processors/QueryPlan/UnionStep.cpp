@@ -94,7 +94,7 @@ void UnionStep::serialize(Serialization & ctx) const
     (void)ctx;
 }
 
-std::unique_ptr<IQueryPlanStep> UnionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 {
     return std::make_unique<UnionStep>(ctx.input_headers);
 }

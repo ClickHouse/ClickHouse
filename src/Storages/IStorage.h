@@ -325,24 +325,24 @@ private:
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const;
 
 public:
     /// Lock table for share. This lock must be acquired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
-    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableLockHolder lockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);
 
     /// Similar to lockForShare, but returns a nullptr if the table is dropped while
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
-    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableLockHolder tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);
 
     /// Lock table for alter. This lock must be acquired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
-    AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
-    std::optional<AlterLockHolder> tryLockForAlter(const std::chrono::milliseconds & acquire_timeout);
+    AlterLockHolder lockForAlter(const Poco::Timespan & acquire_timeout);
+    std::optional<AlterLockHolder> tryLockForAlter(const Poco::Timespan & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -351,7 +351,7 @@ public:
     ///
     /// NOTE: You have to be 100% sure that you need this lock. It's extremely
     /// heavyweight and makes table irresponsive.
-    TableExclusiveLockHolder lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableExclusiveLockHolder lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout);
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,

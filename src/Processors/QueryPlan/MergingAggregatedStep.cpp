@@ -240,7 +240,7 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "MergingAggregatedStep must have one input stream");

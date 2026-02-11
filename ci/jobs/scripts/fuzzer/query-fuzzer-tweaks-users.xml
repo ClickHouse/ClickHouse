@@ -66,6 +66,7 @@
             <allow_experimental_live_view>1</allow_experimental_live_view>
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
+            <allow_experimental_nullable_tuple_type>1</allow_experimental_nullable_tuple_type>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
             <allow_experimental_shared_set_join>1</allow_experimental_shared_set_join>
             <allow_experimental_statistics>1</allow_experimental_statistics>

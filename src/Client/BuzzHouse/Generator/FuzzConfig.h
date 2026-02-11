@@ -304,6 +304,8 @@ public:
 
     String getRandomIcebergHistoryValue(const String & property);
 
+    String getRandomFileSystemCacheValue();
+
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
     String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);

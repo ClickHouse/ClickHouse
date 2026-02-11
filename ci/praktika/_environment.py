@@ -262,6 +262,26 @@ class _Environment(MetaClasses.Serializable):
         config_job_data = workflow_status_data.get(normalized_job_name, {})
         data_str = config_job_data.get("outputs", {}).get("data", "{}")
         env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
+
+        # Reread instance metadata from the host
+        env_dict["INSTANCE_TYPE"] = (
+            os.getenv("INSTANCE_TYPE", None)
+            or Shell.get_output("ec2metadata --instance-type")
+            or ""
+        )
+        env_dict["INSTANCE_ID"] = (
+            os.getenv("INSTANCE_ID", None)
+            or Shell.get_output("ec2metadata --instance-id")
+            or ""
+        )
+        env_dict["INSTANCE_LIFE_CYCLE"] = (
+            os.getenv("INSTANCE_LIFE_CYCLE", None)
+            or Shell.get_output(
+                "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+            )
+            or ""
+        )
+
         return cls.from_dict(env_dict)
 
     def add_info(self, info):

@@ -20,6 +20,10 @@ if (TARGET ch_contrib::vectorscan)
     target_link_libraries(clickhouse_functions_array PRIVATE ch_contrib::vectorscan)
 endif()
 
+# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
+# TUs where libcxx hardening needs to be disabled are specified here.
+set_source_files_properties(array.cpp PROPERTIES COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_array PRIVATE "-g1")
 endif()

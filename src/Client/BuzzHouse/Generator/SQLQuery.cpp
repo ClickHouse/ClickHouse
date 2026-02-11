@@ -666,7 +666,7 @@ bool StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::Table)] = has_table;
     queryMask[static_cast<size_t>(QueryOp::View)] = this->peer_query != PeerQuery::ClickHouseOnly && has_view;
     queryMask[static_cast<size_t>(QueryOp::RemoteUDF)] = this->allow_engine_udf && can_recurse;
-    /// queryMask[static_cast<size_t>(QueryOp::GenerateSeriesUDF)] = true;
+    /// queryMask[static_cast<size_t>(QueryOp::NumbersUDF)] = true;
     queryMask[static_cast<size_t>(QueryOp::SystemTable)] = this->allow_not_deterministic && !systemTables.empty();
     queryMask[static_cast<size_t>(QueryOp::MergeUDF)] = this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::ClusterUDF)] = this->allow_engine_udf && !fc.clusters.empty() && can_recurse;
@@ -744,18 +744,16 @@ bool StatementGenerator::joinedTableOrFunction(
             }
         }
         break;
-        case QueryOp::GenerateSeriesUDF: {
+        case QueryOp::NumbersUDF: {
             SQLRelation rel(rel_name);
             std::unordered_map<uint32_t, QueryLevel> levels_backup;
             std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
             const uint32_t noption = rg.nextSmallNumber();
             Expr * limit = nullptr;
-            GenerateSeriesFunc * gsf = tof->mutable_tfunc()->mutable_gseries();
-            std::uniform_int_distribution<uint32_t> gsf_range(1, static_cast<uint32_t>(GenerateSeriesFunc_GSName_GSName_MAX));
-            const GenerateSeriesFunc_GSName gname = static_cast<GenerateSeriesFunc_GSName>(gsf_range(rg.generator));
-            const String & cname
-                = gname > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries ? "number" : "generate_series";
-            std::uniform_int_distribution<uint32_t> numbers_range(1, UINT32_C(1000000));
+            NumbersFunc * gsf = tof->mutable_tfunc()->mutable_numbers();
+            std::uniform_int_distribution<uint32_t> gsf_range(1, static_cast<uint32_t>(NumbersFunc_NumbersName_NumbersName_MAX));
+            const NumbersFunc_NumbersName gname = static_cast<NumbersFunc_NumbersName>(gsf_range(rg.generator));
+            std::uniform_int_distribution<uint32_t> numbers_range(1, UINT32_C(100000));
 
             gsf->set_fname(gname);
             for (const auto & [key, val] : this->levels)
@@ -771,7 +769,7 @@ bool StatementGenerator::joinedTableOrFunction(
 
             this->current_level++;
             this->levels[this->current_level] = QueryLevel(this->current_level);
-            if (gname > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries)
+            if (gname > NumbersFunc_NumbersName::NumbersFunc_NumbersName_generateSeries)
             {
                 if (noption < 4)
                 {
@@ -843,7 +841,20 @@ bool StatementGenerator::joinedTableOrFunction(
                 this->ctes[key] = val;
             }
 
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {cname}));
+            switch (gname)
+            {
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_generate_series:
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_generateSeries:
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"generate_series"}));
+                    break;
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_numbers:
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_numbers_mt:
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"number"}));
+                    break;
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_primes:
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"prime"}));
+                    break;
+            }
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;
