@@ -183,7 +183,7 @@ struct CustomizeAggregateFunctionsSuffixData
         const auto & instance = AggregateFunctionFactory::instance();
         if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix) && !endsWith(func.name, customized_func_suffix + "If"))
         {
-            auto properties = instance.tryGetProperties(func.name, func.nulls_action);
+            auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
             if (properties && !properties->returns_default_when_only_null)
             {
                 func.name += customized_func_suffix;
@@ -227,7 +227,7 @@ struct CustomizeAggregateFunctionsMoveSuffixData
         {
             if (endsWith(func.name, customized_func_suffix))
             {
-                auto properties = instance.tryGetProperties(func.name, func.nulls_action);
+                auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
                 if (properties && !properties->returns_default_when_only_null)
                 {
                     func.name = moveSuffixAhead(func.name);
@@ -1173,10 +1173,19 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 source_columns.push_back(*column);
                 it = unknown_required_source_columns.erase(it);
             }
-            else if (auto common_column = common_virtual_columns.tryGet(*it))
+            else if (const auto * common_column_desc = common_virtual_columns.tryGetDescription(*it))
             {
-                source_columns.push_back(*common_column);
-                it = unknown_required_source_columns.erase(it);
+                /// Ephemeral common virtual columns (e.g. `_table`) are only supported
+                /// by the new analyzer which fills them via ExpressionStep.
+                /// The old analyzer has no mechanism to fill them, so skip them here
+                /// to avoid a type mismatch between the header and the actual data.
+                if (!common_column_desc->isEphemeral())
+                {
+                    source_columns.emplace_back(common_column_desc->name, common_column_desc->type);
+                    it = unknown_required_source_columns.erase(it);
+                }
+                else
+                    ++it;
             }
             else
             {
@@ -1328,7 +1337,14 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
+    {
+        Aliases aliases;
+        NameSet name_set;
+
+        normalize(query, aliases, name_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext(), select_options.is_create_parameterized_view);
         renameDuplicatedColumns(select_query);
+    }
+
 
     /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some logic inside JOINs
     if (settings[Setting::optimize_normalize_count_variants])

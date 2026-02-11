@@ -514,7 +514,8 @@ def clickhouse_execute_http(
             if i == max_http_retries - 1:
                 raise ex
             client.close()
-            sleep(i + 1)
+            # Cap sleep time to prevent unbounded delays (max 3 seconds per retry)
+            sleep(min(i + 1, 3))
 
     if res.status != 200:
         raise HTTPError(data.decode(), res.status)
@@ -769,6 +770,7 @@ def get_processlist_size(args):
                     count()
                 FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
+                AND query NOT LIKE '%system.minio_%_logs%'
                 """,
             ).strip()
         )
@@ -781,6 +783,7 @@ def get_processlist_size(args):
                     count()
                 FROM clusterAllReplicas('test_cluster_shared_catalog', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
+                AND query NOT LIKE '%system.minio_%_logs%'
                 """,
             ).strip()
         )
@@ -792,6 +795,7 @@ def get_processlist_size(args):
                     count()
                 FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
+                AND query NOT LIKE '%system.minio_%_logs%'
             """,
         ).strip()
     )
@@ -814,6 +818,7 @@ def get_processlist_with_stacktraces(args):
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
+            AND query NOT LIKE '%system.minio_%_logs%'
             GROUP BY p.*
         ))
         ORDER BY elapsed DESC FORMAT Vertical
@@ -839,6 +844,7 @@ def get_processlist_with_stacktraces(args):
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
+            AND query NOT LIKE '%system.minio_%_logs%'
             GROUP BY p.*
         ))
         ORDER BY elapsed DESC FORMAT Vertical
@@ -860,6 +866,7 @@ def get_processlist_with_stacktraces(args):
         FROM system.processes p
         JOIN system.stack_trace s USING (query_id)
         WHERE query NOT LIKE '%system.processes%'
+        AND query NOT LIKE '%system.minio_%_logs%'
         GROUP BY p.*
         ORDER BY elapsed DESC FORMAT Vertical
         """,
@@ -1214,6 +1221,8 @@ class SettingsRandomizer:
         "filesystem_prefetch_step_bytes": lambda: random.choice(
             [0, "100Mi"]
         ),  # 0 means 'auto'
+        "enable_filesystem_cache": lambda: random.randint(0, 1),
+        "enable_filesystem_cache_on_write_operations": lambda: random.randint(0, 1),
         "compile_expressions": lambda: random.randint(0, 1),
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
@@ -1250,11 +1259,13 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
-        # This setting affect part names and their content which can be read from tables in tests.
+        # This setting affects part names and their content which can be read from tables in tests.
         # We have a lot of tests which relies on part names, so it's very unsafe to enable randomization
         # of this setting
         # "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
         "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
+        "use_page_cache_for_local_disks": lambda: random.random() < 0.3,
+        "use_page_cache_for_object_storage": lambda: random.random() < 0.5,
         "page_cache_inject_eviction": lambda: random.random() < 0.5,
         "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: round(
             random.random(), 2
@@ -1580,6 +1591,7 @@ class TestResult:
             self.status != TestStatus.FAIL
             or not need_retry(args, stdout, stderr, self.total_time)
             or MAX_RETRIES < runs_count
+            or args.dont_retry_failures
         ):
             return
         self.need_retry = True
@@ -2033,7 +2045,8 @@ class TestCase:
         if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
             return FailureReason.ENCRYPTED_STORAGE
 
-        if tags:
+        # Ingore no-{build} tags in stress-tests job
+        if tags and not args.stress_tests:
             for build_flag in args.build_flags:
                 # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
                 # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
@@ -3850,8 +3863,8 @@ def do_run_tests(
 
             if server_died.is_set():
                 print("Server died, terminating all processes...")
-                # Wait for test results
-                sleep(args.timeout)
+                # Wait briefly for test results to be written
+                sleep(5)
                 for p in processes:
                     if p.is_alive():
                         p.terminate()
@@ -4225,6 +4238,7 @@ def main(args):
 
     def create_common_database(args, db_name):
         create_database_retries = 0
+        last_err = None
         while create_database_retries < MAX_RETRIES:
             start_time = datetime.now()
             try:
@@ -4234,21 +4248,25 @@ def main(args):
                     f"{get_db_engine(args, db_name)}",
                     settings=get_create_database_settings(args, None),
                 )
-                break
+                return
             except HTTPError as e:
+                last_err = e
                 total_time = (datetime.now() - start_time).total_seconds()
                 if not need_retry(args, e.message, e.message, total_time):
                     break
             create_database_retries += 1
 
+        if last_err:
+            raise RuntimeError(f"Failed to create database {db_name} after {MAX_RETRIES} attempts") from last_err
     try:
         if args.database and args.database != "test":
             create_common_database(args, args.database)
-
-        create_common_database(args, "test")
+        else:
+            create_common_database(args, "test")
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
+        raise
 
     if (
         args.collect_per_test_coverage
@@ -4868,6 +4886,11 @@ def parse_args():
         help="Enables CI flakiness detection by running new tests multiple times. This mode adds specific checks for the flaky-check job and requires the --test-runs argument.",
     )
     parser.add_argument(
+        "--stress-tests",
+        action="store_true",
+        help="A CI test configuration that runs all possible test combinations without validating results. This is used to bypass specific test restrictions.",
+    )
+    parser.add_argument(
         "--secure",
         action="store_true",
         default=False,
@@ -4977,6 +5000,12 @@ def parse_args():
             "test",
         ],
         help="Changes the CH setting 'send_logs_level'",
+    )
+
+    parser.add_argument(
+        "--dont_retry_failures",
+        action="store_true",
+        help="Do not retry failed tests",
     )
 
     return parser.parse_args()

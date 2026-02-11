@@ -41,12 +41,7 @@ def wait_for_clickhouse_stop(started_node):
 
 
 def test_crash_log_synchronous(started_node):
-    if (
-        started_node.is_built_with_thread_sanitizer()
-        or started_node.is_built_with_address_sanitizer()
-        or started_node.is_built_with_memory_sanitizer()
-    ):
-        pytest.skip("doesn't fit in timeouts for stacktrace generation")
+    started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
 
     crashes_count = 0
     for signal in ["SEGV", "4"]:
@@ -61,14 +56,43 @@ def test_crash_log_synchronous(started_node):
         )
 
 
-def test_pkill_query_log(started_node):
-    if (
-        started_node.is_built_with_thread_sanitizer()
-        or started_node.is_built_with_address_sanitizer()
-        or started_node.is_built_with_memory_sanitizer()
-    ):
-        pytest.skip("doesn't fit in timeouts for stacktrace generation")
+@pytest.mark.parametrize(
+    "failpoint, trace_column",
+    [
+        ("terminate_with_exception", "current_exception_trace_full"),
+        ("terminate_with_std_exception", "current_exception_trace_full"),
+        ("terminate_with_exception", "trace_full"),
+        ("terminate_with_std_exception", "trace_full"),
+        ("libcxx_hardening_out_of_bounds_assertion", "trace_full"),
+    ]
+)
+def test_crash_log_extra_fields(started_node, failpoint, trace_column):
+    started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
+    started_node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    started_node.query("SELECT 1", ignore_error=True)
+    wait_for_clickhouse_stop(started_node)
+    started_node.restart_clickhouse()
 
+    assert started_node.query(
+        f"""
+        SELECT
+            count()
+        FROM system.crash_log
+        WHERE 1
+            AND signal = 6
+            AND signal_code = -6 -- SI_TKILL
+            AND signal_description = 'Sent by tkill.'
+            AND fault_access_type = ''
+            AND fault_address IS NULL
+            AND arrayExists(x -> x LIKE '%executeQuery%', {trace_column})
+            AND query = 'SELECT 1'
+            AND length(git_hash) > 0
+            AND length(architecture) > 0
+        """
+    ).strip() == "1"
+
+
+def test_pkill_query_log(started_node):
     for signal in ["SEGV", "4"]:
         # force create query_log if it was not created
         started_node.query("SYSTEM FLUSH LOGS")

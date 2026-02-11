@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/StaticString.h>
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <vector>
@@ -66,6 +67,7 @@ struct ZooKeeperRequest : virtual Request
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
 
     virtual OpNum getOpNum() const = 0;
+    virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
 
     /// Writes length, xid, op_num, then the rest.
     void write(WriteBuffer & out, bool use_xid_64) const;
@@ -879,5 +881,28 @@ std::string_view parentNodePath(std::string_view path);
 
 std::string_view getBaseNodeName(std::string_view path);
 
+/// RAII guard for setting component name in thread-local storage
+class ComponentGuard
+{
+public:
+    explicit ComponentGuard(StaticString component);
+    ~ComponentGuard();
+
+    ComponentGuard(const ComponentGuard &) = delete;
+    ComponentGuard & operator=(const ComponentGuard &) = delete;
+    ComponentGuard(ComponentGuard &&) = delete;
+    ComponentGuard & operator=(ComponentGuard &&) = delete;
+
+private:
+    StaticString previous_component;
+};
+
+/// Sets component name (must be a compile-time string literal) and returns RAII guard
+[[nodiscard]] inline ComponentGuard setCurrentComponent(StaticString component)
+{
+    return ComponentGuard(component);
+}
+
+StaticString getCurrentComponent();
 
 }

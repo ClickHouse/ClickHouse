@@ -682,6 +682,9 @@ void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
 
 void ColumnAggregateFunction::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     size_t size = data.size();
     size_t new_size = size - n;
 
@@ -698,7 +701,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (size == 0)
+    if (size == 0 || offsets.back() == 0)
         return cloneEmpty();
 
     auto res = createView();

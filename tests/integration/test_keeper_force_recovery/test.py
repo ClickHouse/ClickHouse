@@ -1,7 +1,9 @@
 import os
+import socket
 import time
 
 import pytest
+from kazoo.client import KazooClient, KazooRetry
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -47,7 +49,15 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181",
+        timeout=timeout,
+        connection_retry=KazooRetry(max_tries=10),
+        command_retry=KazooRetry(max_tries=10),
+    )
+
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 def wait_and_assert_data(zk, path, data):
@@ -61,14 +71,89 @@ def close_zk(zk):
     zk.close()
 
 
+def wait_nodes_with_retries(cluster, nodes, timeout=120):
+    """
+    Wait for Keeper nodes to be ready, handling ConnectionRefusedError.
+    This is needed because wait_until_connected doesn't handle the case
+    where the server isn't listening yet.
+    """
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            keeper_utils.wait_nodes(cluster, nodes)
+            return
+        except (ConnectionRefusedError, OSError) as e:
+            # Server not listening yet, retry
+            time.sleep(1)
+    raise Exception(f"Timeout waiting for Keeper nodes to be ready after {timeout}s")
+
+
+def reset_cluster_for_next_iteration():
+    """
+    Reset cluster to initial state for repeated test runs.
+    This is needed because the test modifies Keeper cluster membership via force recovery.
+    """
+    # Check if node 6 has a Keeper config (it only has one after the test runs)
+    result = nodes[CLUSTER_SIZE].exec_in_container(
+        ["bash", "-c", f"test -f /etc/clickhouse-server/config.d/enable_keeper{CLUSTER_SIZE+1}.xml && echo yes || echo no"],
+        nothrow=True,
+    )
+    if result.strip() != "yes":
+        return  # Cluster is in initial state, no reset needed
+
+    # Force kill all ClickHouse processes (use kill=True for faster shutdown with TSAN)
+    for node in nodes:
+        node.stop_clickhouse(kill=True)
+
+    # Clear coordination data on all nodes to reset Raft state
+    for node in nodes:
+        node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination"])
+
+    # Remove Keeper configs from nodes 6-8
+    for i in range(CLUSTER_SIZE, len(nodes)):
+        nodes[i].exec_in_container(
+            ["rm", "-f", f"/etc/clickhouse-server/config.d/enable_keeper{i+1}.xml"],
+            nothrow=True,
+        )
+
+    # Restore node 1's original Keeper config
+    nodes[0].copy_file_to_container(
+        os.path.join(CONFIG_DIR, "enable_keeper1.xml"),
+        "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+    )
+
+    # Start nodes 1-5 without waiting (they need to start together to form quorum)
+    for node in nodes[:CLUSTER_SIZE]:
+        node.exec_in_container(
+            ["bash", "-c", node.clickhouse_start_command],
+            detach=True,
+        )
+
+    # Wait for ClickHouse processes to actually be running before checking Keeper
+    for node in nodes[:CLUSTER_SIZE]:
+        for _ in range(120):  # 120 seconds timeout
+            if node.get_process_pid("clickhouse") is not None:
+                break
+            time.sleep(1)
+        else:
+            raise Exception(f"ClickHouse process did not start on {node.name}")
+
+    # Wait for the Keeper cluster to form and become ready (with retry for connection refused)
+    wait_nodes_with_retries(cluster, nodes[:CLUSTER_SIZE])
+
+
 def test_cluster_recovery(started_cluster):
     node_zks = []
     try:
+        # Reset cluster state if this is a repeated test run (flaky test checker runs this 10 times)
+        reset_cluster_for_next_iteration()
+
         # initial cluster of `cluster_size` nodes
         for node in nodes[CLUSTER_SIZE:]:
             node.stop_clickhouse()
 
-        keeper_utils.wait_nodes(cluster, nodes[:CLUSTER_SIZE])
+        # Use retry wrapper in case Keeper is still starting after reset
+        wait_nodes_with_retries(cluster, nodes[:CLUSTER_SIZE])
 
         node_zks = [get_fake_zk(node.name) for node in nodes[:CLUSTER_SIZE]]
 

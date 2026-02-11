@@ -5,6 +5,8 @@
 
 #include <base/types.h>
 
+#include <map>
+
 namespace DB
 {
 

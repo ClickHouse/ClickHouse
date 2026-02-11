@@ -205,6 +205,8 @@ void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
 
     if (need_seek && *new_in_position < *in_position) /// Seek backward.
         do_seek();
+    else if (need_seek && *new_in_position == *in_position) /// No seek needed.
+        need_seek = false;
 
     if (need_set_read_until_position)
     {
@@ -217,6 +219,14 @@ void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
 
     if (need_seek && *new_in_position > *in_position) /// Seek forward.
         do_seek();
+
+    chassert(!need_seek, "ReadBufferFromEncryptedFile invariant violation: `need_seek` must be reset");
+    chassert(!need_set_read_until_position, "ReadBufferFromEncryptedFile invariant violation: `need_set_read_until_position` must be reset");
+    if (read_until_position)
+        chassert(offset <= *read_until_position, "ReadBufferFromEncryptedFile invariant violation: offset must be <= `read_until_position`");
+    chassert(
+        in->getPosition() == static_cast<off_t>(offset + FileEncryption::Header::kSize),
+        "ReadBufferFromEncryptedFile invariant violation: inner buffer position must match encrypted offset");
 }
 
 void ReadBufferFromEncryptedFile::prefetch(Priority priority)

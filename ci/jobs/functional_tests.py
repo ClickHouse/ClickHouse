@@ -154,9 +154,7 @@ def main():
             batch_num, total_batches = map(int, to.split("/"))
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             pass
-        elif (
-            to.startswith("amd_") or to.startswith("arm_")
-        ):
+        elif to.startswith("amd_") or to.startswith("arm_"):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             pass
@@ -244,10 +242,12 @@ def main():
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-        os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+        azure_connection_string = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
+            strict=True,
         )
+        os.environ["AZURE_CONNECTION_STRING"] = azure_connection_string
     else:
         print("Disable azure for a local run")
         config_installs_args += " --no-azure"
@@ -566,11 +566,17 @@ def main():
 
     if JobStages.RETRIES in stages and test_result and test_result.is_failure():
         # retry all failed tests and mark original failed either as success on retry or failed on retry
-        failed_tests = [
-            t.name
-            for t in test_result.results
-            if t.is_failure() and t.name and t.name[0].isdigit()
-        ]
+        failed_tests = []
+        for t in test_result.results:
+            if t.is_failure() and t.name and t.name[0].isdigit():
+                failed_tests.append(t.name)
+            elif t.is_error():
+                failed_tests = []
+                print(
+                    "NOTE: Skipping retry stage because the main test run ended with errors"
+                )
+                break
+
         if len(failed_tests) > 10:
             results.append(
                 Result(
@@ -600,7 +606,15 @@ def main():
             if success_after_rerun or failed_after_rerun:
                 for test_case in test_result.results:
                     if test_case.name in success_after_rerun:
-                        test_case.set_label(Result.Label.OK_ON_RETRY)
+                        if is_llvm_coverage:
+                            print(
+                                f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
+                            )
+                            test_case.remove_label(Result.Status.FAILED)
+                            test_case.remove_label(Result.StatusExtended.FAIL)
+                            test_case.set_status(Result.StatusExtended.OK)
+                        else:
+                            test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
@@ -717,8 +731,12 @@ def main():
 
     if is_llvm_coverage:
         print("Collecting and merging LLVM coverage files...")
-        Shell.get_output("pwd", verbose=True).strip().split('\n')
-        profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
+        Shell.get_output("pwd", verbose=True).strip().split("\n")
+        profraw_files = (
+            Shell.get_output("find . -name '*.profraw'", verbose=True)
+            .strip()
+            .split("\n")
+        )
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
 
         if profraw_files:
@@ -749,9 +767,16 @@ def main():
                 merge_output = Shell.get_output(merge_cmd, verbose=True)
 
                 # Check for corrupted files in the output
-                corrupted_files = [line for line in merge_output.split('\n') if 'invalid instrumentation profile' in line or 'file header is corrupt' in line]
+                corrupted_files = [
+                    line
+                    for line in merge_output.split("\n")
+                    if "invalid instrumentation profile" in line
+                    or "file header is corrupt" in line
+                ]
                 if corrupted_files:
-                    print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
+                    print(
+                        f"WARNING: Found {len(corrupted_files)} corrupted profraw files:"
+                    )
                     for corrupted in corrupted_files:
                         print(f"  {corrupted}")
 

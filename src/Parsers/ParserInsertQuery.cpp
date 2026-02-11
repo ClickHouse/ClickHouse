@@ -112,6 +112,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    Pos before_lparen = pos;
+
     /// Is there a list of columns
     if (s_lparen.ignore(pos, expected))
     {
@@ -121,8 +123,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Optional trailing comma
         ParserToken(TokenType::Comma).ignore(pos);
 
+        /// If this fails, we want to rewind to before the lparen so we can later check for (SELECT ...)
         if (!s_rparen.ignore(pos, expected))
-            return false;
+        {
+            columns.reset();
+            pos = before_lparen;
+        }
     }
 
     /// Check if file is a source of data.

@@ -2,14 +2,11 @@ import logging
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
-from minio.deleteobjects import DeleteObject
+from helpers.blobs import wait_blobs_count_synchronization
 
 cluster = ClickHouseCluster(__file__)
-
-TABLE_NAME = "test"
 
 
 @pytest.fixture(scope="module")
@@ -61,31 +58,16 @@ def start_cluster():
         cluster.shutdown()
 
 
-def remove_minio_objects(minio, path: str):
-    retry_count = 3
-    remaining_files = map(
-        lambda x: DeleteObject(x.object_name),
-        minio.list_objects(cluster.minio_bucket, path, recursive=True),
-    )
-    while len(list(remaining_files)) > 0 and retry_count > 0:
-        errors = minio.remove_objects(cluster.minio_bucket, remaining_files)
-        for error in errors:
-            logging.error(f"error occurred when deleting minio object: {error}")
-
-        remaining_files = map(
-            lambda x: DeleteObject(x.object_name),
-            minio.list_objects(cluster.minio_bucket, path, recursive=True),
-        )
-        retry_count -= 1
-    assert len(list(remaining_files)) == 0, remaining_files
-
-
 def test_merge_tree_disk_setting(start_cluster):
+    TABLE_NAME = "test_merge_tree_disk_setting"
     node1 = cluster.instances["node1"]
+    minio = cluster.minio_client
+
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
 
     node1.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -93,7 +75,6 @@ def test_merge_tree_disk_setting(start_cluster):
     """
     )
 
-    minio = cluster.minio_client
     count = len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
 
     node1.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
@@ -105,7 +86,6 @@ def test_merge_tree_disk_setting(start_cluster):
 
     node1.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME}_2;
         CREATE TABLE {TABLE_NAME}_2 (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -159,14 +139,19 @@ def test_merge_tree_disk_setting(start_cluster):
     node1.query(f"DROP TABLE {TABLE_NAME} SYNC")
     node1.query(f"DROP TABLE {TABLE_NAME}_2 SYNC")
 
-    remove_minio_objects(minio, "data/")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
 
 
 def test_merge_tree_custom_disk_setting(start_cluster):
+    TABLE_NAME = "test_merge_tree_custom_disk_setting"
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
-
+    minio = cluster.minio_client
     zk_client = start_cluster.get_kazoo_client("zoo1")
+
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
 
     if not zk_client.exists("/minio"):
         zk_client.create("/minio")
@@ -176,7 +161,6 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     zk_client.set("/minio/access_key_id", b"minio")
     node1.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -191,7 +175,6 @@ def test_merge_tree_custom_disk_setting(start_cluster):
 
     # Check that data was indeed created on s3 with the needed path in s3
 
-    minio = cluster.minio_client
     count = len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
 
     node1.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
@@ -205,7 +188,6 @@ def test_merge_tree_custom_disk_setting(start_cluster):
 
     node1.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME}_2;
         CREATE TABLE {TABLE_NAME}_2 (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -228,11 +210,8 @@ def test_merge_tree_custom_disk_setting(start_cluster):
 
     # Check that data for a disk with a different path was created on the different path
 
-    remove_minio_objects(minio, "data2/")
-
     node1.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME}_3;
         CREATE TABLE {TABLE_NAME}_3 (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -292,7 +271,6 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     replica = "{replica}"
     node1.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME}_4;
         CREATE TABLE {TABLE_NAME}_4 ON CLUSTER 'cluster' (a Int32)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')
         ORDER BY tuple()
@@ -345,16 +323,20 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     node1.query(f"DROP TABLE {TABLE_NAME}_4 SYNC")
     node2.query(f"DROP TABLE {TABLE_NAME}_4 SYNC")
 
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
 
 def test_merge_tree_nested_custom_disk_setting(start_cluster):
+    TABLE_NAME = "test_merge_tree_nested_custom_disk_setting"
     node = cluster.instances["node1"]
-
     minio = cluster.minio_client
-    remove_minio_objects(minio, "data/")
+
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
 
     node.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree() order by tuple()
         SETTINGS disk = disk(
@@ -393,14 +375,22 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
     assert expected.strip() in node.query(f"SHOW CREATE TABLE {TABLE_NAME}").strip()
     node.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
 
 def test_merge_tree_setting_override(start_cluster):
+    TABLE_NAME = "test_merge_tree_setting_override"
     node = cluster.instances["node3"]
+    minio = cluster.minio_client
+
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
     assert (
         "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
         in node.query_and_get_error(
             f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -413,7 +403,6 @@ def test_merge_tree_setting_override(start_cluster):
         "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
         in node.query_and_get_error(
             f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -423,11 +412,14 @@ def test_merge_tree_setting_override(start_cluster):
         )
     )
 
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
     assert (
         "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
         in node.query_and_get_error(
             f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -437,11 +429,14 @@ def test_merge_tree_setting_override(start_cluster):
         )
     )
 
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
     assert (
         "New storage policy `local` shall contain volumes of the old storage policy `s3`"
         in node.query_and_get_error(
             f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -451,12 +446,15 @@ def test_merge_tree_setting_override(start_cluster):
         )
     )
 
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
     # Using default policy so storage_policy and disk are not set at the same time
     assert (
         "New storage policy `__disk_local` shall contain disks of the old storage policy `hybrid`"
         in node.query_and_get_error(
             f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple();
@@ -465,9 +463,12 @@ def test_merge_tree_setting_override(start_cluster):
         )
     )
 
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
     assert "Unknown storage policy" in node.query_and_get_error(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -477,7 +478,6 @@ def test_merge_tree_setting_override(start_cluster):
 
     assert "Unknown disk" in node.query_and_get_error(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -487,7 +487,6 @@ def test_merge_tree_setting_override(start_cluster):
 
     node.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -500,16 +499,18 @@ def test_merge_tree_setting_override(start_cluster):
     """
     )
 
-    minio = cluster.minio_client
     node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
     assert int(node.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
     )
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
 
     node.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
@@ -525,6 +526,10 @@ def test_merge_tree_setting_override(start_cluster):
     )
     node.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
+
 @pytest.mark.parametrize("use_node", ["node1", "node2"])
 def test_merge_tree_custom_encrypted_disk_include(start_cluster, use_node):
     """Test that encrypted disk configuration works with include parameter.
@@ -534,11 +539,15 @@ def test_merge_tree_custom_encrypted_disk_include(start_cluster, use_node):
     - The include mechanism correctly merges encryption keys into the disk config
     - Data can be successfully encrypted and decrypted using the included keys
     """
+    TABLE_NAME = f"test_merge_tree_custom_encrypted_disk_include_{use_node}"
     node = cluster.instances[use_node]
+    minio = cluster.minio_client
+
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
 
     node.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME}_encrypted;
         CREATE TABLE {TABLE_NAME}_encrypted (
             id Int32,
             data String
@@ -568,9 +577,10 @@ def test_merge_tree_custom_encrypted_disk_include(start_cluster, use_node):
     result = node.query(f"SELECT data FROM {TABLE_NAME}_encrypted WHERE id = 1")
     assert result.strip() == "test_data"
 
-    minio = cluster.minio_client
     s3_objects = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
     assert len(s3_objects) > 0, "Data should be written to S3"
 
     node.query(f"DROP TABLE {TABLE_NAME}_encrypted SYNC")
-    remove_minio_objects(minio, "data/")
+
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
+    wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")

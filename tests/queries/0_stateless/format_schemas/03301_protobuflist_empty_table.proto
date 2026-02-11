@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+message Envelope {
+    message Message {
+        int32 c0 = 1;
+    }
+    repeated Message message = 1;
+}
+
+// same as wrapped in Envelope, used for verification
+message Message {
+    int32 c0 = 1;
+}

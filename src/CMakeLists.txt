@@ -113,8 +113,10 @@ add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhous
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/DiskObjectStorage)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/Replication)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Cache)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Local)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Plain)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable)
@@ -334,6 +336,15 @@ add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Alg
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
+
+# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
+# TUs where libcxx hardening needs to be disabled are specified here.
+set_property(SOURCE
+    Columns/IColumn.cpp                        # hashjoin_with_large_output
+    Processors/Transforms/WindowTransform.cpp  # window functions
+    Interpreters/Aggregator.cpp                # destroy_aggregate_states
+    Common/IntervalTree.cpp                    # range_hashed_dictionary
+    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
@@ -752,7 +763,7 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
-    
+
     if (TARGET ch_contrib::simdcomp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdcomp)
     endif()

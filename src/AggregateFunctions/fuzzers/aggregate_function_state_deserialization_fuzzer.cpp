@@ -43,9 +43,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     try
     {
         total_memory_tracker.resetCounters();
-        total_memory_tracker.setHardLimit(1_GiB);
+        total_memory_tracker.setHardLimit(128_MiB);
         CurrentThread::get().memory_tracker.resetCounters();
-        CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
+        CurrentThread::get().memory_tracker.setHardLimit(128_MiB);
 
         /// The input format is as follows:
         /// - the aggregate function name on the first line, possible with parameters, then data types of the arguments,
