@@ -290,7 +290,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
 
     for (size_t i = 0; i < pool_size; ++i)
         queue_shards[i].busy_timeout_ms
-            = std::min(Milliseconds(settings[Setting::async_insert_busy_timeout_min_ms]), Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms]));
+            = std::min(Milliseconds(settings[Setting::async_insert_busy_timeout_min_ms].totalMilliseconds()), Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds()));
 
     for (size_t i = 0; i < pool_size; ++i)
         dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
@@ -566,7 +566,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !shard.last_insert_time || !flush_time_points.first)
                 return false;
 
-            auto max_ms = Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms]);
+            auto max_ms = Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds());
             return *shard.last_insert_time + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
         };
 
@@ -629,10 +629,10 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
     std::chrono::steady_clock::time_point now) const
 {
     if (!settings[Setting::async_insert_use_adaptive_busy_timeout])
-        return settings[Setting::async_insert_busy_timeout_max_ms];
+        return Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds());
 
-    const auto max_ms = Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms]);
-    const auto min_ms = std::min(std::max(Milliseconds(settings[Setting::async_insert_busy_timeout_min_ms]), Milliseconds(1)), max_ms);
+    const auto max_ms = Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds());
+    const auto min_ms = std::min(std::max(Milliseconds(settings[Setting::async_insert_busy_timeout_min_ms].totalMilliseconds()), Milliseconds(1)), max_ms);
 
     auto normalize = [&min_ms, &max_ms](const auto & t_ms) { return std::min(std::max(t_ms, min_ms), max_ms); };
 
@@ -668,7 +668,7 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
 
 void AsynchronousInsertQueue::validateSettings(const Settings & settings, LoggerPtr log)
 {
-    const auto max_ms = std::chrono::milliseconds(settings[Setting::async_insert_busy_timeout_max_ms]);
+    const auto max_ms = std::chrono::milliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds());
 
     if (max_ms == std::chrono::milliseconds::zero())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_max_ms' can't be zero");
@@ -677,7 +677,7 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
         return;
 
     /// Adaptive timeout settings.
-    const auto min_ms = std::chrono::milliseconds(settings[Setting::async_insert_busy_timeout_min_ms]);
+    const auto min_ms = std::chrono::milliseconds(settings[Setting::async_insert_busy_timeout_min_ms].totalMilliseconds());
 
     if (min_ms > max_ms && log)
         LOG_WARNING(
@@ -831,7 +831,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
             std::unique_lock lock(shard.mutex);
 
             const auto rel_time
-                = std::min(shard.busy_timeout_ms, Milliseconds(getContext()->getSettingsRef()[Setting::async_insert_poll_timeout_ms]));
+                = std::min(shard.busy_timeout_ms, Milliseconds(getContext()->getSettingsRef()[Setting::async_insert_poll_timeout_ms].totalMilliseconds()));
             shard.are_tasks_available.wait_for(
                 lock,
                 rel_time,
@@ -1224,7 +1224,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
-        const auto & columns = insert_context->getInsertionTableColumnsDescription().value();
+        const auto & columns = *insert_context->getInsertionTableColumnsDescription();
         if (columns.hasDefaults())
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
     }

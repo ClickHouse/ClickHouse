@@ -250,7 +250,7 @@ void BlobKillerThread::shutdown()
     task->deactivate();
 
     /// We need to execute it here explicitly because some blobs may be in the metadata storage queue.
-    executeBlobsCleanup(metadata_request_batch.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
+    executeBlobsCleanup(/*max_to_remove=*/0, remove_tasks_runner, cluster, metadata_storage, object_storages, log);
 }
 
 void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)

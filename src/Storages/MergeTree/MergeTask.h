@@ -250,7 +250,7 @@ private:
 
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
-        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
+        WrittenOffsetSubstreams written_offset_substreams{};
         PlainMarksByName cached_marks;
 
         MergeTreeTransactionPtr txn;

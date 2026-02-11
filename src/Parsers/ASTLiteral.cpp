@@ -1,9 +1,7 @@
-
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
-#include <Common/quoteString.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -20,6 +18,11 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
     applyVisitor(FieldVisitorHash(hash_state), value);
     if (!ignore_aliases)
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+String ASTLiteral::getID(char delim) const
+{
+    return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value));
 }
 
 ASTPtr ASTLiteral::clone() const
@@ -64,7 +67,7 @@ String FieldVisitorToColumnName::operator() (const Tuple & x) const
 
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    if (use_legacy_column_name_of_tuple)
+    if (getUseLegacyColumnNameOfTuple())
     {
         appendColumnNameImplLegacy(ostr);
         return;
@@ -155,9 +158,7 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (custom_type && isBool(custom_type) && isInt64OrUInt64FieldType(value.getType()))
-        ostr << applyVisitor(FieldVisitorToString(), Field(value.safeGet<UInt64>() != 0));
-    else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         ostr << applyVisitor(FieldVisitorToString(), value);
     else
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);

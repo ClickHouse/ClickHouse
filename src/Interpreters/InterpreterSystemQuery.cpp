@@ -72,6 +72,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <base/sleep.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -399,6 +400,14 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
+# if USE_PARQUET
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
+            system_context->clearParquetMetadataCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
+# endif
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -1131,11 +1140,21 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
             break;
         }
-        catch (...)
+        catch (const Coordination::Exception & e)
         {
+            /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
                 fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+
+            /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
         }
     }
 
@@ -1989,6 +2008,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:

@@ -176,7 +176,7 @@ public:
         std::vector<MarkRanges> patches_mark_ranges_,
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,

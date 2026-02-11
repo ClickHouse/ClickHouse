@@ -60,6 +60,7 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
+    String getSchemaFormatString() const;
     const std::unordered_map<String, DataTypePtr> & getTypedPaths() const { return typed_paths; }
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }

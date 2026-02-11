@@ -9,7 +9,6 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
-
 namespace DB
 {
 
@@ -122,7 +121,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
                     const DisksMap & map,
                     bool attach,
                     bool custom_disk) -> DiskPtr
-{
+    {
         auto disk_name = config.getString(config_prefix + ".disk", "");
         if (disk_name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk Cache requires `disk` field in config");

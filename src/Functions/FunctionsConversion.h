@@ -72,7 +72,6 @@
 #include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
 #include <Common/Concepts.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
@@ -5224,7 +5223,11 @@ private:
             };
         }
 
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String/Map/Object/Tuple/JSON. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Cast to {} can be performed only from String/Map/Object/Tuple/JSON. Got: {}",
+            to_object->getSchemaFormatString(),
+            from_type->getName());
     }
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const

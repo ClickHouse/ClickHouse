@@ -123,7 +123,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     std::unique_ptr<IQueryPlanStep> clone() const override;
 

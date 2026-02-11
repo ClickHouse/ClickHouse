@@ -1,19 +1,16 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
-
+#include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <Storages/PartitionCommands.h>
+
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-
 #include <Common/filesystemHelpers.h>
+
 #include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
-
 
 namespace DB
 {

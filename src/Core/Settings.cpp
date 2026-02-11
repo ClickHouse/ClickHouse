@@ -1400,6 +1400,10 @@ It helps to avoid unnecessary data copy during formatting.
     DECLARE(Bool, enable_parsing_to_custom_serialization, true, R"(
 If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.
 )", 0) \
+    DECLARE(Bool, ignore_format_null_for_explain, true, R"(
+If enabled, `FORMAT Null` will be ignored for `EXPLAIN` queries and default output format will be used instead.
+When disabled, `EXPLAIN` queries with `FORMAT Null` will produce no output (backward compatible behavior).
+)", 0) \
     \
     DECLARE(Bool, merge_tree_use_v1_object_and_dynamic_serialization, false, R"(
 When enabled, V1 serialization version of JSON and Dynamic types will be used in MergeTree instead of V2. Changing this setting takes affect only after server restart.
@@ -1467,12 +1471,10 @@ Enables usage of the thread pool for parallel prefixes reading in Wide parts in 
 Improve FINAL queries by avoiding merges across different partitions.
 
 When enabled, during SELECT FINAL queries, parts from different partitions will not be merged together. Instead, merging will only occur within each partition separately. This can significantly improve query performance when working with partitioned tables.
-
-If not explicitly set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
-
+)", 0) \
+    DECLARE(Bool, enable_automatic_decision_for_merging_across_partitions_for_final, true, R"(
+If set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
 This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
-
-**Default value:** `false` (but may be automatically enabled based on table structure if not set explicitly)
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
@@ -5154,6 +5156,14 @@ Whether to delete all iceberg files on drop or not.
 )", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, use_parquet_metadata_cache, true, R"(
+If turned on, parquet format may utilize the parquet metadata cache.
 
 Possible values:
 

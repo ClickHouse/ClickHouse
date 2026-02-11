@@ -7956,11 +7956,13 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         missing_parts.clear();
 
+        std::mutex missing_parts_mutex; /// Must be created before runner, so it outlives it
         ThreadPoolCallbackRunnerLocal<void> fetch_partition_runner(getFetchPartitionThreadPool().get(), ThreadName::MERGETREE_FETCH_PARTITION);
-        std::mutex missing_parts_mutex;
+
         for (const String & part : parts_to_fetch)
         {
-            fetch_partition_runner.enqueueAndKeepTrack([&]()
+            /// Passing by reference here is ok. All passed variables are created before the runner, so they will outlive it
+            fetch_partition_runner.enqueueAndKeepTrack([this, &part, &metadata_snapshot, &from_zookeeper_name, &best_replica_path, &zookeeper, &missing_parts_mutex, &missing_parts]()
             {
                 bool fetched = false;
 

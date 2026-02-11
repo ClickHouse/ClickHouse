@@ -146,6 +146,7 @@ namespace Setting
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool do_not_merge_across_partitions_select_final;
+    extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsBool force_primary_key;
@@ -1526,8 +1527,11 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     const auto & settings = context->getSettingsRef();
 
     /// If setting do_not_merge_across_partitions_select_final is set always prefer it
-    if (settings[Setting::do_not_merge_across_partitions_select_final].changed)
-        return settings[Setting::do_not_merge_across_partitions_select_final];
+    if (settings[Setting::do_not_merge_across_partitions_select_final])
+        return true;
+    /// If automatic decision is disabled, should return false straight away
+    else if (!settings[Setting::enable_automatic_decision_for_merging_across_partitions_for_final])
+        return false;
 
     if (!storage_snapshot->metadata->hasPrimaryKey() || !storage_snapshot->metadata->hasPartitionKey())
         return false;
@@ -1568,7 +1572,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     assert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
 
-    /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
+    /// If do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
     /// So we will store iterators pointed to the beginning of each partition range (and parts.end()),
     /// then we will create a pipe for each partition that will run selecting processor and merging processor
@@ -3909,6 +3913,11 @@ bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_ke
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
 {
+    /// Just attempting to read statistics files on disk can increase query latencies
+    /// First check the in-memory metadata if statistics are present at all
+    if (!getStorageMetadata()->hasStatistics())
+        return nullptr;
+
     return data.getConditionSelectivityEstimator(getParts(), getContext());
 }
 

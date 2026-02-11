@@ -241,13 +241,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
         if (reading->getContext()->getSettingsRef()[Setting::use_statistics])
         {
-            if (auto estimator_ = reading->getConditionSelectivityEstimator())
+            if (auto estimator = reading->getConditionSelectivityEstimator())
             {
                 auto prewhere_info = reading->getPrewhereInfo();
                 const ActionsDAG::Node * prewhere_node = prewhere_info
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator_->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
@@ -451,6 +451,9 @@ struct QueryGraphBuilder
 
     std::vector<JoinActionRef> join_edges;
 
+    /// Outer joined relation should be joined after all other relations involved in its join expressions.
+    /// It is joined with specified join kind.
+    /// The `join_kinds` maps (join relation index) -> (set of relations it depends on, join kind)
     std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
     std::unordered_map<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
     std::unordered_map<JoinActionRef, size_t> pinned;
@@ -617,26 +620,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0);
 
     size_t total_inputs = query_graph.inputs.size();
-    if (isRightOrFull(join_kind))
-    {
-        if (lhs_count != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with RIGHT or FULL join must have exactly one left input, but has {}", lhs_count);
-        BitSet join_expression_sources;
-        for (const auto & expr : join_step->getJoinOperator().expression)
-            join_expression_sources |= expr.getSourceRelations();
-        join_expression_sources.set(0, false);
-        query_graph.join_kinds[0] = std::make_pair(std::move(join_expression_sources), join_kind);
-    }
-    if (isLeftOrFull(join_kind))
-    {
-        if (rhs_count != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with LEFT or FULL join must have exactly one right input, but has {}", rhs_count);
-        BitSet join_expression_sources;
-        for (const auto & expr : join_step->getJoinOperator().expression)
-            join_expression_sources |= expr.getSourceRelations();
-        join_expression_sources.set(total_inputs - 1, false);
-        query_graph.join_kinds[total_inputs - 1] = std::make_pair(std::move(join_expression_sources), join_kind);
-    }
     if (join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
         query_graph.join_kinds[0] = std::make_pair(BitSet{}, JoinKind::Cross);
 
@@ -702,11 +685,15 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
     /// During-join predicates cannot be pushed past preserved-row tables;
     /// After-join predicates (those in WHERE) cannot be pushed past null-supplying tables.
+    BitSet join_expression_sources;
     for (const auto * old_node : join_expression)
     {
         const auto & new_node_entry = node_mapping.try_emplace(old_node, old_node);
         const auto * new_node = new_node_entry.first->second;
         auto & edge = query_graph.join_edges.emplace_back(new_node, query_graph.expression_actions);
+
+        /// Collect all sources from join expressions
+        join_expression_sources |= edge.getSourceRelations();
 
         if (isRightOrFull(join_kind))
         {
@@ -729,6 +716,21 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
                 }
             }
         }
+    }
+
+    if (isRightOrFull(join_kind))
+    {
+        if (lhs_count != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with RIGHT or FULL join must have exactly one left input, but has {}", lhs_count);
+        join_expression_sources.set(0, false);
+        query_graph.join_kinds[0] = std::make_pair(join_expression_sources, join_kind);
+    }
+    if (isLeftOrFull(join_kind))
+    {
+        if (rhs_count != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with LEFT or FULL join must have exactly one right input, but has {}", rhs_count);
+        join_expression_sources.set(total_inputs - 1, false);
+        query_graph.join_kinds[total_inputs - 1] = std::make_pair(join_expression_sources, join_kind);
     }
 
     if (!residual_filter.empty())

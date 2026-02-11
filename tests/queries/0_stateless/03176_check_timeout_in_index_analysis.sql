@@ -7,6 +7,8 @@ INSERT INTO t_03176 SELECT number, number FROM numbers(5);
 -- Table is partitioned by k to so it will have 5 partitions
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_03176' AND active;
 
+set ignore_format_null_for_explain = 0;
+
 -- This query is fast without failpoint: should take < 1 sec
 EXPLAIN indexes = 1 SELECT * FROM t_03176 ORDER BY k LIMIT 5 SETTINGS log_comment = '03176_q1' FORMAT Null;
 

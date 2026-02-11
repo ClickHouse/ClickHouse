@@ -2,17 +2,16 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <Storages/PartitionCommands.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <Common/logger_useful.h>
 
+#include <limits>
 #include <ranges>
 #include <memory>
 #include <shared_mutex>
-
 
 namespace DB
 {
@@ -75,7 +74,6 @@ DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string
 {
     return disk->iterateDirectory(path);
 }
-
 
 std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const
 {
@@ -152,6 +150,9 @@ uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) con
 IMetadataStorage::BlobsToRemove MetadataStorageFromDisk::getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count)
 {
     std::lock_guard guard(removed_objects_mutex);
+
+    if (max_count == 0)
+        max_count = std::numeric_limits<int64_t>::max();
 
     BlobsToRemove blobs_to_remove;
     for (const auto & blob : objects_to_remove | std::views::take(max_count))

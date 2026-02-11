@@ -338,6 +338,15 @@ add_object_library(clickhouse_processors_queryplan_optimizations Processors/Quer
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades Processors/QueryPlan/Optimizations/Cascades)
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
+# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
+# TUs where libcxx hardening needs to be disabled are specified here.
+set_property(SOURCE
+    Columns/IColumn.cpp                        # hashjoin_with_large_output
+    Processors/Transforms/WindowTransform.cpp  # window functions
+    Interpreters/Aggregator.cpp                # destroy_aggregate_states
+    Common/IntervalTree.cpp                    # range_hashed_dictionary
+    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
+
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
 endif()
