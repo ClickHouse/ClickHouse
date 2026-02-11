@@ -36,10 +36,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
 #if USE_AVRO
     if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
-    {
         iceberg_info = iceberg_object->info;
-        absolute_path = iceberg_object->getAbsolutePath();
-    }
 #endif
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];

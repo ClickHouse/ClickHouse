@@ -77,6 +77,15 @@ bool s3URIMatches(const S3::URI & target_uri, const std::string & base_bucket, c
     bool is_generic_s3_uri = (target_scheme_normalized == "s3");
     return bucket_matches && (endpoint_matches || is_generic_s3_uri);
 }
+
+bool sameEndpointAuthority(const std::string & a, const std::string & b)
+{
+    SchemeAuthorityKey pa(a);
+    SchemeAuthorityKey pb(b);
+    if (pa.authority.empty() || pb.authority.empty())
+        return false;
+    return pa.authority == pb.authority;
+}
 #endif
 std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
     const std::string & cache_key,
@@ -452,6 +461,7 @@ extern const SettingsUInt64 max_download_buffer_size;
 extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+extern const SettingsBool s3_propagate_credentials_to_other_storages;
 }
 
 std::string makeAbsolutePath(const std::string & table_location, const std::string & path)
@@ -611,8 +621,11 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
 
                 cfg.setString(config_prefix + ".endpoint", endpoint_to_use);
 
-                /// Copy credentials from base storage if it's also S3
-                if (base_storage->getType() == ObjectStorageType::S3)
+                /// Copy credentials from base storage when the endpoint is the same or
+                /// or s3_propagate_credentials_to_other_storages is 1
+                if (base_storage->getType() == ObjectStorageType::S3
+                    && (context->getSettingsRef()[Setting::s3_propagate_credentials_to_other_storages]
+                        || sameEndpointAuthority(base_storage->getDescription(), endpoint_to_use)))
                 {
                     if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
                     {
