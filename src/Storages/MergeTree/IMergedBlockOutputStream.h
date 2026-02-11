@@ -25,8 +25,6 @@ public:
 
     virtual ~IMergedBlockOutputStream() = default;
 
-    using WrittenOffsetColumns = std::set<std::string>;
-
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
 

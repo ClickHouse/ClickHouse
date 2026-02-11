@@ -326,7 +326,7 @@ function check_logs_for_critical_errors()
 
 function collect_query_and_trace_logs()
 {
-    for table in query_log trace_log metric_log
+    for table in query_log trace_log metric_log aggregated_zookeeper_log
     do
         # Don't ignore errors here, it leads to ignore sanitizer reports when running clickhouse-local
         clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst

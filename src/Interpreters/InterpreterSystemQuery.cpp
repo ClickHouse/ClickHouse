@@ -72,6 +72,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <base/sleep.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -1139,11 +1140,21 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
             break;
         }
-        catch (...)
+        catch (const Coordination::Exception & e)
         {
+            /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
                 fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+
+            /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
         }
     }
 

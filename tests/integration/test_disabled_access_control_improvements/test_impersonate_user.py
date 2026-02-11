@@ -1,12 +1,13 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-
 node = cluster.add_instance(
-    "node"
+    "node",
+    main_configs=["configs/config.d/disable_access_control_improvements.xml"],
 )
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -18,8 +19,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_sql_impersonate():
-
+def test_impersonate_user_disabled():
     node.query(
         "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'password1';"
         "CREATE USER user2 IDENTIFIED WITH plaintext_password BY 'password2';"

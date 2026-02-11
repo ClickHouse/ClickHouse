@@ -3,6 +3,7 @@
 #include <Common/BitHelpers.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
+#include <Columns/ColumnsCommon.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -1097,7 +1098,7 @@ ReadManager::ReadResult ReadManager::read()
     {
         chassert(row_subgroup.filter.rows_pass > 0);
         chassert(!row_subgroup.filter.filter.empty());
-        chassert(std::accumulate(row_subgroup.filter.filter.begin(), row_subgroup.filter.filter.end(), size_t(0)) == chunk.getNumRows());
+        chassert(countBytesInFilter(row_subgroup.filter.filter) == chunk.getNumRows());
 
         row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
     }

@@ -194,7 +194,7 @@ def main():
         "enable_fault_injection_settings": random.randint(1, 4) == 1,
         "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
-        "use_dump_table_oracle": random.randint(1, 3) == 1,
+        "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues

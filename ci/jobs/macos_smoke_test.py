@@ -158,6 +158,24 @@ def main():
         )
     )
 
+    # Test: Display options list
+    test_results.append(
+        Result.from_commands_run(
+            name="Display options list",
+            command=f"{BINARY_PATH}",
+            with_info=True,
+        )
+    )
+
+    # Test: clickhouse-local
+    test_results.append(
+        Result.from_commands_run(
+            name="clickhouse-local SELECT 1",
+            command=f"{BINARY_PATH} local --query 'SELECT 1'",
+            with_info=True,
+        )
+    )
+
     # Test: Start server
     server_started = False
     try:
