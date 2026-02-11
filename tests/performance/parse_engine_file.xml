@@ -27,7 +27,7 @@
     
 <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
 
-<fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 20000</fill_query>
+<fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 30000</fill_query>
 
 <query short="'{format}' == 'Native'">SELECT * FROM table_{format} FORMAT Null</query>
 

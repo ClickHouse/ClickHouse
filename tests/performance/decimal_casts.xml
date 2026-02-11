@@ -13,8 +13,8 @@
     <query>SELECT toInt64(x)   y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
     <query>SELECT toUInt64(x)  y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
     <query>SELECT toInt128(x)  y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
-    <query>SELECT toInt256(x)  y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t LIMIT 49000000 FORMAT Null</query>
-    <query>SELECT toUInt256(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t LIMIT 49000000 FORMAT Null</query>
+    <query>SELECT toInt256(x)  y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t LIMIT 58000000 FORMAT Null</query>
+    <query>SELECT toUInt256(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t LIMIT 58000000 FORMAT Null</query>
     <query>SELECT toFloat32(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
     <query>SELECT toFloat64(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
 

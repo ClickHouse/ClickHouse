@@ -32,7 +32,7 @@
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>28000000</value>
+                <value>11000000</value>
             </values>
         </substitution>
     </substitutions>

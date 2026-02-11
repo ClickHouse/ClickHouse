@@ -53,7 +53,7 @@
         UNION ALL
         SELECT * FROM (SELECT 9 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 10 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 100)
+        SELECT * FROM (SELECT 10 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 154)
     </query>
 
     <drop_query>DROP TABLE tab_{type}</drop_query>

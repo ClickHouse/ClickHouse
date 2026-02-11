@@ -16,5 +16,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM numbers(18000000) WHERE NOT ignore({func}toString(number)))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore({func}toString(number)))</query>
 </test>

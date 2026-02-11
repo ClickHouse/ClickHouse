@@ -1,9 +1,9 @@
 <test>
-    <query>SELECT count() FROM zeros(8600000) WHERE NOT ignore(randomPrintableASCII(10))</query>
-    <query>SELECT count() FROM zeros(8600000) WHERE NOT ignore(randomPrintableASCII(100))</query>
-    <query>SELECT count() FROM zeros(86000) WHERE NOT ignore(randomPrintableASCII(1000))</query>
-    <query>SELECT count() FROM zeros(8600) WHERE NOT ignore(randomPrintableASCII(10000))</query>
-    <query>SELECT count() FROM zeros(8600000) WHERE NOT ignore(randomPrintableASCII(rand() % 10))</query>
-    <query>SELECT count() FROM zeros(8600000) WHERE NOT ignore(randomPrintableASCII(rand() % 100))</query>
-    <query>SELECT count() FROM zeros(860000) WHERE NOT ignore(randomPrintableASCII(rand() % 1000))</query>
+    <query>SELECT count() FROM zeros(5000000) WHERE NOT ignore(randomPrintableASCII(10))</query>
+    <query>SELECT count() FROM zeros(5000000) WHERE NOT ignore(randomPrintableASCII(100))</query>
+    <query>SELECT count() FROM zeros(50000) WHERE NOT ignore(randomPrintableASCII(1000))</query>
+    <query>SELECT count() FROM zeros(5000) WHERE NOT ignore(randomPrintableASCII(10000))</query>
+    <query>SELECT count() FROM zeros(5000000) WHERE NOT ignore(randomPrintableASCII(rand() % 10))</query>
+    <query>SELECT count() FROM zeros(5000000) WHERE NOT ignore(randomPrintableASCII(rand() % 100))</query>
+    <query>SELECT count() FROM zeros(500000) WHERE NOT ignore(randomPrintableASCII(rand() % 1000))</query>
 </test>
