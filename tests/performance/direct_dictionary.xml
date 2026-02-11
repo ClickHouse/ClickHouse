@@ -55,14 +55,14 @@
         INSERT INTO simple_key_direct_dictionary_source_table
         SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 1700;
+        LIMIT 739;
     </fill_query>
 
     <fill_query>
         INSERT INTO complex_key_direct_dictionary_source_table
         SELECT number, toString(number), number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 1700;
+        LIMIT 739;
     </fill_query>
 
     <substitutions>
@@ -79,8 +79,8 @@
         <substitution>
             <name>elements_count</name>
             <values>
-                <value>50000</value>
-                <value>75000</value>
+                <value>22000</value>
+                <value>33000</value>
             </values>
         </substitution>
     </substitutions>

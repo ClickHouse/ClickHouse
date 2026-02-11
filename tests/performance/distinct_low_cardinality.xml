@@ -22,7 +22,7 @@
         SELECT
             number AS id,
             toLowCardinality(toString(number % 5000)) AS lc
-        FROM numbers(100000000);
+        FROM numbers(500000000);
     </create_query>
 
     <create_query>
@@ -40,7 +40,7 @@
         SELECT
             number AS id,
             toLowCardinality(toString(number % 100)) AS lc
-        FROM numbers(100000000);
+        FROM numbers(500000000);
     </create_query>
 
     <query>

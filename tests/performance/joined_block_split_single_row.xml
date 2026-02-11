@@ -2,7 +2,7 @@
     <create_query>CREATE TABLE left (id UInt64, payload String) ENGINE = MergeTree ORDER BY id</create_query>
     <create_query>CREATE TABLE right (id UInt64, payload String) ENGINE = MergeTree ORDER BY id</create_query>
 
-    <fill_query>INSERT INTO left SELECT number, repeat('aaa', 100) FROM numbers(100)</fill_query>
+    <fill_query>INSERT INTO left SELECT number, repeat('aaa', 100) FROM numbers(315)</fill_query>
     <fill_query>INSERT INTO right SELECT number % 100, repeat('bbb', 10) FROM numbers(100_000)</fill_query>
 
     <query>

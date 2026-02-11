@@ -5,10 +5,10 @@
 
   <create_query>create table ttt (x UInt64) engine = MergeTree order by tuple();</create_query>
 
-  <fill_query>insert into ttt select zero from zeros(100000000);</fill_query>
+  <fill_query>insert into ttt select zero from zeros(430000000);</fill_query>
 
-  <query>select count() from ttt left join (select number from numbers(1200)) r on x = number;</query>
-  <query>select count() from ttt left join (select number from numbers(1200)) r on x = number settings min_joined_block_size_bytes=0;</query>
+  <query>select count() from ttt left join (select number from numbers(5100)) r on x = number;</query>
+  <query>select count() from ttt left join (select number from numbers(5100)) r on x = number settings min_joined_block_size_bytes=0;</query>
 
   <drop_query>drop table ttt;</drop_query>
 </test>

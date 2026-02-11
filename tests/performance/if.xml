@@ -1,11 +1,11 @@
 <test>
-    <query><![CDATA[ SELECT count() FROM zeros(1300000000) WHERE NOT ignore(if(rand32() > 42949673, zero + 1, zero + 2)) ]]></query>
-    <query><![CDATA[ SELECT count() FROM zeros(1300000000) WHERE NOT ignore(if(rand32() < 3865470566, zero + 1, zero + 2)) ]]></query>
-    <query><![CDATA[ SELECT count() FROM zeros(1300000000) WHERE NOT ignore(if(rand32() < 2147483647, zero + 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(250000000) WHERE NOT ignore(if(rand32() > 42949673, zero + 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(250000000) WHERE NOT ignore(if(rand32() < 3865470566, zero + 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(250000000) WHERE NOT ignore(if(rand32() < 2147483647, zero + 1, zero + 2)) ]]></query>
     <query><![CDATA[ SELECT count() FROM zeros(1300000000) WHERE NOT ignore(if(rand32() < 42949673, zero + 1, zero + 2)) ]]></query>
-    <query><![CDATA[ SELECT count() FROM zeros(1300000000) WHERE NOT ignore(if(rand32() < 42949673, zero + 1, 2)) ]]></query>
-    <query><![CDATA[ SELECT count() FROM zeros(1300000000) WHERE NOT ignore(if(rand32() < 42949673, 1, zero + 2)) ]]></query>
-    <query><![CDATA[ SELECT count() FROM zeros(1300000000) WHERE NOT ignore(if(rand32() < 42949673, 1, 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(280000000) WHERE NOT ignore(if(rand32() < 42949673, zero + 1, 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(280000000) WHERE NOT ignore(if(rand32() < 42949673, 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(330000000) WHERE NOT ignore(if(rand32() < 42949673, 1, 2)) ]]></query>
     
     <!-- Tests when branches are both not constant -->
     <query>with rand32() % 2 as x select if(x, materialize(1.234), materialize(2.456)) from numbers(130000000) format Null</query>
@@ -23,6 +23,6 @@
     <query>with rand32() % 2 as x, 1::Int256 as a, -1::Int256 as b select if(x, a, b) from numbers(130000000) format Null</query>
 
     <!-- Tests when branches are maps -->
-    <query>with rand32() % 2 as x select if(x, map(1,2,3,4), map(3,4,5,6)) from numbers(1300000) format Null</query>
+    <query>with rand32() % 2 as x select if(x, map(1,2,3,4), map(3,4,5,6)) from numbers(9000000) format Null</query>
     <query>with rand32() % 2 as x select if(x, materialize(map(1,2,3,4)), materialize(map(3,4,5,6))) from numbers(1300000) format Null</query>
 </test>
