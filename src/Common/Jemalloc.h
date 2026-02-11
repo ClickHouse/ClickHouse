@@ -5,6 +5,8 @@
 #if USE_JEMALLOC
 
 #include <string>
+#include <utility>
+#include <vector>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>
 
@@ -97,6 +99,15 @@ std::string_view getLastFlushProfileForThread();
 /// Notes:
 /// - demangling code slightly differs (i.e. it may return "operator()" instead of "DB::Context::initializeSystemLogs()::$_0::operator()() const")
 void symbolizeHeapProfile(const std::string & input_filename, const std::string & output_filename);
+
+/// Batch-symbolize multiple heap profiles at once.
+/// Collects all unique addresses from all input files, symbolizes them once,
+/// then writes all output files using the shared symbol table.
+/// This is much faster than calling symbolizeHeapProfile() for each file
+/// individually when files share many common addresses (same binary).
+///
+/// Each pair is (input_heap_file, output_sym_file).
+void symbolizeHeapProfilesBatch(const std::vector<std::pair<std::string, std::string>> & input_output_pairs);
 
 }
 
