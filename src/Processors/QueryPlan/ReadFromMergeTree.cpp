@@ -538,7 +538,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             index_build_context,
             lazy_materializing_rows);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), count_output_rows);
         pipes.emplace_back(std::move(source));
     }
 
@@ -648,7 +648,7 @@ Pipe ReadFromMergeTree::readFromPool(
             index_build_context,
             lazy_materializing_rows);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), count_output_rows);
 
         if (i == 0)
             source->addTotalRowsApprox(total_rows);
@@ -794,7 +794,7 @@ Pipe ReadFromMergeTree::readInOrder(
                 processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
         }
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), count_output_rows);
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 

@@ -23,6 +23,7 @@ public:
         , remove_filter_column(other.remove_filter_column)
         , prevent_input_removal(other.prevent_input_removal)
         , condition(other.condition)
+        , count_mergetree_output_rows(other.count_mergetree_output_rows)
     {}
 
     String getName() const override { return "Filter"; }
@@ -37,6 +38,7 @@ public:
     bool removesFilterColumn() const { return remove_filter_column; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
+    void setCountMergeTreeOutputRows(bool v) { count_mergetree_output_rows = v; }
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -68,6 +70,7 @@ private:
     bool prevent_input_removal = false;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    bool count_mergetree_output_rows = false;
 };
 
 }

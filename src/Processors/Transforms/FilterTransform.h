@@ -23,7 +23,8 @@ public:
     FilterTransform(
         SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
-        std::optional<std::pair<UInt64, String>> condition_ = std::nullopt);
+        std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
+        bool count_mergetree_output_rows_ = false);
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -58,6 +59,7 @@ private:
     Block transformed_header;
 
     bool are_prepared_sets_initialized = false;
+    bool count_mergetree_output_rows = false;
 
     void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Columns & columns) const;
