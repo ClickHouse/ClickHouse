@@ -201,8 +201,6 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     if (!scope.context)
         scope.context = context;
 
-    scope.allow_to_resolve_niladic_functions = false;
-
     auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
