@@ -201,6 +201,8 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     if (!scope.context)
         scope.context = context;
 
+    scope.allow_to_resolve_niladic_functions = false;
+
     auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
@@ -1394,18 +1396,15 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
     if (!resolve_result.resolved_identifier
         && identifier_lookup.isExpressionLookup()
-        && identifier_resolve_settings.scope_to_resolve_alias_expression == nullptr)
+        && identifier_resolve_settings.scope_to_resolve_alias_expression == nullptr
+        && scope.allow_to_resolve_niladic_functions)
     {
         const auto & function_factory = FunctionFactory::instance();
         auto identifier_name = identifier_lookup.identifier.getFullName();
 
         auto function_resolver = function_factory.tryGet(identifier_name, scope.context);
 
-        static const std::unordered_set<std::string> excluded_names = {
-            "database", "user", "schema"
-        };
-        auto lower_name = Poco::toLower(identifier_name);
-        if (function_resolver && function_resolver->allowsOmittingParentheses() && !excluded_names.contains(lower_name))
+        if (function_resolver && function_resolver->allowsOmittingParentheses())
         {
             auto function_node = std::make_shared<FunctionNode>(identifier_name);
             function_node->resolveAsFunction(function_resolver->build({}));

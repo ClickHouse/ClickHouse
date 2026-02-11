@@ -185,6 +185,9 @@ struct IdentifierResolveScope
     bool join_use_nulls = false;
     bool allow_resolve_from_using = true;
 
+    /// Disable resolve of niladic functions without parentheses. Example: SELECT now; instead of SELECT now();
+    bool allow_to_resolve_niladic_functions = true;
+
     /// JOINs count
     size_t joins_count = 0;
 
