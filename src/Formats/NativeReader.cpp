@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/range.h>
+#include "Common/Logger.h"
 #include <Common/typeid_cast.h>
 
 #include <Formats/NativeReader.h>
@@ -220,6 +221,8 @@ Block NativeReader::read()
                 info->deserializeFromKindsBinary(istr);
 
             serialization = column.type->getSerialization(*info);
+            if (column.name == "s")
+                LOG_DEBUG(getLogger("fsst logger"), "serialization of {} column in native reader, has_custom = {}", column.name, static_cast<int>(has_custom));
             auto new_column = column.type->createColumn(*serialization);
             new_column->reserve(rows);
             read_column = std::move(new_column);
