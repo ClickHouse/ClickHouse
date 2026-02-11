@@ -88,4 +88,5 @@ TEST(ObjectSerialization, JSONSerialization)
     "h": "Str",
     "j": "Str"
 })");
+
 }

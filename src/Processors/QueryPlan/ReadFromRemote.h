@@ -146,5 +146,4 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context);
-
 }

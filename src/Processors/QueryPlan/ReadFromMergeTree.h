@@ -1,15 +1,17 @@
 #pragma once
+
+#include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/TopKThresholdTracker.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/PartitionPruner.h>
-#include <Processors/TopKThresholdTracker.h>
-#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -177,7 +179,8 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exceeded_row_limits(other.exceeded_row_limits.load())
-        {}
+        {
+        }
 
         AnalysisResult(AnalysisResult && other) noexcept
             : parts_with_ranges(std::move(other.parts_with_ranges))
@@ -197,7 +200,8 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exceeded_row_limits(other.exceeded_row_limits.load())
-        {}
+        {
+        }
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
 
@@ -270,7 +274,8 @@ public:
             , use_skip_indexes_for_disjunctions(false)
             , use_skip_indexes_if_final_exact_mode(false)
             , use_skip_indexes_on_data_read(false)
-        {}
+        {
+        }
 
         KeyCondition key_condition;
         std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
@@ -342,7 +347,10 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
+    void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_)
+    {
+        vector_search_parameters = vector_search_parameters_;
+    }
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
@@ -358,7 +366,8 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
+    void createReadTasksForTextIndex(
+        const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
@@ -469,9 +478,7 @@ private:
         std::optional<ActionsDAG> & result_projection);
 
     Pipe groupStreamsByPartition(
-        AnalysisResult & result,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        std::optional<ActionsDAG> & result_projection);
+        AnalysisResult & result, const MergeTreeIndexBuildContextPtr & index_build_context, std::optional<ActionsDAG> & result_projection);
 
     Pipe readByLayers(
         const RangesInDataParts & parts_with_ranges,

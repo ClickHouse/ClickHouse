@@ -1,9 +1,8 @@
 #include <Storages/IStorage.h>
 
-#include <Backups/IBackup.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Core/Settings.h>
 #include <Disks/IStoragePolicy.h>
+#include <Common/StringUtils.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -11,9 +10,9 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Backups/RestorerFromBackup.h>

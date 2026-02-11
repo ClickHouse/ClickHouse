@@ -1,30 +1,23 @@
-#include <Columns/ColumnConst.h>
-#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypesNumber.h>
-<<<<<<< HEAD
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-=======
 #include <DataTypes/NestedUtils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeData.h>
->>>>>>> e75a7aa721d (serialization string hack)
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Columns/ColumnConst.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -35,8 +28,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace
@@ -138,14 +131,8 @@ bool injectRequiredColumnsRecursively(
     bool result = false;
     for (const auto & identifier : identifiers)
         result |= injectRequiredColumnsRecursively(
-            identifier,
-            storage_snapshot,
-            alter_conversions,
-            data_part_info_for_reader,
-            options,
-            columns,
-            required_columns,
-            injected_columns);
+            identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
+            options, columns, required_columns, injected_columns);
 
     return result;
 }
@@ -171,7 +158,9 @@ NameSet injectRequiredColumns(
     if (!data_part_info_for_reader.isProjectionPart())
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals().withSubcolumns(with_subcolumns);
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withVirtuals()
+        .withSubcolumns(with_subcolumns);
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -180,14 +169,8 @@ NameSet injectRequiredColumns(
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            columns[i],
-            storage_snapshot,
-            alter_conversions,
-            data_part_info_for_reader,
-            options,
-            columns,
-            required_columns,
-            injected_columns);
+            columns[i], storage_snapshot, alter_conversions,
+            data_part_info_for_reader, options, columns, required_columns, injected_columns);
     }
 
     /** Add a column of the minimum size.
@@ -220,14 +203,9 @@ NameSet injectRequiredColumns(
     return injected_columns;
 }
 
-<<<<<<< HEAD
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
     : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
-=======
-MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
-    : data_part(data_part_)
->>>>>>> e75a7aa721d (serialization string hack)
 {
     number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
@@ -275,14 +253,9 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
             else
                 column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
 
-<<<<<<< HEAD
             info.bytes_per_row_global = column_size.data_uncompressed
                 ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)
                 : static_cast<double>(column_data->byteSize()) / static_cast<double>(std::max<size_t>(1, column_data->size()));
-=======
-            info.bytes_per_row_global = column_size.data_uncompressed ? column_size.data_uncompressed / number_of_rows_in_part
-                                                                      : column_data->byteSize() / std::max<size_t>(1, column_data->size());
->>>>>>> e75a7aa721d (serialization string hack)
 
             dynamic_columns_infos.emplace_back(info);
         }
@@ -311,12 +284,9 @@ void MergeTreeBlockSizePredictor::startBlock()
 void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
 {
     if (columns.size() != sample_block.columns())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
-            "Have {} in sample block and {} columns in list",
-            toString(sample_block.columns()),
-            toString(columns.size()));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
+                        "Have {} in sample block and {} columns in list",
+                        toString(sample_block.columns()), toString(columns.size()));
 
     if (!is_initialized_in_update)
     {
@@ -327,7 +297,8 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
     if (num_rows < block_size_rows)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Updated block has less rows ({}) than previous one ({})", num_rows, block_size_rows);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Updated block has less rows ({}) than previous one ({})",
+                        num_rows, block_size_rows);
     }
 
     size_t diff_rows = num_rows - block_size_rows;
@@ -359,7 +330,8 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
 {
-    PrewhereExprStep step{
+    PrewhereExprStep step
+    {
         .type = PrewhereExprStep::Filter,
         .actions = nullptr,
         .filter_column_name = RowExistsColumn::name,
@@ -454,7 +426,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     /// Inject columns required for defaults evaluation
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals().withSubcolumns(with_subcolumns);
+    auto options = GetColumnsOptions(GetColumnsOptions::All)
+        .withVirtuals()
+        .withSubcolumns(with_subcolumns);
 
     auto add_step = [&](const PrewhereExprStep & step)
     {
@@ -485,7 +459,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// because we cannot determine the correct size of the last granule without reading data.
         if (!step_column_names.empty() || !has_adaptive_granularity)
         {
-            injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, step_column_names);
+            injectRequiredColumns(
+                data_part_info_for_reader, storage_snapshot,
+                with_subcolumns, step_column_names);
         }
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
@@ -545,12 +521,12 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         data_part_info_for_reader,
         storage_snapshot,
         required_columns,
-        /*row_level_filter=*/nullptr,
-        /*prewhere_info=*/nullptr,
+        /*row_level_filter=*/ nullptr,
+        /*prewhere_info=*/ nullptr,
         mutation_steps,
         /*index_read_tasks*/ {},
-        /*actions_settings=*/{},
-        /*reader_settings=*/MergeTreeReaderSettings::createFromSettings(),
+        /*actions_settings=*/ {},
+        /*reader_settings=*/ MergeTreeReaderSettings::createFromSettings(),
         storage_snapshot->storage.supportsSubcolumns());
 }
 
