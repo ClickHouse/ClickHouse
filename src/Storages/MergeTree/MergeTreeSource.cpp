@@ -6,6 +6,11 @@
 #include <Common/EventFD.h>
 #include <Common/setThreadName.h>
 
+namespace ProfileEvents
+{
+    extern const Event MergeTreeOutputRows;
+}
+
 namespace DB
 {
 
@@ -181,6 +186,8 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
 {
     if (chunk.num_read_rows || chunk.num_read_bytes)
         progress(chunk.num_read_rows, chunk.num_read_bytes);
+
+    ProfileEvents::increment(ProfileEvents::MergeTreeOutputRows, chunk.chunk.getNumRows());
 
     finished = chunk.is_finished;
 

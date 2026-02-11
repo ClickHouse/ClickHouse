@@ -377,7 +377,8 @@
     M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRows, "Number of rows SELECTed from all tables.", ValueType::Number) \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
-    M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
+    M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step). Includes all rows from granules that were not fully filtered by PREWHERE, even if only some rows in those granules matched.", ValueType::Number) \
+    M(MergeTreeOutputRows, "Number of rows output by MergeTree after PREWHERE filtering. Only counts rows that survived all PREWHERE filters, unlike RowsReadByMainReader which counts full granules.", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
     M(LoadedDataParts, "Number of data parts loaded by MergeTree tables during initialization.", ValueType::Number) \
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
