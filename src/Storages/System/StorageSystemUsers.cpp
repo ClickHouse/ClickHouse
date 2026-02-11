@@ -11,8 +11,10 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Poco/JSON/JSON.h>
@@ -89,14 +91,48 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
 }
 
 
-void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+Block StorageSystemUsers::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "name" },
+    };
+}
+
+
+/// If the predicate is a simple `name = 'literal'`, extract the literal string.
+/// Returns std::nullopt for any other predicate shape — the caller falls back to the full scan.
+static std::optional<String> tryExtractNameFromPredicate(const ActionsDAG::Node * predicate)
+{
+    if (!predicate
+        || predicate->type != ActionsDAG::ActionType::FUNCTION
+        || predicate->function_base->getName() != "equals"
+        || predicate->children.size() != 2)
+        return {};
+
+    const ActionsDAG::Node * name_node = nullptr;
+    const ActionsDAG::Node * const_node = nullptr;
+
+    for (const auto * child : predicate->children)
+    {
+        if (child->type == ActionsDAG::ActionType::INPUT && child->result_name == "name")
+            name_node = child;
+        else if (child->type == ActionsDAG::ActionType::COLUMN && child->column && isColumnConst(*child->column))
+            const_node = child;
+    }
+
+    if (!name_node || !const_node)
+        return {};
+
+    return (*const_node->column)[0].safeGet<String>();
+}
+
+
+void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
     if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
         context->checkAccess(AccessType::SHOW_USERS);
-
-    std::vector<UUID> ids = access_control.findAll<User>();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -256,6 +292,28 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         column_default_database.insertData(default_database.data(),default_database.length());
     };
 
+    /// Fast path: if predicate is `name = 'literal'`, do an O(1) lookup instead of iterating all users.
+    if (auto name_literal = tryExtractNameFromPredicate(predicate))
+    {
+        auto id = access_control.find<User>(*name_literal);
+        if (!id)
+            return;
+
+        auto user = access_control.tryRead<User>(*id);
+        if (!user)
+            return;
+
+        auto storage = access_control.findStorage(*id);
+        if (!storage)
+            return;
+
+        add_row(user->getName(), *id, storage->getStorageName(), user->authentication_methods, user->allowed_client_hosts,
+                user->default_roles, user->grantees, user->default_database);
+        return;
+    }
+
+    /// Fallback: iterate all users when the predicate is not a simple name equality.
+    std::vector<UUID> ids = access_control.findAll<User>();
     for (const auto & id : ids)
     {
         auto user = access_control.tryRead<User>(id);
