@@ -1052,7 +1052,7 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
-    forEachTokenPadded(
+    forEachToken(
         *token_extractor,
         document.data(),
         document.size(),
@@ -1361,7 +1361,8 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
            SplitByNonAlphaTokenExtractor::getExternalName(),
            SplitByStringTokenExtractor::getExternalName(),
            ArrayTokenExtractor::getExternalName(),
-           SparseGramsTokenExtractor::getExternalName()};
+           SparseGramsTokenExtractor::getExternalName(),
+           UnicodeWordTokenExtractor::getExternalName()};
 
     auto token_extractor = TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index.name);
 
@@ -1399,7 +1400,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
            SplitByNonAlphaTokenExtractor::getExternalName(),
            SplitByStringTokenExtractor::getExternalName(),
            ArrayTokenExtractor::getExternalName(),
-           SparseGramsTokenExtractor::getExternalName()};
+           SparseGramsTokenExtractor::getExternalName(),
+           UnicodeWordTokenExtractor::getExternalName()};
 
     TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index.name, /*only_validate = */ true);
 

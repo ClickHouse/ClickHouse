@@ -1,0 +1,29 @@
+splitByNonAlpha:
+['hello','world']	['hello','world']
+['hello','world']	['hello','world']
+['hello']	[]
+['hello','world']	[]
+['test']	[]
+[]	[]
+[]	[]
+ngrams:
+['ab','bc','cd']	['ab','bc','cd']
+['ab']	['ab']
+['abc']	['abc']
+['ab','bc','cd']	['ab','bc','cd']
+['ab','b_','_c','cd']	['ab','b_','_c','cd']
+unsupported tokenizers:
+unicode_word:
+['hello']	['hello']
+['你','好','世','界']	['你','好','世','界']
+['hello']	[]
+['hello_world']	[]
+['你','好','世','界']	['你','好','世','界']
+['a:bc.d']	[]
+['测','试','数','据']	['测','试','数','据']
+['test_data']	[]
+edge cases:
+['test']	[]
+['abcd']	[]
+[]	[]
+[]	[]

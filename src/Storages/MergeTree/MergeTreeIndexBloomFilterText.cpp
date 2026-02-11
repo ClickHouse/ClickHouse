@@ -124,7 +124,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
+                    forEachTokenToBloomFilter(*token_extractor, ref.data(), ref.size(), granule->bloom_filters[col]);
                 }
 
                 current_position += 1;
@@ -135,7 +135,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
+                forEachTokenToBloomFilter(*token_extractor, ref.data(), ref.size(), granule->bloom_filters[col]);
             }
         }
     }
@@ -747,7 +747,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         {
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
-            token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), bloom_filters.back().back());
+            forEachTokenToBloomFilter(*token_extractor, ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
 
@@ -772,6 +772,17 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, token_extractor.get());
 }
+
+
+MergeTreeIndexBloomFilterText::MergeTreeIndexBloomFilterText(
+    const IndexDescription & index_, const BloomFilterParameters & params_, std::unique_ptr<ITokenExtractor> && token_extractor_)
+    : IMergeTreeIndex(index_)
+    , params(params_)
+    , token_extractor(std::move(token_extractor_))
+{
+}
+
+MergeTreeIndexBloomFilterText::~MergeTreeIndexBloomFilterText() = default;
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
 {

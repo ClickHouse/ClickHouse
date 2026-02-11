@@ -10,6 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ITokenExtractor.h>
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/dynamic_bitset.hpp>
@@ -106,12 +107,16 @@ TokensWithPosition extractTokensFromString(std::string_view value)
     TokensWithPosition tokens;
     size_t pos = 0;
 
-    forEachTokenPadded(default_token_extractor, value.data(), value.size(), [&](const char * token_start, size_t token_len)
-    {
-        tokens.emplace(std::string{token_start, token_len}, pos);
-        ++pos;
-        return false;
-    });
+    forEachToken(
+        default_token_extractor,
+        value.data(),
+        value.size(),
+        [&](const char * token_start, size_t token_length)
+        {
+            tokens.emplace(std::string{token_start, token_length}, pos);
+            ++pos;
+            return false;
+        });
 
     return tokens;
 }
@@ -236,7 +241,7 @@ void searchOnArray(
         {
             std::string_view input = input_string.getDataAt(current_offset + j);
 
-            forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+            forEachToken(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
 
             if (col_result[i])
                 break;
@@ -260,7 +265,7 @@ void searchOnString(
         col_result[i] = false;
         matcher.reset();
 
-        forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+        forEachToken(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
     }
 }
 
