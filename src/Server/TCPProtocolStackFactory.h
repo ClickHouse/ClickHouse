@@ -7,6 +7,8 @@
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
 #include <Access/Common/AllowedClientHosts.h>
+#include <vector>
+#include <string>
 
 
 namespace DB
@@ -15,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
-    extern const int IP_ADDRESS_NOT_ALLOWED;
 }
 
 
@@ -64,13 +65,35 @@ public:
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
+        bool ip_blocked = false;
         if (!allowed_client_hosts.empty() && !allowed_client_hosts.contains(socket.peerAddress().host()))
-            throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", socket.peerAddress().toString());
+            ip_blocked = true;
+
+        /// For non-TLS stacks, keep the old fast-fail behavior for blocked IPs to avoid
+        /// consuming a worker thread and doing extra work (DoS surface).
+        if (ip_blocked)
+        {
+            bool has_secure_layer = false;
+            for (const auto & factory : stack)
+            {
+                if (factory && factory->isSecure())
+                {
+                    has_secure_layer = true;
+                    break;
+                }
+            }
+            if (!has_secure_layer)
+            {
+                LOG_TRACE(log, "TCP Request. Address: {}. Access denied (non-TLS, fast-fail).", socket.peerAddress().toString());
+                /// Throw before creating any handler to avoid tying up a worker thread.
+                throw Poco::Net::NetException("Client is not allowed to connect");
+            }
+        }
 
         try
         {
-            LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name);
+            LOG_TRACE(log, "TCP Request. Address: {}. {}", socket.peerAddress().toString(), ip_blocked ? "Access denied." : "Allowed.");
+            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name, ip_blocked);
         }
         catch (const Poco::Net::NetException &)
         {

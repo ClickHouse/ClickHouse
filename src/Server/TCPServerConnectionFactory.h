@@ -28,5 +28,7 @@ public:
     {
         return createConnection(socket, tcp_server);
     }
+
+    virtual bool isSecure() const { return false; }
 };
 }
