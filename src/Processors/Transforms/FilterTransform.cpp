@@ -18,6 +18,7 @@ namespace ProfileEvents
 {
     extern const Event FilterTransformPassedRows;
     extern const Event FilterTransformPassedBytes;
+    extern const Event MergeTreeSelectOutputRows;
 }
 
 namespace DB
@@ -70,7 +71,8 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<UInt64, String>> condition_)
+    std::optional<std::pair<UInt64, String>> condition_,
+    bool count_mergetree_output_rows_)
     : ISimpleTransform(
             header_,
             std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
@@ -81,6 +83,7 @@ FilterTransform::FilterTransform(
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
     , condition(condition_)
+    , count_mergetree_output_rows(count_mergetree_output_rows_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -146,6 +149,8 @@ void FilterTransform::transform(Chunk & chunk)
     doTransform(chunk);
     if (rows_filtered)
         *rows_filtered += chunk_rows_before - chunk.getNumRows();
+    if (count_mergetree_output_rows)
+        ProfileEvents::increment(ProfileEvents::MergeTreeSelectOutputRows, chunk.getNumRows());
 }
 
 void FilterTransform::doTransform(Chunk & chunk)

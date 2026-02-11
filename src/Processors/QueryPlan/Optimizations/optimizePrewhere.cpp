@@ -138,6 +138,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     if (typeid_cast<ReadFromMerge *>(child_node->step.get()))
         return;
 
+    /// Check early if the child is ReadFromMergeTree so we can set MergeTreeSelectOutputRows counting flags.
+    /// Pessimistic default: assume the FilterStep will remain (WHERE not fully pushed), so count at FilterStep.
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
+    if (read_from_merge_tree_step)
+    {
+        filter_step->setCountMergeTreeOutputRows(true);
+        read_from_merge_tree_step->setCountOutputRows(false);
+    }
+
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
     const auto & storage = storage_snapshot->storage;
     if (!storage.canMoveConditionsToPrewhere())
@@ -162,7 +171,6 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     /// - vector search lookups with disabled rescoring
     /// - PREWHERE
     /// The former is more impactful, therefore disable PREWHERE if both may be used.
-    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
     if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
         return;
 
@@ -204,14 +212,25 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        new_step = std::make_unique<FilterStep>(
+        auto new_filter_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+
+        /// Remaining WHERE stays as FilterStep -- it should count MergeTreeSelectOutputRows.
+        if (read_from_merge_tree_step)
+            new_filter_step->setCountMergeTreeOutputRows(true);
+
+        new_step = std::move(new_filter_step);
     }
     else
     {
+        /// WHERE fully pushed to PREWHERE -- re-enable counting at ReadFromMergeTree
+        /// since the old FilterStep (which had the flag) is about to be destroyed.
+        if (read_from_merge_tree_step)
+            read_from_merge_tree_step->setCountOutputRows(true);
+
         /// Have to keep this expression to change column names to column identifiers
         new_step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),
