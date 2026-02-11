@@ -1988,7 +1988,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// so we need to check whether the query is initial through getZooKeeperMetadataTransaction()->isInitialQuery()
     bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
                             (getContext()->getZooKeeperMetadataTransaction() && getContext()->getZooKeeperMetadataTransaction()->isInitialQuery());
-    bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(create.getDatabase());
+    bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(create.getDatabase()) || DatabaseCatalog::instance().isUserPredefinedDatabase(create.getDatabase());
     if (!internal && is_initial_query && !is_predefined_database)
         throwIfTooManyEntities(create);
 

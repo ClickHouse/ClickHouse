@@ -61,6 +61,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
     extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
     extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
+    extern const ServerSettingsString user_predefined_database;
 }
 
 namespace ErrorCodes
@@ -348,6 +349,11 @@ bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
 {
     return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
         || database_name == INFORMATION_SCHEMA_UPPERCASE;
+}
+
+bool DatabaseCatalog::isUserPredefinedDatabase(std::string_view database_name) const
+{
+    return database_name == getContext()->getServerSettings()[ServerSetting::user_predefined_database].toString();
 }
 
 

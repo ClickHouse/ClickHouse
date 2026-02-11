@@ -1490,6 +1490,16 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```xml
     <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
     ```
+    )", 0) \
+    DECLARE(String, user_predefined_database, "", R"(
+    Tables from this database will not be counted in metrics such as `AttachedTable`.
+    Adding a table to this database also ignores all limits like [`max_table_num_to_throw`](#max_table_num_to_throw).
+
+    **Example**
+
+    ```xml
+    <user_predefined_database>_system_database</user_predefined_database>
+    ```
     )", 0)
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).

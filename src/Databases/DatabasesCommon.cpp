@@ -461,7 +461,8 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     tables.erase(it);
     table_storage->is_detached = true;
 
-    if (!table_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(database_name) || DatabaseCatalog::instance().isUserPredefinedDatabase(database_name);
+    if (!table_storage->isSystemStorage() && !is_predefined_database)
     {
         LOG_TEST(log, "Counting detached table {} to database {}", table_name, database_name);
         for (auto metric : getAttachedCountersForStorage(table_storage))
@@ -510,7 +511,8 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
 
-    if (!table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(database_name) || DatabaseCatalog::instance().isUserPredefinedDatabase(database_name);
+    if (!table->isSystemStorage() && !is_predefined_database)
     {
         LOG_TEST(log, "Counting attached table {} to database {}", table_name, database_name);
         for (auto metric : getAttachedCountersForStorage(table))
