@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/Set.h>
@@ -105,8 +106,7 @@ public:
         UInt64 exact_values_limit_
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
-        , argument_can_have_nulls(filter_column_target_type->isNullable() ||
-            filter_column_target_type->isLowCardinalityNullable() ||
+        , argument_can_have_nulls(hasNullable(filter_column_target_type) ||
             WhichDataType(filter_column_target_type).isDynamic())
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)

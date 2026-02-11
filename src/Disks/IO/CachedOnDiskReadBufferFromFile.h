@@ -146,9 +146,8 @@ private:
     FileCacheOriginInfo origin;
 
     bool allow_seeks_after_first_read;
-    [[maybe_unused]]bool use_external_buffer;
+    bool use_external_buffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
-    ProfileEvents::Counters current_file_segment_counters;
 
     FileCacheQueryLimit::QueryContextHolderPtr query_context_holder;
 

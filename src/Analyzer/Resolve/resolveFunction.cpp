@@ -1477,6 +1477,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
                 column = executable_function->execute(argument_columns, result_type, num_rows, true);
+
+                /// All constant (literal) columns in block are added with size 1.
+                /// But if there was no columns in block before executing a function, the result has size 0.
+                /// Change the size to 1.
+                if (column && column->empty() && isColumnConst(*column))
+                    column = column->cloneResized(1);
             }
             else
             {

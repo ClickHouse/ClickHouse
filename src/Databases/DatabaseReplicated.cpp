@@ -1361,6 +1361,14 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
 
+    String host_fqdn_id;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (!ddl_worker || is_probably_dropped)
+            throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Database is not initialized or is being dropped");
+        host_fqdn_id = ddl_worker->getCommonHostID();
+    }
+
     if (!flags.internal && (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
@@ -1369,7 +1377,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 
     DDLLogEntry entry;
     entry.query = query->formatWithSecretsOneLine();
-    entry.initiator = ddl_worker->getCommonHostID();
+    entry.initiator = host_fqdn_id;
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.is_backup_restore = flags.distributed_backup_restore;
@@ -1724,7 +1732,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     {
         for (const auto & table_id : tables_to_create)
         {
-            auto task = [&]()
+            /// Note that passing references here to runner is fine:
+            /// table_id is part of tables_to_create, which is part of tables_to_create_by_level, which is alive until runner is destroyed
+            /// Same for table_name_to_metadata and make_query_context
+            auto task = [this, &table_id, &table_name_to_metadata, &make_query_context]()
             {
                 auto table_name = table_id.getTableName();
 
@@ -1982,6 +1993,28 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
 {
     waitDatabaseStarted();
 
+    /// Stop the DDL worker before restoring metadata to prevent a race condition:
+    /// the old DDL worker may reconnect to ZooKeeper, read the intermediate state
+    /// (where table metadata has not been written yet), and mistakenly move local
+    /// tables to `_broken_replicated_tables`.
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (ddl_worker)
+        {
+            LOG_TRACE(log, "Stopping DDL worker before restoring database metadata in Keeper.");
+            ddl_worker->shutdown();
+            ddl_worker_initialized = false;
+            ddl_worker = nullptr;
+        }
+    }
+
+    /// If the restore fails, reinitialize the DDL worker so the database remains functional.
+    bool need_reinitialize_ddl_worker = true;
+    SCOPE_EXIT({
+        if (need_reinitialize_ddl_worker)
+            reinitializeDDLWorker();
+    });
+
     tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::CREATE);
 
     try
@@ -2001,6 +2034,7 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
     auto current_zookeeper = getContext()->getZooKeeper();
     current_zookeeper->set(replica_path + "/digest", DatabaseReplicatedDDLWorker::FORCE_AUTO_RECOVERY_DIGEST);
 
+    need_reinitialize_ddl_worker = false;
     reinitializeDDLWorker();
 }
 

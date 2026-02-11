@@ -7,8 +7,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Port.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {

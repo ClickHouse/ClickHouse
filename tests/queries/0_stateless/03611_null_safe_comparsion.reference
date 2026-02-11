@@ -110,10 +110,6 @@ NULL-safe comparisons with type-correct literals
 1
 1
 1
-\N
-\N
-0
-\N
 Array vs Map cross-type test cases
 Map vs Variant cross-type test cases
 1.9 WHERE Clause

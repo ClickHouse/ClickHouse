@@ -496,6 +496,10 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     else if (config.has(config_prefix + ".connection_string"))
     {
         storage_url = config.getString(config_prefix + ".connection_string");
+        if (storage_url.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Azure Blob Storage connection string is empty. "
+                "If it is specified via an environment variable, please check that the variable is set");
         container_name = get_container_name();
     }
     else if (config.has(config_prefix + ".storage_account_url"))

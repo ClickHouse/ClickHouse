@@ -735,7 +735,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
-    ASTCreateQuery & create, LoadingStrictnessLevel mode) const
+    ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
@@ -784,9 +784,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->projections)
-            for (const auto & projection_ast : create.columns_list->projections->children)
+            for (auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
+                /// Replace the original AST with the normalized one (e.g., positional GROUP BY arguments
+                /// like `GROUP BY 1, 2` are rewritten to use actual column names). This ensures that
+                /// the stored table metadata uses resolved names and can be loaded on server restart.
+                projection_ast = projection.definition_ast;
                 properties.projections.add(std::move(projection));
             }
 
@@ -1515,7 +1519,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
 
     if (create.sql_security)
-        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, /* skip_check_permissions= */ mode >= LoadingStrictnessLevel::SECONDARY_CREATE);
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, mode);
 
     DDLGuardPtr ddl_guard;
 
@@ -2311,7 +2315,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
-        String as_database_name = getContext()->resolveDatabase(create.as_database);
+        String as_database_name = getContext()->resolveDatabase(as_database_saved);
 
         auto partition = make_intrusive<ASTPartition>();
         partition->all = true;
@@ -2527,7 +2531,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, bool skip_check_permissions)
+void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, LoadingStrictnessLevel mode)
 {
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
@@ -2568,27 +2572,30 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     }
 
     /// Checks the permissions for the specified definer user.
-    if (sql_security.definer && !skip_check_permissions)
+    if (sql_security.definer)
     {
         auto definer_name = sql_security.definer->toString();
         if (definer_name != current_user_name)
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
 
-        auto & access_control = context_->getAccessControl();
-        const auto user = access_control.read<User>(definer_name);
-        if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
+        if (mode <= LoadingStrictnessLevel::CREATE)
         {
-            definer_name = user->getName() + ":definer";
-            sql_security.definer = make_intrusive<ASTUserNameWithHost>(definer_name);
-            auto new_user = typeid_cast<std::shared_ptr<User>>(user->clone());
-            new_user->setName(definer_name);
-            new_user->authentication_methods.clear();
-            new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
-            access_control.insertOrReplace(new_user);
+            auto & access_control = context_->getAccessControl();
+            const auto user = access_control.read<User>(definer_name);
+            if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
+            {
+                definer_name = user->getName() + ":definer";
+                sql_security.definer = make_intrusive<ASTUserNameWithHost>(definer_name);
+                auto new_user = typeid_cast<std::shared_ptr<User>>(user->clone());
+                new_user->setName(definer_name);
+                new_user->authentication_methods.clear();
+                new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
+                access_control.insertOrReplace(new_user);
+            }
         }
     }
 
-    if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
+    if (sql_security.type == SQLSecurityType::NONE)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 

@@ -56,7 +56,7 @@ template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
     if (!object_storage)
-        object_storage = configuration->createObjectStorage(context, create_readonly);
+        object_storage = configuration->createObjectStorage(context, create_readonly, std::nullopt);
     return object_storage;
 }
 

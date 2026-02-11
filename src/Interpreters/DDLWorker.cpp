@@ -30,6 +30,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
@@ -37,7 +38,6 @@
 #include <Common/setThreadName.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/sleep.h>
 #include <base/sort.h>
 
 #include <memory>
@@ -1177,7 +1177,9 @@ bool DDLWorker::initializeMainThread()
         }
 
         /// Avoid busy loop when ZooKeeper is not available.
-        sleepForSeconds(5);
+        /// Use an interruptible wait so that shutdown() can wake us up immediately
+        /// instead of waiting for the full sleep duration.
+        queue_updated_event->tryWait(5000);
     }
 
     return false;
@@ -1257,7 +1259,7 @@ void DDLWorker::runMainThread()
                 LOG_ERROR(log, "Unexpected ZooKeeper error, will try to restart main thread: {}", getCurrentExceptionMessage(true));
                 reset_state();
             }
-            sleepForSeconds(1);
+            queue_updated_event->tryWait(1000);
         }
         catch (...)
         {
@@ -1282,15 +1284,15 @@ void DDLWorker::runMainThread()
 
             LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count.load(), message);
 
-            /// Sleep before retrying
-            sleepForSeconds(5);
+            /// Sleep before retrying, but use an interruptible wait
+            /// so that shutdown() can wake us up promptly.
+            queue_updated_event->tryWait(5000);
             /// Reset state after sleeping, so DatabaseReplicated::canExecuteReplicatedMetadataAlter()
             /// will have a chance even when the database got stuck in infinite retries
             reset_state();
         }
     }
 }
-
 
 void DDLWorker::initializeReplication()
 {
@@ -1300,6 +1302,7 @@ void DDLWorker::initializeReplication()
 
 void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
 {
+    auto component_guard = Coordination::setCurrentComponent("DDLWorker::createReplicaDirs");
     for (const auto & host_id : host_ids)
     {
         LOG_INFO(log, "Creating replica dir for host id {}", host_id);
