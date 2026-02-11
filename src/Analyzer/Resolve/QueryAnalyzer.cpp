@@ -3778,6 +3778,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     auto & scope_context = scope.context;
 
+    auto old_scope_allow_to_resolve_niladic_functions = scope.allow_to_resolve_niladic_functions;
+    scope.allow_to_resolve_niladic_functions = false;
+
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
@@ -3969,6 +3972,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     auto table_function_ast = table_function_node_typed.toAST();
     table_function_ptr->parseArguments(table_function_ast, scope_context);
 
+    scope.allow_to_resolve_niladic_functions = old_scope_allow_to_resolve_niladic_functions;
 
     uint64_t use_structure_from_insertion_table_in_table_functions
         = scope_context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
