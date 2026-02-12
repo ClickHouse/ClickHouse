@@ -7,9 +7,9 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFactory.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -27,16 +27,19 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 template <typename Point>
-struct AggregateFunctionGroupPolygonUnionData
+struct AggregateFunctionGroupPolygonIntersectionData
 {
-    MultiPolygon<Point> accumulated_union;
+    MultiPolygon<Point> accumulated_intersection;
     bool has_value = false;
 };
 
+// Reusing InputGeometryType from Union implementation if possible, or redefining here.
+// Since it was defined inside the anonymous namespace or class in Union, we should probably redefine or move it to a common header.
+// For now, redefining to avoid header dependency hell.
 enum class InputGeometryType : uint8_t
 {
     Ring,
@@ -45,13 +48,13 @@ enum class InputGeometryType : uint8_t
 };
 
 template <typename Point>
-class AggregateFunctionGroupPolygonUnion final
-    : public IAggregateFunctionDataHelper<AggregateFunctionGroupPolygonUnionData<Point>, AggregateFunctionGroupPolygonUnion<Point>>
+class AggregateFunctionGroupPolygonIntersection final : public IAggregateFunctionDataHelper<
+                                                            AggregateFunctionGroupPolygonIntersectionData<Point>,
+                                                            AggregateFunctionGroupPolygonIntersection<Point>>
 {
 private:
-    using Data = AggregateFunctionGroupPolygonUnionData<Point>;
+    using Data = AggregateFunctionGroupPolygonIntersectionData<Point>;
     InputGeometryType input_type;
-    bool correct_geometry = true;
 
     static InputGeometryType resolveInputType(const DataTypePtr & type)
     {
@@ -62,20 +65,22 @@ private:
             return InputGeometryType::Polygon;
         if (factory.get("MultiPolygon")->equals(*type))
             return InputGeometryType::MultiPolygon;
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
             "Unsupported geometry type for {}: {}. Expected Ring, Polygon, or MultiPolygon",
-            "groupPolygonUnion", type->getName());
+            "groupPolygonIntersection",
+            type->getName());
     }
 
 public:
-    explicit AggregateFunctionGroupPolygonUnion(const DataTypes & argument_types_, bool correct_geometry_ = true)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupPolygonUnion<Point>>(
+    explicit AggregateFunctionGroupPolygonIntersection(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupPolygonIntersection<Point>>(
             argument_types_, {}, DataTypeFactory::instance().get("MultiPolygon"))
         , input_type(resolveInputType(argument_types_.at(0)))
+    {
+    }
 
-    {}
-
-    String getName() const override { return "groupPolygonUnion"; }
+    String getName() const override { return "groupPolygonIntersection"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -83,13 +88,10 @@ public:
     {
         auto & state = this->data(place);
 
-        /// If the second argument is provided and is 0, skip geometry correction for this row.
-        bool should_correct = correct_geometry;
-        if (this->argument_types.size() == 2)
-        {
-            const auto & col = assert_cast<const ColumnUInt8 &>(*columns[1]);
-            should_correct = col.getData()[row_num] != 0;
-        }
+        // Optimization: if we already have a value and it is empty, the intersection will always be empty.
+        // So we can skip processing subsequent rows.
+        if (state.has_value && state.accumulated_intersection.empty())
+            return;
 
         /// Extract only the single row we need, avoiding conversion of the entire column.
         auto single_row_col = columns[0]->cut(row_num, 1);
@@ -98,50 +100,44 @@ public:
 
         switch (input_type)
         {
-            case InputGeometryType::Ring:
-            {
+            case InputGeometryType::Ring: {
                 auto rings = ColumnToRingsConverter<Point>::convert(single_row_col);
                 if (rings.empty())
-                    return;
+                    return; // Should not happen for 1 row unless null, but safe check
                 Polygon<Point> polygon;
                 polygon.outer() = std::move(rings[0]);
-                if (should_correct)
-                    boost::geometry::correct(polygon);
+                boost::geometry::correct(polygon);
                 current_multi_polygon.emplace_back(std::move(polygon));
                 break;
             }
-            case InputGeometryType::Polygon:
-            {
+            case InputGeometryType::Polygon: {
                 auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
                 if (polygons.empty())
                     return;
-                if (should_correct)
-                    boost::geometry::correct(polygons[0]);
+                boost::geometry::correct(polygons[0]);
                 current_multi_polygon.emplace_back(std::move(polygons[0]));
                 break;
             }
-            case InputGeometryType::MultiPolygon:
-            {
+            case InputGeometryType::MultiPolygon: {
                 auto multi_polygons = ColumnToMultiPolygonsConverter<Point>::convert(single_row_col);
                 if (multi_polygons.empty())
                     return;
                 current_multi_polygon = std::move(multi_polygons[0]);
-                if (should_correct)
-                    boost::geometry::correct(current_multi_polygon);
+                boost::geometry::correct(current_multi_polygon);
                 break;
             }
         }
 
         if (!state.has_value)
         {
-            state.accumulated_union = std::move(current_multi_polygon);
+            state.accumulated_intersection = std::move(current_multi_polygon);
             state.has_value = true;
         }
         else
         {
-            MultiPolygon<Point> new_union;
-            boost::geometry::union_(state.accumulated_union, current_multi_polygon, new_union);
-            state.accumulated_union = std::move(new_union);
+            MultiPolygon<Point> new_intersection;
+            boost::geometry::intersection(state.accumulated_intersection, current_multi_polygon, new_intersection);
+            state.accumulated_intersection = std::move(new_intersection);
         }
     }
 
@@ -155,14 +151,23 @@ public:
 
         if (!state.has_value)
         {
-            state.accumulated_union = rhs_state.accumulated_union;
+            state.accumulated_intersection = rhs_state.accumulated_intersection;
             state.has_value = true;
         }
         else
         {
-            MultiPolygon<Point> new_union;
-            boost::geometry::union_(state.accumulated_union, rhs_state.accumulated_union, new_union);
-            state.accumulated_union = std::move(new_union);
+            // Optimization: if either is empty, intersection is empty
+            if (state.accumulated_intersection.empty())
+                return;
+            if (rhs_state.accumulated_intersection.empty())
+            {
+                state.accumulated_intersection.clear();
+                return;
+            }
+
+            MultiPolygon<Point> new_intersection;
+            boost::geometry::intersection(state.accumulated_intersection, rhs_state.accumulated_intersection, new_intersection);
+            state.accumulated_intersection = std::move(new_intersection);
         }
     }
 
@@ -176,7 +181,7 @@ public:
 
         std::stringstream wkt_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         wkt_stream.exceptions(std::ios::failbit);
-        wkt_stream << boost::geometry::wkt(state.accumulated_union);
+        wkt_stream << boost::geometry::wkt(state.accumulated_intersection);
         std::string wkt_str = wkt_stream.str();
 
         writeVarUInt(wkt_str.size(), buf);
@@ -197,7 +202,7 @@ public:
         std::string wkt_str(wkt_size, '\0');
         buf.readStrict(wkt_str.data(), wkt_size);
 
-        boost::geometry::read_wkt(wkt_str, state.accumulated_union);
+        boost::geometry::read_wkt(wkt_str, state.accumulated_intersection);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -215,7 +220,7 @@ public:
 
         // Use MultiPolygonSerializer to add the result
         MultiPolygonSerializer<Point> serializer;
-        serializer.add(state.accumulated_union);
+        serializer.add(state.accumulated_intersection);
         auto result_column = serializer.finalize();
 
         // Copy from result to output
