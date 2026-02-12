@@ -245,7 +245,6 @@ def _grafana_params(commit_sha, from_iso, to_iso, scenario_filter=None):
         "to": to_iso,
         "timezone": "utc",
         "var-commit_sha": commit_sha or "$__all",
-        "var-backend": "$__all",
         "refresh": "1m",
     }
     if scenario_filter:
@@ -257,8 +256,9 @@ def _grafana_params(commit_sha, from_iso, to_iso, scenario_filter=None):
 def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None):
     """
     Add clickable Grafana dashboard links to the result (job report and GH summary).
-    - Run details: this run (exact time window) and historical 30d.
-    - Run Comparison: PR vs base (compare_version=current, baseline_version from env if set).
+    - Run details: drill-down for this run only (exact time window and commit).
+    - Run Comparison: baseline vs compare version over recent window; scenario, time range, and
+      last_n_commits are dashboard variables so users can adjust without changing the link.
     """
     base = GRAFANA_KEEPER_STRESS_RUN_DETAILS_BASE
     start_ts = stop_watch.start_time
@@ -272,19 +272,13 @@ def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None):
         if include_ids:
             scenario_filter = [s.strip() for s in include_ids.split(",") if s.strip()]
 
-    # 1. Run details: this run (exact time window and commit)
+    # 1. Run details: this run only (exact time window and commit)
     p1 = _grafana_params(commit_sha, start_iso, end_iso, scenario_filter)
     result.set_clickable_label(
         "Grafana: This run (details)",
         f"{base}?{urlencode(p1, doseq=True)}",
     )
-    # 2. Run details: historical 30d
-    p2 = _grafana_params(commit_sha, "now-30d", "now", scenario_filter)
-    result.set_clickable_label(
-        "Grafana: Historical (30d)",
-        f"{base}?{urlencode(p2, doseq=True)}",
-    )
-    # 3. Run Comparison dashboard: PR vs base (single scenario, two versions)
+    # 2. Run Comparison: one link; default 7d + last_n_commits for recent PR/baseline view
     compare_short = (commit_sha or "")[:8]
     baseline_sha = os.environ.get("KEEPER_STRESS_BASELINE_SHA", "").strip()[:8] or ""
     run_comp_params = {
@@ -299,7 +293,7 @@ def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None):
         "refresh": "1m",
     }
     result.set_clickable_label(
-        "Grafana: Run Comparison (PR vs base)",
+        "Grafana: Run Comparison",
         f"{GRAFANA_KEEPER_STRESS_RUN_COMPARISON_BASE}?{urlencode(run_comp_params)}",
     )
 
