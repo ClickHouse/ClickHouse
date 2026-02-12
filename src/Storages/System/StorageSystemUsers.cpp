@@ -40,6 +40,33 @@ namespace
             enum_values.emplace_back(AuthenticationTypeInfo::get(type).name, static_cast<Int8>(type));
         return enum_values;
     }
+
+    /// If the predicate is a simple `name = 'literal'`, extract the literal string.
+    /// Returns std::nullopt for any other predicate shape — the caller falls back to the full scan.
+    std::optional<String> tryExtractNameFromPredicate(const ActionsDAG::Node * predicate)
+    {
+        if (!predicate
+            || predicate->type != ActionsDAG::ActionType::FUNCTION
+            || predicate->function_base->getName() != "equals"
+            || predicate->children.size() != 2)
+            return {};
+
+        const ActionsDAG::Node * name_node = nullptr;
+        const ActionsDAG::Node * const_node = nullptr;
+
+        for (const auto * child : predicate->children)
+        {
+            if (child->type == ActionsDAG::ActionType::INPUT && child->result_name == "name")
+                name_node = child;
+            else if (child->type == ActionsDAG::ActionType::COLUMN && child->column && isColumnConst(*child->column))
+                const_node = child;
+        }
+
+        if (!name_node || !const_node || !isString(const_node->result_type))
+            return {};
+
+        return (*const_node->column)[0].safeGet<String>();
+    }
 }
 
 
@@ -96,34 +123,6 @@ Block StorageSystemUsers::getFilterSampleBlock() const
     return {
         { {}, std::make_shared<DataTypeString>(), "name" },
     };
-}
-
-
-/// If the predicate is a simple `name = 'literal'`, extract the literal string.
-/// Returns std::nullopt for any other predicate shape — the caller falls back to the full scan.
-static std::optional<String> tryExtractNameFromPredicate(const ActionsDAG::Node * predicate)
-{
-    if (!predicate
-        || predicate->type != ActionsDAG::ActionType::FUNCTION
-        || predicate->function_base->getName() != "equals"
-        || predicate->children.size() != 2)
-        return {};
-
-    const ActionsDAG::Node * name_node = nullptr;
-    const ActionsDAG::Node * const_node = nullptr;
-
-    for (const auto * child : predicate->children)
-    {
-        if (child->type == ActionsDAG::ActionType::INPUT && child->result_name == "name")
-            name_node = child;
-        else if (child->type == ActionsDAG::ActionType::COLUMN && child->column && isColumnConst(*child->column))
-            const_node = child;
-    }
-
-    if (!name_node || !const_node)
-        return {};
-
-    return (*const_node->column)[0].safeGet<String>();
 }
 
 
