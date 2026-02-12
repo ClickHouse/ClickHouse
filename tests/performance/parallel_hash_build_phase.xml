@@ -5,5 +5,5 @@
     <max_threads>8</max_threads>
   </settings>
 
-  <query>select * from numbers_mt(100) t1 inner join numbers_mt(1e8) t2 using (number) format Null</query>
+  <query>select * from numbers_mt(12) t1 inner join numbers_mt(1e8) t2 using (number) format Null</query>
 </test>

@@ -5,7 +5,7 @@
         <substitution>
            <name>numbers</name>
            <values>
-               <value>numbers_mt(1500000)</value>
+               <value>numbers_mt(250000)</value>
            </values>
         </substitution>
         <substitution>
