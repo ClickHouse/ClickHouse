@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-random-detach
 
 # Test for data race in Context::getAccess() where need_recalculate_access
 # was written under a shared lock while being read by another thread.

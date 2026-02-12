@@ -1,4 +1,4 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-random-detach
 -- This is a whole separate new set of tests since ReplicatedMergeTree deals with the metadata changes differently (via Keeper)
 
 -- Group 1: Column operations (rename, add, drop, multiple ops) - reuse one table

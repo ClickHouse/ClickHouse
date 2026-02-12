@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+
 select 'Different materialized view insert into one underlayed table equal data.';
 
 DROP TABLE IF EXISTS dst;
