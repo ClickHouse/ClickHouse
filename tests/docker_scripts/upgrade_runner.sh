@@ -310,6 +310,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
+# `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
+# from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -361,6 +363,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "QUALIFY clause is not supported in the old analyzer" \
            -e "Cannot attach table \`test_7\`" \
            -e "Cannot open file /var/lib/clickhouse/access/" \
+           -e "NO_SUCH_INTERSERVER_IO_ENDPOINT" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true

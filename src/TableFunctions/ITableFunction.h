@@ -116,19 +116,7 @@ protected:
         return empty;
     }
 
-    String getFunctionURINormalized() const
-    {
-        try
-        {
-            Poco::URI uri(getFunctionURI());
-            uri.normalize();
-            return uri.toString();
-        }
-        catch (const Poco::Exception &)
-        {
-            return "";
-        }
-    }
+    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

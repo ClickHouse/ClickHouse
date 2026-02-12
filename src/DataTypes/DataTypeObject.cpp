@@ -158,6 +158,11 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     }
 }
 
+String DataTypeObject::getSchemaFormatString() const
+{
+    return String{magic_enum::enum_name(schema_format)};
+}
+
 String DataTypeObject::doGetName() const
 {
     WriteBufferFromOwnString out;
@@ -311,7 +316,7 @@ std::optional<String> tryGetSubObjectSubcolumn(std::string_view subcolumn_name)
 
 }
 
-std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const
+std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     /// Check if it's a special subcolumn used for distinct paths calculation.
     if (subcolumn_name == SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
@@ -465,7 +470,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// Get subcolumn for Dynamic type if needed.
     if (!path_subcolumn.empty())
     {
-        res = DB::IDataType::getSubcolumnData(path_subcolumn, *res, throw_if_null);
+        res = DB::IDataType::getSubcolumnData(path_subcolumn, *res, initial_array_level, throw_if_null);
         if (!res)
             return nullptr;
     }

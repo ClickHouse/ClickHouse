@@ -1,9 +1,11 @@
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <base/defines.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 namespace DB
@@ -176,7 +178,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        MergeTreeIndexGranularityPtr computed_index_granularity);
+        MergeTreeIndexGranularityPtr computed_index_granularity,
+        WrittenOffsetSubstreams * written_offset_substreams);
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,
@@ -195,7 +198,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        MergeTreeIndexGranularityPtr computed_index_granularity)
+        MergeTreeIndexGranularityPtr computed_index_granularity,
+        WrittenOffsetSubstreams * written_offset_substreams)
 {
     if (part_type == MergeTreeDataPartType::Compact)
         return createMergeTreeDataPartCompactWriter(
@@ -231,7 +235,8 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             marks_file_extension_,
             default_codec_,
             writer_settings,
-            std::move(computed_index_granularity));
+            std::move(computed_index_granularity),
+            written_offset_substreams);
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
 }
 

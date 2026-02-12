@@ -262,6 +262,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString parquet_metadata_cache_policy;
+    extern const ServerSettingsUInt64 parquet_metadata_cache_size;
+    extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
+    extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
@@ -689,9 +693,10 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Server::options());
+        std::string app_name = (commandName() == "clickhouse-server") ? "clickhouse-server" : "clickhouse server";
         auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName());
+                                      app_name);
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -1208,6 +1213,22 @@ try
         LOG_INFO(log, "Starting root logger in level {}", logger_startup_level_setting.value);
     }
 
+    // If the startup_console_log_level is set in the config, we override the console logger level.
+    // Specific loggers can still override it.
+    std::string original_console_log_level_config = config().getString("logger.startup_console_log_level", "");
+    bool should_restore_console_log_level = false;
+    if (config().has("logger.startup_console_log_level") && !config().getString("logger.startup_console_log_level").empty())
+    {
+        /// Set the console logger level to the startup console level.
+        /// This is useful for debugging startup issues.
+        /// The console logger level will be reset to the default level after the server is fully initialized.
+        config().setString("logger.console_log_level", config().getString("logger.startup_console_log_level"));
+        Loggers::updateLevels(config(), logger());
+        should_restore_console_log_level = true;
+
+        LOG_INFO(log, "Starting console logger in level {}", config().getString("logger.startup_console_log_level"));
+    }
+
     MainThreadStatus::getInstance();
 
 #if USE_JEMALLOC
@@ -1347,8 +1368,8 @@ try
         server_settings[ServerSetting::max_thread_pool_size],
         server_settings[ServerSetting::max_thread_pool_free_size],
         server_settings[ServerSetting::thread_pool_queue_size],
-        has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns] : 0,
-        has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns] : 0);
+        has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
+        has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
 
     if (has_trace_collector)
     {
@@ -2017,6 +2038,18 @@ try
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
+#if USE_PARQUET
+    String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
+    size_t parquet_metadata_cache_size = server_settings[ServerSetting::parquet_metadata_cache_size];
+    size_t parquet_metadata_cache_max_entries = server_settings[ServerSetting::parquet_metadata_cache_max_entries];
+    double parquet_metadata_cache_size_ratio = server_settings[ServerSetting::parquet_metadata_cache_size_ratio];
+    if (parquet_metadata_cache_size > max_cache_size)
+    {
+        parquet_metadata_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_cache_size));
+    }
+    global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
+#endif
 
     Names allowed_disks_table_engines;
     splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
@@ -2423,6 +2456,17 @@ try
 
             if (global_context->isServerCompletelyStarted())
                 CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
+
+            /// Update core dump size limit.
+            {
+                rlimit rlim;
+                if (getrlimit(RLIMIT_CORE, &rlim) == 0)
+                {
+                    rlim.rlim_cur = config->getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+                    if (setrlimit(RLIMIT_CORE, &rlim))
+                        LOG_WARNING(log, "Cannot set max size of core file to {}", rlim.rlim_cur);
+                }
+            }
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
@@ -2956,6 +3000,14 @@ try
                 LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
             }
 
+            // Restore the root logger level to the default level after the server is fully initialized.
+            if (should_restore_console_log_level)
+            {
+                config().setString("logger.console_log_level", original_console_log_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+            }
+
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
@@ -2999,6 +3051,17 @@ try
 
                 LOG_INFO(log, "Set root logger in level {} before shutdown", logger_shutdown_level_setting.value);
             }
+
+            if (config().has("logger.shutdown_console_log_level") && !config().getString("logger.shutdown_console_log_level").empty())
+            {
+                /// Set the root logger level to the shutdown level.
+                /// This is useful for debugging shutdown issues.
+                config().setString("logger.console_log_level", config().getString("logger.shutdown_console_log_level"));
+                Loggers::updateLevels(config(), logger());
+
+                LOG_INFO(log, "Set console logger in level {} before shutdown", config().getString("logger.shutdown_console_log_level"));
+            }
+
             LOG_DEBUG(log, "Received termination signal.");
 
             CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);

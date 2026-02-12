@@ -1126,7 +1126,7 @@ ZooKeeperPtr ZooKeeper::create(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeepe
     return res;
 }
 
-ZooKeeperPtr ZooKeeper::create_from_impl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory)
+ZooKeeperPtr ZooKeeper::createFromImpl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory)
 {
     auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(factory()));
     res->args.zookeeper_name = "internal";

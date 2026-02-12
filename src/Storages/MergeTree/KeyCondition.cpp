@@ -1549,10 +1549,25 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     for (const auto & index_mapping : adjusted_indexes_mapping)
         out.key_columns.push_back(index_mapping.key_index);
 
-    /// When not all key columns are used or when there are multiple elements in
-    /// the set, the atom's hyperrectangle is expanded to encompass the missing
-    /// dimensions and any "gaps".
-    if (adjusted_indexes_mapping.size() < set_types.size() || out.set_index->size() > 1 || is_constant_transformed)
+    /// Mark the atom as relaxed when the set check is not exact.
+    ///
+    /// - `adjusted_indexes_mapping.size() < set_types.size()`
+    ///    We couldn't build a 1:1 mapping from set tuple elements to key columns:
+    ///      - some tuple elements are not key columns (so they are dropped), or
+    ///      - multiple tuple elements map to the same key column and MergeTreeSetIndex deduplicates them.
+    ///    This makes `IN` weaker and, after negation, makes `NOT IN` stronger. In such cases we must not
+    ///    rely on `MergeTreeSetIndex::checkInRange()` returning an exact `can_be_false` for single-point
+    ///    key ranges (used by partition pruning and minmax), otherwise `NOT IN` could prune incorrectly.
+    ///    Example: `tuple(i, i) NOT IN (tuple(1, 2))` would effectively turn into `i NOT IN (1)`.
+    ///
+    /// - `is_constant_transformed`
+    ///    For partition pruning we may transform set elements via functions from the key expression,
+    ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
+    ///    `ts NOT IN ('2026-02-03 19:00:00')` into `toDate(ts) NOT IN ('2026-02-03')`, which is not equivalent.
+    if (adjusted_indexes_mapping.size() < set_types.size() || is_constant_transformed)
+        out.relaxed = true;
+
+    if (out.set_index->size() > 1 || out.relaxed)
         relaxed = true;
 
     return true;
@@ -1661,10 +1676,26 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     for (const auto & index_mapping : adjusted_indexes_mapping)
         out.key_columns.push_back(index_mapping.key_index);
 
-    /// When not all key columns are used or when there are multiple elements in
-    /// the set, the atom's hyperrectangle is expanded to encompass the missing
-    /// dimensions and any "gaps".
-    if (adjusted_indexes_mapping.size() < set_types.size() || out.set_index->size() > 1 || is_constant_transformed)
+    /// Mark the atom as relaxed when the set check is not exact.
+    ///
+    /// - `adjusted_indexes_mapping.size() < set_types.size()`
+    ///    We couldn't build a 1:1 mapping from set tuple elements to key columns:
+    ///      - some tuple elements are not key columns (so they are dropped), or
+    ///      - multiple tuple elements map to the same key column and MergeTreeSetIndex deduplicates them.
+    ///    This makes `has` weaker and, after negation, makes `NOT has` stronger. In such cases we must not
+    ///    rely on `MergeTreeSetIndex::checkInRange()` returning an exact `can_be_false` for single-point
+    ///    key ranges (used by partition pruning and minmax), otherwise `NOT has` could prune incorrectly.
+    ///    Example: `NOT has([(1, 2)], tuple(i, i))` would effectively turn into `NOT has([1], i)`.
+    ///
+    /// - `is_constant_transformed`
+    ///    For partition pruning we may transform set elements via functions from the key expression,
+    ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
+    ///    `has([toDateTime('2026-02-03 19:00:00')], ts)` into `has([toDate('2026-02-03')], toDate(ts))`,
+    ///    which is not equivalent.
+    if (adjusted_indexes_mapping.size() < set_types.size() || is_constant_transformed)
+        out.relaxed = true;
+
+    if (out.set_index->size() > 1 || out.relaxed)
         relaxed = true;
 
     return true;
@@ -3079,11 +3110,11 @@ bool KeyCondition::matchesExactContinuousRange() const
             if (!func || !func->hasInformationAboutMonotonicity())
                 return {false, false};
 
-            const auto & types = func->getArgumentTypes();
-            if (types.empty() || !types.front())
+            auto arg_type = getArgumentTypeOfMonotonicFunction(*func);
+            if (!arg_type)
                 return {false, false};
 
-            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
+            const auto monotonicity = func->getMonotonicityForRange(*arg_type, field, field);
             all_always_monotonic &= monotonicity.is_always_monotonic;
             all_strict &= monotonicity.is_strict;
 
@@ -3649,6 +3680,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
             }
+
+            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
+            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+            /// Therefore, we must set `can_be_false = true` to be safe.
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
 
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();

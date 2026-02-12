@@ -17,8 +17,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Arena.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {

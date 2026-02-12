@@ -772,15 +772,15 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
-    size_t max_rows = index.arguments[0].safeGet<size_t>();
+    size_t max_rows = getFieldFromIndexArgumentAST(index.arguments->children[0]).safeGet<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);
 }
 
 void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    if (index.arguments.size() != 1)
+    if (!index.arguments || index.arguments->children.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");
-    if (index.arguments[0].getType() != Field::Types::UInt64)
+    if (getFieldFromIndexArgumentAST(index.arguments->children[0]).getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer");
 }
 

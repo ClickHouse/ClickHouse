@@ -181,7 +181,9 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 
     [[maybe_unused]] TaskHolder prev;
     [[maybe_unused]] const Priority highest_priority{reader_settings.read_settings.priority.value + 1};
-    assert(prefetch_queue.top().task->priority == highest_priority);
+    /// Due to the difference in `estimated_memory_usage_for_single_prefetch` for different parts (column sizes might be different), it might happen that for the given thread, task number N won't fit in the prefetch memory limit, but the next task will.
+    /// So the top of the queue may have a priority higher than `highest_priority`.
+    assert(prefetch_queue.top().task->priority >= highest_priority);
 
     while (!prefetch_queue.empty())
     {
