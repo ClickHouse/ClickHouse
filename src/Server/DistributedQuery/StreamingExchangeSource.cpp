@@ -6,9 +6,11 @@
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {
@@ -20,8 +22,49 @@ namespace ErrorCodes
 
 StreamingExchangeSource::~StreamingExchangeSource()
 {
-    if (!out.isFinalized())
-        out.cancel();
+    if (out && !out->isFinalized())
+        out->cancel();
+}
+
+void StreamingExchangeSource::onStart()
+{
+    connect();
+    sendHello();
+    receiveHello();
+
+    /// Set socket to non-blocking mode after handshake is finished.
+    socket->setBlocking(false);
+    /// Initialize packet receive state
+    packet_receive_state = ReceivingHeader;
+    current_packet_header_bytes_filled = 0;
+}
+
+void StreamingExchangeSource::connect()
+{
+    LOG_TRACE(log, "Connecting to {}:{} for query id {} exchange stream {}", host, port, query_id, stream_name);
+    socket = std::make_unique<Poco::Net::StreamSocket>();
+    Poco::Net::SocketAddress address(host, port);
+    socket->connect(address);
+    socket->setReceiveBufferSize(10 * 1024 * 1024);
+    in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+}
+
+void StreamingExchangeSource::sendHello()
+{
+    WriteBufferFromPocoSocket hello_out(*socket);
+    writeVarUInt(StreamingExchangeProtocol::PacketType::SourceHello, hello_out);
+    writeStringBinary(query_id, hello_out);
+    writeStringBinary(stream_name, hello_out);
+    hello_out.next();
+    hello_out.cancel();
+}
+
+void StreamingExchangeSource::receiveHello()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != StreamingExchangeProtocol::PacketType::SinkHello)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
 }
 
 IProcessor::Status StreamingExchangeSource::prepare()
@@ -54,6 +97,10 @@ IProcessor::Status StreamingExchangeSource::prepare()
 
     /// TODO: handle cancelled state?
 
+
+    if (!was_on_start_called)
+        return Status::Ready;
+
     if (packet_in)
         return Status::Ready;
 
@@ -62,15 +109,17 @@ IProcessor::Status StreamingExchangeSource::prepare()
 
 int StreamingExchangeSource::schedule()
 {
-    LOG_TEST(log, "Schedule exchange stream {}, fd: {}", stream_name, socket.sockfd());
+    LOG_TEST(log, "Schedule exchange stream {}, fd: {}", stream_name, socket->sockfd());
 
-    return socket.sockfd();
+    return socket->sockfd();
 }
 
 void StreamingExchangeSource::sendNoMoreDataNeeded()
 {
-    writeVarUInt(StreamingExchangeProtocol::PacketType::NoMoreDataNeeded, out);
-    out.next();
+    if (!out)
+        out = std::make_unique<WriteBufferFromPocoSocket>(*socket);
+    writeVarUInt(StreamingExchangeProtocol::PacketType::NoMoreDataNeeded, *out);
+    out->next();
 }
 
 void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, size_t & position)
@@ -79,7 +128,7 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
     {
         size_t remaining_size = buffer_size - position;
 
-        ssize_t received = socket.receiveBytes(buffer + position, remaining_size);
+        ssize_t received = socket->receiveBytes(buffer + position, static_cast<int>(remaining_size));
         if (received < 0)
         {
             auto last_error = errno;
@@ -102,7 +151,7 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
             throw Poco::Net::NetException("Failed to receive data from socket for exchange {}, socket was unexpectedly closed", stream_name);
         }
 
-        LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket.sockfd());
+        LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket->sockfd());
 
         position += received;
         bytes_read += received;
@@ -122,7 +171,7 @@ void StreamingExchangeSource::tryReadHeader()
         current_packet_body_bytes_filled = 0;
         packet_receive_state = ReceivingBody;
 
-        LOG_TEST(log, "Expecting packet with {} bytes from exchange stream {}, fd: {}", current_packet_header.bytes_size, stream_name, socket.sockfd());
+        LOG_TEST(log, "Expecting packet with {} bytes from exchange stream {}, fd: {}", current_packet_header.bytes_size, stream_name, socket->sockfd());
     }
 }
 
@@ -140,6 +189,13 @@ void StreamingExchangeSource::tryReadBody()
 
 std::optional<Chunk> StreamingExchangeSource::tryGenerate()
 {
+    if (!was_on_start_called)
+    {
+        was_on_start_called = true;
+        onStart();
+        return Chunk(); /// Empty chunk means we need to be called again
+    }
+
     if (output_finished)
     {
         LOG_TRACE(log, "NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes: {}", stream_name, rows_read, bytes_read);

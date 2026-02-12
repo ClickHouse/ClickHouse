@@ -14,9 +14,9 @@ struct DistributedQueryPlan;
 void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled);
 
 /// Contains info about hosts assigned to exchange buckets
-struct ExchangeStreamDestinations
+struct ExchangeStreamSources
 {
-    /// Exchange stream id -> destination host
+    /// Exchange stream id -> source host
     std::unordered_map<String, String> stream_hosts;
 };
 
@@ -27,7 +27,7 @@ struct DistributedQueryTaskDescription
     DistributedQueryTask task;
     String serialized_query_plan;
     ExchangeDescriptions exchanges;
-    ExchangeStreamDestinations exchange_stream_destinations;
+    ExchangeStreamSources exchange_stream_sources;
 };
 
 /// Executes a task locally
@@ -52,7 +52,7 @@ struct ExchangeDescription;
 ExchangeLookupPtr createExchangeLookup(
     const String & query_id,
     const std::unordered_map<String, ExchangeDescription> & exchanges_,
-    const ExchangeStreamDestinations & exchange_stream_destinations,
+    const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context);
 

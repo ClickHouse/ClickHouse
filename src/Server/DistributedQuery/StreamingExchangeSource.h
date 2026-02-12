@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <Common/Logger.h>
+#include <IO/ReadBufferFromPocoSocket.h>
 #include <Processors/ISource.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Poco/Net/StreamSocket.h>
@@ -13,16 +15,13 @@ namespace DB
 class StreamingExchangeSource final : public ISource
 {
 public:
-    explicit StreamingExchangeSource(SharedHeader header_, Poco::Net::StreamSocket socket_, const String & stream_name_)
+    explicit StreamingExchangeSource(SharedHeader header_, String query_id_, String stream_name_, String host_, UInt16 port_)
         : ISource(std::move(header_))
-        , socket(socket_)
-        , out(socket)
-        , stream_name(stream_name_)
+        , host(std::move(host_))
+        , port(port_)
+        , query_id(std::move(query_id_))
+        , stream_name(std::move(stream_name_))
     {
-        socket.setReceiveBufferSize(10 * 1024 * 1024);
-        socket.setBlocking(false);
-        packet_receive_state = ReceivingHeader;
-        current_packet_header_bytes_filled = 0;
     }
 
     ~StreamingExchangeSource() override;
@@ -33,6 +32,11 @@ public:
     int schedule() override;
 
 private:
+    void onStart();
+    void connect();
+    void sendHello();
+    void receiveHello();
+
     /// Read as many bytes as we can from the socket without blocking and update position accordingly.
     void readFromSocket(char * buffer, size_t buffer_size, size_t & position);
 
@@ -47,8 +51,14 @@ private:
     /// Tell the sender that no more data is needed from it.
     void sendNoMoreDataNeeded();
 
+    const String host;
+    const UInt16 port;
+    const String query_id;
+    const String stream_name;
+
     bool finished_reading = false;  /// All data has been read from socket.
     bool output_finished = false;   /// Output port is finished, do not need to receive more data.
+    bool was_on_start_called = false;
 
     enum PacketReceiveState
     {
@@ -62,10 +72,10 @@ private:
     std::vector<char> current_packet_body;
     size_t current_packet_body_bytes_filled = 0;
 
-    Poco::Net::StreamSocket socket;
+    std::unique_ptr<Poco::Net::StreamSocket> socket;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::unique_ptr<ReadBufferFromMemory> packet_in;    /// One full packet
-    WriteBufferFromPocoSocket out;
-    const String stream_name;
+    std::unique_ptr<WriteBufferFromPocoSocket> out;
     size_t rows_read = 0;
     size_t bytes_read = 0;
     LoggerPtr log = getLogger("StreamingExchangeSource");

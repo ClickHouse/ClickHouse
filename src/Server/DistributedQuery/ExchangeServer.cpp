@@ -94,7 +94,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
 
     UInt64 packet_type = 0;
     readVarUInt(packet_type, in);
-    if (packet_type != StreamingExchangeProtocol::PacketType::SinkHello)
+    if (packet_type != StreamingExchangeProtocol::PacketType::SourceHello)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
 
     String query_id;
@@ -106,7 +106,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
 
     /// Send Hello back to finish handshake
     WriteBufferFromPocoSocket out(socket);
-    writeVarUInt(StreamingExchangeProtocol::PacketType::SourceHello, out);
+    writeVarUInt(StreamingExchangeProtocol::PacketType::SinkHello, out);
     out.next();
     out.cancel();
 

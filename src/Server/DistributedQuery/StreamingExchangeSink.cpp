@@ -31,14 +31,13 @@ StreamingExchangeSink::~StreamingExchangeSink()
 
 void StreamingExchangeSink::onStart()
 {
-    connect();
-    sendHello();
-    receiveHello();
-
     /// Set socket to non-blocking mode after handshake is finished.
-    socket->setBlocking(false);
+    socket.setBlocking(false);
+    socket.setSendBufferSize(1 * 1024 * 1024);
+
     /// Prepare initial in-memory buffer for serializing chunks
     out = std::make_shared<WriteBufferFromOwnString>();
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket);
 }
 
 /// Send data to socket until the buffer is empty or until socket would block.
@@ -53,7 +52,7 @@ void StreamingExchangeSink::sendToSocket()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No more data needed packet was not received");
 
             size_t bytes_to_send = current_send_buffer.size() - current_send_position_in_buffer;
-            ssize_t sent = socket->sendBytes(current_send_buffer.data() + current_send_position_in_buffer, bytes_to_send);
+            ssize_t sent = socket.sendBytes(current_send_buffer.data() + current_send_position_in_buffer, static_cast<int>(bytes_to_send));
             if (sent < 0)
             {
                 auto last_error = errno;
@@ -72,7 +71,7 @@ void StreamingExchangeSink::sendToSocket()
                 }
             }
 
-            LOG_TEST(log, "Sent {} bytes to exchange stream {}, fd: {}", sent, stream_name, socket->sockfd());
+            LOG_TEST(log, "Sent {} bytes to exchange stream {}, fd: {}", sent, stream_name, socket.sockfd());
 
             current_send_position_in_buffer += sent;
             total_bytes_sent += sent;
@@ -200,9 +199,9 @@ void StreamingExchangeSink::work()
 
 std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
 {
-    LOG_TEST(log, "Schedule exchange stream sink {}, fd: {}", stream_name, socket->sockfd());
+    LOG_TEST(log, "Schedule exchange stream sink {}, fd: {}", stream_name, socket.sockfd());
 
-    return {socket->sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
+    return {socket.sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
 }
 
 void StreamingExchangeSink::consume(Chunk chunk)
@@ -285,33 +284,6 @@ void StreamingExchangeSink::onFinish()
 {
     LOG_TRACE(log, "Finished writing to exchange stream {}, total rows: {}, bytes: {}",
         stream_name, rows_written, total_bytes_sent);
-}
-
-void StreamingExchangeSink::connect()
-{
-    socket = std::make_unique<Poco::Net::StreamSocket>();
-    Poco::Net::SocketAddress address(host, port);
-    socket->connect(address);
-    socket->setSendBufferSize(1 * 1024 * 1024);
-    in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-}
-
-void StreamingExchangeSink::sendHello()
-{
-    WriteBufferFromPocoSocket hello_out(*socket);
-    writeVarUInt(StreamingExchangeProtocol::PacketType::SinkHello, hello_out);
-    writeStringBinary(query_id, hello_out);
-    writeStringBinary(stream_name, hello_out);
-    hello_out.next();
-    hello_out.cancel();
-}
-
-void StreamingExchangeSink::receiveHello()
-{
-    UInt64 packet_type = 0;
-    readVarUInt(packet_type, *in);
-    if (packet_type != StreamingExchangeProtocol::PacketType::SourceHello)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
 }
 
 void StreamingExchangeSink::receiveNoMoDataNeeded()

@@ -19,9 +19,10 @@
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Processors/Sources/NativeCompressedSource.h>
 #include <Planner/Utils.h>
-#include <Disks/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
@@ -161,7 +162,7 @@ public:
 
         auto file_name = exchange_stream_id.toString();
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
-        return std::make_shared<NativeCompressedSource>(output_header, temporary_files->getTemporaryFileForReading(file_name));
+        return std::make_shared<NativeCompressedSource>(output_header, temporary_files->getTemporaryFileForReading(file_name), file_name);
     }
 
 private:
@@ -464,7 +465,7 @@ TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storag
 ExchangeLookupPtr createExchangeLookup(
     const String & query_id,
     const std::unordered_map<String, ExchangeDescription> & exchanges_,
-    const ExchangeStreamDestinations & exchange_stream_destinations,
+    const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context)
 {
@@ -472,10 +473,10 @@ ExchangeLookupPtr createExchangeLookup(
 #ifdef OS_LINUX
     auto streaming_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
     streaming_exchanges = streaming_exchange_port != 0 ?
-        createStreamingExchangeLookup(query_id, ExchangeConnections::instance(), exchange_stream_destinations, streaming_exchange_port) :
+        createStreamingExchangeLookup(query_id, ExchangeConnections::instance(), exchange_stream_sources, static_cast<UInt16>(streaming_exchange_port)) :
         std::make_shared<ExchangeViaChunks>(query_id);
 #else
-    UNUSED(exchanges_, exchange_stream_destinations, context);
+    UNUSED(exchanges_, exchange_stream_sources, context);
     streaming_exchanges = std::make_shared<ExchangeViaChunks>(query_id);
 #endif
     auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
@@ -528,7 +529,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     pipeline_settings.exchange_lookup = createExchangeLookup(
         object_storage_path,
         task_description.exchanges,
-        task_description.exchange_stream_destinations,
+        task_description.exchange_stream_sources,
         temporary_files,
         context);
 
@@ -546,7 +547,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
-    ASTPtr ast_stub = std::make_shared<ASTSelectQuery>(); /// FIXME: this is only used to populate query_kind
+    ASTPtr ast_stub = make_intrusive<ASTSelectQuery>(); /// FIXME: this is only used to populate query_kind
     UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
 
     auto query_log_elem = logQueryStart(
@@ -592,16 +593,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         logQueryException(query_log_elem, context, execute_task_watch, ast_stub, query_span, false, true);
         throw;
     }
-
-    if (!pipeline.completed())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not completed");
-
-    pipeline.setProcessListElement(context->getProcessListElement());
-
-    CompletedPipelineExecutor executor(pipeline);
-    if (is_cancelled)
-        executor.setCancelCallback(is_cancelled, 100);
-    executor.execute();
 }
 
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context)
@@ -777,12 +768,12 @@ protected:
                 const auto & assigned_host = hostnames[current_host];
                 current_host = (current_host + 1) % hostnames.size();
                 task_hosts[task.task_id] = assigned_host;
-                for (const auto & input_stream : task.input_exchange_streams)
-                    exchange_stream_destination_hosts[input_stream.toString()] = assigned_host;
+                for (const auto & output_stream : task.output_exchange_streams)
+                    exchange_stream_source_hosts[output_stream.toString()] = assigned_host;
             }
         }
 
-        exchange_stream_destination_hosts[distributed_query_plan.final_result_stream_name] = getFQDNOrHostName();
+//        exchange_stream_source_hosts[distributed_query_plan.final_result_stream_name] = getFQDNOrHostName();
     }
 
     struct RunningTaskInfo
@@ -1033,9 +1024,7 @@ protected:
     {
         const String host = task_hosts.at(task_description.task.task_id);
         String stateless_worker_endpoint_uri;
-        if (context->getConfigRef().getBool("stateless_worker_client.enabled", true))
         {
-            String host = context->getConfigRef().getString("stateless_worker_client.host", "localhost");
             auto default_port = context->getInterserverIOAddress().second;
             auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
             String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
@@ -1043,7 +1032,7 @@ protected:
             Poco::URI stateless_worker_uri;
             stateless_worker_uri.setScheme("http");
             stateless_worker_uri.setHost(host);
-            stateless_worker_uri.setPort(port);
+            stateless_worker_uri.setPort(static_cast<UInt16>(port));
             stateless_worker_uri.addQueryParameter("endpoint", endpoint);
             stateless_worker_endpoint_uri = stateless_worker_uri.toString();
         }
@@ -1073,11 +1062,11 @@ protected:
             task_description.task = task;
 
             /// Add exchange destinations for output streams
-            task_description.exchange_stream_destinations = {};
-            for (const auto & output_stream : task.output_exchange_streams)
+            task_description.exchange_stream_sources = {};
+            for (const auto & input_stream : task.input_exchange_streams)
             {
-                String output_stream_name = output_stream.toString();
-                task_description.exchange_stream_destinations.stream_hosts[output_stream_name] = exchange_stream_destination_hosts.at(output_stream_name);
+                String input_stream_name = input_stream.toString();
+                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = exchange_stream_source_hosts.at(input_stream_name);
             }
 
             running_tasks.addTask(stage_name, startTask(task_description));
@@ -1091,7 +1080,7 @@ protected:
 
     Strings hostnames;
     std::unordered_map<String, String> task_hosts;
-    std::unordered_map<String, String> exchange_stream_destination_hosts;
+    std::unordered_map<String, String> exchange_stream_source_hosts;
 
     TaskTracker running_tasks;
 };

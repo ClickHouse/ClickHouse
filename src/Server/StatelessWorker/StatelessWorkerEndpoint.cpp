@@ -73,8 +73,8 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeVarUInt(exchange.destination_bucket_count, out);
     }
 
-    writeVarUInt(task_description.exchange_stream_destinations.stream_hosts.size(), out);
-    for (const auto & [stream, host] : task_description.exchange_stream_destinations.stream_hosts)
+    writeVarUInt(task_description.exchange_stream_sources.stream_hosts.size(), out);
+    for (const auto & [stream, host] : task_description.exchange_stream_sources.stream_hosts)
     {
         writeStringBinary(stream, out);
         writeStringBinary(host, out);
@@ -135,15 +135,15 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         task_description.exchanges[name] = exchange;
     }
 
-    size_t exchange_stream_destinations_size;
-    readVarUInt(exchange_stream_destinations_size, in);
-    for (size_t i = 0; i < exchange_stream_destinations_size; ++i)
+    size_t exchange_stream_sources_size;
+    readVarUInt(exchange_stream_sources_size, in);
+    for (size_t i = 0; i < exchange_stream_sources_size; ++i)
     {
         String stream;
         readStringBinary(stream, in);
         String host;
         readStringBinary(host, in);
-        task_description.exchange_stream_destinations.stream_hosts[stream] = host;
+        task_description.exchange_stream_sources.stream_hosts[stream] = host;
     }
 }
 

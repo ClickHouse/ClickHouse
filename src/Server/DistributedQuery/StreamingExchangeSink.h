@@ -14,11 +14,9 @@ namespace DB
 class StreamingExchangeSink final : public ISink
 {
 public:
-    StreamingExchangeSink(SharedHeader header_, String query_id_, String stream_name_, String host_, UInt16 port_)
+    StreamingExchangeSink(SharedHeader header_, Poco::Net::StreamSocket socket_, String stream_name_)
         : ISink(std::move(header_))
-        , host(std::move(host_))
-        , port(port_)
-        , query_id(std::move(query_id_))
+        , socket(socket_)
         , stream_name(std::move(stream_name_))
     {
     }
@@ -33,9 +31,6 @@ private:
     void onFinish() override;
     void work() override;
 
-    void connect();
-    void sendHello();
-    void receiveHello();
     void receiveNoMoDataNeeded();
 
     /// Send data in current_send_buffer to socket in non-blocking mode.
@@ -48,12 +43,9 @@ private:
     /// Otherwise, need to wait on socket and then call this method again.
     void tryToSwitchSendBuffer();
 
-    const String host;
-    const UInt16 port;
-    const String query_id;
+    Poco::Net::StreamSocket socket;
     const String stream_name;
 
-    std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocket> in;
 
     /// In-memory buffer to which the chunks are serialized.
