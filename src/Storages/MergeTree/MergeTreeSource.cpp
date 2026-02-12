@@ -9,7 +9,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event RowsAfterPrewhereAndWhereFilter;
+    extern const Event RowsAfterWhere;
 }
 
 namespace DB
@@ -190,7 +190,7 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
 
     if (count_output_rows)
         if (auto rows = chunk.chunk.getNumRows())
-            ProfileEvents::increment(ProfileEvents::RowsAfterPrewhereAndWhereFilter, rows);
+            ProfileEvents::increment(ProfileEvents::RowsAfterWhere, rows);
 
     finished = chunk.is_finished;
 
