@@ -13,6 +13,7 @@ SELECT * FROM test_output_rows WHERE k < 100 FORMAT Null SETTINGS optimize_move_
 
 SYSTEM FLUSH LOGS query_log;
 
+-- RowsAfterPrewhereAndWhereFilter should be consistent regardless of push-down
 SELECT ProfileEvents['RowsAfterPrewhereAndWhereFilter']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '03916_case1';
@@ -22,6 +23,15 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '03916_case2';
 
 SELECT ProfileEvents['RowsAfterPrewhereAndWhereFilter']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '03916_case3';
+
+-- Sanity: verify Case 2 pushed WHERE to PREWHERE (no FilterTransform), Case 3 did not (FilterTransform active)
+SELECT ProfileEvents['FilterTransformPassedRows']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '03916_case2';
+
+SELECT ProfileEvents['FilterTransformPassedRows']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '03916_case3';
 
