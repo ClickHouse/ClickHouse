@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/NestedUtils.h>
 #include <Common/Arena.h>
 
 namespace DB
@@ -20,15 +21,19 @@ AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefiniti
 AggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
 
 static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
-    const Block & header, const SortDescription & description)
+    const Block & header, const SortDescription & description, bool allow_tuple_element_aggregation)
 {
     AggregatingSortedAlgorithm::ColumnsDefinition def = {};
-    size_t num_columns = header.columns();
+    def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
+    const Block header_flatten = allow_tuple_element_aggregation
+        ? Nested::flattenTupleRecursive(header)
+        : header;
+    size_t num_columns = header_flatten.columns();
 
     /// Fill in the column numbers that need to be aggregated.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
+        const ColumnWithTypeAndName & column = header_flatten.safeGetByPosition(i);
 
         /// We leave only states of aggregate functions.
         if (!dynamic_cast<const DataTypeAggregateFunction *>(column.type.get())
@@ -78,7 +83,8 @@ static void preprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Col
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-
+    if (def.allow_tuple_element_aggregation)
+        columns = Nested::flattenTupleColumnsRecursive(*def.origin_header, columns);
     for (const auto & desc : def.columns_to_simple_aggregate)
         if (desc.nested_type)
             columns[desc.column_number] = recursiveRemoveLowCardinality(columns[desc.column_number]);
@@ -101,6 +107,8 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
             columns[desc.column_number] = recursiveLowCardinalityTypeConversion(columns[desc.column_number], from_type, to_type);
         }
     }
+    if (def.allow_tuple_element_aggregation)
+        columns = Nested::reconstructTupleColumnsRecursive(*def.origin_header, columns);
 
     chunk.setColumns(std::move(columns), num_rows);
 }
@@ -260,29 +268,39 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     SortDescription description_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
-    std::optional<size_t> max_dynamic_subcolumns_)
+    std::optional<size_t> max_dynamic_subcolumns_,
+    bool allow_tuple_element_aggregation_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
-    , columns_definition(defineColumns(*header_, description_))
+    , columns_definition(defineColumns(*header_, description_, allow_tuple_element_aggregation_))
     , merged_data(max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_, columns_definition)
 {
+    columns_definition.origin_header = header_;
 }
 
 void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 {
     removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
-    merged_data.initialize(*header, inputs);
+    if (columns_definition.allow_tuple_element_aggregation)
+        header = std::make_shared<Block>(Nested::flattenTupleRecursive(*header));
 
+    /// Preprocess chunks before initializing merged data to ensure
+    /// that the flattened header and input columns have matching structure.
     for (auto & input : inputs)
         if (input.chunk)
             preprocessChunk(input.chunk, columns_definition);
 
+    merged_data.initialize(*header, inputs);
     initializeQueue(std::move(inputs));
 }
 
 void AggregatingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeReplicatedFromSortingColumns(header, input, description);
+    /// When allow_tuple_element_aggregation is enabled, base class `header` has been flattened in initialize(),
+    if (columns_definition.allow_tuple_element_aggregation)
+        removeReplicatedFromSortingColumns(columns_definition.origin_header, input, description);
+    else
+        removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);

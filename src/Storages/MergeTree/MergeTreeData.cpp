@@ -290,6 +290,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
 }
 
 namespace ServerSetting
@@ -963,6 +964,27 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    if (!attach && (*getSettings())[MergeTreeSetting::allow_tuple_element_aggregation])
+    {
+        for (size_t i = 0; i < sorting_key_size; ++i)
+        {
+            const auto & type = new_sorting_key.data_types[i];
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            if (tuple_type && !tuple_type->getElements().empty() && !type->hasCustomName())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Sorting key column '{}' has Tuple type '{}'. When "
+                    "setting 'allow_tuple_element_aggregation' is enabled, "
+                    "plain Tuple columns cannot be used as sorting key because flattening "
+                    "would change the column names used for ordering. "
+                    "Consider extracting individual fields as separate sorting key columns.",
+                    new_sorting_key.column_names[i],
+                    type->getName());
+            }
+        }
+    }
+
     auto all_columns = new_metadata.columns.getAllPhysical();
 
     /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
@@ -1595,6 +1617,14 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
 
         check_sign_column(false, "VersionedCollapsingMergeTree");
         check_version_column(false, "VersionedCollapsingMergeTree");
+    }
+
+    if (allow_tuple_element_aggregation)
+    {
+        if (mode != Summing && mode != Aggregating && mode != Coalescing)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting 'allow_tuple_element_aggregation' is only supported for SummingMergeTree, AggregatingMergeTree and CoalescingMergeTree");
     }
 
     /// TODO Checks for Graphite mode.

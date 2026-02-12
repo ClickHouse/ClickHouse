@@ -56,6 +56,23 @@ namespace Nested
     /// Same as flatten but only for Nested column.
     Block flattenNested(const Block & block);
 
+    /// Recursively flatten all Tuple columns in the block.
+    /// For tuples with explicit names: t Tuple(x Int32, y String) -> t.x Int32, t.y String
+    /// For tuples without explicit names: t Tuple(Int32, String) -> t.1 Int32, t.2 String
+    /// Nested tuples are recursively flattened: t Tuple(a Int32, b Tuple(c Int64, d String))
+    ///   -> t.a Int32, t.b.c Int64, t.b.d String
+    Block flattenTupleRecursive(const Block & block);
+
+    /// All tuples are flattened recursively, regardless of whether they have explicit names.
+    /// For example, [Int32, Tuple(field1 Int64, field2 String)] will be flattened to [Int32, Int64, String].
+    /// Non-tuple columns are kept as-is in the result.
+    Columns flattenTupleColumnsRecursive(const Block & header, const Columns & columns);
+
+    /// This is the inverse operation of flattenTupleColumnsRecursive.
+    /// All tuples in the header will be reconstructed, regardless of whether they have explicit names.
+    /// The header defines the expected structure (including tuple types).
+    Columns reconstructTupleColumnsRecursive(const Block & header, const Columns & flattened_columns);
+
     /// Collect Array columns in a form of `column_name.element_name` to single Nested column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 

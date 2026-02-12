@@ -1,0 +1,21 @@
+=== Test 1: CoalescingMergeTree Basic Tuple ===
+Coalescing Basic - with FINAL:
+1	(100,60,'updated')
+2	(250,80,'second')
+Coalescing Basic - after OPTIMIZE:
+1	(100,60,'updated')
+2	(250,80,'second')
+=== Test 2: CoalescingMergeTree Nested Tuple ===
+Coalescing Nested Tuple - with FINAL:
+1	(100,(210,(300)))
+2	(160,(250,(360)))
+Coalescing Nested Tuple - after OPTIMIZE:
+1	(100,(210,(300)))
+2	(160,(250,(360)))
+=== Test 3: CoalescingMergeTree Tuple before sorting key ===
+Tuple before sort key - with FINAL:
+1	(100,(210))
+2	(160,(250))
+Tuple before sort key - after OPTIMIZE:
+1	(100,(210))
+2	(160,(250))
