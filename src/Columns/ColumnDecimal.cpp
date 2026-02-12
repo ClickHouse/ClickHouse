@@ -1,5 +1,5 @@
-#include <Common/Arena.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
@@ -11,13 +11,18 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 
+#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
+
+#include <DataTypes/FieldToDataType.h>
+
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <base/TypeName.h>
@@ -319,6 +324,14 @@ size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permu
 }
 
 template <is_decimal T>
+DataTypePtr ColumnDecimal<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
+{
+    if (options.notFull(name_buf))
+        name_buf << FieldVisitorToString()(data[n], scale);
+    return FieldToDataType()(data[n], scale);
+}
+
+template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     return permuteImpl(*this, perm, limit);
@@ -529,7 +542,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = this->create(0, scale);
-    if (0 == size)
+    if (size == 0 || offsets.back() == 0)
         return res;
 
     typename Self::Container & res_data = res->getData();

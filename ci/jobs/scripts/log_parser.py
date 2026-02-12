@@ -158,7 +158,7 @@ class FuzzerLogParser:
 
         if is_logical_error:
             failed_query = self.get_failed_query()
-            if failed_query:
+            if failed_query and self.fuzzer_log:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
             if format_message and "Inconsistent AST formatting" not in result_name:
                 # Replace {} placeholders with A, B, C, etc. to create a generic error pattern.
@@ -433,13 +433,23 @@ class FuzzerLogParser:
         if not failure_output:
             return None
         if "Inconsistent AST formatting: the query:" in failure_output:
-            query_command = failure_output.splitlines()[1]
-            return query_command
+            lines = failure_output.splitlines()
+            if len(lines) > 1:
+                query_command = lines[1]
+                return query_command
+            else:
+                print("ERROR: Expected query on second line but not found")
+                return None
 
         assert failure_output, "No failure found in server log"
-        failure_first_line = failure_output.splitlines()[0]
-        assert failure_first_line, "No failure first line found in server log"
-        query_id = failure_first_line.split(" ] {")[1].split("}")[0]
+        # Find the first line that has a proper log format with query ID.
+        # rg may match continuation lines (e.g. SQL comments like "-- Logical error query")
+        # that lack the "] {query_id}" prefix.
+        query_id = None
+        for line in failure_output.splitlines():
+            if " ] {" in line and "} <" in line:
+                query_id = line.split(" ] {")[1].split("}")[0]
+                break
         if not query_id:
             print("ERROR: Query id not found")
             return None
@@ -497,7 +507,7 @@ class FuzzerLogParser:
 
         if not (tables or table_files or table_finctions):
             print("WARNING: No tables found in query command")
-            return [failed_query]
+            return [failed_query + ";" if not failed_query.endswith(";") else failed_query]
 
         # Get all write commands for found tables
         commands_to_reproduce = []
@@ -518,6 +528,12 @@ class FuzzerLogParser:
             # Add table drop commands
             for table in tables:
                 commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
+
+        # Ensure all commands end with a semicolon
+        commands_to_reproduce = [
+            cmd + ";" if not cmd.endswith(";") else cmd
+            for cmd in commands_to_reproduce
+        ]
 
         return commands_to_reproduce
 

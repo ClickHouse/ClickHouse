@@ -7,10 +7,16 @@
 namespace DB
 {
 
-bool RowPolicyFilter::empty() const
+bool RowPolicyFilter::isAlwaysTrue() const
 {
     bool value;
     return !expression || (tryGetLiteralBool(expression.get(), value) && value);
+}
+
+bool RowPolicyFilter::isAlwaysFalse() const
+{
+    bool value;
+    return expression && (tryGetLiteralBool(expression.get(), value) && !value);
 }
 
 size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
@@ -53,11 +59,11 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
     {
         auto new_filter = std::make_shared<RowPolicyFilter>(*filter);
 
-        if (filter->empty())
+        if (filter->isAlwaysTrue())
         {
             new_filter->expression = combine_with_filter->expression;
         }
-        else if (combine_with_filter->empty())
+        else if (combine_with_filter->isAlwaysTrue())
         {
             new_filter->expression = filter->expression;
         }

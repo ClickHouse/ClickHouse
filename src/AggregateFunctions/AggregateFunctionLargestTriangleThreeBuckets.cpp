@@ -301,7 +301,7 @@ public:
                 return [](IColumn & column, Float64 value)
                 {
                     auto & col = assert_cast<ColumnDate32 &>(column);
-                    col.getData().push_back(static_cast<UInt32>(value));
+                    col.getData().push_back(static_cast<Int32>(value));
                 };
             case TypeIndex::DateTime:
                 return [](IColumn & column, Float64 value)

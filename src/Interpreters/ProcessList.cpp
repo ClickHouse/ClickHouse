@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/logger_useful.h>
@@ -286,8 +287,9 @@ ProcessList::EntryPtr ProcessList::insert(
                 if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
 
-                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
+                if (user_process_list.user_temp_data_on_disk)
+                    query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
+                        user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
 
             /// Set query-level memory trackers
@@ -356,9 +358,9 @@ ProcessList::EntryPtr ProcessList::insert(
             increaseQueryKindAmount(query_kind);
         }
 
-        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
+        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
-        res = std::make_shared<Entry>(*this, process_it);
+        res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
 
         (*process_it)->setUserProcessList(&user_process_list);
         (*process_it)->setProcessListEntry(res);
@@ -396,7 +398,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
-    CancellationChecker::getInstance().appendDoneTasks(*it);
+    if (registered_in_cancellation_checker)
+    {
+        /// We need to block the overcommit tracker here to avoid lock inversion because OvercommitTracker takes a lock on the ProcessList::mutex.
+        /// When task is added, we lock the ProcessList::mutex, and then the CancellationChecker mutex.
+        OvercommitTrackerBlockerInThread blocker;
+        CancellationChecker::getInstance().appendDoneTasks(*it);
+    }
+
     LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> lock(parent.getMutex());
 
     const String user = (*it)->getClientInfo().current_user;
@@ -872,8 +881,9 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .metrics = {}, /// Metrics are set by child scopes
         };
 
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
-            std::move(temporary_data_on_disk_settings));
+        if (auto shared_temp_data = global_context->getSharedTempDataOnDisk())
+            user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(shared_temp_data),
+                std::move(temporary_data_on_disk_settings));
     }
 }
 

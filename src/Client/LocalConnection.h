@@ -5,12 +5,12 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/ColumnsDescription.h>
 #include <Common/CurrentThread.h>
 
 
 namespace DB
 {
+class ColumnsDescription;
 class PullingAsyncPipelineExecutor;
 class PushingAsyncPipelineExecutor;
 class PushingPipelineExecutor;
@@ -43,7 +43,7 @@ struct LocalQueryState
 
     /// Current block to be sent next.
     std::optional<Block> block;
-    std::optional<ColumnsDescription> columns_description;
+    std::shared_ptr<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
     /// Is request cancelled

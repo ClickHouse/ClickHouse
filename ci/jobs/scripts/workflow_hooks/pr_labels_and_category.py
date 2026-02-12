@@ -140,11 +140,17 @@ def check_labels(category, info):
     if category in CATEGORY_TO_LABEL and CATEGORY_TO_LABEL[category] not in labels:
         pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
 
+    # Labels that should not be auto-removed even if they don't match the current
+    # category, because they serve additional purposes (e.g., enabling performance
+    # tests in CI when set manually).
+    protected_labels = {Labels.PR_PERFORMANCE}
+
     for label in labels:
         if (
             label in CATEGORY_TO_LABEL.values()
             and category in CATEGORY_TO_LABEL
             and label != CATEGORY_TO_LABEL[category]
+            and label not in protected_labels
         ):
             pr_labels_to_remove.append(label)
 
@@ -176,7 +182,7 @@ def check_labels(category, info):
             info.dump()
 
     if pr_labels_to_remove or pr_labels_to_add:
-        Shell.check(cmd, verbose=True, strict=True)
+        Shell.check(cmd, verbose=True, strict=True, retries=5)
 
 
 if __name__ == "__main__":

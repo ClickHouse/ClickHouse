@@ -16,9 +16,7 @@ $CLICKHOUSE_CLIENT --query "
     ENGINE = MergeTree()
     ORDER BY id;
 
-    INSERT INTO mt VALUES (1, 1);
-    INSERT INTO mt VALUES (2, 2);
-    INSERT INTO mt VALUES (3, 3);
+    INSERT INTO mt VALUES (1, 1), (2, 2), (3, 3);
 "
 
 #test1 'all_parts'->no thread in pool for one mutation
@@ -42,7 +40,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
 "
 
-wait_for_mutation "mt" "mutation_4.txt"
+wait_for_mutation "mt" "mutation_2.txt"
 
 #test2 'all_parts'->no thread in pool for multiple mutations
 $CLICKHOUSE_CLIENT --query "
@@ -72,9 +70,7 @@ $CLICKHOUSE_CLIENT --query "
     ENGINE = MergeTree()
     ORDER BY id;
 
-    INSERT INTO mt VALUES (1, 1);
-    INSERT INTO mt VALUES (2, 2);
-    INSERT INTO mt VALUES (3, 3);
+    INSERT INTO mt VALUES (1, 1), (2, 2), (3, 3);
 "
 
 #test3 part->postpone reasons in pool for one mutation
@@ -98,7 +94,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
 "
 
-wait_for_mutation "mt" "mutation_4.txt"
+wait_for_mutation "mt" "mutation_2.txt"
 
 #test4 part->postpone reasons for multiple mutations
 $CLICKHOUSE_CLIENT --query "

@@ -761,12 +761,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
         return false;
 
-    /// Support `REPLACE TEMPORARY TABLE t ...` and `CREATE OR REPLACE TEMPORARY TABLE t ...`,
-    /// but forbid wrong syntax `ATTACH TEMPORARY TABLE t`.
-    if (!attach && s_temporary.ignore(pos, expected))
-    {
+    if (s_temporary.ignore(pos, expected))
         is_temporary = true;
-    }
     if (!s_table.ignore(pos, expected))
         return false;
 
@@ -825,6 +821,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+        query->setIsTemporary(is_temporary);
 
         query->attach_as_replicated = attach_as_replicated;
 

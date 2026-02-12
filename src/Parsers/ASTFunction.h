@@ -143,6 +143,21 @@ boost::intrusive_ptr<ASTFunction> makeASTOperator(const String & name, Args &&..
     return function;
 }
 
+/// Adds a parameters to aggregate function.
+inline boost::intrusive_ptr<ASTFunction> addParametersToAggregateFunction(boost::intrusive_ptr<ASTFunction> && function) { return std::move(function); }
+
+template <typename... OtherParameters>
+boost::intrusive_ptr<ASTFunction> addParametersToAggregateFunction(boost::intrusive_ptr<ASTFunction> && function, ASTPtr parameter, OtherParameters &&... other_parameters)
+{
+    if (!function->parameters)
+    {
+        function->parameters = make_intrusive<ASTExpressionList>();
+        function->children.push_back(function->parameters);
+    }
+    function->parameters->children.push_back(std::move(parameter));
+    return addParametersToAggregateFunction(std::move(function), std::forward<OtherParameters>(other_parameters)...);
+}
+
 /// ASTFunction Helpers: hide casts and semantic.
 
 String getFunctionName(const IAST * ast);

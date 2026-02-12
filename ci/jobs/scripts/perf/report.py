@@ -138,6 +138,14 @@ tr:nth-child(odd) td {{filter: brightness(90%);}}
 <div class="main">
 
 <h1>ClickHouse performance comparison</h1>
+
+<div style="border: 1px solid #ccc; padding: 0 10px; border-radius: 8px; max-width: 1000px; background-color: #fffbea; text-align: center;">
+  <h3>Good to know</h3>
+  <p>
+      You can learn how to interact with this report and find a lot of useful information (e.g., flame graphs) from the
+      <a href="https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report" target="_blank">documentation</a>
+  </p>
+</div>
 """
 
 table_anchor = 0

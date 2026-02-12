@@ -24,7 +24,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -49,9 +49,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   collect_statistics:
@@ -63,7 +63,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -88,7 +88,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci 2>&1 | tee ./ci/tmp/job.log
           fi

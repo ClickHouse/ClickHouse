@@ -70,3 +70,7 @@ def test(cluster_without_dns_cache_update):
         )
         == "1\n"
     )
+
+    node1.query(
+        "DROP TABLE test"
+    )
