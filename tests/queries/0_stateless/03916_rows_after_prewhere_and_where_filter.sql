@@ -5,8 +5,6 @@ DROP TABLE IF EXISTS test_output_rows;
 CREATE TABLE test_output_rows (k UInt64, v String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO test_output_rows SELECT number, toString(number) FROM numbers(1000);
 
-SYSTEM FLUSH LOGS;
-
 -- Case 1: No WHERE -- counts all storage output rows
 SELECT * FROM test_output_rows FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
