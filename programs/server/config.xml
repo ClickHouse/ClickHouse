@@ -31,6 +31,14 @@
              It is useful for debugging shutdown issues -->
         <!-- <shutdown_level>trace</shutdown_level> -->
 
+        <!-- Startup console level is used to set the console logger level at server startup.
+             It is useful for debugging startup issues.
+             The console logger level will be reset to the default level after the server is fully initialized -->
+        <!-- <startup_console_log_level>trace</startup_console_log_level> -->
+       <!-- Shutdown console log level is used to set the console logger level at server Shutdown.
+             It is useful for debugging shutdown issues -->
+        <!-- <shutdown_console_log_level>trace</shutdown_console_log_level> -->
+
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <!-- Rotation policy
@@ -853,6 +861,9 @@
         <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
+
+        <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
+        <allow_impersonate_user>false</allow_impersonate_user>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>

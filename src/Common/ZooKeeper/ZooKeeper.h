@@ -215,7 +215,7 @@ public:
 
     /// Creates ZooKeeper from a custom IKeeper implementation using a factory.
     /// The factory is stored and used by startNewSession() for reconnection.
-    static Ptr create_from_impl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory);
+    static Ptr createFromImpl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -616,7 +616,6 @@ public:
     /// So we update the version of /clickhouse/sessions/server_uuid node when starting a new session.
     /// And there's an option to check this version when committing something.
     void addCheckSessionOp(Coordination::Requests & requests) const;
-
 private:
     void init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper> existing_impl);
     void updateAvailabilityZones();
@@ -687,7 +686,7 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
-    /// Factory to create new IKeeper instances for reconnection (used by create_from_impl)
+    /// Factory to create new IKeeper instances for reconnection (used by createFromImpl)
     std::function<std::unique_ptr<Coordination::IKeeper>()> impl_factory;
 
     ZooKeeperArgs args;

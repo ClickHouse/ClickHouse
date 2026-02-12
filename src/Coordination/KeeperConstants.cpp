@@ -212,12 +212,6 @@
     M(ThreadpoolReaderSubmitLookupInCacheMicroseconds) \
     M(AsynchronousReaderIgnoredBytes) \
 \
-    M(FileSegmentWaitReadBufferMicroseconds) \
-    M(FileSegmentReadMicroseconds) \
-    M(FileSegmentCacheWriteMicroseconds) \
-    M(FileSegmentPredownloadMicroseconds) \
-    M(FileSegmentUsedBytes) \
-\
     M(ReadBufferSeekCancelConnection) \
 \
     M(SleepFunctionCalls) \

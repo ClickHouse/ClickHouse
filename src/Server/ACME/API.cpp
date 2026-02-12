@@ -7,6 +7,7 @@
 #include <Common/JSONWebKey.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <Common/config_version.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
@@ -113,6 +114,7 @@ std::string API::requestNonce() const
 
     auto uri = Poco::URI(directory->new_nonce);
     auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, uri.getPathAndQuery());
+    r.set("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, connection_timeout_settings, proxy_configuration);
     session->sendRequest(r);
@@ -163,6 +165,7 @@ std::string API::doJWSRequest(
     std::string request_data = formatJWSRequestData(url, payload, nonce);
 
     auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery());
+    r.set("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
     r.set("Content-Type", APPLICATION_JOSE_JSON);
     r.set("Content-Length", std::to_string(request_data.size()));
 

@@ -120,7 +120,7 @@ void ExpressionStep::serialize(Serialization & ctx) const
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
 {
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     if (ctx.input_headers.size() != 1)

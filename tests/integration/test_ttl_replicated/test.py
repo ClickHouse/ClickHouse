@@ -538,8 +538,8 @@ def test_ttl_empty_parts(started_cluster):
     [(node1, node2, 0), (node3, node4, 1), (node5, node6, 2)],
 )
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
-    # The test times out for sanitizer builds, so we increase the timeout.
-    timeout = 20
+    # The test times out for sanitizer/ARM builds, so we increase the timeout.
+    timeout = 60
     if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer() or \
     node_left.is_built_with_llvm_coverage() or node_right.is_built_with_llvm_coverage():
         timeout = 300
@@ -582,24 +582,31 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
             )
         )
 
-    node_left.query(f"INSERT INTO {table}_delete VALUES (now(), 1)")
+    # Compute a fixed timestamp once so that all rows use the same toDayOfMonth
+    # and land in the same partition, even if the test runs across midnight.
+    # Using a literal from now() also ensures the data is NOT yet expired at
+    # insert time, so the old binary doesn't start premature TTL merges.
+    now_str = node_left.query("SELECT toString(now())").strip()
+    expired = f"toDateTime('{now_str}')"
+
+    node_left.query(f"INSERT INTO {table}_delete VALUES ({expired}, 1)")
     node_left.query(
         f"INSERT INTO {table}_delete VALUES (toDateTime('2100-10-11 10:00:00'), 2)"
     )
-    node_right.query(f"INSERT INTO {table}_delete VALUES (now(), 3)")
+    node_right.query(f"INSERT INTO {table}_delete VALUES ({expired}, 3)")
     node_right.query(
         f"INSERT INTO {table}_delete VALUES (toDateTime('2100-10-11 10:00:00'), 4)"
     )
 
-    node_left.query(f"INSERT INTO {table}_group_by VALUES (now(), 0, 1)")
-    node_left.query(f"INSERT INTO {table}_group_by VALUES (now(), 0, 2)")
-    node_right.query(f"INSERT INTO {table}_group_by VALUES (now(), 0, 3)")
-    node_right.query(f"INSERT INTO {table}_group_by VALUES (now(), 0, 4)")
+    node_left.query(f"INSERT INTO {table}_group_by VALUES ({expired}, 0, 1)")
+    node_left.query(f"INSERT INTO {table}_group_by VALUES ({expired}, 0, 2)")
+    node_right.query(f"INSERT INTO {table}_group_by VALUES ({expired}, 0, 3)")
+    node_right.query(f"INSERT INTO {table}_group_by VALUES ({expired}, 0, 4)")
 
-    node_left.query(f"INSERT INTO {table}_where VALUES (now(), 1)")
-    node_left.query(f"INSERT INTO {table}_where VALUES (now(), 2)")
-    node_right.query(f"INSERT INTO {table}_where VALUES (now(), 3)")
-    node_right.query(f"INSERT INTO {table}_where VALUES (now(), 4)")
+    node_left.query(f"INSERT INTO {table}_where VALUES ({expired}, 1)")
+    node_left.query(f"INSERT INTO {table}_where VALUES ({expired}, 2)")
+    node_right.query(f"INSERT INTO {table}_where VALUES ({expired}, 3)")
+    node_right.query(f"INSERT INTO {table}_where VALUES ({expired}, 4)")
 
     if node_left.with_installed_binary:
         node_left.restart_with_latest_version()
@@ -609,14 +616,25 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
     time.sleep(5)  # Wait for TTL
 
-    # after restart table can be in readonly mode
-    exec_query_with_retry(node_right, f"OPTIMIZE TABLE {table}_delete FINAL")
-    node_right.query(f"OPTIMIZE TABLE {table}_group_by FINAL")
-    node_right.query(f"OPTIMIZE TABLE {table}_where FINAL")
+    # Disable TTL merge cooldown so that OPTIMIZE TABLE FINAL can re-trigger
+    # TTL merges immediately if the first merge was only partial.
+    # We set this after restart (not in CREATE TABLE) to avoid an infinite
+    # TTL rewrite loop on the old binary that creates thousands of outdated parts.
+    for suffix in ["_delete", "_group_by", "_where"]:
+        for node in [node_left, node_right]:
+            exec_query_with_retry(
+                node,
+                f"ALTER TABLE {table}{suffix} MODIFY SETTING merge_with_ttl_timeout=0",
+            )
 
-    exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_delete FINAL")
-    node_left.query(f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=timeout)
-    node_left.query(f"OPTIMIZE TABLE {table}_where FINAL", timeout=timeout)
+    # After restart, tables can be in readonly mode, so use retry for all.
+    exec_query_with_retry(node_right, f"OPTIMIZE TABLE {table}_delete FINAL", timeout=timeout)
+    exec_query_with_retry(node_right, f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=timeout)
+    exec_query_with_retry(node_right, f"OPTIMIZE TABLE {table}_where FINAL", timeout=timeout)
+
+    exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_delete FINAL", timeout=timeout)
+    exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=timeout)
+    exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_where FINAL", timeout=timeout)
 
     # After OPTIMIZE TABLE, it is not guaranteed that everything is merged.
     # Possible scenario (for test_ttl_group_by):
@@ -628,13 +646,15 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     #
     # So, let's also sync replicas for node_right (for now).
 
-    exec_query_with_retry(node_right, f"SYSTEM SYNC REPLICA {table}_delete")
-    node_right.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
-    node_right.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
-
-    exec_query_with_retry(node_left, f"SYSTEM SYNC REPLICA {table}_delete")
-    node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
-    node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
+    # Best-effort SYSTEM SYNC REPLICA: the assert_eq_with_retry calls below
+    # handle the actual waiting for correct results.  A timeout here (common
+    # with sanitiser/old-binary builds) must not kill the whole test.
+    for suffix in ["_delete", "_group_by", "_where"]:
+        for node in [node_right, node_left]:
+            try:
+                node.query(f"SYSTEM SYNC REPLICA {table}{suffix}", timeout=timeout)
+            except Exception:
+                pass
 
     # Use assert_eq_with_retry because merges with TTL may still be pending
     # after OPTIMIZE TABLE FINAL due to concurrent merge limits.

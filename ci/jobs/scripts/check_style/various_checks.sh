@@ -79,7 +79,14 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
 done
 
 # Check for existence of __init__.py files
-# for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
+# This check is necessary to prevent issues with Python imports when test directories are missing this file.
+# See https://stackoverflow.com/questions/53918088/import-file-mismatch-in-pytest
+for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
+
+# Docker compose files in integration tests should not use :latest for third-party images,
+# because it leads to non-reproducible builds and unexpected breakage when upstream images change.
+# ClickHouse-owned images with ${VAR:-latest} pattern are excluded since the variable is set in CI.
+find "${ROOT_PATH}/tests/integration/compose" -name '*.yml' -print0 | xargs -0 grep -P 'image:\s*\S+:latest\s*$' | grep -v '\${\|clickhouse/' && echo "Docker compose files should use pinned versions instead of :latest for third-party images"
 
 # Check for executable bit on non-executable files
 git ls-files -s $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} | \

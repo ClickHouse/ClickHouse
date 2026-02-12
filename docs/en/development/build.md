@@ -51,7 +51,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of March 2025, Clang 19 or higher is required.
+As of February 2026, Clang 21 or higher is required.
 GCC or other compilers are not supported.
 
 ## Install the Rust compiler (optional) {#install-the-rust-compiler-optional}

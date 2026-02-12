@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -16,9 +17,9 @@
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -413,6 +414,27 @@ WindowTransform::~WindowTransform()
     }
 }
 
+Columns & WindowTransform::inputAt(const RowNumber & x)
+{
+    assert(x.block >= first_block_number);
+    assert(x.block - first_block_number < blocks.size());
+    return blocks[x.block - first_block_number].input_columns;
+}
+
+WindowTransformBlock & WindowTransform::blockAt(const UInt64 block_number)
+{
+    assert(block_number >= first_block_number);
+    assert(block_number - first_block_number < blocks.size());
+    return blocks[block_number - first_block_number];
+}
+
+MutableColumns & WindowTransform::outputAt(const RowNumber & x)
+{
+    assert(x.block >= first_block_number);
+    assert(x.block - first_block_number < blocks.size());
+    return blocks[x.block - first_block_number].output_columns;
+}
+
 void WindowTransform::advancePartitionEnd()
 {
     if (partition_ended)
@@ -610,7 +632,12 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     assertValid(frame_start);
 
-    if (frame_start <= partition_start)
+    // When moving backwards (PRECEDING) and we hit the start of available data
+    // (offset_left < 0), the logical position is before partition_start.
+    // We must check offset_left < 0 first because partition_start might point
+    // to a block that has already been freed, making the comparison unreliable.
+    if (frame_start <= partition_start
+        || (window_description.frame.begin_preceding && offset_left < 0))
     {
         // Got to the beginning of partition and can't go further back.
         frame_start = partition_start;
@@ -628,12 +655,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     // Handled the equality case above. Now the frame start is inside the
     // partition, if we walked all the offset, it's final.
-    assert(partition_start < frame_start);
     frame_started = offset_left == 0;
-
-    // If we ran into the start of data (offset left is negative), we won't be
-    // able to make progress. Should have handled this case above.
-    assert(offset_left >= 0);
 }
 
 
@@ -855,7 +877,12 @@ void WindowTransform::advanceFrameEndRowsOffset()
         return;
     }
 
-    if (moved_row <= partition_start)
+    // When moving backwards (PRECEDING) and we hit the start of available data
+    // (offset_left < 0), the logical position is before partition_start.
+    // We must check offset_left < 0 first because partition_start might point
+    // to a block that has already been freed, making the comparison unreliable.
+    if (moved_row <= partition_start
+        || (window_description.frame.end_preceding && offset_left < 0))
     {
         // Clamp to the start of partition.
         frame_end = partition_start;
@@ -866,10 +893,6 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Frame end inside partition, if we walked all the offset, it's final.
     frame_end = moved_row;
     frame_ended = offset_left == 0;
-
-    // If we ran into the start of data (offset left is negative), we won't be
-    // able to make progress. Should have handled this case above.
-    assert(offset_left >= 0);
 }
 
 void WindowTransform::advanceFrameEndRangeOffset()

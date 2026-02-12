@@ -212,7 +212,7 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
         + get_count(f"{dst_table_name}_3")
     ) != files_to_generate:
         info = node.query(
-            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+            f"SELECT * FROM system.s3queue_metadata_cache WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
         )
         logging.debug(info)
         assert False
@@ -442,14 +442,14 @@ def test_max_set_age(started_cluster, mode):
     for _ in range(10):
         node.query("SYSTEM FLUSH LOGS")
         if "Cannot parse input" in node.query(
-            f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
+            f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}'"
         ):
             break
         time.sleep(1)
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
-        f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
+        f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}'"
     )
     assert "Cannot parse input" in node.query(
         f"SELECT exception FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
@@ -465,7 +465,7 @@ def test_max_set_age(started_cluster, mode):
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
-        f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
+        f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
     )
     assert 1 < int(
         node.query(

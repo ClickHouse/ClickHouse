@@ -4,19 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>praktika report</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
 
         /* Default (Day Theme) */
         :root {
-            --background-color: white;
-            --text-color: #000;
-            --tile-background: #f9f9f9;
-            --info-background: #e4e4e4;
-            --footer-background: #333;
-            --footer-text-color: #fff;
+            --background-color: #FBFCFF;
+            --text-color: #151515;
+            --tile-background: #F9F9F9;
+            --info-background: #DFDFDF;
+            --footer-background: #151515;
+            --footer-text-color: #F9F9F9;
             --status-width: 300px;
-            --pending-bar-color: #f5e6a3;
-            --skipped-bar-color: #ccc;
+            --pending-bar-color: #FAFF69;
+            --skipped-bar-color: #C0C0C0;
         }
 
         .hidden {
@@ -38,33 +41,33 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
-            --header-background-color: #f4f4f4;
-            --link-color: blue;
-            --link-hover-color: darkblue;
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            letter-spacing: -0.2px;
+            --header-background-color: #F9F9F9;
+            --link-color: #2563eb;
+            --link-hover-color: #1d4ed8;
             --job-name-color: var(--text-color);
-            --file-link-color: blue;
-            --file-link-hover-color: darkblue;
-            --table-border-color: #ccc;
+            --file-link-color: #2563eb;
+            --file-link-hover-color: #1d4ed8;
+            --table-border-color: #DFDFDF;
         }
 
         body.night-theme {
-            --background-color: #1F1F1C;
-            --text-color: #dedede;
-            --tile-background: #1F1F1F;
-            --info-background: #575757;
-            --header-background-color: #1F1F1C;
-            --pending-bar-color: #595801;
-            --skipped-bar-color: #575757;
-            --table-border-color: #444;
+            --background-color: #151515;
+            --text-color: #DFDFDF;
+            --tile-background: #1D1D1D;
+            --info-background: #414141;
+            --header-background-color: #151515;
+            --pending-bar-color: #FAFF69;
+            --skipped-bar-color: #414141;
+            --table-border-color: #414141;
             --job-name-color: var(--text-color);
-            --link-color: #ffea00;
-            --link-hover-color: #ffaa00;
-            --file-link-color: #007efc;
-            --file-link-hover-color: #004d9a;
-            --footer-background: #1F1F1C;
-            --footer-text-color: #fff;
+            --link-color: #FAFF69;
+            --link-hover-color: #e6eb5e;
+            --file-link-color: #7ab3ff;
+            --file-link-hover-color: #a3cbff;
+            --footer-background: #151515;
+            --footer-text-color: #F9F9F9;
         }
 
         #status-container {
@@ -117,7 +120,7 @@
             color: var(--file-link-color);
             font-weight: bold;
             font-size: 0.7em;
-            font-family: 'Roboto Condensed', sans-serif;
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             font-stretch: ultra-condensed;
             cursor: pointer;
             display: inline-block;
@@ -135,7 +138,7 @@
 
         .external-link {
             color: var(--file-link-color);
-            font-family: 'Source Code Pro', monospace, sans-serif;
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             cursor: pointer;
             display: inline-block;
             text-decoration: none;
@@ -178,6 +181,7 @@
             overflow-wrap: break-word;
             max-width: 100%; /* Prevent overflow */
             background-color: var(--info-background);
+            font-family: 'SF Mono', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
         }
         #info-content {
             text-align: left;
@@ -221,14 +225,14 @@
         #footer .right a::before {
             content: "#";
             margin-left: 10px;
-            color: #e0e0e0;
+            color: #606060;
         }
 
         #footer .right::before, #footer .settings::before {
             content: "|"; /* Add separator before right and settings sections */
             margin-left: 0px;
             margin-right: 10px;
-            color: #e0e0e0;
+            color: #606060;
         }
 
         #theme-toggle, #status-filter-toggle, #sort-toggle {
@@ -238,7 +242,7 @@
         }
 
         #theme-toggle:hover, #sort-toggle:hover {
-            color: #e0e0e0;
+            color: #FAFF69;
         }
 
         #footer a:hover {
@@ -267,6 +271,11 @@
 
         td.dur-column {
             text-align: right;
+            font-family: 'SF Mono', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+        }
+
+        td.time-column {
+            font-family: 'SF Mono', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
         }
 
         th.time-column, td.time-column {
@@ -306,43 +315,43 @@
         }
 
         .status-success {
-            color: green;
-            font-weight: bold;
+            color: #16a34a;
+            font-weight: 600;
         }
 
         .status-fail {
-            color: red;
-            font-weight: bold;
+            color: #dc2626;
+            font-weight: 600;
         }
 
         .status-pending {
-            color: #d4a017;
-            font-weight: bold;
+            color: #ca8a04;
+            font-weight: 600;
         }
 
         .status-broken {
-            color: purple;
-            font-weight: bold;
+            color: #9333ea;
+            font-weight: 600;
         }
 
         .status-run {
-            color: #0080ff;
-            font-weight: bold;
+            color: #2563eb;
+            font-weight: 600;
         }
 
         .status-error {
-            color: darkred;
-            font-weight: bold;
+            color: #b91c1c;
+            font-weight: 600;
         }
 
         .status-dropped {
-            color: rgb(78, 0, 194);
-            font-weight: bold;
+            color: #7c3aed;
+            font-weight: 600;
         }
 
         .status-other {
-            color: grey;
-            font-weight: bold;
+            color: #808080;
+            font-weight: 600;
         }
     </style>
 </head>
@@ -1082,6 +1091,7 @@
 
         // Move taskRects to outer scope so event handlers can access it
         let taskRects = [];
+        let hoveredIndex = -1;
 
         function resizeCanvas() {
             canvas.width = widget.clientWidth;
@@ -1110,6 +1120,14 @@
             const currentUtcTimestamp = Date.now() / 1000;
             const maxTime = runtimeCache.json0?.duration ?? (currentUtcTimestamp - minStartTime);
             const scaleX = canvas.width / maxTime;
+
+            // Draw highlight background for hovered row
+            if (hoveredIndex >= 0) {
+                const hy = hoveredIndex * (lineWidth + padding) - padding;
+                const isDark = document.body.classList.contains('night-theme');
+                ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)';
+                ctx.fillRect(0, hy, canvas.width, lineWidth + 2 * padding);
+            }
 
             results.forEach((task, index) => {
                 const y = index * (lineWidth + padding);
@@ -1154,11 +1172,19 @@
             const mouseY = event.clientY - rect.top;
 
             let hoveredTask = null;
-            for (let { y, height, task } of taskRects) {
+            let newHoveredIndex = -1;
+            for (let i = 0; i < taskRects.length; i++) {
+                const { y, height, task } = taskRects[i];
                 if (mouseY >= y && mouseY <= y + height) {
                     hoveredTask = task;
+                    newHoveredIndex = i;
                     break;
                 }
+            }
+
+            if (newHoveredIndex !== hoveredIndex) {
+                hoveredIndex = newHoveredIndex;
+                drawTimeline();
             }
 
             if (hoveredTask && statusWidget?.update) {
@@ -1172,6 +1198,8 @@
         });
 
         activeListeners.add(canvas, "mouseleave", () => {
+            hoveredIndex = -1;
+            drawTimeline();
             if (statusWidget?.update && originalTask) {
                 statusWidget.update(
                     originalTask.name,

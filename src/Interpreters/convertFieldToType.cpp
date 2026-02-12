@@ -817,28 +817,53 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
     return decimal_to_float == float_value;
 }
 
+static bool decimalEqualsFloatByType(const Field & decimal_field, Float64 float_value)
+{
+    switch (decimal_field.getType())
+    {
+        case Field::Types::Decimal32:
+            return decimalEqualsFloat<Decimal32>(decimal_field, float_value);
+        case Field::Types::Decimal64:
+            return decimalEqualsFloat<Decimal64>(decimal_field, float_value);
+        case Field::Types::Decimal128:
+            return decimalEqualsFloat<Decimal128>(decimal_field, float_value);
+        case Field::Types::Decimal256:
+            return decimalEqualsFloat<Decimal256>(decimal_field, float_value);
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", decimal_field.getTypeName());
+    }
+}
+
 std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type, const FormatSettings & format_settings)
 {
     Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
 
-    if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
+    /// `convertFieldToType` returns NULL on failed conversion (out-of-range, loss of precision, etc).
+    /// For strict conversions we treat it as "not representable" and return empty optional,
+    /// but keep NULL -> NULL conversion valid.
+    if (!from_value.isNull() && result_value.isNull())
+        return std::nullopt;
+
+    /// For Decimal -> Decimal conversions, `convertFieldToType` may round/truncate (e.g. due to different scales).
+    /// Strict mode rejects any lossy conversion by requiring exact equality after conversion.
+    /// This is used by IN to avoid inserting values that cannot exist in the LHS type.
+    /// Example:
+    ///   SELECT CAST('33.3', 'Decimal64(1)') IN (CAST('33.33', 'Decimal64(2)')); -- 0 (would be 1 without following check)
+    ///   SELECT CAST('33.3', 'Decimal64(1)') IN (CAST('33.30', 'Decimal64(2)')); -- 1
+    if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()) && !accurateEquals(from_value, result_value))
     {
-        bool is_equal = accurateEquals(from_value, result_value);
-        return is_equal ? result_value : std::optional<Field>{};
+        return std::nullopt;
     }
 
+    /// For Float64 -> Decimal conversions, the "strictness" check is done by converting the Decimal back to Float64
+    /// and comparing with the original Float64. This prevents surprising membership results like:
+    /// Example:
+    ///   SELECT CAST('33.3', 'Decimal64(1)') IN (33.33); -- 0 (RHS would round to 33.3 without strict check)
+    ///   SELECT CAST('33.3', 'Decimal64(1)') IN (33.3);  -- 1
     if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
     {
-        /// Convert back to Float64 and compare
-        if (result_value.getType() == Field::Types::Decimal32)
-            return decimalEqualsFloat<Decimal32>(result_value, from_value.safeGet<Float64>()) ? result_value : std::optional<Field>{};
-        if (result_value.getType() == Field::Types::Decimal64)
-            return decimalEqualsFloat<Decimal64>(result_value, from_value.safeGet<Float64>()) ? result_value : std::optional<Field>{};
-        if (result_value.getType() == Field::Types::Decimal128)
-            return decimalEqualsFloat<Decimal128>(result_value, from_value.safeGet<Float64>()) ? result_value : std::optional<Field>{};
-        if (result_value.getType() == Field::Types::Decimal256)
-            return decimalEqualsFloat<Decimal256>(result_value, from_value.safeGet<Float64>()) ? result_value : std::optional<Field>{};
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
+        if (!decimalEqualsFloatByType(result_value, from_value.safeGet<Float64>()))
+            return std::nullopt;
     }
 
     return result_value;
