@@ -221,7 +221,7 @@ If `max_lag` is not provided, calculates for all possible lags.
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-
+    // FunctionDocumentation::Category::Arrays
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayAutocorrelation>(documentation);
