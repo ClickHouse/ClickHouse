@@ -162,7 +162,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
     if (read_from_merge_tree_step)
     {
-        filter_step->setCountMergeTreeOutputRows(true);
+        filter_step->setCountOutputRows(true);
         read_from_merge_tree_step->setCountOutputRows(false);
     }
 
@@ -289,7 +289,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
         /// Remaining WHERE stays as FilterStep -- it should count RowsAfterPrewhereAndWhereFilter.
         if (read_from_merge_tree_step)
-            new_filter_step->setCountMergeTreeOutputRows(true);
+            new_filter_step->setCountOutputRows(true);
 
         new_step = std::move(new_filter_step);
     }
