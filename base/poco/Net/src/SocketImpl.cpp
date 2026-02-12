@@ -288,7 +288,11 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 		if (_sndTimeout.totalMicroseconds() != 0)
 		{
 			if (!poll(_sndTimeout, SELECT_WRITE))
-				throw TimeoutException();
+			{
+				std::string addr;
+				try { addr = peerAddress().toString(); } catch (...) {}
+				throw TimeoutException("send timed out", addr);
+			}
 		}
 	}
 
@@ -302,12 +306,15 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 	if (rc < 0)
 	{
 		int err = lastError();
+		// Get peer address once for error reporting
+		std::string addr;
+		try { addr = peerAddress().toString(); } catch (...) {}
 		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
 			;
 		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
-			throw TimeoutException();
+			throw TimeoutException("send timed out", addr);
 		else
-			error(err);
+			error(err, addr);
 	}
 
 	useSendThrottlerBudget(rc);
@@ -319,12 +326,17 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 {
 	bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
+
 	if (_isBrokenTimeout && blocking)
 	{
 		if (_recvTimeout.totalMicroseconds() != 0)
 		{
 			if (!poll(_recvTimeout, SELECT_READ))
-				throw TimeoutException();
+			{
+				std::string addr;
+				try { addr = peerAddress().toString(); } catch (...) {}
+				throw TimeoutException("receive timed out", addr);
+			}
 		}
 	}
 
@@ -340,12 +352,15 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 	if (rc < 0)
 	{
 		int err = lastError();
+		// Get peer address once for error reporting
+		std::string addr;
+		try { addr = peerAddress().toString(); } catch (...) {}
 		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
 			;
 		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
-			throw TimeoutException(err);
+			throw TimeoutException("receive timed out", addr);
 		else
-			error(err);
+			error(err, addr);
 	}
 
 	useRecvThrottlerBudget(rc);
@@ -365,7 +380,12 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 		rc = ::sendto(_sockfd, reinterpret_cast<const char*>(buffer), length, flags, address.addr(), address.length());
 	}
 	while (_blocking && rc < 0 && lastError() == POCO_EINTR);
-	if (rc < 0) error();
+	if (rc < 0)
+	{
+		std::string addr;
+		try { addr = peerAddress().toString(); } catch (...) {}
+		error(lastError(), addr);
+	}
 
 	useSendThrottlerBudget(rc);
 
@@ -380,7 +400,11 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 		if (_recvTimeout.totalMicroseconds() != 0)
 		{
 			if (!poll(_recvTimeout, SELECT_READ))
-				throw TimeoutException();
+			{
+				std::string addr;
+				try { addr = peerAddress().toString(); } catch (...) {}
+				throw TimeoutException("receiveFrom timed out", addr);
+			}
 		}
 	}
 
@@ -403,12 +427,15 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 	else
 	{
 		int err = lastError();
+		// Get peer address once for error reporting
+		std::string addr;
+		try { addr = peerAddress().toString(); } catch (...) {}
 		if (err == POCO_EAGAIN && !_blocking)
 			;
 		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
-			throw TimeoutException(err);
+			throw TimeoutException("receiveFrom timed out", addr);
 		else
-			error(err);
+			error(err, addr);
 	}
 
 	useRecvThrottlerBudget(rc);
@@ -422,7 +449,12 @@ void SocketImpl::sendUrgent(unsigned char data)
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
 
 	int rc = ::send(_sockfd, reinterpret_cast<const char*>(&data), sizeof(data), MSG_OOB);
-	if (rc < 0) error();
+	if (rc < 0)
+	{
+		std::string addr;
+		try { addr = peerAddress().toString(); } catch (...) {}
+		error(lastError(), addr);
+	}
 }
 
 
@@ -1046,7 +1078,7 @@ void SocketImpl::error(int code, const std::string& arg)
 	case POCO_ESHUTDOWN:
 		throw NetException("Cannot send after socket shutdown", code);
 	case POCO_ETIMEDOUT:
-		throw TimeoutException(code);
+		throw TimeoutException("timeout", arg);
 	case POCO_ECONNREFUSED:
 		throw ConnectionRefusedException(arg, code);
 	case POCO_EHOSTDOWN:

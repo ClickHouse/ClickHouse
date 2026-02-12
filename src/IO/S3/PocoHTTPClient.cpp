@@ -799,11 +799,22 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
     request.add("metadata-flavor", "Google");
 
     auto log = getLogger("PocoHTTPClientGCPOAuth");
-    if (enable_s3_requests_logging)
-        LOG_TEST(log, "Make request to: {}", url.toString());
 
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto session = makeHTTPSession(group, url, timeouts);
+
+    if (enable_s3_requests_logging)
+    {
+        try
+        {
+            LOG_TEST(log, "Make request to: {} (IP: {})", url.toString(), session->getResolvedAddress());
+        }
+        catch (...)
+        {
+            LOG_TEST(log, "Make request to: {}", url.toString());
+        }
+    }
+
     session->sendRequest(request);
 
     Poco::Net::HTTPResponse response;
