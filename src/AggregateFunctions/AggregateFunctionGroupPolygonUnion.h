@@ -51,6 +51,7 @@ class AggregateFunctionGroupPolygonUnion final
 private:
     using Data = AggregateFunctionGroupPolygonUnionData<Point>;
     InputGeometryType input_type;
+    bool correct_geometry = true;
 
     static InputGeometryType resolveInputType(const DataTypePtr & type)
     {
@@ -67,10 +68,11 @@ private:
     }
 
 public:
-    explicit AggregateFunctionGroupPolygonUnion(const DataTypes & argument_types_)
+    explicit AggregateFunctionGroupPolygonUnion(const DataTypes & argument_types_, bool correct_geometry_ = true)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupPolygonUnion<Point>>(
             argument_types_, {}, DataTypeFactory::instance().get("MultiPolygon"))
         , input_type(resolveInputType(argument_types_.at(0)))
+        , correct_geometry(correct_geometry_)
     {}
 
     String getName() const override { return "groupPolygonUnion"; }
@@ -80,6 +82,14 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & state = this->data(place);
+
+        /// If the second argument is provided and is 0, skip geometry correction for this row.
+        bool should_correct = correct_geometry;
+        if (this->argument_types.size() == 2)
+        {
+            const auto & col = assert_cast<const ColumnUInt8 &>(*columns[1]);
+            should_correct = col.getData()[row_num] != 0;
+        }
 
         /// Extract only the single row we need, avoiding conversion of the entire column.
         auto single_row_col = columns[0]->cut(row_num, 1);
@@ -95,7 +105,8 @@ public:
                     return;
                 Polygon<Point> polygon;
                 polygon.outer() = std::move(rings[0]);
-                boost::geometry::correct(polygon);
+                if (should_correct)
+                    boost::geometry::correct(polygon);
                 current_multi_polygon.emplace_back(std::move(polygon));
                 break;
             }
@@ -104,7 +115,8 @@ public:
                 auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
                 if (polygons.empty())
                     return;
-                boost::geometry::correct(polygons[0]);
+                if (should_correct)
+                    boost::geometry::correct(polygons[0]);
                 current_multi_polygon.emplace_back(std::move(polygons[0]));
                 break;
             }
@@ -114,7 +126,8 @@ public:
                 if (multi_polygons.empty())
                     return;
                 current_multi_polygon = std::move(multi_polygons[0]);
-                boost::geometry::correct(current_multi_polygon);
+                if (should_correct)
+                    boost::geometry::correct(current_multi_polygon);
                 break;
             }
         }

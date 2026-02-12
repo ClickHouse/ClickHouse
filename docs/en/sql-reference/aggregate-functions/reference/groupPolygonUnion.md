@@ -11,12 +11,13 @@ Computes the geometric union of all polygons in a group, producing a single `Mul
 **Syntax**
 
 ```sql
-groupPolygonUnion(geometry)
+groupPolygonUnion(geometry [, correct_geometry])
 ```
 
 **Arguments**
 
 - `geometry` — A column of type [Ring](../../data-types/geo.md#ring), [Polygon](../../data-types/geo.md#polygon), or [MultiPolygon](../../data-types/geo.md#multipolygon).
+- `correct_geometry` — Optional. A [UInt8](../../data-types/int-uint.md) value that controls whether [`boost::geometry::correct`](https://www.boost.org/doc/libs/release/libs/geometry/doc/html/geometry/reference/algorithms/correct.html) is applied to input geometries (e.g. ensuring correct ring orientation and closure). `1` (default) enables correction, `0` disables it.
 
 **Returned value**
 
