@@ -1,0 +1,121 @@
+<test>
+    <settings>
+        <optimize_trivial_insert_select>0</optimize_trivial_insert_select>
+    </settings>
+
+    <!-- ================================================================== -->
+    <!-- Setup: tables with various geometry types and complexity levels      -->
+    <!-- ================================================================== -->
+
+    <!-- Simple overlapping squares (Polygon) — 100K rows -->
+    <create_query>CREATE TABLE perf_poly_simple (polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_poly_simple
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Complex circular polygons (Polygon, 180 vertices) — 100K rows -->
+    <create_query>CREATE TABLE perf_poly_complex (polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_poly_complex
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number % 500) + cos(i / 90.0 * pi()) * (1 + number % 10),
+                toFloat64(intDiv(number, 500)) + sin(i / 90.0 * pi()) * (1 + number % 10)
+            ), range(180))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Disjoint non-overlapping squares (Polygon) — 100K rows -->
+    <create_query>CREATE TABLE perf_poly_disjoint (polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_poly_disjoint
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number * 100) + [0, 1, 1, 0, 0][i + 1],
+                toFloat64(0) + [0, 0, 1, 1, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(5000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Ring input — 100K rows -->
+    <create_query>CREATE TABLE perf_ring (ring Ring) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ring
+        SELECT
+            arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- MultiPolygon input — 100K rows -->
+    <create_query>CREATE TABLE perf_mpoly (mpoly MultiPolygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_mpoly
+        SELECT
+            [[arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- GROUP BY table — 100K rows, 1000 groups -->
+    <create_query>CREATE TABLE perf_poly_grouped (grp UInt32, polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_poly_grouped
+        SELECT
+            number % 1000 AS grp,
+            [arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- ================================================================== -->
+    <!-- Benchmark queries                                                    -->
+    <!-- ================================================================== -->
+
+    <!-- Q1: Simple overlapping polygons — baseline -->
+    <query>SELECT groupPolygonUnion(polygon) FROM perf_poly_simple FORMAT Null</query>
+
+    <!-- Q2: Complex polygons (180 vertices each) — measures vertex-heavy cost -->
+    <query>SELECT groupPolygonUnion(polygon) FROM perf_poly_complex FORMAT Null</query>
+
+    <!-- Q3: Disjoint polygons — stresses result MultiPolygon accumulation -->
+    <query>SELECT groupPolygonUnion(polygon) FROM perf_poly_disjoint FORMAT Null</query>
+
+    <!-- Q4: Ring input — measures Ring-to-Polygon conversion overhead -->
+    <query>SELECT groupPolygonUnion(ring) FROM perf_ring FORMAT Null</query>
+
+    <!-- Q5: MultiPolygon input — measures MultiPolygon extraction path -->
+    <query>SELECT groupPolygonUnion(mpoly) FROM perf_mpoly FORMAT Null</query>
+
+    <!-- Q6: GROUP BY with 1000 groups — parallel aggregation -->
+    <query>SELECT grp, groupPolygonUnion(polygon) FROM perf_poly_grouped GROUP BY grp FORMAT Null</query>
+
+    <!-- ================================================================== -->
+    <!-- Teardown                                                             -->
+    <!-- ================================================================== -->
+
+    <drop_query>DROP TABLE IF EXISTS perf_poly_simple</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_poly_complex</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_poly_disjoint</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ring</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_mpoly</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_poly_grouped</drop_query>
+</test>

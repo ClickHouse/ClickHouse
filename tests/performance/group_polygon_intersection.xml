@@ -1,0 +1,115 @@
+<test>
+    <type>loop</type>
+    <stop_conditions>
+        <all_of>
+            <iterations>1</iterations>
+            <min_time_not_taken>0.2</min_time_not_taken>
+        </all_of>
+        <any_of>
+            <iterations>5</iterations>
+            <total_time_taken>60</total_time_taken>
+        </any_of>
+    </stop_conditions>
+
+    <!-- Table creation -->
+    <create_query>CREATE TABLE perf_poly_simple (polygon Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO perf_poly_simple
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </fill_query>
+
+    <create_query>CREATE TABLE perf_poly_complex (polygon Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO perf_poly_complex
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number % 500) + cos(i / 90.0 * pi()) * (1 + number % 10),
+                toFloat64(intDiv(number, 500)) + sin(i / 90.0 * pi()) * (1 + number % 10)
+            ), range(180))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </fill_query>
+
+    <!-- Disjoint polygons - intersection should be empty immediately -->
+    <create_query>CREATE TABLE perf_poly_disjoint (polygon Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO perf_poly_disjoint
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number * 100) + [0, 1, 1, 0, 0][i + 1],
+                toFloat64(0) + [0, 0, 1, 1, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(5000)
+        SETTINGS max_insert_threads = 2
+    </fill_query>
+
+    <create_query>CREATE TABLE perf_ring (ring Ring) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO perf_ring
+        SELECT
+            arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </fill_query>
+
+    <create_query>CREATE TABLE perf_mpoly (mpoly MultiPolygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO perf_mpoly
+        SELECT
+            [[arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </fill_query>
+
+    <!-- Grouped by small cardinality to ensure non-empty intersections within groups -->
+    <create_query>CREATE TABLE perf_poly_grouped (grp UInt32, polygon Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO perf_poly_grouped
+        SELECT
+            number % 1000 AS grp,
+            [arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </fill_query>
+
+    <!-- 0. Simple polygons (Overlap test) -->
+    <!-- Note: with standard grid generation, total intersection of 100K polygons might be empty or very small -->
+    <query>SELECT groupPolygonIntersection(polygon) FROM perf_poly_simple FORMAT Null</query>
+
+    <!-- 1. Complex polygons -->
+    <query>SELECT groupPolygonIntersection(polygon) FROM perf_poly_complex FORMAT Null</query>
+
+    <!-- 2. Disjoint polygons (Should be very fast due to empty short-circuit) -->
+    <query>SELECT groupPolygonIntersection(polygon) FROM perf_poly_disjoint FORMAT Null</query>
+
+    <!-- 3. Ring input -->
+    <query>SELECT groupPolygonIntersection(ring) FROM perf_ring FORMAT Null</query>
+
+    <!-- 4. MultiPolygon input -->
+    <query>SELECT groupPolygonIntersection(mpoly) FROM perf_mpoly FORMAT Null</query>
+
+    <!-- 5. Grouped aggregation -->
+    <query>SELECT grp, groupPolygonIntersection(polygon) FROM perf_poly_grouped GROUP BY grp FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_poly_simple</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_poly_complex</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_poly_disjoint</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ring</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_mpoly</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_poly_grouped</drop_query>
+</test>
