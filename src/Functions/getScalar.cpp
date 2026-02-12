@@ -74,36 +74,34 @@ private:
 
 /** Get special scalar values
   */
-template <typename Scalar>
 class FunctionGetSpecialScalar : public IFunction
 {
 public:
-    static constexpr auto name = Scalar::name;
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(ContextPtr context_, const char * function_name_, const char * scalar_name_)
     {
-        return std::make_shared<FunctionGetSpecialScalar<Scalar>>(context_);
+        return std::make_shared<FunctionGetSpecialScalar>(context_, function_name_, scalar_name_);
     }
 
-    static ColumnWithTypeAndName createScalar(ContextPtr context_)
+    static ColumnWithTypeAndName createScalar(ContextPtr context_, const char * scalar_name_)
     {
-        if (auto block = context_->tryGetSpecialScalar(Scalar::scalar_name))
+        if (auto block = context_->tryGetSpecialScalar(scalar_name_))
             return block->getByPosition(0);
         if (context_->hasQueryContext())
         {
-            if (context_->getQueryContext()->hasScalar(Scalar::scalar_name))
-                return context_->getQueryContext()->getScalar(Scalar::scalar_name).getByPosition(0);
+            if (context_->getQueryContext()->hasScalar(scalar_name_))
+                return context_->getQueryContext()->getScalar(scalar_name_).getByPosition(0);
         }
-        return {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), Scalar::scalar_name};
+        return {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), scalar_name_};
     }
 
-    explicit FunctionGetSpecialScalar(ContextPtr context_)
-        : scalar(createScalar(context_)), is_distributed(context_->isDistributed())
+    FunctionGetSpecialScalar(ContextPtr context_, const char * function_name_, const char * scalar_name_)
+        : scalar(createScalar(context_, scalar_name_)), is_distributed(context_->isDistributed()), function_name(function_name_)
     {
     }
 
     String getName() const override
     {
-        return name;
+        return function_name;
     }
 
     bool isDeterministic() const override { return false; }
@@ -137,18 +135,7 @@ public:
 private:
     ColumnWithTypeAndName scalar;
     bool is_distributed;
-};
-
-struct GetShardNum
-{
-    static constexpr auto name = "shardNum";
-    static constexpr auto scalar_name = "_shard_num";
-};
-
-struct GetShardCount
-{
-    static constexpr auto name = "shardCount";
-    static constexpr auto scalar_name = "_shard_count";
+    const char * function_name;
 };
 
 }
@@ -185,7 +172,7 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
     FunctionDocumentation::Category category_shardNum = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_shardNum = {description_shardNum, syntax_shardNum, arguments_shardNum, {}, returned_value_shardNum, examples_shardNum, introduced_in_shardNum, category_shardNum};
 
-    factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>(documentation_shardNum);
+    factory.registerFunction("shardNum", [](ContextPtr context){ return FunctionGetSpecialScalar::create(context, "shardNum", "_shard_num"); }, documentation_shardNum);
 
     FunctionDocumentation::Description description_shardCount = R"(
 Returns the total number of shards for a distributed query.
@@ -215,7 +202,7 @@ SELECT shardCount() FROM shard_count_example;
     FunctionDocumentation::Category category_shardCount = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_shardCount = {description_shardCount, syntax_shardCount, arguments_shardCount, {}, returned_value_shardCount, examples_shardCount, introduced_in_shardCount, category_shardCount};
 
-    factory.registerFunction<FunctionGetSpecialScalar<GetShardCount>>(documentation_shardCount);
+    factory.registerFunction("shardCount", [](ContextPtr context){ return FunctionGetSpecialScalar::create(context, "shardCount", "_shard_count"); }, documentation_shardCount);
 }
 
 }

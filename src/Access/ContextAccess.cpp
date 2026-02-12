@@ -339,6 +339,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         /// User has been dropped.
         user_was_dropped = true;
         subscription_for_user_change = {};
+        subscription_for_initial_user_change = {};
         subscription_for_roles_changes = {};
         access = nullptr;
         access_with_implicit = nullptr;
@@ -387,10 +388,20 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
     setRolesInfo(enabled_roles->getRolesInfo());
 
-    std::optional<UUID> initial_user_id;
-    if (!params.initial_user.empty())
-        initial_user_id = access_control->find<User>(params.initial_user);
-    row_policies_of_initial_user = initial_user_id ? access_control->tryGetDefaultRowPolicies(*initial_user_id) : nullptr;
+    if (params.initial_user_id)
+    {
+        subscription_for_initial_user_change = access_control->subscribeForChanges(
+            *params.initial_user_id,
+            [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr &)
+            {
+                if (auto ptr = weak_ptr.lock())
+                {
+                    std::lock_guard lock2{ptr->mutex};
+                    ptr->findRowPoliciesOfInitialUser();
+                }
+            });
+        findRowPoliciesOfInitialUser();
+    }
 }
 
 
@@ -425,6 +436,12 @@ void ContextAccess::calculateAccessRights() const
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
+}
+
+
+void ContextAccess::findRowPoliciesOfInitialUser() const
+{
+    row_policies_of_initial_user = params.initial_user_id ? access_control->tryGetDefaultRowPolicies(*params.initial_user_id) : nullptr;
 }
 
 
@@ -469,22 +486,45 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
-    std::lock_guard lock{mutex};
-
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-
     RowPolicyFilterPtr filter;
-    if (enabled_row_policies)
-        filter = enabled_row_policies->getFilter(database, table_name, filter_type);
 
-    if (row_policies_of_initial_user)
     {
-        /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
-        /// TODO: we need a better solution here. It seems we should pass the initial row policy
-        /// because a shard is allowed to not have the initial user or it might be another user
-        /// with the same name.
-        filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+        std::lock_guard lock{mutex};
+
+        if (initialized && !user && !user_was_dropped)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
+
+        if (enabled_row_policies)
+            filter = enabled_row_policies->getFilter(database, table_name, filter_type);
+
+        if (row_policies_of_initial_user)
+        {
+            /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
+            /// TODO: we need a better solution here. It seems we should pass the initial row policy
+            /// because a shard is allowed to not have the initial user or it might be another user
+            /// with the same name.
+            filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+        }
+    }
+
+    if (filter && filter->policies.empty())
+    {
+        if (access_control->shouldThrowOnUnmatchedRowPolicies())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                            "{}: Table {}.{} has row policies, but none of them are for the current user",
+                            getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name));
+        }
+        else
+        {
+            chassert(filter->isAlwaysTrue() || filter->isAlwaysFalse());
+            std::string_view filter_info =
+                filter->isAlwaysTrue() ? ", no filters will be used" :
+                (filter->isAlwaysFalse() ? ", no rows will be shown" : "");
+
+            LOG_TRACE(trace_log, "{}: Table {}.{} has row policies, but none of them are for the current user{}",
+                      getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name), filter_info);
+        }
     }
 
     return filter;

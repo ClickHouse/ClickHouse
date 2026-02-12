@@ -3,7 +3,8 @@ import pytest
 from helpers.iceberg_utils import (
     create_iceberg_table,
     get_uuid_str,
-    default_download_directory
+    default_download_directory,
+    get_creation_expression
 )
 
 
@@ -138,3 +139,114 @@ def test_writes_create_table_bug_tuple(started_cluster_iceberg_with_spark, forma
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int, y Int)", order_by="tuple()", format_version=format_version)
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 2), (1, 3);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\t2\n1\t3\n'
+
+@pytest.mark.parametrize("format_version", [2])
+@pytest.mark.parametrize("storage_type", ["s3"])
+@pytest.mark.parametrize(
+    "schema,order_by",
+    [
+        ("(c0 Int)", "(1)"),
+        ("(c0 Int)", "(1+1)"),
+        ("(c0 Int)", "rand(c0)"),
+        ("(c0 Int)", "(now())"),
+        ("(c0 Int)", "identity(1)"),
+        ("(c0 Int)", "identity(1+1)"),
+        ("(c0 Int, c1 Int)", "icebergBucket(c0, c1)"),
+        ("(c0 Int, c1 Int)", "icebergBucket(1, 2)"),
+        ("(c0 Int)", "icebergBucket(c0, 1)"),
+        ("(c0 Int)", "icebergBucket(-1, c0)"),
+    ]
+)
+def test_order_by_bad_arguments_ast_parsing(
+    started_cluster_iceberg_with_spark, format_version, storage_type, schema, order_by
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = "test_order_by_bad_ast_" + storage_type + "_" + get_uuid_str()
+
+    query = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        schema,
+        format_version=format_version,
+        order_by=order_by,
+    )
+    
+    error = instance.query_and_get_error(query)
+    assert (
+        "Code: 36" in error or "BAD_ARGUMENTS" in error
+    ), f"Expected BAD_ARGUMENTS error (Code: 36), got: {error}"
+    assert (
+        "Invalid iceberg sort order" in error 
+        or "Unsupported function" in error 
+        or "expected a column identifier" in error.lower()
+        or "expected (integer_literal, column_identifier)" in error.lower()
+        or "expected 1 or 2 arguments" in error.lower()
+        or "expected a non-negative integer literal" in error.lower()
+        or "arguments are missing" in error.lower()
+    ), f"Expected error message about invalid sort order, got: {error}"
+
+
+@pytest.mark.parametrize("format_version", [2])
+@pytest.mark.parametrize("storage_type", ["s3"])
+@pytest.mark.parametrize(
+    "schema,order_by",
+    [
+        ("(c0 Int)", "identity()"),
+        ("(c0 Int, c1 Int)", "identity(c0, c1, c0)"),
+    ]
+)
+def test_order_by_bad_arguments_wrong_count(
+    started_cluster_iceberg_with_spark, format_version, storage_type, schema, order_by
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = "test_order_by_bad_count_" + storage_type + "_" + get_uuid_str()
+
+    query = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        schema,
+        format_version=format_version,
+        order_by=order_by,
+    )
+    
+    error = instance.query_and_get_error(query)
+    assert (
+        "Code: 42" in error or "NUMBER_OF_ARGUMENTS_DOESNT_MATCH" in error
+    ), f"Expected NUMBER_OF_ARGUMENTS_DOESNT_MATCH error (Code: 42), got: {error}"
+    assert (
+        "doesn't match" in error.lower()
+    ), f"Expected error message about argument count mismatch, got: {error}"
+
+
+@pytest.mark.parametrize("format_version", [2])
+@pytest.mark.parametrize("storage_type", ["s3"])
+@pytest.mark.parametrize(
+    "schema,order_by",
+    [
+        ("(c0 Int)", "icebergTruncate(1.5, c0)"),
+    ]
+)
+def test_order_by_bad_arguments_wrong_type(
+    started_cluster_iceberg_with_spark, format_version, storage_type, schema, order_by
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = "test_order_by_bad_type_" + storage_type + "_" + get_uuid_str()
+
+    query = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        schema,
+        format_version=format_version,
+        order_by=order_by,
+    )
+    
+    error = instance.query_and_get_error(query)
+    assert (
+        "Code: 43" in error or "ILLEGAL_TYPE_OF_ARGUMENT" in error
+    ), f"Expected ILLEGAL_TYPE_OF_ARGUMENT error (Code: 43), got: {error}"
+    assert (
+        "should be" in error.lower()
+    ), f"Expected error message about invalid argument type, got: {error}"

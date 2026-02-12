@@ -17,7 +17,6 @@ struct LeastBaseImpl
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        /** gcc 4.9.2 successfully vectorizes a loop from this function. */
         return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
 

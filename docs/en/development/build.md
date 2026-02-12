@@ -46,12 +46,14 @@ sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm y
 To install Clang on Ubuntu/Debian, use LLVM's automatic installation script from [here](https://apt.llvm.org/).
 
 ```bash
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 21
 ```
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of March 2025, Clang 19 or higher is required.
+As of February 2026, Clang 21 or higher is required.
 GCC or other compilers are not supported.
 
 ## Install the Rust compiler (optional) {#install-the-rust-compiler-optional}

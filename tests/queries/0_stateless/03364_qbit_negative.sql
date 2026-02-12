@@ -1,5 +1,3 @@
-SET enable_qbit_type = 1;
-
 DROP TABLE IF EXISTS qbits;
 
 CREATE TABLE qbits (id UInt32, vec QBit(BFloat16, 0)) ENGINE = Memory; -- { serverError UNEXPECTED_AST_STRUCTURE }

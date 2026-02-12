@@ -1138,6 +1138,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveAllArenasMetric<size_t>(new_values, "pmuzzy");
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
+    saveJemallocMetricImpl<size_t>(new_values, "arenas.dirty_decay_ms", "jemalloc.arenas.dirty_decay_ms");
 #endif
 
     /// Process process memory usage according to OS

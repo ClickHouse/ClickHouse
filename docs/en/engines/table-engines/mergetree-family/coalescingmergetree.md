@@ -43,10 +43,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 #### Columns {#columns}
 
-`columns` - a tuple with the names of columns where values will be united. Optional parameter.
-    The columns must be of a numeric type and must not be in the partition or sorting key.
-
- If `columns` is not specified, ClickHouse unites the values in all columns that are not in the sorting key.
+`columns` - Optional. A tuple with the names of columns where values will be united. The provided columns must not be in the partition or sorting key. If `columns` is not specified, ClickHouse unites the values in all columns that are not in the sorting key.
 
 ### Query clauses {#query-clauses}
 

@@ -161,6 +161,8 @@ class HtmlRunnerHooks:
         )
 
         summary_result.dump()
+        # Use version 0 for initial workflow report creation (destructive reset)
+        # This is safe here as it runs once at workflow start before any concurrent updates
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         print(f"CI Status page url [{report_url_current_sha}]")
 

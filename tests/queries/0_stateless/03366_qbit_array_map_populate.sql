@@ -1,5 +1,3 @@
-SET enable_qbit_type = 1;
-
 SELECT 'Test QBit population with arrayMap: Float64';
 
 DROP TABLE IF EXISTS qbits;

@@ -300,7 +300,8 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n <= _size);
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -729,7 +730,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     if (_size != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (_size == 0)
+    if (_size == 0 || replicate_offsets.back() == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
     auto res_offsets = offsets->cloneEmpty();

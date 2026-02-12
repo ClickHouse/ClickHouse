@@ -6,7 +6,6 @@
 
     Can't select from temporary table
     ReadFromParallelRemoteReplicasStep: There is no table `_temporary_and_external_tables`.`_tmp_fad23aad-ce65-4447-81fe-114409a5f0f9` on server: 127.0.0.2:9000
-00600_create_temporary_table_if_not_exists
 00542_access_to_temporary_table_in_readonly_mode
 03156_nullable_number_tips
 03143_cte_scope
@@ -20,13 +19,8 @@
 
     https://github.com/ClickHouse/ClickHouse/issues/74324
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
-03171_function_to_subcolumns_fuzzer
 00597_push_down_predicate_long
 02559_multiple_read_steps_in_prewhere
-
-    https://github.com/ClickHouse/ClickHouse/issues/74329
-    Column with Array type is not represented by ColumnArray column
-02834_array_exists_segfault
 
     https://github.com/ClickHouse/ClickHouse/issues/74335
     Bad get: has Decimal32, requested Decimal128
@@ -43,33 +37,15 @@
     https://github.com/ClickHouse/ClickHouse/issues/74343
     Cannot find column `tuple(col_a, type)` in source stream, there are only columns: [__table1.id, tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type), tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type)]. (THERE_IS_NO_COLUMN) (in query: SELECT id, tuple(replaceAll(data, 'a', 'e') AS col_a, type) AS a, tuple(replaceAll(data, 'a', 'e') AS col_b, type) AS b FROM src;)
 03240_insert_select_named_tuple
-00500_point_in_polygon_non_const_poly
-01017_tuplehamming_distance
-01300_svg
-01849_geoToS2
-02504_regexp_dictionary_table_source
-02833_tuple_concat
-02378_analyzer_projection_names
 
     https://github.com/ClickHouse/ClickHouse/issues/74367
     Cannot find column in source stream
-02457_morton_coding_with_mask
 01358_mutation_delete_null_rows
-
-    https://github.com/ClickHouse/ClickHouse/issues/74447
-    Sizes of columns doesn't match
-02861_filter_pushdown_const_bug
-
-    https://github.com/ClickHouse/ClickHouse/issues/74711
-03080_incorrect_join_with_merge
 
     Storage Join/Set
     https://github.com/ClickHouse/ClickHouse/issues/74362
     Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
 01594_storage_join_uuid
-    Unsupported JOIN keys of type keys256 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;)
-02498_storage_join_key_positions.gen
-03447_storage_join_unsupported_keys
 
     https://github.com/ClickHouse/ClickHouse/issues/74360
     LOGICAL ERROR https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=84536&sha=516c114f38828a2853efa3f0935f19d11b7c0d23&name_0=PR&name_1=Stateless+tests+%28amd_binary%2C+ParallelReplicas%2C+s3+storage%2C+parallel%29
@@ -79,9 +55,6 @@
 
     GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
 01231_operator_null_in
-    Alter (Method read is not supported by storage Set)
-    https://fiddle.clickhouse.com/6237cbe7-242e-4ae5-95d2-754a8284072c
-02581_share_big_sets_between_mutation_tasks_with_storage_set
 
     https://github.com/ClickHouse/ClickHouse/issues/74366
     Cannot convert type UInt8 to Variant(String, UInt64)
@@ -89,11 +62,7 @@
 
     Bloom filters
     Needle must not contain whitespace or separator characters: while executing 'FUNCTION hasToken(s : 0, 'abcabcabcabcabcabcabcab\0'_String :: 1) -> hasToken(__table1.s, 'abcabcabcabcabcabcabcab\0'_String) UInt8 : 2': While executing MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread). (BAD_ARGUMENTS) (version 25.1.1.1927 (official build)) (from [::ffff:127.0.0.1]:44318) (comment: 01781_token_extractor_buffer_overflow.sql) (in query: SELECT max(`__table1`.`id`) AS `max(id)` FROM `test_klfow1or`.`bloom_filter` AS `__table1` WHERE hasToken(`__table1`.`s`, 'abcabcabcabcabcabcabcab\0'))
-01781_token_extractor_buffer_overflow
 00945_bloom_filter_index
-    Number of columns in section IN doesn't match. 1 at left, 2 at right.: while executing 'FUNCTION in(str : 0, __set_5453536365783156953_2864831594540334414 :: 1) -> in(__table1.str, __set_5453536365783156953_2864831594540334414) Nullable(UInt8) : 2': While executing MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread). (NUMBER_OF_COLUMNS_DOESNT_MATCH)
-    (query: SELECT * FROM bloom_filter_nullable_index WHERE str IN (SELECT '1048576', str FROM bloom_filter_nullable_index) SETTINGS transform_null_in = 0;)
-01681_bloom_filter_nullable_column
 
     Setting offset=5 not work
 01892_setting_limit_offset_distributed
@@ -102,9 +71,6 @@
 02517_wrong_total_structure_crash
 02985_shard_query_start_time
 
-    CANNOT_PARSE_TEXT
-02771_ignore_data_skipping_indices
-
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
 01513_optimize_aggregation_in_order_memory_long
@@ -112,28 +78,14 @@
 
     https://github.com/ClickHouse/clickhouse-private/issues/15758
     dictGet by dict name
-02366_direct_dictionary_dict_has
-03071_fix_short_circuit_logic
-02234_column_function_short_circuit
-03171_hashed_dictionary_short_circuit_bug_fix
-02950_dictionary_short_circuit
-01852_dictionary_found_rate_long
-01037_polygon_dicts_correctness_all
-01037_polygon_dicts_correctness_fast
-01037_polygon_dicts_simple_functions
 01904_dictionary_default_nullable_type.cloud
 01904_ssd_cache_dictionary_default_nullable_type
 02950_dictionary_ssd_cache_short_circuit
 02504_regexp_dictionary_ua_parser
 03062_analyzer_join_engine_missing_column
-01852_dictionary_query_count_long
-01904_dictionary_default_nullable_type
-02391_hashed_dictionary_shards
-02740_hashed_dictionary_load_factor_smoke
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
     Actual WithMergeableState
-01483_merge_table_join_and_group_by
 01147_partial_merge_full_join
 01010_partial_merge_join
 02789_filesystem_cache_alignment
@@ -142,37 +94,12 @@
     https://github.com/ClickHouse/clickhouse-private/issues/17173
 03174_exact_rows_before_aggregation
 
-    https://github.com/ClickHouse/clickhouse-private/issues/19792
-01622_constraints_simple_optimization
-
-    https://github.com/ClickHouse/clickhouse-private/issues/14832
-02319_quantile_interpolated_weighted
-00753_quantile_format
-
     https://github.com/ClickHouse/clickhouse-private/issues/11666
 02941_any_RESPECT_NULL_sparse_column
 02662_first_last_value
 
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
-
-    https://github.com/ClickHouse/ClickHouse/issues/80426
-    Duplicates with all right join and join engine
-01051_all_join_engine
-02497_storage_join_right_assert
-02495_analyzer_storage_join
-
-    https://github.com/ClickHouse/clickhouse-private/issues/27882
-    duplicates cross_to_inner_join_rewrite=1
-02564_analyzer_cross_to_inner
-
-    https://github.com/ClickHouse/ClickHouse/issues/80439
-    Predicate pushdown CTE incorrect result
-02901_predicate_pushdown_cte_stateful
-
-    https://github.com/ClickHouse/ClickHouse/issues/80440
-    MULTIPLE_EXPRESSIONS_FOR_ALIAS
-03121_analyzer_filed_redefenition_in_subquery
 
     Transactions
 02421_truncate_isolation_no_merges
@@ -194,47 +121,7 @@
 03040_recursive_cte_postgres_6
 03154_recursive_cte_distributed
 
-    WINDOW VIEW
-01047_window_view_parser_inner_table
-01048_window_view_parser
-01052_window_view_proc_tumble_to_now
-01053_window_view_proc_hop_to_now
-01054_window_view_proc_tumble_to
-01055_window_view_proc_hop_to
-01056_window_view_proc_hop_watch
-01057_window_view_event_tumble_to_strict_asc
-01058_window_view_event_hop_to_strict_asc
-01059_window_view_event_hop_watch_strict_asc
-01060_window_view_event_tumble_to_asc
-01061_window_view_event_hop_to_asc
-01062_window_view_event_hop_watch_asc
-01063_window_view_event_tumble_to_bounded
-01064_window_view_event_hop_to_bounded
-01065_window_view_event_hop_watch_bounded
-01066_window_view_event_tumble_to_strict_asc_lateness
-01067_window_view_event_tumble_to_asc_lateness
-01068_window_view_event_tumble_to_bounded_lateness
-01069_window_view_proc_tumble_watch
-01070_window_view_watch_events
-01071_window_view_event_tumble_asc_join
-01073_window_view_event_tumble_to_asc_populate
-01074_window_view_event_tumble_asc_join_populate
-01075_window_view_proc_tumble_to_now_populate
-01076_window_view_alter_query_to
-01077_window_view_alter_query_to_modify_source
-01078_window_view_alter_query_watch
-01079_window_view_inner_table_memory_tumble
-01080_window_view_inner_table_memory_hop
-01081_window_view_target_table_engine
-01082_window_view_watch_limit
-01083_window_view_select
-01084_window_view_with_table_identifier
-01087_window_view_alter_query
-01088_window_view_default_column
-
     analyzer=0 (partially supported)
-02918_join_pm_lc_crash
-01925_join_materialized_columns
 02962_join_using_bug_57894
 01049_join_low_card_bug_long.gen
 01721_join_implicit_cast_long.gen
@@ -354,7 +241,6 @@
 
     # NOT BUGS
     Not a bug
-02910_object-json-crash-add-column
 02494_query_cache_user_isolation
 02346_non_negative_derivative
 01913_exact_rows_before_limit
@@ -386,9 +272,6 @@
 
     minor: formatted query in system.query_log
 02751_query_log_test_partitions
-
-    fail with parallel_replicas_local_plan=0
-    03155_in_nested_subselects
 
     max_memory_usage limit
     !!!(MEMORY_LIMIT_EXCEEDED) (version 25.1.1.3390 (official build)) (from [::1]:59776) (comment: 02782_uniq_exact_parallel_merging_bug.sh) (in query: select count(distinct s) from test_372i6d19.t settings max_memory_usage = \'50Mi\')
@@ -428,16 +311,7 @@
     max rows: 2.00, current rows: 11.00
 01585_use_index_for_global_in_with_null
 
-00955_test_final_mark_use
 01624_soft_constraints
-03031_minmax_index_for_pointinpolygon
-
-    ORDER BY ALL is missing for multiple queries
-00326_long_function_multi_if
-00328_long_case_construction
-
-    GLOBAL JOIN duplicates
-00857_global_joinsavel_table_alias
 
     !!!Reason: Timeout!
 01666_merge_tree_max_query_limit
@@ -457,6 +331,3 @@
 
     Produces different result:
 03658_joined_block_split_single_row_bytes
-
-# https://github.com/ClickHouse/ClickHouse/issues/92056
-03712_nested_loop_join_merge_tree

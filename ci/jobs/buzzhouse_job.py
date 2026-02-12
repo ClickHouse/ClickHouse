@@ -4,7 +4,6 @@ import random
 from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import run_fuzz_job
-from ci.praktika.info import Info
 from ci.praktika.utils import Utils
 
 
@@ -179,20 +178,22 @@ def main():
         "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
         "max_string_length": random.randint(min_string_length, max_string_length),
-        "max_parallel_queries": (
-            1
-            if (
-                any(x in Info().job_name for x in ["tsan", "asan", "msan"])
-                or random.randint(1, 2) == 1
-            )
-            else random.randint(1, 5)
-        ),
+        # Disable parallel queries, there are issues in the CI currently
+        # "max_parallel_queries": (
+        #    1
+        #    if (
+        #        any(x in Info().job_name for x in ["tsan", "asan", "msan"])
+        #        or random.randint(1, 2) == 1
+        #    )
+        #    else random.randint(1, 5)
+        # ),
+        "max_parallel_queries": 1,
         "max_number_alters": (1 if random.randint(1, 2) == 1 else random.randint(1, 4)),
         "fuzz_floating_points": random.choice([True, False]),
         "enable_fault_injection_settings": random.randint(1, 4) == 1,
         "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
-        "use_dump_table_oracle": random.randint(1, 3) == 1,
+        "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues

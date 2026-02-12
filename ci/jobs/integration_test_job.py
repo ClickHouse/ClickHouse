@@ -5,11 +5,13 @@ import time
 from pathlib import Path
 from typing import List, Tuple
 
+from more_itertools import tail
+
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
 from ci.praktika.info import Info
-from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.result import Result, ResultTranslator
+from ci.praktika.utils import ContextManager, Shell, Utils
 
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
@@ -82,6 +84,12 @@ def parse_args():
         type=int,
     )
     parser.add_argument(
+        "--session-timeout",
+        help="Optional. Session timeout in seconds",
+        default=None,
+        type=int,
+    )
+    parser.add_argument(
         "--param",
         help=(
             "Optional. Comma-separated KEY=VALUE pairs to inject as environment "
@@ -91,6 +99,76 @@ def parse_args():
         default="",
     )
     return parser.parse_args()
+
+
+def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
+    """Merge all profraw files into final profdata file.
+
+    Args:
+        llvm_profdata_cmd: Path to llvm-profdata tool
+        batch_num: Batch number for naming output file
+    """
+    import subprocess
+    from pathlib import Path
+
+    # Find all profraw files
+    profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
+
+    if not profraw_files:
+        print("No profraw files found", flush=True)
+        return
+
+    final_file = f"./it-{batch_num}.profdata"
+    print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
+
+    result = subprocess.run(
+        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=warn"]
+        + profraw_files
+        + ["-o", final_file],
+        capture_output=True,
+        text=True,
+    )
+
+    # Check for corrupted files in stderr
+    corrupted_count = result.stderr.count(
+        "invalid instrumentation profile"
+    ) + result.stderr.count("file header is corrupt")
+    if corrupted_count > 0:
+        print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)
+        # Extract and display corrupted filenames from stderr
+        corrupted_files = set()
+        for line in result.stderr.split("\n"):
+            if (
+                "invalid instrumentation profile" in line
+                or "file header is corrupt" in line
+                or "error:" in line.lower()
+            ):
+                print(f"    {line.strip()}", flush=True)
+                # Extract filename from error message (format: "error: file.profraw: ..." or "warning: file.profraw: ...")
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    potential_file = parts[1].strip()
+                    if potential_file.endswith(".profraw"):
+                        corrupted_files.add(potential_file)
+        if corrupted_files:
+            print(f"  Corrupted files: {', '.join(corrupted_files)}", flush=True)
+
+    if result.returncode == 0:
+        print(f"Successfully created final coverage file: {final_file}", flush=True)
+
+        # Delete merged profraw files to save disk space
+        deleted_count = 0
+        for profraw_file in profraw_files:
+            try:
+                Path(profraw_file).unlink()
+                deleted_count += 1
+            except Exception as e:
+                print(f"  WARNING: Failed to delete {profraw_file}: {e}", flush=True)
+        print(f"  Deleted {deleted_count} profraw files", flush=True)
+    else:
+        print(f"ERROR: Failed to create final coverage file", flush=True)
+        if result.stderr:
+            print(result.stderr, flush=True)
 
 
 FLAKY_CHECK_TEST_REPEAT_COUNT = 3
@@ -153,6 +231,43 @@ def get_parallel_sequential_tests_to_run(
     return parallel_tests, sequential_tests
 
 
+def tail(filepath: str, buff_len: int = 1024) -> List[str]:
+    with open(filepath, "rb") as f:
+        f.seek(-buff_len, os.SEEK_END)
+        f.readline()
+        data = f.read()
+        return data.decode(errors="replace")
+
+
+def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> Result:
+    """
+    Does xdist timeout check.
+    """
+
+    test_result = Result.from_pytest_run(
+        command=command,
+        env=env,
+        cwd="./tests/integration/",
+        pytest_report_file=f"{temp_path}/pytest_{report_name}.jsonl",
+        pytest_logfile=f"{temp_path}/pytest_{report_name}.log",
+        logfile=f"{temp_path}/{report_name}.log",
+    )
+
+    if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
+        f"{temp_path}/{report_name}.log"
+    ):
+        test_result.info = "[ERROR] session-timeout occurred during test execution"
+        assert test_result.status == Result.Status.ERROR
+        test_result.results.append(
+            Result(
+                name="Timeout",
+                status=Result.StatusExtended.FAIL,
+                info=test_result.info,
+            )
+        )
+    return test_result
+
+
 def main():
     sw = Utils.Stopwatch()
     info = Info()
@@ -167,6 +282,8 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+    is_llvm_coverage = False
+    llvm_profdata_cmd = None
 
     # Set on_error_hook to collect logs on hard timeout
     Result.from_fs(info.job_name).set_on_error_hook(
@@ -210,6 +327,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
             batch_num, total_batches = map(int, to.split("/"))
         elif any(build in to for build in ("amd_", "arm_")):
             build_type = to
+            if "amd_llvm_coverage" in to:
+                is_llvm_coverage = True
         elif to == "old analyzer":
             use_old_analyzer = True
         elif to == "distributed plan":
@@ -382,17 +501,45 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
     }
+    if is_llvm_coverage:
+        test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
+        print(
+            f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+        )
+        # Auto-detect available LLVM profdata tool
+        for ver in ["21", "20", "18", "19", "17", "16", ""]:
+            cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+            if Shell.check(f"command -v {cmd}", verbose=False):
+                llvm_profdata_cmd = cmd
+                break
+
+        if not llvm_profdata_cmd:
+            print("ERROR: llvm-profdata not found in PATH")
+        else:
+            print(f"Using {llvm_profdata_cmd} to merge coverage files")
+
     test_results = []
     failed_tests_files = []
 
     has_error = False
     if not is_targeted_check:
-        session_timeout = 5400
+        session_timeout_parallel = 3600 * 2
+        session_timeout_sequential = 3600
     else:
         # For targeted jobs, use a shorter session timeout to keep feedback fast.
         # If this timeout is exceeded but all completed tests have passed, the
         # targeted check will not fail solely because the session timed out.
-        session_timeout = 1200
+        session_timeout_parallel = 1200
+        session_timeout_sequential = 1200
+
+    if is_llvm_coverage:
+        session_timeout_parallel = 7200
+        session_timeout_sequential = 7200
+
+    if args.session_timeout:
+        session_timeout_parallel = args.session_timeout * 2
+        session_timeout_sequential = args.session_timeout
+
     error_info = []
 
     module_repeat_cnt = 1
@@ -404,12 +551,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
-            test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout}",
-                cwd="./tests/integration/",
+            test_result_parallel = run_pytest_and_collect_results(
+                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                 env=test_env,
-                pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
-                logfile=log_file,
+                report_name="parallel",
             )
             if is_flaky_check and not test_result_parallel.is_ok():
                 print(
@@ -434,14 +579,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(module_repeat_cnt):
-            log_file = f"{temp_path}/pytest_sequential.log"
-            test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout}",
+            test_result_sequential = run_pytest_and_collect_results(
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                 env=test_env,
-                cwd="./tests/integration/",
-                pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
-                logfile=log_file,
+                report_name="sequential",
             )
+
             if is_flaky_check and not test_result_sequential.is_ok():
                 print(
                     f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
@@ -498,11 +641,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
-        test_result_retries = Result.from_pytest_run(
+        test_result_retries = run_pytest_and_collect_results(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
-            cwd="./tests/integration/",
-            pytest_report_file=f"{temp_path}/pytest_retries.jsonl",
+            report_name="retries",
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
@@ -535,10 +677,33 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 
+    if is_llvm_coverage:
+        assert (
+            is_bugfix_validation is False
+        ), "LLVM coverage with bugfix validation is not supported"
+        has_failure = False
+        for r in R.results:
+            if r.status == Result.StatusExtended.FAIL:
+                if r.has_label(Result.Label.OK_ON_RETRY):
+                    # Remove label and set to OK
+                    r.remove_label(Result.Label.OK_ON_RETRY)
+                    r.status = Result.StatusExtended.OK
+                else:
+                    has_failure = True
+        if has_failure:
+            R.set_failed()
+            R.set_info("Some tests failed during LLVM coverage run")
+        else:
+            R.set_success()
+            has_error = False
+
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
     if is_bugfix_validation:
+        assert (
+            is_llvm_coverage is False
+        ), "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
         for r in R.results:
             # invert statuses
@@ -555,7 +720,17 @@ tar -czf ./ci/tmp/logs.tar.gz \
         else:
             R.set_success()
 
-    R.sort().complete_job()
+    force_ok_exit = False
+    if is_llvm_coverage and llvm_profdata_cmd:
+        print("Collecting and merging LLVM coverage files...")
+
+        # Merge all profraw files into final profdata file
+        merge_profraw_files(llvm_profdata_cmd, batch_num)
+
+        force_ok_exit = True
+        print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+
+    R.sort().complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

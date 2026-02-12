@@ -338,17 +338,17 @@ void generateManifestFile(
                 {
                     avro::GenericDatum record_datum(schema_element);
                     auto & record = record_datum.value<avro::GenericRecord>();
-                    record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
+                    record.field(Iceberg::f_key) = static_cast<Int64>(field_id);
                     record.field(Iceberg::f_value) = dump_function(field_id, value);
                     record_values.value().push_back(record_datum);
                 }
             };
 
             auto statistics = data_file_statistics->getColumnSizes();
-            set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int32>(value); });
+            set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
             statistics = data_file_statistics->getNullCounts();
-            set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int32>(value); });
+            set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = data_file_statistics->getFieldIds();
@@ -437,7 +437,7 @@ void generateManifestList(
     ContextPtr context,
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
-    Int32 manifest_length,
+    Int64 manifest_length,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots)
@@ -463,12 +463,12 @@ void generateManifestList(
 
         entry.field(Iceberg::f_manifest_path) = manifest_entry_name;
         entry.field(Iceberg::f_manifest_length) = manifest_length;
-        entry.field(Iceberg::f_partition_spec_id) = metadata->getValue<Int32>(Iceberg::f_default_spec_id);
+        entry.field(Iceberg::f_partition_spec_id) = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         if (version > 1)
         {
             entry.field(Iceberg::f_content) = static_cast<Int32>(content_type);
-            entry.field(Iceberg::f_sequence_number) = new_snapshot->getValue<Int32>(Iceberg::f_metadata_sequence_number);
-            entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int32>(Iceberg::f_metadata_sequence_number);
+            entry.field(Iceberg::f_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+            entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
         }
 
         auto set_versioned_field = [&](const auto & value, const String & field_name)
@@ -731,7 +731,9 @@ void IcebergStorageSink::consume(Chunk & chunk)
 
         for (size_t i = 0; i < block.columns(); ++i)
             column_name_to_column_index[block.getNames()[i]] = i;
-        chunk = Chunk(block.getColumns(), block.rows());
+        auto new_chunk = Chunk(block.getColumns(), block.rows());
+        new_chunk.setChunkInfos(chunk.getChunkInfos());
+        chunk = std::move(new_chunk);
     }
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> partition_result;
@@ -805,7 +807,9 @@ void IcebergStorageSink::consume(Chunk & chunk)
     }
     auto columns = chunk.getColumns();
     columns.resize(start_columns_size);
-    chunk = Chunk(columns, chunk.getNumRows());
+    auto new_chunk = Chunk(columns, chunk.getNumRows());
+    new_chunk.setChunkInfos(chunk.getChunkInfos());
+    chunk = std::move(new_chunk);
 }
 
 void IcebergStorageSink::onFinish()
@@ -870,7 +874,7 @@ bool IcebergStorageSink::initializeMetadata()
 
     Strings manifest_entries_in_storage;
     Strings manifest_entries;
-    Int32 manifest_lengths = 0;
+    Int64 manifest_lengths = 0;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {

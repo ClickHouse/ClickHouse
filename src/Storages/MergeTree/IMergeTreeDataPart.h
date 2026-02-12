@@ -408,7 +408,7 @@ public:
     UInt64 getIndexGranularityBytes() const;
     UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
-    UInt64 getIndexSizeFromFile() const;
+    IndexSize getIndexSizeFromFile() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     UInt64 getBytesUncompressedOnDisk() const { return bytes_uncompressed_on_disk; }

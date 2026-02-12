@@ -8,6 +8,8 @@ CREATE TABLE 03667_t1 ( `key` Int64, `value` Int64 ) ENGINE = ReplacingMergeTree
 CREATE TABLE 03667_t2 ( `key` Int64, `value` Int64 ) ENGINE = ReplacingMergeTree PARTITION BY tuple() ORDER BY key SETTINGS index_granularity = 8192;
 CREATE TABLE 03667_t3 ( `key` Int64, `value` Int64 ) ENGINE = ReplacingMergeTree PARTITION BY tuple() ORDER BY key SETTINGS index_granularity = 8192;
 
+set ignore_format_null_for_explain = 0;
+
 explain select
     *
 from

@@ -3,12 +3,13 @@
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
-#include <Common/StrictString.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
 
@@ -97,9 +98,9 @@ public:
     };
 
 private:
-    struct DataChunk : public std::variant<StrictString, Block>
+    struct DataChunk : public std::variant<StringWithMemoryTracking, Block>
     {
-        using std::variant<StrictString, Block>::variant;
+        using std::variant<StringWithMemoryTracking, Block>::variant;
 
         size_t byteSize() const
         {
@@ -130,7 +131,7 @@ private:
             }, *this);
         }
 
-        const StrictString * asString() const { return std::get_if<StrictString>(this); }
+        const StringWithMemoryTracking * asString() const { return std::get_if<StringWithMemoryTracking>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
@@ -280,10 +281,10 @@ private:
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
     void processBatchDeadlines(size_t shard_num);
-    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
 
     static void processData(
-        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-async-insert
+# Tags: long, no-replicated-database
 # Tag no-replicated-database: Fails due to additional replicas or shards
-# Tag no-async-insert: Quorum settings incompatible with async inserts
-
 
 set -e
 

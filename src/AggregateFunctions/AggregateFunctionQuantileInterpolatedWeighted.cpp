@@ -118,7 +118,7 @@ private:
 
         /// Maintain a vector of pair of values and weights for easier sorting and for building
         /// a cumulative distribution using the provided weights.
-        std::vector<Pair> value_weight_pairs;
+        VectorWithMemoryTracking<Pair> value_weight_pairs;
         value_weight_pairs.reserve(size);
 
         /// Note: weight provided must be a 64-bit integer
@@ -142,7 +142,7 @@ private:
 
         /// vector for populating and storing the cumulative sum using the provided weights.
         /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
-        std::vector<Float64> weights_cum_sum;
+        VectorWithMemoryTracking<Float64> weights_cum_sum;
         weights_cum_sum.reserve(size);
 
         for (size_t idx = 0; idx < size; ++idx)
@@ -219,7 +219,7 @@ private:
             return;
         }
 
-        std::vector<Pair> value_weight_pairs;
+        VectorWithMemoryTracking<Pair> value_weight_pairs;
         value_weight_pairs.reserve(size);
 
         Float64 sum_weight = 0;
@@ -237,7 +237,7 @@ private:
 
         /// vector for populating and storing the cumulative sum using the provided weights.
         /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
-        std::vector<Float64> weights_cum_sum;
+        VectorWithMemoryTracking<Float64> weights_cum_sum;
         weights_cum_sum.reserve(size);
 
         for (size_t idx = 0; idx < size; ++idx)

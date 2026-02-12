@@ -11,6 +11,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -18,14 +19,14 @@ namespace DB
 struct Settings;
 
 /// Because ranks are adjusted, we have to store each of them in Float type.
-using RanksArray = std::vector<Float64>;
+using RanksArray = VectorWithMemoryTracking<Float64>;
 
 template <typename Values>
 std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & values)
 {
     const size_t size = values.size();
     /// Save initial positions, than sort indices according to the values.
-    std::vector<size_t> indexes(size);
+    VectorWithMemoryTracking<size_t> indexes(size);
     iota(indexes.data(), indexes.size(), size_t(0));
     std::sort(indexes.begin(), indexes.end(),
         [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });

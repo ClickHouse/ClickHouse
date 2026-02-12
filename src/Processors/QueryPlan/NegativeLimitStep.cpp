@@ -68,7 +68,7 @@ void NegativeLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> NegativeLimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
     readIntBinary(flags, ctx.in); // reserved, ignored for now
