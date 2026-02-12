@@ -17,9 +17,22 @@ class Field;
 
 struct StatisticsUtils
 {
+    /// Float64 can exactly represent integers in the range [-2^53, 2^53].
+    static constexpr Float64 MAX_EXACT_FLOAT64_INTEGER = static_cast<Float64>(1ULL << std::numeric_limits<Float64>::digits);
+
+    /// Float64 (IEEE 754 double precision) can exactly represent at most 15 significant decimal digits.
+    static constexpr UInt32 MAX_FLOAT64_DECIMAL_PRECISION = std::numeric_limits<Float64>::digits10;
+
     /// Returns std::nullopt if input Field cannot be converted to a concrete value
     /// - `data_type` is the type of the column on which the statistics object was build on
     static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
+
+    /// Safely convert a Float64 statistics value back to the original column type.
+    /// Returns std::nullopt if precision would be lost:
+    ///   - Decimal with precision > 15
+    ///   - Int64/UInt64 with |value| > 2^53
+    ///   - castColumnAccurate conversion failure
+    static std::optional<Field> tryConvertFromFloat64(Float64 value, const DataTypePtr & data_type);
 };
 
 class IStatistics;

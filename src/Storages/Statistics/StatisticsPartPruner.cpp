@@ -1,23 +1,15 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/castColumn.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/defines.h>
 
 namespace DB
 {
-
-/// Float64 (IEEE 754 double precision) can exactly represent at most 15 significant decimal digits.
-static constexpr UInt32 MAX_FLOAT64_DECIMAL_PRECISION = std::numeric_limits<Float64>::digits10;
-
-/// Float64 can exactly represent integers in the range [-2^53, 2^53].
-static constexpr Float64 MAX_EXACT_FLOAT64_INTEGER = static_cast<Float64>(1ULL << std::numeric_limits<Float64>::digits);
 
 UInt32 getDecimalPrecisionOrZero(const DataTypePtr & data_type)
 {
@@ -26,35 +18,6 @@ UInt32 getDecimalPrecisionOrZero(const DataTypePtr & data_type)
     if (!which.isDecimal())
         return 0;
     return getDecimalPrecision(*unwrapped);
-}
-
-std::optional<Field> tryConvertFloat64(Float64 value, const DataTypePtr & data_type)
-{
-    static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
-
-    auto float64_column = float64_type->createColumn();
-    float64_column->insert(Field(value));
-
-    ColumnWithTypeAndName src_column(std::move(float64_column), float64_type, "");
-    auto unwrapped_type = removeLowCardinalityAndNullable(data_type);
-
-    ColumnPtr casted_column;
-    try
-    {
-        /// castColumnAccurate throws on conversion failure (overflow, etc.)
-        casted_column = castColumnAccurate(src_column, unwrapped_type);
-    }
-    catch (...)
-    {
-        return std::nullopt;
-    }
-
-    if (!casted_column || casted_column->empty())
-        return std::nullopt;
-
-    Field result_field;
-    casted_column->get(0, result_field);
-    return result_field;
 }
 
 /// Create a Range from statistics estimate for use in part pruning.
@@ -94,7 +57,7 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
     }
 
     /// For Decimal, check if precision > 15 - skip statistics entirely.
-    if (getDecimalPrecisionOrZero(data_type) > MAX_FLOAT64_DECIMAL_PRECISION)
+    if (getDecimalPrecisionOrZero(data_type) > StatisticsUtils::MAX_FLOAT64_DECIMAL_PRECISION)
         return make_whole_universe();
 
     /// For Int, handle values outside Float64's exact integer range [-2^53, 2^53].
@@ -106,15 +69,15 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
     /// 2. min >= 2^53: all data in positive overflow region -> [2^53, +inf)
     /// 3. min <= -2^53: left bound unreliable -> (-inf
     /// 4. max >= 2^53: right bound unreliable -> +inf)
-    bool min_in_negative_overflow = min_value <= -MAX_EXACT_FLOAT64_INTEGER;
-    bool max_in_negative_overflow = max_value <= -MAX_EXACT_FLOAT64_INTEGER;
-    bool min_in_positive_overflow = min_value >= MAX_EXACT_FLOAT64_INTEGER;
-    bool max_in_positive_overflow = max_value >= MAX_EXACT_FLOAT64_INTEGER;
+    bool min_in_negative_overflow = min_value <= -StatisticsUtils::MAX_EXACT_FLOAT64_INTEGER;
+    bool max_in_negative_overflow = max_value <= -StatisticsUtils::MAX_EXACT_FLOAT64_INTEGER;
+    bool min_in_positive_overflow = min_value >= StatisticsUtils::MAX_EXACT_FLOAT64_INTEGER;
+    bool max_in_positive_overflow = max_value >= StatisticsUtils::MAX_EXACT_FLOAT64_INTEGER;
 
     /// Case 1: max <= -2^53, use (-inf, -2^53]
     if (max_in_negative_overflow)
     {
-        auto boundary = tryConvertFloat64(-MAX_EXACT_FLOAT64_INTEGER, data_type);
+        auto boundary = StatisticsUtils::tryConvertFromFloat64(-StatisticsUtils::MAX_EXACT_FLOAT64_INTEGER, data_type);
         if (!boundary.has_value())
             return make_whole_universe();
         return Range::createRightBounded(boundary.value(), true, is_nullable);
@@ -123,7 +86,7 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
     /// Case 2: min >= 2^53, use [2^53, +inf)
     if (min_in_positive_overflow)
     {
-        auto boundary = tryConvertFloat64(MAX_EXACT_FLOAT64_INTEGER, data_type);
+        auto boundary = StatisticsUtils::tryConvertFromFloat64(StatisticsUtils::MAX_EXACT_FLOAT64_INTEGER, data_type);
         if (!boundary.has_value())
             return make_whole_universe();
         return Range::createLeftBounded(boundary.value(), true, is_nullable);
@@ -134,11 +97,11 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
 
     /// Case 3: min <= -2^53, left bound is -inf
     if (!min_in_negative_overflow)
-        left_bound = tryConvertFloat64(min_value, data_type);
+        left_bound = StatisticsUtils::tryConvertFromFloat64(min_value, data_type);
 
     /// Case 4: max >= 2^53, right bound is +inf
     if (!max_in_positive_overflow)
-        right_bound = tryConvertFloat64(max_value, data_type);
+        right_bound = StatisticsUtils::tryConvertFromFloat64(max_value, data_type);
 
     /// Build the range based on which boundaries are valid.
     if (!left_bound.has_value() && !right_bound.has_value())
