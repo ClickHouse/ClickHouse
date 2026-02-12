@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
@@ -651,7 +652,7 @@ namespace ErrorCodes
     Possible values:
     - true, false
     )", false) \
-    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, false, R"(
+    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
     If settings `min_age_to_force_merge_seconds` and
     `min_age_to_force_merge_on_partition_only` should respect setting
     `max_bytes_to_merge_at_max_space_in_pool`.
@@ -2064,14 +2065,17 @@ namespace ErrorCodes
     - local - scope is limited by local disks .
     - none - empty scope, do not search
     )", 0) \
-    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
+    DECLARE(Seconds, refresh_statistics_interval, 300, R"(
     The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
     Minimal number of parts to activated distributed index analysis
-    )", 0) \
-    DECLARE(UInt64, distributed_index_analysis_min_indexes_size_to_activate, 1_GiB, R"(
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, distributed_index_analysis_min_indexes_bytes_to_activate, 1_GiB, R"(
     Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
+    )", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
+    Batch size for ZooKeeper multi-create get-part requests when cloning replica.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

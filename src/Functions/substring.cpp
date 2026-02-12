@@ -224,7 +224,7 @@ REGISTER_FUNCTION(Substring)
 Returns the substring of a string `s` which starts at the specified byte index `offset`.
 Byte counting starts from 1 with the following logic:
 - If `offset` is `0`, an empty string is returned.
-- If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning.
+- If `offset` is negative, the substring starts `offset` characters from the end of the string, rather than from the beginning.
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 )";
@@ -251,12 +251,12 @@ An optional argument `length` specifies the maximum number of bytes the returned
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_utf8 = R"(
-Returns the substring of a string `s` which starts at the specified byte index `offset` for Unicode code points.
-Byte counting starts from `1` with the following logic:
+Returns the substring of a string `s` which starts at the specified code point index `offset`.
+Code point counting starts from `1` with the following logic:
 - If `offset` is `0`, an empty string is returned.
-- If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning.
+- If `offset` is negative, the substring starts `offset` code points from the end of the string, rather than from the beginning.
 
-An optional argument `length` specifies the maximum number of bytes the returned substring may have.
+An optional argument `length` specifies the maximum number of code points the returned substring may have.
 
 :::note
 This function assumes that the string contains valid UTF-8 encoded text.
@@ -269,7 +269,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         {"offset", "The starting position of the substring in `s`.", {"Int", "UInt"}},
         {"length", "The maximum length of the substring. Optional.", {"Int", "UInt"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_utf8 = {"Returns a substring of `s` with `length` many bytes, starting at index `offset`.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_utf8 = {"Returns a substring of `s` with `length` many code points, starting at code point index `offset`.", {"String"}};
     FunctionDocumentation::Examples examples_utf8 = {
     {
         "Usage example",

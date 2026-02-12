@@ -12,6 +12,7 @@ $CLICKHOUSE_CLIENT -m -q "
 system flush logs text_log;
 
 SET max_rows_to_read = 0; -- system.text_log can be really big
+SET max_threads = 0; -- override random settings, scanning text_log with 1 thread under TSan is too slow
 
 select count() > 0 from system.text_log where event_date >= yesterday() and level = 'Error' and message_format_string = 'Unknown {}{} identifier {} in scope {}{}' and value1 = 'expression' and value3 = '\`count\`' and value4 = 'SELECT count' and query_id = '${query_id}_1';
 

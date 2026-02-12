@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <base/EnumReflection.h>
 
 
 namespace Coordination
@@ -53,6 +54,18 @@ enum class OpNum : int32_t
 
     SessionID = 997, /// Special internal request
 };
+
+}
+
+/// OpNum has values from -11 to 997, which is outside the default magic_enum range [-128, 127].
+template <> struct magic_enum::customize::enum_range<Coordination::OpNum>
+{
+    static constexpr int min = -20;
+    static constexpr int max = 1000;
+};
+
+namespace Coordination
+{
 
 OpNum getOpNum(int32_t raw_op_num);
 

@@ -206,4 +206,4 @@ If it fails, ask a maintainer for help.
 
 Measure changes in query performance.
 This is the longest check that takes just below 6 hours to run.
-The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).
+The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).

@@ -106,12 +106,12 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
     const String & metadata_filename,
     Int64 parent_snapshot_id,
-    Int32 added_files,
-    Int32 added_records,
-    Int32 added_files_size,
-    Int32 num_partitions,
-    Int32 added_delete_files,
-    Int32 num_deleted_rows,
+    Int64 added_files,
+    Int64 added_records,
+    Int64 added_files_size,
+    Int64 num_partitions,
+    Int64 added_delete_files,
+    Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp)
 {
@@ -155,9 +155,9 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
     }
 
-    auto sum_with_parent_snapshot = [&](const char * field_name, Int32 snapshot_value)
+    auto sum_with_parent_snapshot = [&](const char * field_name, Int64 snapshot_value)
     {
-        Int32 prev_value = parent_snapshot ? std::stoi(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
+        Int64 prev_value = parent_snapshot ? parse<Int64>(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
         summary->set(field_name, std::to_string(prev_value + snapshot_value));
     };
 

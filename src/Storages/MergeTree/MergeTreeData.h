@@ -190,7 +190,7 @@ public:
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public IStorage, public WithMutableContext
+class MergeTreeData : public WithMutableContext, public IStorage, public IBackgroundOperation
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -964,7 +964,7 @@ public:
         AlterLockHolder & table_lock_holder);
 
     static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
-    static void verifySortingKey(const KeyDescription & sorting_key, const MergeTreeData::MergingParams & merging_params);
+    static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
@@ -1289,10 +1289,8 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
-    /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
 
 
@@ -1481,6 +1479,10 @@ protected:
     /// Current set of data parts.
     /// On updates shared_parts_list/shared_ranges_in_parts should be reset (will be updated in getPossiblySharedVisibleDataPartsRanges())
     mutable DB::SharedMutex data_parts_mutex;
+
+    /// Notified when parts transition out of PreActive state (via Transaction::commit or rollback).
+    /// Used by waitForPreActivePartsInRange to avoid a race between INSERT and DROP_RANGE.
+    mutable std::condition_variable_any preactive_parts_cv;
 
     DataPartsIndexes data_parts_indexes;
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
@@ -1834,7 +1836,7 @@ protected:
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
-    void startStatisticsCache(UInt64 refresh_statistics_seconds);
+    void startStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);

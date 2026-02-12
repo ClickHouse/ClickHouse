@@ -21,7 +21,7 @@ source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
+azurite-rs --host 0.0.0.0 --blob-port 10000 --debug > /azurite_log 2>&1 &
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
@@ -91,22 +91,16 @@ save_mergetree_settings_clean 'old_merge_tree_settings.native'
 save_major_version 'old_version.native'
 old_major_version=$(clickhouse-local -q "select a[1] || '.' || a[2] from (select splitByChar('.', version()) as a)")
 
-# Initial run without S3 to create system.*_log on local file system to make it
-# available for dump via clickhouse-local
-configure
-
-start_server || (echo "Failed to start server" && exit 1)
-stop_server || (echo "Failed to stop server" && exit 1)
-mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
+configure_opts=(
+    # Let's enable S3 storage by default
+    --s3-storage
+)
+if [ $((RANDOM % 2)) -eq 0 ]; then
+    configure_opts+=(--encrypted-storage)
+fi
 
 # Start server from previous release
-# Let's enable S3 storage by default
-export USE_S3_STORAGE_FOR_MERGE_TREE=1
-export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
-
-# Previous version may not be ready for fault injections
-export ZOOKEEPER_FAULT_INJECTION=0
-configure
+configure "${configure_opts[@]}"
 
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -139,8 +133,7 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Install and start new server
 install_packages $PACKAGES_DIR
-export ZOOKEEPER_FAULT_INJECTION=1
-configure
+configure "${configure_opts[@]}"
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
@@ -317,6 +310,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
+# `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
+# from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -363,12 +358,12 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "doesn't have metadata version on disk" \
            -e "Unknown codec family: ZSTD_QAT" \
            -e "Unknown codec family: DEFLATE_QPL" \
-           -e "Failed to flush system log" \
            -e "Bad get: has String, requested UInt64. (BAD_GET" \
            -e "Disk does not support stat. (NOT_IMPLEMENTED" \
            -e "QUALIFY clause is not supported in the old analyzer" \
            -e "Cannot attach table \`test_7\`" \
            -e "Cannot open file /var/lib/clickhouse/access/" \
+           -e "NO_SUCH_INTERSERVER_IO_ENDPOINT" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true

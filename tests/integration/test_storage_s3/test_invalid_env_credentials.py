@@ -217,3 +217,27 @@ def test_no_sign_config(started_cluster):
         assert_nosign_works()
 
     instance.restart_clickhouse()
+
+
+def test_error_message_includes_auth_hint(started_cluster):
+    """Test that authentication errors include a hint to check credentials."""
+    instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
+    bucket = started_cluster.minio_restricted_bucket
+
+    # First, insert some data with valid credentials
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_error_msg.jsonl', 'minio', '{minio_secret_key}') select * from numbers(10) settings s3_truncate_on_insert=1"
+    )
+
+    # Try to read without valid credentials - should fail with improved error message
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_error_msg.jsonl')"
+        )
+
+    assert ei.value.returncode == 243
+    error_message = ei.value.stderr
+
+    # Check that the error message contains the authentication error hint
+    assert "HTTP response code: 403" in error_message
+    assert "Please check your AWS credentials and permissions" in error_message

@@ -18,6 +18,11 @@ namespace Aws::Glue
     class GlueClient;
 }
 
+namespace Aws::Auth
+{
+    class AWSCredentialsProvider;
+}
+
 namespace DataLake
 {
 
@@ -71,7 +76,7 @@ private:
 
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
-    Aws::Auth::AWSCredentials credentials;
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     std::string region;
     CatalogSettings settings;
     DB::ASTPtr table_engine_definition;

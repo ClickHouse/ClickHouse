@@ -65,12 +65,6 @@ public:
         const String & end_param);
 
 private:
-    /// Convert timestamp parameter to Field
-    Field parseTimestamp(const String & time_param);
-
-    /// Convert step parameter to Field
-    Field parseStep(const String & step_param);
-
     /// Write JSON response for instant query result (including scalars)
     void writeInstantQueryHeader(WriteBuffer & response);
     void writeScalarQueryResponse(WriteBuffer & response, const Block & result_block);

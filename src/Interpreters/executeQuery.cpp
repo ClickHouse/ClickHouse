@@ -64,6 +64,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -182,6 +183,7 @@ namespace Setting
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
+    extern const SettingsBool ignore_format_null_for_explain;
 }
 
 namespace ServerSetting
@@ -206,11 +208,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char execute_query_calling_empty_set_result_func_on_exception[];
+    extern const char terminate_with_exception[];
+    extern const char terminate_with_std_exception[];
+    extern const char libcxx_hardening_out_of_bounds_assertion[];
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -272,26 +278,6 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         }
     }
 }
-
-/// Call this inside catch block.
-static void setExceptionStackTrace(QueryLogElement & elem)
-{
-    /// Disable memory tracker for stack trace.
-    /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-
-    LockMemoryExceptionInThread lock(VariableContext::Global);
-
-    try
-    {
-        throw;
-    }
-    catch (const std::exception & e)
-    {
-        elem.stack_trace = getExceptionStackTraceString(e);
-    }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
-}
-
 
 /// Log exception (with query info) into text log (not into system table).
 static void logException(ContextPtr context, QueryLogElement & elem, bool log_error = true)
@@ -823,7 +809,7 @@ void logQueryException(
     elem.is_internal = internal;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
-        setExceptionStackTrace(elem);
+        elem.stack_trace = getExceptionStackTraceString(std::current_exception());
     logException(context, elem, log_error);
 
     /// In case of exception we log internal queries also
@@ -908,7 +894,7 @@ void logExceptionBeforeStart(
         elem.query_settings = std::make_shared<Settings>(settings);
 
     if (settings[Setting::calculate_text_stack_trace])
-        setExceptionStackTrace(elem);
+        elem.stack_trace = getExceptionStackTraceString(std::current_exception());
 
     elem.is_internal = internal;
 
@@ -1782,7 +1768,7 @@ static BlockIO executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
                         {
                             auto created_at = std::chrono::system_clock::now();
-                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl]);
+                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
@@ -1988,8 +1974,43 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                 ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
-        if (boost::iequals(format_name, "Null"))
+        const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
+        if (boost::iequals(format_name, "Null") && !(ast->as<ASTExplainQuery>() && ignore_null_for_explain))
             res.null_format = true;
+    }
+
+    /// The 'SYSTEM ENABLE FAILPOINT terminate_with_exception' query itself should succeed.
+    if (ast && !ast->as<ASTSystemQuery>())
+    {
+        fiu_do_on(FailPoints::terminate_with_exception,
+        {
+            try
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
+            }
+            catch (...)
+            {
+                std::terminate();
+            }
+        });
+
+        fiu_do_on(FailPoints::terminate_with_std_exception,
+        {
+            try
+            {
+                throw std::runtime_error("Failpoint terminate_with_std_exception");
+            }
+            catch (...)
+            {
+                std::terminate();
+            }
+        });
+
+        fiu_do_on(FailPoints::libcxx_hardening_out_of_bounds_assertion,
+        {
+            std::vector<int> v;
+            (void)v[0];
+        });
     }
 
     return std::make_pair(std::move(ast), std::move(res));
@@ -2207,6 +2228,10 @@ void executeQuery(
             format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
                 ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
+
+            const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
+            if (boost::iequals(format_name, "Null") && ast->as<ASTExplainQuery>() && ignore_null_for_explain)
+                format_name = context->getDefaultFormat();
 
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
