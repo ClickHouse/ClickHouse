@@ -4,6 +4,7 @@
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <type_traits>
@@ -265,20 +266,20 @@ struct CrossTabPhiSquaredWindowData
     HashMapWithStackMemory<UInt128, UInt32, UInt128Hash, 4> ab_edge_index_by_pair;
 
     /// Reverse maps index (compact index -> hash)
-    std::vector<UInt64> a_hash_by_index;
-    std::vector<UInt64> b_hash_by_index;
+    VectorWithMemoryTracking<UInt64> a_hash_by_index;
+    VectorWithMemoryTracking<UInt64> b_hash_by_index;
 
     /// compact index -> marginal counts
-    std::vector<UInt64> a_marginal_count;
-    std::vector<UInt64> b_marginal_count;
+    VectorWithMemoryTracking<UInt64> a_marginal_count;
+    VectorWithMemoryTracking<UInt64> b_marginal_count;
 
     /// Incident edge lists by node
     /// compact index -> edge indices (in ab_edges[])
-    std::vector<std::vector<UInt32>> a_incident_edges;
-    std::vector<std::vector<UInt32>> b_incident_edges;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> a_incident_edges;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> b_incident_edges;
 
     /// All observed (a, b) pairs as edges
-    std::vector<Edge> ab_edges;
+    VectorWithMemoryTracking<Edge> ab_edges;
 
     /// Marks for "a" nodes used during merge() to avoid double-subtract/add.
     /// During a merge we first adjust affected rows (all edges with affected `a`), then adjust affected
@@ -286,7 +287,7 @@ struct CrossTabPhiSquaredWindowData
     /// We mark affected `a` indices by setting `a_epoch_mark[a_idx] = epoch`. Since `epoch` is unique
     /// for the current merge, we can test membership with a single integer compare without clearing the
     /// mark array each time.
-    std::vector<UInt32> a_epoch_mark;
+    VectorWithMemoryTracking<UInt32> a_epoch_mark;
     UInt32 epoch = 1;
 
     void add(UInt64 hash1, UInt64 hash2)
@@ -340,11 +341,11 @@ struct CrossTabPhiSquaredWindowData
             return;
 
         /// Remap other indices -> our indices
-        std::vector<UInt32> map_a(other.a_hash_by_index.size());
-        std::vector<UInt32> map_b(other.b_hash_by_index.size());
+        VectorWithMemoryTracking<UInt32> map_a(other.a_hash_by_index.size());
+        VectorWithMemoryTracking<UInt32> map_b(other.b_hash_by_index.size());
 
         /// Keep the affected node indices (in our indexing)
-        std::vector<UInt32> affected_a;
+        VectorWithMemoryTracking<UInt32> affected_a;
         affected_a.reserve(other.a_hash_by_index.size());
         for (size_t i = 0; i < other.a_hash_by_index.size(); ++i)
         {
@@ -352,7 +353,7 @@ struct CrossTabPhiSquaredWindowData
             affected_a.push_back(map_a[i]);
         }
 
-        std::vector<UInt32> affected_b;
+        VectorWithMemoryTracking<UInt32> affected_b;
         affected_b.reserve(other.b_hash_by_index.size());
         for (size_t i = 0; i < other.b_hash_by_index.size(); ++i)
         {
@@ -408,12 +409,12 @@ struct CrossTabPhiSquaredWindowData
         if (other.count == 0)
             return;
 
-        std::vector<UInt32> affected_a;
+        VectorWithMemoryTracking<UInt32> affected_a;
         affected_a.reserve(other.count_a.size());
         for (const auto & [hash, _] : other.count_a)
             affected_a.push_back(getOrCreateIndexA(hash));
 
-        std::vector<UInt32> affected_b;
+        VectorWithMemoryTracking<UInt32> affected_b;
         affected_b.reserve(other.count_b.size());
         for (const auto & [hash, _] : other.count_b)
             affected_b.push_back(getOrCreateIndexB(hash));
@@ -578,7 +579,7 @@ struct CrossTabPhiSquaredWindowData
 private:
     static constexpr UInt32 INVALID_EDGE_IDX = UInt32(-1);
 
-    void prepareMerge(const std::vector<UInt32> & affected_a, const std::vector<UInt32> & affected_b, UInt32 cur_epoch)
+    void prepareMerge(const VectorWithMemoryTracking<UInt32> & affected_a, const VectorWithMemoryTracking<UInt32> & affected_b, UInt32 cur_epoch)
     {
         for (UInt32 a_idx : affected_a)
             a_epoch_mark[a_idx] = cur_epoch;
@@ -601,7 +602,7 @@ private:
         }
     }
 
-    void finalizeMerge(const std::vector<UInt32> & affected_a, const std::vector<UInt32> & affected_b, UInt32 cur_epoch)
+    void finalizeMerge(const VectorWithMemoryTracking<UInt32> & affected_a, const VectorWithMemoryTracking<UInt32> & affected_b, UInt32 cur_epoch)
     {
         /// Add new contributions back for affected rows
         for (UInt32 a_idx : affected_a)
