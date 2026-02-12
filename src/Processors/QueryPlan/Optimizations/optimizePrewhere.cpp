@@ -138,7 +138,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     if (typeid_cast<ReadFromMerge *>(child_node->step.get()))
         return;
 
-    /// Check early if the child is ReadFromMergeTree so we can set MergeTreeSelectOutputRows counting flags.
+    /// Check early if the child is ReadFromMergeTree so we can set RowsAfterPrewhereAndWhereFilter counting flags.
     /// Pessimistic default: assume the FilterStep will remain (WHERE not fully pushed), so count at FilterStep.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
     if (read_from_merge_tree_step)
@@ -218,7 +218,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
 
-        /// Remaining WHERE stays as FilterStep -- it should count MergeTreeSelectOutputRows.
+        /// Remaining WHERE stays as FilterStep -- it should count RowsAfterPrewhereAndWhereFilter.
         if (read_from_merge_tree_step)
             new_filter_step->setCountMergeTreeOutputRows(true);
 

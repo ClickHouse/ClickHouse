@@ -18,7 +18,7 @@ namespace ProfileEvents
 {
     extern const Event FilterTransformPassedRows;
     extern const Event FilterTransformPassedBytes;
-    extern const Event MergeTreeSelectOutputRows;
+    extern const Event RowsAfterPrewhereAndWhereFilter;
 }
 
 namespace DB
@@ -150,7 +150,7 @@ void FilterTransform::transform(Chunk & chunk)
     if (rows_filtered)
         *rows_filtered += chunk_rows_before - chunk.getNumRows();
     if (count_mergetree_output_rows)
-        ProfileEvents::increment(ProfileEvents::MergeTreeSelectOutputRows, chunk.getNumRows());
+        ProfileEvents::increment(ProfileEvents::RowsAfterPrewhereAndWhereFilter, chunk.getNumRows());
 }
 
 void FilterTransform::doTransform(Chunk & chunk)
