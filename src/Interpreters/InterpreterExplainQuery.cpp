@@ -467,7 +467,10 @@ bool explainQueryTree(
         ConvertToASTOptions ast_options;
         ast_options.use_source_expression_for_constants = true;
 
-        query_tree->toAST(ast_options)->format(buf, format_settings);
+        IAST::FormatState format_state;
+        IAST::FormatStateStacked format_frame;
+        format_frame.allow_operators = false;
+        query_tree->toAST(ast_options)->format(buf, format_settings, format_state, format_frame);
     }
 
     return true;
