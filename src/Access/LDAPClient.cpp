@@ -526,8 +526,8 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                 break;
             }
 
-			case LDAP_RES_SEARCH_REFERENCE:
-			{
+            case LDAP_RES_SEARCH_REFERENCE:
+            {
                 char ** referrals = nullptr;
                 handleError(ldap_parse_reference(handle, msg, &referrals, nullptr, 0));
 
@@ -549,8 +549,8 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                     }
                 }
 
-			    break;
-        	}
+                break;
+            }
 
             case LDAP_RES_SEARCH_RESULT:
             {
