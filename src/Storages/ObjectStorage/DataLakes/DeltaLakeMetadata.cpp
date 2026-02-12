@@ -194,8 +194,8 @@ struct DeltaLakeMetadataImpl
         else
         {
             const auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
-            for (const String & key : keys)
-                processMetadataFile(key, current_schema, current_partition_columns, result_files);
+            for (const auto & key : keys)
+                processMetadataFile(key->relative_path, current_schema, current_partition_columns, result_files);
         }
 
         return DeltaLakeMetadata{current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns};
