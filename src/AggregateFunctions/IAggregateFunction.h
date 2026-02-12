@@ -50,6 +50,7 @@ struct AggregateFunctionProperties;
 /// even if the function name/arguments match and the serialization format is compatible. See
 /// CrossTab.h for an example. Aggregate functions with variant can implement canMergeStateFromDifferentVariant()
 /// and mergeStateFromDifferentVariant() methods to allow merging states from different variants.
+/// The serialization format must be same for all variants of the same aggregate function.
 enum class AggregateFunctionStateVariant : UInt8
 {
     Aggregation,
@@ -108,11 +109,16 @@ public:
         return AggregateFunctionStateVariant::Aggregation;
     }
 
-    /// Optional hook used when haveSameStateRepresentation() is false but states still need to be merged
-    /// (for example, aggregation vs window variants of the same function).
+    /// Allows merging states produced by different state variants of the same aggregate function
+    /// (for example, Aggregate vs Window) when haveSameStateRepresentation() is false.
+    /// This is used by the -Merge combinator to decide whether it can call mergeStateFromDifferentVariant().
     virtual bool canMergeStateFromDifferentVariant(const IAggregateFunction & /*rhs*/) const { return false; }
 
     /// Similar to merge() but allows merging between different variants (Aggregate/Window).
+    /// Called by the -Merge combinator when haveSameStateRepresentation() is false and canMergeStateFromDifferentVariant()
+    /// returns true and the input AggregateFunction state column was produced by the same aggregate function
+    /// but with a different state variant (e.g. Window vs Aggregate),
+    /// If haveSameStateRepresentation() is true, then always merge() is called.
     /// Must be called only if canMergeStateFromDifferentVariant(rhs) returns true.
     /// See CrossTab.h for an example implementation.
     virtual void mergeStateFromDifferentVariant(AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const;
@@ -123,6 +129,9 @@ public:
     ///  - quantile(x), quantile(a)(x), quantile(b)(x) - parameter doesn't affect state and used for finalization only
     ///  - foo(x) and fooIf(x) - If combinator doesn't affect state
     /// By default returns true only if functions have exactly the same names, combinators and parameters.
+    /// For the same aggregate function but a different variant (e.g. Window vs Aggregate), it returns false by default.
+    /// If the in-memory Data states of the window and variant versions are different, then, even if the implementation overrides it,
+    /// it must return false for different variants and implement merging logic in mergeStateFromDifferentVariant().
     bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
     virtual bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const;
 
