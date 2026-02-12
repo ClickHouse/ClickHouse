@@ -35,6 +35,7 @@ Replication is only supported for tables in the MergeTree family:
 - ReplicatedCollapsingMergeTree
 - ReplicatedVersionedCollapsingMergeTree
 - ReplicatedGraphiteMergeTree
+- ReplicatedCoalescingMergeTree
 
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
