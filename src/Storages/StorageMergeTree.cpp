@@ -419,7 +419,7 @@ void StorageMergeTree::alter(
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
-        MergeTreeData::verifySortingKey(new_metadata.sorting_key, merging_params);
+        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
 
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
@@ -1170,7 +1170,9 @@ void StorageMergeTree::loadMutations()
                     }
                     else
                     {
-                        TransactionLog::assertTIDIsNotOutdated(entry.tid);
+                        /// Transaction is not committed. The TID may be outdated if the transaction log entry
+                        /// was garbage-collected (e.g. after upgrade from a version that advanced tail_ptr).
+                        /// In either case the mutation was not committed and should be removed.
                         LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
                                   it->name(), entry.tid);
                         disk->removeFile(it->path());

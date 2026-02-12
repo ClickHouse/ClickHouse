@@ -11,7 +11,7 @@ do
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM FLUSH LOGS text_log"
 sleep 0.1;
-if [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() > 0 FROM system.text_log WHERE position(system.text_log.message, 'SELECT 6103') > 0 AND event_date >= yesterday() SETTINGS max_rows_to_read = 0") == 1 ]]; then echo 1; exit; fi;
+if [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT 1 FROM system.text_log WHERE position(system.text_log.message, 'SELECT 6103') > 0 AND event_date >= yesterday() LIMIT 1 SETTINGS max_rows_to_read = 0") == 1 ]]; then echo 1; exit; fi;
 
 done;
 

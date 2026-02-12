@@ -1,8 +1,8 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
@@ -33,6 +33,30 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool hasMaterializedTextIndex(
+    const StorageSnapshotPtr & storage_snapshot,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const String & virtual_column_name)
+{
+    if (!storage_snapshot->virtual_columns)
+        return false;
+
+    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(virtual_column_name);
+    if (!virtual_column)
+        return false;
+
+    /// Name of the text index is embedded as a comment to the virtual column.
+    const auto & text_index_name = virtual_column->comment;
+    for (const auto & index_desc : storage_snapshot->metadata->getSecondaryIndices())
+    {
+        if (index_desc.type == "text" && index_desc.name == text_index_name)
+            if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
+                return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
+    }
+
+    return false;
+}
 
 /// Columns absent in part may depend on other absent columns so we are
 /// searching all required physical columns recursively. Return true if found at
@@ -80,9 +104,9 @@ bool injectRequiredColumnsRecursively(
                 return true;
             }
         }
-        /// TODO: correctly determine whether the index is present in the part
-        else if (isTextIndexVirtualColumn(column_name_in_part))
+        else if (isTextIndexVirtualColumn(column_name_in_part) && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part))
         {
+            /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
             return true;
         }
@@ -90,13 +114,14 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->metadata->getColumns().getDefault(column_name);
-    if (!column_default)
+    const auto column_default = storage_snapshot->getDefault(column_name);
+    ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
+    if (!default_expression)
         return false;
 
     /// collect identifiers required for evaluation
     IdentifierNameSet identifiers;
-    column_default->expression->collectIdentifierNames(identifiers);
+    default_expression->collectIdentifierNames(identifiers);
 
     bool result = false;
     for (const auto & identifier : identifiers)

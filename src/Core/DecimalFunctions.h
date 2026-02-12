@@ -477,6 +477,9 @@ inline DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const D
     return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, ty.getScale());
 }
 
+/// Returns the current time.
+DateTime64 getCurrentDateTime64(UInt32 scale);
+
 }
 
 }

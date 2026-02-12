@@ -21,7 +21,7 @@ source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
+azurite-rs --host 0.0.0.0 --blob-port 10000 --debug > /azurite_log 2>&1 &
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
@@ -310,6 +310,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
+# `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
+# from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -361,6 +363,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "QUALIFY clause is not supported in the old analyzer" \
            -e "Cannot attach table \`test_7\`" \
            -e "Cannot open file /var/lib/clickhouse/access/" \
+           -e "NO_SUCH_INTERSERVER_IO_ENDPOINT" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true

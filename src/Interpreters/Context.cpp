@@ -44,6 +44,7 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -316,6 +317,8 @@ namespace Setting
     extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
+    extern const SettingsBool use_page_cache_for_local_disks;
+    extern const SettingsBool use_page_cache_for_object_storage;
     extern const SettingsBool use_page_cache_with_distributed_cache;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
@@ -323,7 +326,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
-    extern const SettingsString default_dictionary_database;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 
@@ -536,6 +538,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
     mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
+#endif
+#if USE_PARQUET
+    mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
@@ -1994,6 +1999,15 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         SharedLockGuard lock(mutex);
         if (access && !need_recalculate_access)
             return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
+    }
+
+    {
+        /// NOTE: We cannot just use SharedLockGuard here because we may need to write `need_recalculate_access`.
+        std::lock_guard lock(mutex);
+
+        /// Re-check after upgrading to exclusive lock - another thread may have already recalculated.
+        if (access && !need_recalculate_access)
+            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
 
         params.emplace(get_params());
 
@@ -3125,6 +3139,16 @@ void Context::setCurrentDatabase(const String & name)
     setCurrentDatabaseWithLock(name, lock);
 }
 
+void Context::setCurrentDatabaseUnchecked(const String & name)
+{
+    if (name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
+
+    std::lock_guard lock(mutex);
+    current_database = name;
+    need_recalculate_access = true;
+}
+
 void Context::setCurrentQueryId(const String & query_id)
 {
     /// Generate random UUID, but using lower quality RNG,
@@ -3185,7 +3209,7 @@ bool Context::isCurrentQueryKilled() const
     return false;
 }
 
-void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::optional<ColumnsDescription> column_description)
+void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::shared_ptr<ColumnsDescription> column_description)
 {
     insertion_table_info = {
         .table = std::move(db_and_table),
@@ -4107,6 +4131,49 @@ std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache
 void Context::clearIcebergMetadataFilesCache() const
 {
     auto cache = getIcebergMetadataFilesCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+#endif
+
+#if USE_PARQUET
+void Context::setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->parquet_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache has been already created.");
+
+    shared->parquet_metadata_cache = std::make_shared<ParquetMetadataCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->parquet_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("parquet_metadata_cache_size", DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("parquet_metadata_cache_max_entries", DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES);
+    shared->parquet_metadata_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->parquet_metadata_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->parquet_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
+    return shared->parquet_metadata_cache;
+}
+
+void Context::clearParquetMetadataCache() const
+{
+    auto cache = getParquetMetadataCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
@@ -6914,7 +6981,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 
     std::lock_guard lock(shared->mutex);
 
-    if (std::chrono::milliseconds(getSettingsRef()[Setting::async_insert_poll_timeout_ms]) == std::chrono::milliseconds::zero())
+    if (std::chrono::milliseconds(getSettingsRef()[Setting::async_insert_poll_timeout_ms].totalMilliseconds()) == std::chrono::milliseconds::zero())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
@@ -7123,6 +7190,8 @@ ReadSettings Context::getReadSettings() const
     res.page_cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
+    res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
+    res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
     res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
     res.page_cache_block_size = settings_ref[Setting::page_cache_block_size];

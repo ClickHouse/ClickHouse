@@ -3,6 +3,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>

@@ -368,7 +368,7 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
 
 std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, /*file_size*/ std::nullopt, /*flags*/ -1, /*existing_memory*/ nullptr, settings.use_page_cache_for_local_disks);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

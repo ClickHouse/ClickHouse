@@ -9,6 +9,8 @@
 #include <IO/S3Settings.h>
 
 #include <IO/S3/Client.h>
+#include <Databases/DataLake/StorageCredentials.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -18,10 +20,16 @@ std::unique_ptr<S3::Client> getClient(
     const S3Settings & settings,
     ContextPtr context,
     bool for_disk_s3,
-    std::optional<std::string> opt_disk_name = {});
+    std::optional<std::string> opt_disk_name = {},
+    std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback = std::nullopt);
 
 std::unique_ptr<S3::Client> getClient(
-    const S3::URI & url_, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name = {});
+    const S3::URI & url_,
+    const S3Settings & settings,
+    ContextPtr context,
+    bool for_disk_s3,
+    std::optional<std::string> opt_disk_name = {},
+    std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback = std::nullopt);
 }
 
 #endif
