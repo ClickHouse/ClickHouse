@@ -1073,6 +1073,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"allow_tuple_element_aggregation", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {

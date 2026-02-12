@@ -464,6 +464,9 @@ public:
         /// For Graphite mode.
         Graphite::Params graphite_params;
 
+        /// For Summing, Coalescing and Aggregating modes.
+        bool allow_tuple_element_aggregation = false;
+
         /// Check that needed columns are present and have correct types.
         void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
 

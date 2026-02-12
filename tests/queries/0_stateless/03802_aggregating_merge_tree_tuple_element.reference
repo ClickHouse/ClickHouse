@@ -1,0 +1,88 @@
+=== Test 1: Basic SimpleAggregateFunction subcolumn test ===
+Basic test - with FINAL (after two inserts):
+(0,0)
+(1,2)
+(2,4)
+(3,6)
+(4,8)
+(5,10)
+(6,12)
+(7,14)
+(8,16)
+(9,18)
+Basic test - after OPTIMIZE:
+(0,0)
+(1,2)
+(2,4)
+(3,6)
+(4,8)
+(5,10)
+(6,12)
+(7,14)
+(8,16)
+(9,18)
+=== Test 2: Comprehensive SimpleAggregateFunction types ===
+Comprehensive test - with FINAL:
+1	350	5	100	first	third_last	3	3	3	192.168.1.3	7	3	1	[1,2,2,3,4,5]	[1,2,3,4,5,6]
+10	3000	50	1000	ten	2222	2222	10	20	10.0.0.2	24	127	16	[]	[]
+Comprehensive test - after OPTIMIZE:
+1	350	5	100	first	third_last	3	3	3	192.168.1.3	7	3	1	[1,2,2,3,4,5]	[1,2,3,4,5,6]
+10	3000	50	1000	ten	2222	2222	10	20	10.0.0.2	24	127	16	[]	[]
+=== Test 3: AggregateFunction subcolumns ===
+AggregateFunction test - before OPTIMIZE:
+0	8	8	360	29.5	8	-5	14	val_0	new_9	9.5	8
+1	6	6	240	29	6	-4	12	val_1	new_7	9	6
+2	6	6	300	30	6	-3	13	val_2	new_8	10	6
+AggregateFunction test - after OPTIMIZE:
+0	8	8	360	29.5	8	-5	14	val_0	new_9	9.5	8
+1	6	6	240	29	6	-4	12	val_1	new_7	9	6
+2	6	6	300	30	6	-3	13	val_2	new_8	10	6
+=== Test 4: With overflow ===
+with_overflow	1	(0)
+=== Test 5: Multi-level nested Tuple aggregation ===
+Nested Tuple test - with FINAL:
+1	350	100	5	3	third	3	7	15.333333333333334
+2	1000	500	100	1	alpha_last	1	8	5.5
+Nested Tuple test - after OPTIMIZE:
+1	350	100	5	3	third	3	7	15.333333333333334
+2	1000	500	100	1	alpha_last	1	8	5.5
+=== Test 6: ColumnConst with Tuple aggregation ===
+ColumnConst Tuple test - WITH FINAL:
+0	300	75	2	another_const	8
+1	300	75	2	another_const	6
+2	300	75	2	another_const	6
+ColumnConst Tuple test - after OPTIMIZE:
+0	300	75	2	another_const	8
+1	300	75	2	another_const	6
+2	300	75	2	another_const	6
+=== Test 7: Unnamed Tuple (positional access) ===
+Unnamed Tuple test - with FINAL (after two inserts):
+0	0	0	new_0	2	2
+1	4	20	new_1	2	2
+2	8	40	new_2	2	2
+3	12	60	new_3	2	2
+4	16	80	new_4	2	2
+5	20	100	new_5	2	2
+6	24	120	new_6	2	2
+7	28	140	new_7	2	2
+8	32	160	new_8	2	2
+9	36	180	new_9	2	2
+Unnamed Tuple test - after OPTIMIZE:
+0	0	0	new_0	2	2
+1	4	20	new_1	2	2
+2	8	40	new_2	2	2
+3	12	60	new_3	2	2
+4	16	80	new_4	2	2
+5	20	100	new_5	2	2
+6	24	120	new_6	2	2
+7	28	140	new_7	2	2
+8	32	160	new_8	2	2
+9	36	180	new_9	2	2
+Nested Unnamed Tuple test - with FINAL:
+0	2700	180	0	9.5
+1	1800	140	1	9
+2	2250	160	2	10
+Nested Unnamed Tuple test - after OPTIMIZE:
+0	2700	180	0	9.5
+1	1800	140	1	9
+2	2250	160	2	10

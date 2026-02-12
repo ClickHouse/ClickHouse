@@ -25,7 +25,8 @@ public:
         SortDescription description_,
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_);
+        std::optional<size_t> max_dynamic_subcolumns_,
+        bool allow_tuple_element_aggregation_);
 
     const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -99,6 +100,11 @@ public:
 
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;
+
+        /// record the origin header
+        Block origin_header;
+
+        bool allow_tuple_element_aggregation = false;
     };
 
 private:
