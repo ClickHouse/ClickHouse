@@ -52,6 +52,71 @@
             --table-border-color: #DFDFDF;
         }
 
+        #header {
+            padding: 10px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: var(--header-background-color);
+            color: var(--text-color);
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            height: 20px;
+            border-bottom: 1px solid var(--table-border-color);
+        }
+
+        #header a {
+            color: var(--link-color);
+            text-decoration: none;
+        }
+
+        #header a:hover {
+            color: var(--link-hover-color);
+            text-decoration: underline;
+        }
+
+        #header .nav-breadcrumb {
+            flex-grow: 1;
+        }
+
+        #header .nav-breadcrumb span.separator {
+            margin-left: 5px;
+            margin-right: 5px;
+        }
+
+        #header .right, #header .settings {
+            display: flex;
+            align-items: center;
+            margin-right: 20px;
+        }
+
+        #header .right a::before {
+            content: "#";
+            margin-left: 10px;
+            color: #606060;
+        }
+
+        #header .right::before, #header .settings::before {
+            content: "|";
+            margin-left: 0px;
+            margin-right: 10px;
+            color: #606060;
+        }
+
+        #header #theme-toggle, #header #status-filter-toggle, #header #sort-toggle {
+            cursor: pointer;
+            color: var(--text-color);
+            margin-left: 10px;
+        }
+
+        #header #theme-toggle:hover, #header #sort-toggle:hover {
+            opacity: 0.7;
+        }
+
         body.night-theme {
             --background-color: #151515;
             --text-color: #DFDFDF;
@@ -66,14 +131,12 @@
             --link-hover-color: #e6eb5e;
             --file-link-color: #7ab3ff;
             --file-link-hover-color: #a3cbff;
-            --footer-background: #151515;
-            --footer-text-color: #F9F9F9;
         }
 
         #status-container {
             position: fixed;
-            top: 0;
-            bottom: 40px;
+            top: 40px;
+            bottom: 0;
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
@@ -162,8 +225,8 @@
         #result-container {
             background-color: var(--tile-background);
             position: fixed;
-            top: 0;
-            bottom: 40px;
+            top: 40px;
+            bottom: 0;
             left: calc(var(--status-width) + 10px); /* Align with status container */
             right: 0; /* Stretch to the right edge */
 
@@ -186,67 +249,6 @@
         #info-content {
             text-align: left;
             padding: 10px;
-        }
-
-        #footer {
-            padding: 10px;
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background-color: var(--footer-background);
-            color: var(--footer-text-color);
-            font-size: 14px;
-            display: flex;
-            justify-content: space-between; /* Ensure the .left expands, and .right and .settings are aligned to the right */
-            align-items: center;
-        }
-
-        #footer a {
-            color: var(--footer-text-color);
-            text-decoration: none;
-        }
-
-        #footer .left {
-            flex-grow: 1; /* Takes up all the available space */
-        }
-
-        #footer .left span.separator {
-            margin-left: 5px;
-            margin-right: 5px;
-        }
-
-        #footer .right, #footer .settings {
-            display: flex;
-            align-items: center;
-            margin-right: 20px;
-        }
-
-        #footer .right a::before {
-            content: "#";
-            margin-left: 10px;
-            color: #606060;
-        }
-
-        #footer .right::before, #footer .settings::before {
-            content: "|"; /* Add separator before right and settings sections */
-            margin-left: 0px;
-            margin-right: 10px;
-            color: #606060;
-        }
-
-        #theme-toggle, #status-filter-toggle, #sort-toggle {
-            cursor: pointer;
-            color: var(--footer-text-color);
-            margin-left: 10px;
-        }
-
-        #theme-toggle:hover, #sort-toggle:hover {
-            color: #FAFF69;
-        }
-
-        #footer a:hover {
-            text-decoration: underline;
         }
 
         table {
@@ -356,18 +358,18 @@
     </style>
 </head>
 <body>
-    <div id="status-container"></div>
-    <div id="result-container"></div>
-    <button id="toggle-status-bar">‖</button>
-    <footer id="footer">
-        <div class="left"></div>
+    <div id="header">
+        <div class="nav-breadcrumb"></div>
         <div class="right"></div>
         <div class="settings">
             <span id="status-filter-toggle"></span>
             <span id="sort-toggle">🔼</span>
             <span id="theme-toggle">🔆️</span>
         </div>
-    </footer>
+    </div>
+    <div id="status-container"></div>
+    <div id="result-container"></div>
+    <button id="toggle-status-bar">‖</button>
     <script>
     // Track all interval timers for cleanup
     const activeTimers = {
@@ -1689,22 +1691,22 @@
             pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}" class="nav-link">${name}</a>`);
         }
 
-        const footerLeft = document.querySelector('#footer .left');
-        footerLeft.innerHTML = pathLinks.join('');
+        const headerNav = document.querySelector('#header .nav-breadcrumb');
+        headerNav.innerHTML = pathLinks.join('');
     }
 
     function renderFooter(nameParams) {
-        const footerRight = document.querySelector('#footer .right');
-        function createLinkElement(href, textContent, footer) {
+        const headerRight = document.querySelector('#header .right');
+        function createLinkElement(href, textContent, container) {
             const a = document.createElement('a');
             a.href = href;
             a.textContent = textContent;
             a.target = '_blank';
-            footer.appendChild(a);
+            container.appendChild(a);
         }
-        if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', footerRight);
-        if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
-        if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', footerRight);
+        if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', headerRight);
+        if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', headerRight);
+        if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', headerRight);
         const result = getTargetResults(nameParams)
         let i = 1;
         for (const name of nameParams) {
