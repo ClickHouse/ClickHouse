@@ -81,6 +81,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_ca_cert_dir = config.has(ldap_server_config + ".tls_ca_cert_dir");
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
+    const bool has_follow_referrals = config.has(ldap_server_config + ".follow_referrals");
 
     if (!has_host)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
@@ -199,6 +200,12 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
 
     if (has_search_limit)
         params.search_limit = static_cast<UInt32>(config.getUInt64(ldap_server_config + ".search_limit"));
+
+    if (has_follow_referrals)
+    {
+        params.follow_referrals = config.getBool(ldap_server_config + ".follow_referrals");
+    }
+    else params.follow_referrals = false;
 }
 
 void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)

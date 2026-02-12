@@ -32,6 +32,7 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <port>636</port>
             <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
             <verification_cooldown>300</verification_cooldown>
+            <follow_referrals>false</follow_referrals>
             <enable_tls>yes</enable_tls>
             <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
             <tls_require_cert>demand</tls_require_cert>
@@ -76,6 +77,9 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
       - Note, that the special characters must be escaped properly in XML.
 - `verification_cooldown` — A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server.
   - Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.
+- `follow_referrals` —  A flag to allow the LDAP client library to automatically chase LDAP referrals returned by the server. `false` by default. Note: This setting is mostly relevant for Microsoft Active Directory environments where subtree searches at a high-level base DN (e.g. `DC=example,DC=com`) can return referrals/search references (e.g. `DC=DomainDnsZones,...`).
+  - Specify `true` only when you explicitly need cross‑partition searches and your environment is configured to allow them.
+  - Specify `false` to not chase referrals. This is recommended for AD domain‑root searches.
 - `enable_tls` — A flag to trigger the use of the secure connection to the LDAP server.
   - Specify `no` for plain text `ldap://` protocol (not recommended).
   - Specify `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended, the default).
