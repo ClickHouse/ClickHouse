@@ -22,7 +22,7 @@ SELECT name FROM system.users WHERE name LIKE 'test_pushdown_%' ORDER BY name;
 SELECT count() > 0 FROM system.users;
 
 -- Verify the fast path reads exactly 1 row via query_log (requires query_log to be enabled)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT argMax(read_rows, event_time_microseconds)
 FROM system.query_log
