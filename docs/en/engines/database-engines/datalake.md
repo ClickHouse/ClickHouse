@@ -62,6 +62,8 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 
+Named collections could also be used.
+
 ## Examples {#examples}
 
 See below sections for examples of using the `DataLakeCatalog` engine:
