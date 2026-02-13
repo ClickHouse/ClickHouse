@@ -27,7 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename Point>
@@ -37,9 +37,6 @@ struct AggregateFunctionGroupPolygonIntersectionData
     bool has_value = false;
 };
 
-// Reusing InputGeometryType from Union implementation if possible, or redefining here.
-// Since it was defined inside the anonymous namespace or class in Union, we should probably redefine or move it to a common header.
-// For now, redefining to avoid header dependency hell.
 enum class InputGeometryType : uint8_t
 {
     Ring,
@@ -55,6 +52,7 @@ class AggregateFunctionGroupPolygonIntersection final : public IAggregateFunctio
 private:
     using Data = AggregateFunctionGroupPolygonIntersectionData<Point>;
     InputGeometryType input_type;
+    bool correct_geometry = true;
 
     static InputGeometryType resolveInputType(const DataTypePtr & type)
     {
@@ -73,10 +71,11 @@ private:
     }
 
 public:
-    explicit AggregateFunctionGroupPolygonIntersection(const DataTypes & argument_types_)
+    explicit AggregateFunctionGroupPolygonIntersection(const DataTypes & argument_types_, bool correct_geometry_ = true)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupPolygonIntersection<Point>>(
             argument_types_, {}, DataTypeFactory::instance().get("MultiPolygon"))
         , input_type(resolveInputType(argument_types_.at(0)))
+        , correct_geometry(correct_geometry_)
     {
     }
 
@@ -93,6 +92,14 @@ public:
         if (state.has_value && state.accumulated_intersection.empty())
             return;
 
+        /// If the second argument is provided and is 0, skip geometry correction for this row.
+        bool should_correct = correct_geometry;
+        if (this->argument_types.size() == 2)
+        {
+            const auto & col = assert_cast<const ColumnUInt8 &>(*columns[1]);
+            should_correct = col.getData()[row_num] != 0;
+        }
+
         /// Extract only the single row we need, avoiding conversion of the entire column.
         auto single_row_col = columns[0]->cut(row_num, 1);
 
@@ -103,10 +110,11 @@ public:
             case InputGeometryType::Ring: {
                 auto rings = ColumnToRingsConverter<Point>::convert(single_row_col);
                 if (rings.empty())
-                    return; // Should not happen for 1 row unless null, but safe check
+                    return;
                 Polygon<Point> polygon;
                 polygon.outer() = std::move(rings[0]);
-                boost::geometry::correct(polygon);
+                if (should_correct)
+                    boost::geometry::correct(polygon);
                 current_multi_polygon.emplace_back(std::move(polygon));
                 break;
             }
@@ -114,7 +122,8 @@ public:
                 auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
                 if (polygons.empty())
                     return;
-                boost::geometry::correct(polygons[0]);
+                if (should_correct)
+                    boost::geometry::correct(polygons[0]);
                 current_multi_polygon.emplace_back(std::move(polygons[0]));
                 break;
             }
@@ -123,7 +132,8 @@ public:
                 if (multi_polygons.empty())
                     return;
                 current_multi_polygon = std::move(multi_polygons[0]);
-                boost::geometry::correct(current_multi_polygon);
+                if (should_correct)
+                    boost::geometry::correct(current_multi_polygon);
                 break;
             }
         }
