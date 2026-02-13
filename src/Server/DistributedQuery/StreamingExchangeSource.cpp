@@ -46,13 +46,12 @@ void StreamingExchangeSource::connect()
     Poco::Net::SocketAddress address(host, port);
     socket->connect(address);
     socket->setReceiveBufferSize(10 * 1024 * 1024);
-    in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
 }
 
 void StreamingExchangeSource::sendHello()
 {
     WriteBufferFromPocoSocket hello_out(*socket);
-    writeVarUInt(StreamingExchangeProtocol::PacketType::SourceHello, hello_out);
+    writeIntBinary(StreamingExchangeProtocol::PacketType::SourceHello, hello_out);
     writeStringBinary(query_id, hello_out);
     writeStringBinary(stream_name, hello_out);
     hello_out.next();
@@ -62,7 +61,10 @@ void StreamingExchangeSource::sendHello()
 void StreamingExchangeSource::receiveHello()
 {
     UInt64 packet_type = 0;
-    readVarUInt(packet_type, *in);
+    size_t position = 0;
+    readFromSocket(reinterpret_cast<char *>(&packet_type), sizeof(packet_type), position);
+    if (position != sizeof(packet_type))
+        throw Poco::Net::NetException(fmt::format("Failed to receive Hello packet from socket for exchange stream {}, expected {} bytes but received {}", stream_name, sizeof(packet_type), position));
     if (packet_type != StreamingExchangeProtocol::PacketType::SinkHello)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
 }
@@ -118,7 +120,7 @@ void StreamingExchangeSource::sendNoMoreDataNeeded()
 {
     if (!out)
         out = std::make_unique<WriteBufferFromPocoSocket>(*socket);
-    writeVarUInt(StreamingExchangeProtocol::PacketType::NoMoreDataNeeded, *out);
+    writeIntBinary(StreamingExchangeProtocol::PacketType::NoMoreDataNeeded, *out);
     out->next();
 }
 
@@ -143,12 +145,12 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
             }
             else
             {
-                throw Poco::Net::NetException("Failed to receive data from socket for exchange {}, error {}", stream_name, last_error);
+                throw Poco::Net::NetException(fmt::format("Failed to receive data from socket for exchange {}, error {}", stream_name, last_error));
             }
         }
         else if (received == 0)
         {
-            throw Poco::Net::NetException("Failed to receive data from socket for exchange {}, socket was unexpectedly closed", stream_name);
+            throw Poco::Net::NetException(fmt::format("Failed to receive data from socket for exchange {}, socket was unexpectedly closed", stream_name));
         }
 
         LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket->sockfd());

@@ -67,7 +67,7 @@ void StreamingExchangeSink::sendToSocket()
                 }
                 else
                 {
-                    throw Poco::Net::NetException("Failed to send data to socket", last_error);
+                    throw Poco::Net::NetException(fmt::format("Failed to send data to socket for stream {}, last error {}", stream_name, last_error));
                 }
             }
 
@@ -289,7 +289,7 @@ void StreamingExchangeSink::onFinish()
 void StreamingExchangeSink::receiveNoMoDataNeeded()
 {
     UInt64 packet_type = 0;
-    readVarUInt(packet_type, *in);
+    readIntBinary(packet_type, *in);
     if (packet_type != StreamingExchangeProtocol::PacketType::NoMoreDataNeeded)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
 

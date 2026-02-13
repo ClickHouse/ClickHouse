@@ -73,7 +73,6 @@ private:
     size_t current_packet_body_bytes_filled = 0;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::unique_ptr<ReadBufferFromMemory> packet_in;    /// One full packet
     std::unique_ptr<WriteBufferFromPocoSocket> out;
     size_t rows_read = 0;

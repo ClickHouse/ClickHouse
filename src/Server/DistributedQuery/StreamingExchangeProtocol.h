@@ -7,7 +7,7 @@ namespace DB
 namespace StreamingExchangeProtocol
 {
     /// Packet types between StreamingExchangeSink and StreamingExchangeSource.
-    enum PacketType
+    enum PacketType : UInt64
     {
         SourceHello = 0x5004e110,   /// Sent by source to sink when initiating connection
         SinkHello   = 0x5104e110,   /// Response from sink to source
