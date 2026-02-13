@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 struct Settings;
@@ -21,7 +22,7 @@ void registerAggregateFunctionGroupPolygonUnion(AggregateFunctionFactory & facto
             assertNoParameters(name, parameters);
 
             if (argument_types.size() != 1 && argument_types.size() != 2)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Aggregate function {} requires 1 or 2 arguments, got {}", name, argument_types.size());
 
             bool correct_geometry = true;
