@@ -6,7 +6,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
@@ -21,9 +20,7 @@ public:
         const FormatSettings & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        size_t min_bytes_for_seek,
-        ParquetMetadataCachePtr metadata_cache_ = nullptr,
-        const std::optional<RelativePathWithMetadata> & metadata_ = std::nullopt);
+        size_t min_bytes_for_seek);
 
     void resetParser() override;
 
@@ -47,8 +44,6 @@ private:
     Parquet::ReadOptions read_options;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
-    ParquetMetadataCachePtr metadata_cache;
-    const std::optional<RelativePathWithMetadata> metadata;
 
     /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
     ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,
@@ -63,8 +58,6 @@ private:
 
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
-
-    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
 
 class NativeParquetSchemaReader : public ISchemaReader
@@ -79,7 +72,7 @@ private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
-    parquet::format::FileMetaData file_metadata;
+    Parquet::parq::FileMetaData file_metadata;
     bool initialized = false;
 };
 

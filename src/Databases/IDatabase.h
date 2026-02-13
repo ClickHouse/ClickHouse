@@ -38,6 +38,13 @@ struct ParsedTablesMetadata;
 struct QualifiedTableName;
 class IRestoreCoordination;
 
+/// This structure is returned when getLightweightTablesIterator is called
+/// It contains basic details of the table, currently only the table name
+struct LightWeightTableDetails
+{
+    String name;
+};
+
 class IDatabaseTablesIterator
 {
 public:
@@ -271,9 +278,17 @@ public:
 
     /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
     /// Useful for queries like "SHOW TABLES"
-    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
+    virtual std::vector<LightWeightTableDetails> getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
     {
-        return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
+        std::vector<LightWeightTableDetails> result;
+
+        for (auto iterator = getTablesIterator(context, filter_by_table_name, skip_not_loaded); iterator->isValid(); iterator->next())
+        {
+            if (const auto & table = iterator->table())
+                result.emplace_back(iterator->name());
+        }
+
+        return result;
     }
 
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(

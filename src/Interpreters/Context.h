@@ -105,7 +105,6 @@ class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
-class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
 class TextIndexDictionaryBlockCache;
 class TextIndexHeaderCache;
@@ -1002,6 +1001,9 @@ public:
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
+    /// Set current_database without validating that database exists.
+    /// Use during bootstrap/restore scenarios where database may not be loaded yet.
+    void setCurrentDatabaseUnchecked(const String & name);
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
@@ -1352,13 +1354,6 @@ public:
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
-#endif
-
-#if USE_PARQUET
-    void setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
-    void clearParquetMetadataCache() const;
 #endif
 
     void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }

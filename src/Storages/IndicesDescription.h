@@ -35,8 +35,9 @@ struct IndexDescription
     /// Prepared expressions for index calculations
     ExpressionActionsPtr expression;
 
-    /// Index arguments, for example probability for bloom filter
-    FieldVector arguments;
+    /// Index arguments, for example probability for bloom filter.
+    /// Stored as ASTExpressionList with children being ASTLiteral or ASTIdentifier nodes.
+    ASTPtr arguments;
 
     /// Names of index columns (not to be confused with required columns)
     Names column_names;
@@ -84,8 +85,6 @@ struct IndexDescription
 
     bool isSimpleSingleColumnIndex() const;
 
-private:
-    static FieldVector parsePositionalArgumentsFromAST(const ASTPtr & arguments);
 };
 
 /// All secondary indices in storage
@@ -112,6 +111,13 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 
     Names getAllRegisteredNames() const override;
 };
+
+/// Extract Field value from an index argument AST node.
+/// ASTLiteral yields its value; ASTIdentifier yields its name as a String.
+Field getFieldFromIndexArgumentAST(const ASTPtr & ast);
+
+/// Convert all children of an index arguments AST (ASTExpressionList) to a FieldVector.
+FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments);
 
 ASTPtr createImplicitMinMaxIndexAST(const String & column_name);
 IndexDescription createImplicitMinMaxIndexDescription(

@@ -20,21 +20,25 @@ extern const int ILLEGAL_COLUMN;
 
 namespace
 {
-template <typename Name, bool is_injective>
+
 class ConcatWithSeparatorImpl : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    explicit ConcatWithSeparatorImpl(ContextPtr context_) : context(context_) { }
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatWithSeparatorImpl>(context); }
+    ConcatWithSeparatorImpl(ContextPtr context_, const char * name_, bool is_injective_)
+        : context(context_), function_name(name_), injective(is_injective_) {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr context, const char * name, bool is_injective)
+    {
+        return std::make_shared<ConcatWithSeparatorImpl>(context, name, is_injective);
+    }
+
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return injective; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -180,19 +184,10 @@ public:
 
 private:
     ContextWeakPtr context;
+    const char * function_name;
+    bool injective;
 };
 
-struct NameConcatWithSeparator
-{
-    static constexpr auto name = "concatWithSeparator";
-};
-struct NameConcatWithSeparatorAssumeInjective
-{
-    static constexpr auto name = "concatWithSeparatorAssumeInjective";
-};
-
-using FunctionConcatWithSeparator = ConcatWithSeparatorImpl<NameConcatWithSeparator, false>;
-using FunctionConcatWithSeparatorAssumeInjective = ConcatWithSeparatorImpl<NameConcatWithSeparatorAssumeInjective, true>;
 }
 
 REGISTER_FUNCTION(ConcatWithSeparator)
@@ -275,8 +270,8 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
     };
     FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, {}, returned_value_injective, examples_injective, introduced_in, category};
 
-    factory.registerFunction<FunctionConcatWithSeparator>(documentation);
-    factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(documentation_injective);
+    factory.registerFunction("concatWithSeparator", [](ContextPtr ctx){ return ConcatWithSeparatorImpl::create(ctx, "concatWithSeparator", false); }, documentation);
+    factory.registerFunction("concatWithSeparatorAssumeInjective", [](ContextPtr ctx){ return ConcatWithSeparatorImpl::create(ctx, "concatWithSeparatorAssumeInjective", true); }, documentation_injective);
 
     /// Compatibility with Spark and MySQL:
     factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);

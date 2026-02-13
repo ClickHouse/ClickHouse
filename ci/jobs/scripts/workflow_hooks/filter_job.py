@@ -85,6 +85,12 @@ def should_skip_job(job_name):
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
 
     if (
+        job_name == JobNames.SMOKE_TEST_MACOS
+        and Labels.CI_MACOS not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
+
+    if (
         Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels
         and job_name not in INTEGRATION_TEST_FLAKY_CHECK_JOBS
     ):

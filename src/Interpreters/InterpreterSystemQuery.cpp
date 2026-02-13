@@ -400,14 +400,6 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
-        case Type::CLEAR_PARQUET_METADATA_CACHE:
-# if USE_PARQUET
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
-            system_context->clearParquetMetadataCache();
-            break;
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
-# endif
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -1345,7 +1337,7 @@ bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, co
 
 void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database)
 {
-    for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
+    for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
         dropStorageReplica(query_replica, iterator->table());
 
     LOG_TRACE(log, "Dropped storage replica from {} of database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -2008,7 +2000,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
-        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:

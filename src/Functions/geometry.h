@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 
+#include <base/EnumReflection.h>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 
@@ -104,6 +105,18 @@ enum class GeometryColumnType
     Ring = 5,
     Null = 255
 };
+
+}
+
+/// GeometryColumnType has Null = 255, which is outside the default magic_enum range [-128, 127].
+template <> struct magic_enum::customize::enum_range<DB::GeometryColumnType>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 255;
+};
+
+namespace DB
+{
 
 template <typename Point, typename FunctionToCalculate>
 class FunctionGeometry : public IFunction

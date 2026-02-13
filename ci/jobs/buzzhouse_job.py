@@ -4,7 +4,6 @@ import random
 from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import run_fuzz_job
-from ci.praktika.info import Info
 from ci.praktika.utils import Utils
 
 
