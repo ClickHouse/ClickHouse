@@ -109,6 +109,28 @@
     <query>SELECT grp, groupPolygonUnion(polygon) FROM perf_poly_grouped GROUP BY grp FORMAT Null</query>
 
     <!-- ================================================================== -->
+    <!-- Tests with correct_geometry parameter                               -->
+    <!-- ================================================================== -->
+
+    <!-- Q7: Simple polygons with correct_geometry=0 (correction disabled) -->
+    <query>SELECT groupPolygonUnion(polygon, 0) FROM perf_poly_simple FORMAT Null</query>
+
+    <!-- Q8: Simple polygons with correct_geometry=1 (correction enabled, explicit) -->
+    <query>SELECT groupPolygonUnion(polygon, 1) FROM perf_poly_simple FORMAT Null</query>
+
+    <!-- Q9: Complex polygons with correct_geometry=0 -->
+    <query>SELECT groupPolygonUnion(polygon, 0) FROM perf_poly_complex FORMAT Null</query>
+
+    <!-- Q10: Ring input with correct_geometry=0 -->
+    <query>SELECT groupPolygonUnion(ring, 0) FROM perf_ring FORMAT Null</query>
+
+    <!-- Q11: MultiPolygon input with correct_geometry=0 -->
+    <query>SELECT groupPolygonUnion(mpoly, 0) FROM perf_mpoly FORMAT Null</query>
+
+    <!-- Q12: Grouped aggregation with correct_geometry=0 -->
+    <query>SELECT grp, groupPolygonUnion(polygon, 0) FROM perf_poly_grouped GROUP BY grp FORMAT Null</query>
+
+    <!-- ================================================================== -->
     <!-- Teardown                                                             -->
     <!-- ================================================================== -->
 

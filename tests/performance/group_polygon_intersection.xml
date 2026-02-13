@@ -106,6 +106,28 @@
     <!-- 5. Grouped aggregation -->
     <query>SELECT grp, groupPolygonIntersection(polygon) FROM perf_poly_grouped GROUP BY grp FORMAT Null</query>
 
+    <!-- ================================================================== -->
+    <!-- Tests with correct_geometry parameter                               -->
+    <!-- ================================================================== -->
+
+    <!-- 6. Simple polygons with correct_geometry=0 (correction disabled) -->
+    <query>SELECT groupPolygonIntersection(polygon, 0) FROM perf_poly_simple FORMAT Null</query>
+
+    <!-- 7. Simple polygons with correct_geometry=1 (correction enabled, explicit) -->
+    <query>SELECT groupPolygonIntersection(polygon, 1) FROM perf_poly_simple FORMAT Null</query>
+
+    <!-- 8. Complex polygons with correct_geometry=0 -->
+    <query>SELECT groupPolygonIntersection(polygon, 0) FROM perf_poly_complex FORMAT Null</query>
+
+    <!-- 9. Ring input with correct_geometry=0 -->
+    <query>SELECT groupPolygonIntersection(ring, 0) FROM perf_ring FORMAT Null</query>
+
+    <!-- 10. MultiPolygon input with correct_geometry=0 -->
+    <query>SELECT groupPolygonIntersection(mpoly, 0) FROM perf_mpoly FORMAT Null</query>
+
+    <!-- 11. Grouped aggregation with correct_geometry=0 -->
+    <query>SELECT grp, groupPolygonIntersection(polygon, 0) FROM perf_poly_grouped GROUP BY grp FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS perf_poly_simple</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_poly_complex</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_poly_disjoint</drop_query>
