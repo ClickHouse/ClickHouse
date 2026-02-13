@@ -9,9 +9,34 @@
 namespace DB
 {
 
+class TaskToHostMap : public boost::noncopyable
+{
+public:
+    TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
+
+    const std::vector<String> & getHostnames() const { return hostnames; }
+    const std::unordered_map<String, String> & getTaskHosts() const { return task_hosts; }
+    const std::unordered_map<String, String> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
+
+private:
+    void fillHostnames(ContextPtr context);
+    void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan);
+
+    std::vector<String> hostnames;
+    std::unordered_map<String, String> task_hosts;
+    std::unordered_map<String, String> exchange_stream_source_hosts;
+};
+
+using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
+
 struct DistributedQueryPlan;
 
-void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled);
+void executeDistributedQuery(
+    const UUID & unique_query_id,
+    const DistributedQueryPlan & distributed_query_plan,
+    TaskToHostMapPtr task_to_host_map,
+    ContextPtr context,
+    std::shared_ptr<std::atomic<bool>> is_cancelled);
 
 /// Contains info about hosts assigned to exchange buckets
 struct ExchangeStreamSources

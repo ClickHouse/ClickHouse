@@ -13,7 +13,7 @@ Chunk ReadFromDistributedPlanSource::generate()
     if (!started)
     {
         started = true;
-        executeDistributedQuery(unique_query_id, distributed_query_plan, CurrentThread::getQueryContext(), cancellation_flag);
+        executeDistributedQuery(unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::getQueryContext(), cancellation_flag);
     }
 
     return {};

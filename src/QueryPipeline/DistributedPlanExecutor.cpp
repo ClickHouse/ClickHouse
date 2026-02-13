@@ -706,86 +706,75 @@ private:
 };
 
 
-class TaskToHostMap
+TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
-public:
-    TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
+    fillHostnames(context_);
+    assignHostsForTasks(distributed_query_plan_);
+}
+
+void TaskToHostMap::fillHostnames(ContextPtr context)
+{
+    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
+
+    String host;
+    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
+    if (!cluster_name.empty())
     {
-        fillHostnames(context_);
-        assignHostsForTasks(distributed_query_plan_);
+        auto cluster = context->tryGetCluster(cluster_name);
+        if (!cluster)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
+
+        auto shard_addresses = cluster->getShardsAddresses();
+        if (shard_addresses.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
+        for (const auto & shard : shard_addresses[0])
+            hostnames.push_back(shard.host_name);
+    }
+    else
+    {
+        host = context->getConfigRef().getString("stateless_worker_client.host");
+        if (!host.empty())
+            hostnames.push_back(host);
     }
 
-    const Strings & getHostnames() const { return hostnames; }
-    const std::unordered_map<String, String> & getTaskHosts() const { return task_hosts; }
-    const std::unordered_map<String, String> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
+    if (hostnames.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
+}
 
-private:
-    void fillHostnames(ContextPtr context)
+void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan)
+{
+    size_t current_host = 0;
+    for (const auto & [stage_id, stage] : distributed_query_plan.stages)
     {
-        if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
-
-        String host;
-        String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
-        if (!cluster_name.empty())
+        for (const auto & task : stage.tasks)
         {
-            auto cluster = context->tryGetCluster(cluster_name);
-            if (!cluster)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
-
-            auto shard_addresses = cluster->getShardsAddresses();
-            if (shard_addresses.empty())
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-            for (const auto & shard : shard_addresses[0])
-                hostnames.push_back(shard.host_name);
+            const auto & assigned_host = hostnames[current_host];
+            current_host = (current_host + 1) % hostnames.size();
+            task_hosts[task.task_id] = assigned_host;
+            for (const auto & output_stream : task.output_exchange_streams)
+                exchange_stream_source_hosts[output_stream.toString()] = assigned_host;
         }
-        else
-        {
-            host = context->getConfigRef().getString("stateless_worker_client.host");
-            if (!host.empty())
-                hostnames.push_back(host);
-        }
-
-        if (hostnames.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
     }
-
-    void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan)
-    {
-        size_t current_host = 0;
-        for (const auto & [stage_id, stage] : distributed_query_plan.stages)
-        {
-            for (const auto & task : stage.tasks)
-            {
-                const auto & assigned_host = hostnames[current_host];
-                current_host = (current_host + 1) % hostnames.size();
-                task_hosts[task.task_id] = assigned_host;
-                for (const auto & output_stream : task.output_exchange_streams)
-                    exchange_stream_source_hosts[output_stream.toString()] = assigned_host;
-            }
-        }
-
-//        exchange_stream_source_hosts[distributed_query_plan.final_result_stream_name] = getFQDNOrHostName();
-    }
-
-private:
-    Strings hostnames;
-    std::unordered_map<String, String> task_hosts;
-    std::unordered_map<String, String> exchange_stream_source_hosts;
-};
+}
 
 
 /// Sends tasks to remote nodes.
 class DistributedQueryPlanExecutorRemote final : public DistributedQueryPlanExecutor
 {
 public:
-    DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
+    DistributedQueryPlanExecutorRemote(
+        const UUID & unique_query_id_,
+        const DistributedQueryPlan & distributed_query_plan_,
+        TaskToHostMapPtr task_to_host_map_,
+        ContextPtr context_,
+        std::shared_ptr<std::atomic<bool>> is_cancelled_)
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(is_cancelled_))
-        , task_to_host_map(distributed_query_plan_, context)
+        , task_to_host_map(std::move(task_to_host_map_))
         , running_tasks(8, context, is_cancelled, logger)
     {
         QueryStatusPtr query_status = context->getProcessListElement();
-        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(task_to_host_map.getHostnames(), ", "));
+        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(task_to_host_map->getHostnames(), ", "));
     }
 
     void cleanup() override
@@ -1040,7 +1029,7 @@ protected:
 
     RunningTaskInfo startTask(const DistributedQueryTaskDescription & task_description)
     {
-        const String host = task_to_host_map.getTaskHosts().at(task_description.task.task_id);
+        const String host = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
         String stateless_worker_endpoint_uri;
         {
             auto default_port = context->getInterserverIOAddress().second;
@@ -1084,7 +1073,7 @@ protected:
             for (const auto & input_stream : task.input_exchange_streams)
             {
                 String input_stream_name = input_stream.toString();
-                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map.getExchangeStreamSourceHosts().at(input_stream_name);
+                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
 
             running_tasks.addTask(stage_name, startTask(task_description));
@@ -1096,7 +1085,7 @@ protected:
         running_tasks.waitForStage(stage_name);
     }
 
-    const TaskToHostMap task_to_host_map;
+    TaskToHostMapPtr task_to_host_map;
     TaskTracker running_tasks;
 };
 
@@ -1148,14 +1137,19 @@ void DistributedQueryPlanExecutor::execute()
         waitForStage(stage_name);
 }
 
-void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
+void executeDistributedQuery(
+    const UUID & unique_query_id,
+    const DistributedQueryPlan & distributed_query_plan,
+    TaskToHostMapPtr task_to_host_map,
+    ContextPtr context,
+    std::shared_ptr<std::atomic<bool>> is_cancelled)
 {
     bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
     std::unique_ptr<DistributedQueryPlanExecutor> executor;
     if (run_locally)
         executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, is_cancelled);
     else
-        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, context, is_cancelled);
+        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, is_cancelled);
 
     try
     {
