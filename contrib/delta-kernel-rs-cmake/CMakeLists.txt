@@ -8,7 +8,7 @@ set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
 # MSAN: Disabled because ring does not generate the appropriate symbols
 # NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
-if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
+if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR NO_ARMV81_OR_HIGHER)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
@@ -23,7 +23,7 @@ endif()
 # * default-engine: Needed for its s3 client (we can't pass our own s3 client via ffi)
 clickhouse_import_crate(
     MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
-    FEATURES "default-engine-rustls, test-ffi, tracing"
+    FEATURES "default-engine-native-tls, test-ffi, tracing"
 )
 clickhouse_config_crate_flags(delta_kernel_ffi)
 
