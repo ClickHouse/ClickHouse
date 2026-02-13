@@ -101,6 +101,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_read_in_order_through_join", false, true, "New setting"},
             {"query_plan_max_limit_for_lazy_materialization", 10, 10000, "Increase the limit after performance improvement"},
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
+            {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting to control how posting lists are applied during projection text index queries"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"use_skip_indexes_for_top_k", false, false, "New setting."},

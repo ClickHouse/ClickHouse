@@ -7417,6 +7417,11 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to use a cache of deserialized text index posting lists.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
+    DECLARE(String, text_index_posting_list_apply_mode, "materialize", R"(
+Controls how posting lists are applied during projection text index queries.
+'materialize' mode (default) eagerly materializes posting lists into Roaring bitmaps before performing set operations.
+'lazy' mode uses lazy-decoding cursors with adaptive intersection/union algorithms (skip-list leapfrog for sparse, brute-force bitmap for dense), which can significantly reduce memory usage and improve performance for selective queries.
+)", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
 )", EXPERIMENTAL) \
