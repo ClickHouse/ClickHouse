@@ -11,6 +11,7 @@
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
+#include <Common/JemallocCacheArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/logger_useful.h>
@@ -1139,6 +1140,17 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
     saveJemallocMetricImpl<size_t>(new_values, "arenas.dirty_decay_ms", "jemalloc.arenas.dirty_decay_ms");
+
+    /// Per-arena metrics for the dedicated cache arena (mark cache, uncompressed cache).
+    {
+        unsigned cache_arena = JemallocCacheArena::getArenaIndex();
+        saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pactive", cache_arena),
+            "jemalloc.cache_arena.pactive");
+        saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pdirty", cache_arena),
+            "jemalloc.cache_arena.pdirty");
+    }
 #endif
 
     /// Process process memory usage according to OS
