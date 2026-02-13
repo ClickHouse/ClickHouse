@@ -190,6 +190,14 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
 
     EventNotifier::init();
+
+    const char * env_password = getenv("CLICKHOUSE_KEEPER_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
+    if (env_password && !config().has("password"))
+        config().setString("password", env_password);
+
+    const char * env_identity = getenv("CLICKHOUSE_KEEPER_IDENTITY"); // NOLINT(concurrency-mt-unsafe)
+    if (env_identity && !config().has("identity"))
+        config().setString("identity", env_identity);
 }
 
 std::vector<String> KeeperClient::getCompletions(const String & prefix) const
@@ -459,10 +467,17 @@ void KeeperClient::connectToKeeper()
     new_zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     new_zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     new_zk_args.use_xid_64 = config().hasOption("use-xid-64");
-    new_zk_args.password = config().getString("password", "");
-    new_zk_args.identity = config().getString("identity", "");
+    new_zk_args.password = config().has("password")
+        ? config().getString("password")
+        : clickhouse_config.configuration->getString("zookeeper.password", "");
+
+    new_zk_args.identity = config().has("identity")
+        ? config().getString("identity")
+        : clickhouse_config.configuration->getString("zookeeper.identity", "");
+
     if (!new_zk_args.identity.empty())
         new_zk_args.auth_scheme = "digest";
+
     zk_args = new_zk_args;
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
 }
