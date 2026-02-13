@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS test_output_rows;
 CREATE TABLE test_output_rows (k UInt64, v String) ENGINE = MergeTree ORDER BY k;
