@@ -54,6 +54,7 @@ class AggregateFunctionGroupConvexHull final
 private:
     using Data = AggregateFunctionGroupConvexHullData<Point>;
     ConvexHullInputType input_type;
+    bool correct_geometry = true;
 
     static ConvexHullInputType resolveInputType(const DataTypePtr & type)
     {
@@ -87,10 +88,11 @@ private:
     }
 
 public:
-    explicit AggregateFunctionGroupConvexHull(const DataTypes & argument_types_)
+    explicit AggregateFunctionGroupConvexHull(const DataTypes & argument_types_, bool correct_geometry_ = true)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupConvexHull<Point>>(
             argument_types_, {}, DataTypeFactory::instance().get("Ring"))
         , input_type(resolveInputType(argument_types_.at(0)))
+        , correct_geometry(correct_geometry_)
     {}
 
     String getName() const override { return "groupConvexHull"; }
@@ -100,6 +102,14 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & state = this->data(place);
+
+        /// If the second argument is provided and is 0, skip geometry correction for this row.
+        bool should_correct = correct_geometry;
+        if (this->argument_types.size() == 2)
+        {
+            const auto & col = assert_cast<const ColumnUInt8 &>(*columns[1]);
+            should_correct = col.getData()[row_num] != 0;
+        }
 
         /// Extract only the single row we need.
         auto single_row_col = columns[0]->cut(row_num, 1);
@@ -114,6 +124,8 @@ public:
                 /// A point becomes a degenerate polygon with a single-vertex outer ring.
                 Polygon<Point> polygon;
                 polygon.outer().push_back(std::move(points[0]));
+                if (should_correct)
+                    boost::geometry::correct(polygon);
                 state.accumulated.emplace_back(std::move(polygon));
                 state.has_value = true;
                 break;
@@ -126,6 +138,8 @@ public:
                 /// Ring becomes a polygon's outer ring.
                 Polygon<Point> polygon;
                 polygon.outer() = std::move(rings[0]);
+                if (should_correct)
+                    boost::geometry::correct(polygon);
                 state.accumulated.emplace_back(std::move(polygon));
                 state.has_value = true;
                 break;
@@ -138,6 +152,8 @@ public:
                 /// Only take the outer ring, discard holes.
                 Polygon<Point> polygon;
                 polygon.outer() = std::move(polygons[0].outer());
+                if (should_correct)
+                    boost::geometry::correct(polygon);
                 state.accumulated.emplace_back(std::move(polygon));
                 state.has_value = true;
                 break;
@@ -149,7 +165,11 @@ public:
                     return;
                 /// Move each polygon directly; holes don't affect convex hull computation.
                 for (auto & poly : multi_polygons[0])
+                {
+                    if (should_correct)
+                        boost::geometry::correct(poly);
                     state.accumulated.emplace_back(std::move(poly));
+                }
                 state.has_value = true;
                 break;
             }
@@ -161,6 +181,8 @@ public:
                 /// Treat the linestring's points as a polygon's outer ring.
                 Polygon<Point> polygon;
                 polygon.outer().assign(linestrings[0].begin(), linestrings[0].end());
+                if (should_correct)
+                    boost::geometry::correct(polygon);
                 state.accumulated.emplace_back(std::move(polygon));
                 state.has_value = true;
                 break;
@@ -175,6 +197,8 @@ public:
                 {
                     Polygon<Point> polygon;
                     polygon.outer().assign(ls.begin(), ls.end());
+                    if (should_correct)
+                        boost::geometry::correct(polygon);
                     state.accumulated.emplace_back(std::move(polygon));
                 }
                 state.has_value = true;
