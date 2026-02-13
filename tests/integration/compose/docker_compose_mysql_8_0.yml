@@ -29,4 +29,3 @@ services:
         cap_add:
           - NET_ADMIN
         privileged: true
-        cpus: 3

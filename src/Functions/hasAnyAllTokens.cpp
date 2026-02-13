@@ -12,7 +12,6 @@
 #include <Interpreters/Context.h>
 
 #include <absl/container/flat_hash_map.h>
-#include <boost/dynamic_bitset.hpp>
 
 namespace DB
 {
@@ -55,6 +54,8 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setTokenExtractor(std::unique_ptr
 template <class HasTokensTraits>
 void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector<String> & new_search_tokens)
 {
+    static constexpr size_t max_number_of_tokens = 64;
+
     if (search_tokens.has_value())
         return;
 
@@ -63,6 +64,8 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector
         if (auto [_, inserted] = search_tokens->emplace(new_search_token, pos); inserted)
             ++pos;
 
+    if (search_tokens->size() > max_number_of_tokens)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} search tokens", name, max_number_of_tokens);
 }
 
 namespace
@@ -172,9 +175,10 @@ struct HasAllTokensMatcher
 {
     explicit HasAllTokensMatcher(const TokensWithPosition & tokens_)
         : tokens(tokens_)
-        , mask(tokens.size())
-        , num_set_bits(0)
     {
+        const size_t ns = tokens.size();
+        /// It is equivalent to ((2 ^ ns) - 1), but avoids overflow in case of ns = 64.
+        expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
     }
 
     template <typename OnMatchCallback>
@@ -183,30 +187,24 @@ struct HasAllTokensMatcher
         return [&](const char * token_start, size_t token_len)
         {
             if (auto it = tokens.find(std::string_view(token_start, token_len)); it != tokens.end())
-            {
-                num_set_bits += !mask.test_set(it->second);
+                mask |= (1ULL << it->second);
 
-                if (num_set_bits == tokens.size())
-                {
-                    onMatchCallback();
-                    return true;
-                }
+            if (mask == expected_mask)
+            {
+                onMatchCallback();
+                return true;
             }
 
             return false;
         };
     }
 
-    void reset()
-    {
-        mask.reset();
-        num_set_bits = 0;
-    }
+    void reset() { mask = 0; }
 
 private:
     const TokensWithPosition & tokens;
-    boost::dynamic_bitset<> mask;
-    UInt64 num_set_bits;
+    UInt64 expected_mask;
+    UInt64 mask = 0;
 };
 
 template <typename T>
@@ -436,7 +434,7 @@ REGISTER_FUNCTION(HasAnyTokens)
 Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
-Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
@@ -455,7 +453,7 @@ hasAnyTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
-        {"needles", "Tokens to be searched.", {"String", "Array(String)"}}
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
@@ -570,7 +568,7 @@ REGISTER_FUNCTION(HasAllTokens)
 Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
-Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
@@ -589,7 +587,7 @@ hasAllTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
-        {"needles", "Tokens to be searched.", {"String", "Array(String)"}}
+        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {

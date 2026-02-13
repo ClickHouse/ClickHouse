@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <bit>
 
-#include <Common/FramePointers.h>
+#include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
@@ -105,8 +105,8 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
     writeStringBinary(std::string_view{s}, buf);
 }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf)
+template <typename T>
+void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
 {
     writeVarUInt(v.size(), buf);
 
@@ -1157,7 +1157,7 @@ inline void writeBinary(const CityHash_v1_0_2::uint128 & x, WriteBuffer & buf)
     writePODBinary(x.high64, buf);
 }
 
-inline void writeBinary(const FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const StackTrace::FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 
@@ -1237,7 +1237,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 
     if (fixed_fractional_length && fractional_length < scale)
     {
-        T new_value = static_cast<T>(value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1));
+        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1);
         auto round_carry = new_value % 10;
         value = new_value / 10;
         if (round_carry >= 5)
@@ -1385,8 +1385,8 @@ inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, b
 inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf)
+template <typename T>
+void writeBinary(const std::vector<T> & x, WriteBuffer & buf)
 {
     size_t size = x.size();
     writeVarUInt(size, buf);

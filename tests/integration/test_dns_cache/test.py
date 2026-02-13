@@ -73,8 +73,7 @@ def _fill_nodes(nodes, table_name):
     for node in nodes:
         node.query(
             """
-            DROP DATABASE IF EXISTS test;
-            CREATE DATABASE test;
+            CREATE DATABASE IF NOT EXISTS test;
             CREATE TABLE IF NOT EXISTS {0}(date Date, id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{0}', '{1}')
             ORDER BY id PARTITION BY toYYYYMM(date);

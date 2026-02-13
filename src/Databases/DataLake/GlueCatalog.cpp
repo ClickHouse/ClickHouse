@@ -75,6 +75,19 @@ namespace DB::ServerSetting
     extern const ServerSettingsUInt64 s3_retry_attempts;
 }
 
+namespace DB::StorageObjectStorageSetting
+{
+    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+}
+
+namespace DB::DatabaseDataLakeSetting
+{
+    extern const DatabaseDataLakeSettingsString storage_endpoint;
+    extern const DatabaseDataLakeSettingsString aws_access_key_id;
+    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsString region;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric MarkCacheBytes;
@@ -92,6 +105,7 @@ GlueCatalog::GlueCatalog(
     : ICatalog("")
     , DB::WithContext(context_)
     , log(getLogger("GlueCatalog(" + settings_.region + ")"))
+    , credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key)
     , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
@@ -99,8 +113,6 @@ GlueCatalog::GlueCatalog(
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
-    creds_config.role_arn = settings.aws_role_arn;
-    creds_config.role_session_name = settings.aws_role_session_name;
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
@@ -131,7 +143,6 @@ GlueCatalog::GlueCatalog(
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 
-
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
@@ -139,32 +150,30 @@ GlueCatalog::GlueCatalog(
     client_configuration.region = region;
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
-    Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key);
     /// Only for testing when we are mocking glue
     if (!endpoint.empty())
     {
         client_configuration.endpointOverride = endpoint;
         endpoint_provider->OverrideEndpoint(endpoint);
-
+        Aws::Auth::AWSCredentials fake_credentials_for_fake_catalog;
         if (credentials.IsEmpty())
         {
             /// You can specify any key for fake moto glue, it's just important
             /// for it not to be empty.
-            credentials.SetAWSAccessKeyId("testing");
-            credentials.SetAWSSecretKey("testing");
+            fake_credentials_for_fake_catalog.SetAWSAccessKeyId("testing");
+            fake_credentials_for_fake_catalog.SetAWSSecretKey("testing");
         }
+        else
+            fake_credentials_for_fake_catalog = credentials;
 
-        Poco::URI uri(endpoint);
-        if (uri.getScheme() == "http")
-            poco_config.scheme = Aws::Http::Scheme::HTTP;
+        glue_client = std::make_unique<Aws::Glue::GlueClient>(fake_credentials_for_fake_catalog, endpoint_provider, client_configuration);
     }
     else
     {
         LOG_TRACE(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
+        auto credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
+        glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
     }
-
-    credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
-    glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
 
 }
 
@@ -175,7 +184,7 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
     DataLake::ICatalog::Namespaces result;
     Aws::Glue::Model::GetDatabasesRequest request;
     if (limit != 0)
-        request.SetMaxResults(static_cast<int>(limit));
+        request.SetMaxResults(limit);
 
     LOG_TEST(log, "Getting databases for prefix '{}'", prefix);
     std::string next_token;
@@ -220,7 +229,7 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     Aws::Glue::Model::GetTablesRequest request;
     request.SetDatabaseName(db_name);
     if (limit != 0)
-        request.SetMaxResults(static_cast<int>(limit));
+        request.SetMaxResults(limit);
 
     std::string next_token;
     do
@@ -288,6 +297,7 @@ bool GlueCatalog::tryGetTableMetadata(
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
+
 
     auto outcome = glue_client->GetTable(request);
     if (outcome.IsSuccess())
@@ -415,9 +425,8 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
 
     if (storage_type == StorageType::S3)
     {
-        auto credentials = credentials_provider->GetAWSCredentials();
-        auto s3_creds = std::make_shared<S3Credentials>(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken());
-        metadata.setStorageCredentials(s3_creds);
+        auto creds = std::make_shared<S3Credentials>(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken());
+        metadata.setStorageCredentials(creds);
     }
     else
     {
@@ -489,21 +498,16 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
 
     String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
     if (args.empty())
-        args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
+        args.emplace_back(std::make_shared<DB::ASTLiteral>(storage_endpoint));
     else
-        args[0] = DB::make_intrusive<DB::ASTLiteral>(storage_endpoint);
+        args[0] = std::make_shared<DB::ASTLiteral>(storage_endpoint);
 
     if (args.size() == 1)
     {
         if (table_metadata.hasStorageCredentials())
-        {
             table_metadata.getStorageCredentials()->addCredentialsToEngineArgs(args);
-        }
-        else
-        {
-            auto credentials = credentials_provider->GetAWSCredentials();
+        else if (!credentials.IsExpiredOrEmpty())
             DataLake::S3Credentials(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken()).addCredentialsToEngineArgs(args);
-        }
     }
 
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();

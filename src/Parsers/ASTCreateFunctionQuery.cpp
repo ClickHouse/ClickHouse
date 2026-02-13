@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTCreateFunctionQuery::clone() const
 {
-    auto res = make_intrusive<ASTCreateFunctionQuery>(*this);
+    auto res = std::make_shared<ASTCreateFunctionQuery>(*this);
     res->children.clear();
 
     res->function_name = function_name->clone();

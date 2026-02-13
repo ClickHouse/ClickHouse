@@ -192,19 +192,17 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
-        const auto file_size_str = file_size.has_value() ? toString(*file_size) : "Unknown";
         stop_reason = fmt::format(
-            "EOF (read offset: {}/{}, expected file size: {}, restricted seek: {})",
-            offset.load(), read_until_position.load(), file_size_str, restricted_seek);
+            "EOF (read offset: {}/{}, file size: {}, restricted seek: {})",
+            offset.load(), read_until_position.load(),
+            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
 
         release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
         /// We could get EOF only if read_until_position is not set,
         /// otherwise we'd quit before impl->next().
-        chassert(!read_until_position,
-                 fmt::format("Cannot read all data. Key: {}, size: {}, expected size: {}, position: {}/{}",
-                             key, getObjectSizeFromS3(), file_size_str, offset.load(), read_until_position.load()));
+        chassert(!read_until_position);
         return false;
     }
 
@@ -379,13 +377,10 @@ std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
     if (file_size)
         return file_size;
 
-    file_size = getObjectSizeFromS3();
-    return file_size;
-}
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
 
-size_t ReadBufferFromS3::getObjectSizeFromS3() const
-{
-    return S3::getObjectSize(*client_ptr, bucket, key, version_id);
+    file_size = object_size;
+    return file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()

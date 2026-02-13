@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB

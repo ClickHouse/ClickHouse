@@ -96,9 +96,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         if (options.contains("help"))
         {
-            std::cout << "Usage: clickhouse format [options] < query" << std::endl;
+            std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
             std::cout << desc << std::endl;
-            return 0;
+            return 1;
         }
 
         bool hilite = options.contains("hilite");

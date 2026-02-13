@@ -1,11 +1,12 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
+#include <Common/DateLUT.h>
+
+class DateLUTImpl;
 
 namespace DB
 {
-
-class DataTypeTime64;
 
 class SerializationTime64 final : public SerializationDecimalBase<Time64>
 {

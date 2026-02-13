@@ -398,9 +398,6 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
     auto & offsets_data = getOffsets();
     size_t nested_n = offsets_data.back() - offsetAt(offsets_data.size() - n);
     if (nested_n)
@@ -1351,7 +1348,7 @@ ColumnPtr ColumnArray::compress(bool force_compression) const
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
-    if (replicate_offsets.empty() || replicate_offsets.back() == 0)
+    if (replicate_offsets.empty())
         return cloneEmpty();
 
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
