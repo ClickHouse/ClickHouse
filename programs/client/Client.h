@@ -62,8 +62,6 @@ protected:
         std::vector<Arguments> & hosts_and_ports_arguments) override;
 
 private:
-    String getHelpHeader() const;
-    String getHelpFooter() const;
     void printChangedSettings() const;
     void showWarnings();
 #if USE_BUZZHOUSE
@@ -76,7 +74,7 @@ private:
 #endif
     std::vector<String> loadWarningMessages();
 
-    CurrentThread::QueryScope query_scope;
+    std::optional<CurrentThread::QueryScope> query_scope;
 
 #if USE_JWT_CPP && USE_SSL
     std::shared_ptr<JWTProvider> jwt_provider;

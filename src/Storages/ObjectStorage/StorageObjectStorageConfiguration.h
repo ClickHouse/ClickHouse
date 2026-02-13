@@ -228,14 +228,8 @@ public:
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const std::optional<FormatSettings> & /*format_settings*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
-    }
-    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
-    }
+        const std::optional<FormatSettings> & /*format_settings*/) {}
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
     virtual void checkAlterIsPossible(const AlterCommands & commands)
     {
@@ -264,11 +258,6 @@ public:
     virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
-    }
-
-    virtual bool supportsPrewhere() const
-    {
-        return true;
     }
 
     virtual void drop(ContextPtr) {}

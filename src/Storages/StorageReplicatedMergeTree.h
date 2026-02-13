@@ -1,5 +1,19 @@
 #pragma once
 
+#include <atomic>
+#include <expected>
+
+#include <base/UUID.h>
+#include <base/defines.h>
+#include <pcg_random.hpp>
+
+#include <Common/EventNotifier.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/Throttler.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/randomSeed.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
@@ -31,19 +45,6 @@
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/RenamingRestrictions.h>
 #include <Storages/TableZnodeInfo.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Common/EventNotifier.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/Throttler.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
-#include <Common/randomSeed.h>
-#include <base/UUID.h>
-#include <base/defines.h>
-
-#include <atomic>
-#include <expected>
-#include <pcg_random.hpp>
 
 
 namespace DB
@@ -682,10 +683,6 @@ private:
     MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry, PartsTemporaryRename & rename_parts) const;
 
     void executeDropRange(const LogEntry & entry);
-
-    /// Wait for parts in PreActive state within the drop range to finish committing.
-    /// This prevents a race between a concurrent INSERT and DROP_RANGE processing.
-    void waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const;
 
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.

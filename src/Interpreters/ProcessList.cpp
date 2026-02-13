@@ -22,7 +22,6 @@
 namespace CurrentMetrics
 {
     extern const Metric Query;
-    extern const Metric QueryNonInternal;
 }
 
 namespace DB
@@ -271,7 +270,7 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
+            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
@@ -286,9 +285,8 @@ ProcessList::EntryPtr ProcessList::insert(
                 if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
 
-                if (user_process_list.user_temp_data_on_disk)
-                    query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                        user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
+                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
+                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
 
             /// Set query-level memory trackers
@@ -485,9 +483,6 @@ QueryStatus::QueryStatus(
     , num_queries_increment(CurrentMetrics::Query)
     , is_internal(is_internal_)
 {
-    if (!is_internal)
-        num_non_internal_queries_increment.emplace(CurrentMetrics::QueryNonInternal);
-
     /// We have to pass `query_settings_` to this constructor because we can't use `context_->getSettings().max_execution_time` here:
     /// a QueryStatus is created with `ProcessList::mutex` locked (see ProcessList::insert) and calling `context_->getSettings()`
     /// would lock the context's lock too, whereas holding two those locks simultaneously is not good.
@@ -873,9 +868,8 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .metrics = {}, /// Metrics are set by child scopes
         };
 
-        if (auto shared_temp_data = global_context->getSharedTempDataOnDisk())
-            user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(shared_temp_data),
-                std::move(temporary_data_on_disk_settings));
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
+            std::move(temporary_data_on_disk_settings));
     }
 }
 

@@ -634,8 +634,8 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     LoadingStrictnessLevel mode,
     BrokenPartCallback broken_part_callback_)
-    : WithMutableContext(context_->getGlobalContext())
-    , IStorage(table_id_)
+    : IStorage(table_id_)
+    , WithMutableContext(context_->getGlobalContext())
     , format_version(date_column_name.empty() ? MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING : MERGE_TREE_DATA_OLD_FORMAT_VERSION)
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
@@ -647,8 +647,8 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
-    , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, getContext())
-    , background_moves_assignee(*this, table_id_, BackgroundJobsAssignee::Type::Moving, getContext())
+    , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
+    , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
 {
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
@@ -2470,12 +2470,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
+
+    startStatisticsCache((*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds());
 }
 
-void MergeTreeData::startStatisticsCache()
+void MergeTreeData::startStatisticsCache(UInt64 refresh_statistics_seconds)
 {
-    const auto settings = getSettings();
-    UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
     if (refresh_statistics_seconds && !refresh_stats_task)
     {
         LOG_INFO(log, "Start to refresh statistics");
@@ -5998,7 +5998,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & /*sizes_lock*/) const
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & /*parts_lock*/, std::unique_lock<std::mutex> & /*sizes_lock*/) const
 {
     if (are_columns_and_secondary_indices_sizes_calculated)
         return;
@@ -6012,14 +6012,9 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
     /// can read a column sample from each part, it can be slow and we don't want to
     /// do it under parts lock, so we create a copy of the data parts and release parts lock
     /// before calculation.
-    ///
-    /// Note, the result will be still correct, since it is guarded by the
-    /// columns_and_secondary_indices_sizes_mutex.
     if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr()->getSampleBlock()))
     {
         DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
-        parts_lock.unlock();
-
         for (const auto & part : data_parts)
             addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
     }
@@ -6029,7 +6024,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
             addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
     }
 
-    are_columns_and_secondary_indices_sizes_calculated = true;
+    are_columns_and_secondary_indices_sizes_calculated= true;
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
@@ -6059,8 +6054,6 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
         IndexSize part_index_size = part->getSecondaryIndexSize(index.name);
         total_secondary_index_size.add(part_index_size);
     }
-
-    primary_index_size.add(part->getIndexSizeFromFile());
 }
 
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
@@ -8132,8 +8125,6 @@ void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
     }
 
     clear();
-
-    data.preactive_parts_cv.notify_all();
 }
 
 void MergeTreeData::Transaction::clear()
@@ -8174,18 +8165,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             if (part->getDataPartStorage().hasActiveTransaction())
                 part->getDataPartStorage().commitTransaction();
 
-        /// Collect covered parts and call addNewPartAndRemoveCovered before NOEXCEPT_SCOPE,
-        /// because lockRemovalTID inside addNewPartAndRemoveCovered can throw SERIALIZATION_ERROR.
-        std::vector<DataPartsVector> covered_parts_for_commit;
-        covered_parts_for_commit.reserve(precommitted_parts.size());
-
-        for (const auto & part : precommitted_parts)
+        if (txn)
         {
-            DataPartPtr covering_part;
-            DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
-
-            if (txn)
+            for (const auto & part : precommitted_parts)
             {
+                DataPartPtr covering_part;
+                DataPartsVector covered_active_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
+
                 /// outdated parts should be also collected here
                 /// the visible outdated parts should be tried to be removed
                 /// more likely the conflict happens at the removing visible outdated parts, what is right actually
@@ -8195,15 +8181,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                          covered_outdated_parts.size(), part->getNameWithState(), txn->tid, txn->getSnapshot(), fmt::join(getPartsNames(covered_outdated_parts), ", "));
                 data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
 
+                DataPartsVector covered_parts;
+                covered_parts.reserve(covered_active_parts.size() + covered_outdated_parts.size());
+                std::move(covered_active_parts.begin(), covered_active_parts.end(), std::back_inserter(covered_parts));
                 std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
-            }
 
-            /// Call addNewPartAndRemoveCovered only if there's no covering part.
-            /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
-            if (!covering_part)
                 MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-
-            covered_parts_for_commit.push_back(std::move(covered_parts));
+            }
         }
 
         NOEXCEPT_SCOPE({
@@ -8217,7 +8201,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             size_t reduce_rows = 0;
             size_t reduce_parts = 0;
 
-            size_t part_idx = 0;
             for (const auto & part : precommitted_parts)
             {
                 DataPartPtr covering_part;
@@ -8237,9 +8220,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 }
                 else
                 {
-                    /// Use the covered parts computed before NOEXCEPT_SCOPE.
-                    /// addNewPartAndRemoveCovered was already called above (before NOEXCEPT_SCOPE).
-                    covered_parts = std::move(covered_parts_for_commit[part_idx]);
+                    if (!txn)
+                        MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, NO_TRANSACTION_RAW);
 
                     total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
                     for (const auto & covered_part : covered_parts)
@@ -8264,7 +8246,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                     data.addPartContributionToColumnAndSecondaryIndexSizes(part);
                     data.addPartContributionToUncompressedBytesInPatches(part);
                 }
-                ++part_idx;
             }
 
             data.updateSerializationHints(precommitted_parts, total_covered_parts, acquired_parts_lock);
@@ -8277,8 +8258,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
     }
 
     clear();
-
-    data.preactive_parts_cv.notify_all();
 
     return total_covered_parts;
 }
@@ -9192,8 +9171,7 @@ void MergeTreeData::writePartLog(
     const DataPartPtr & result_part,
     const DataPartsVector & source_parts,
     const MergeListEntry * merge_entry,
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-    const Strings & mutation_ids)
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters)
 try
 {
     auto table_id = getStorageID();
@@ -9266,8 +9244,6 @@ try
     {
         part_log_elem.profile_counters = profile_counters;
     }
-
-    part_log_elem.mutation_ids = mutation_ids;
 
     part_log->add(std::move(part_log_elem));
 }
@@ -10322,7 +10298,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
         /// New part have to capture its name, therefore there is no concurrentcy in directory creation
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "New empty part is about to materialize but the directory already exist"
+                        "New empty part is about to matirialize but the directory already exist"
                         ", new part {}"
                         ", directory {}",
                         new_part_name, new_data_part_storage->getFullPath());
@@ -10469,7 +10445,7 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
     return parts_to_clear.size();
 }
 
-void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
+void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key, const MergeTreeData::MergingParams & merging_params)
 {
     /// Aggregate functions already forbidden, but SimpleAggregateFunction are not
     for (const auto & data_type : sorting_key.data_types)
@@ -10477,6 +10453,9 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
         if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
+
+    if (sorting_key.data_types.empty() && merging_params.mode != MergingParams::Mode::Ordinary)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sorting key cannot be empty for MergeTree table with {} merging mode", merging_params.mode);
 }
 
 size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList & list) const noexcept

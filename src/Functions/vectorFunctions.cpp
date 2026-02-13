@@ -90,13 +90,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"left_tuple", &isTuple, nullptr, "Tuple"},
-            {"right_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
 
         const auto & left_types = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get())->getElements();
@@ -176,13 +169,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -250,14 +242,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"},
-            {"value", nullptr, nullptr, "Any"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
@@ -330,15 +320,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"left_tuple", &isTuple, nullptr, "Tuple"},
-            {"right_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+
+        if (!left_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
+        if (!right_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
+                            getName(), arguments[1].type->getName());
 
         const auto & left_types = left_tuple->getElements();
         const auto & right_types = right_tuple->getElements();
@@ -452,14 +443,18 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"date_or_datetime", &isDateOrDate32OrDateTimeOrDateTime64, nullptr, "Date, Date32, DateTime or DateTime64"},
-            {"intervals_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+                throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}. Should be a date or a date with time",
+                    arguments[0].type->getName(), getName()};
 
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+
+        if (!cur_tuple)
+            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of second argument of function {}. Should be a tuple",
+                    arguments[0].type->getName(), getName()};
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -714,13 +709,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
@@ -815,13 +809,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -967,13 +960,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -1072,14 +1064,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"tuple", &isTuple, nullptr, "Tuple"},
-            {"p", nullptr, nullptr, "Any"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
         const auto & cur_types = cur_tuple->getElements();
 
         Columns cur_elements;
@@ -1210,9 +1200,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionTupleMinus tuple_minus(context);
-        // Only pass the first two arguments (the tuples) to tupleMinus
-        ColumnsWithTypeAndName tuple_args{arguments[0], arguments[1]};
-        auto type = tuple_minus.getReturnTypeImpl(tuple_args);
+        auto type = tuple_minus.getReturnTypeImpl(arguments);
 
         ColumnWithTypeAndName minus_res{type, {}};
 
@@ -1226,10 +1214,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         FunctionTupleMinus tuple_minus(context);
-        // Only pass the first two arguments (the tuples) to tupleMinus
-        ColumnsWithTypeAndName tuple_args{arguments[0], arguments[1]};
-        auto type = tuple_minus.getReturnTypeImpl(tuple_args);
-        auto column = tuple_minus.executeImpl(tuple_args, DataTypePtr(), input_rows_count);
+        auto type = tuple_minus.getReturnTypeImpl(arguments);
+        auto column = tuple_minus.executeImpl(arguments, DataTypePtr(), input_rows_count);
 
         ColumnWithTypeAndName minus_res{column, type, {}};
 
@@ -1323,13 +1309,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"left_tuple", &isTuple, nullptr, "Tuple"},
-            {"right_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
         size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
         if (tuple_size == 0)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -2424,7 +2403,6 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceCosine", TupleOrArrayFunctionCosineDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
 

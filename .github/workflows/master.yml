@@ -25,7 +25,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -65,7 +65,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -105,7 +105,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -145,7 +145,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -185,7 +185,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -225,7 +225,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -265,7 +265,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -305,7 +305,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -345,7 +345,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -385,7 +385,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -425,7 +425,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -465,7 +465,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -505,7 +505,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -535,46 +535,6 @@ jobs:
             python3 -m praktika run 'Build (arm_binary)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_llvm_coverage_build:
-    runs-on: [self-hosted, amd-large]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGxsdm1fY292ZXJhZ2VfYnVpbGQp') }}
-    name: "Build (llvm_coverage_build)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (llvm_coverage_build)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (llvm_coverage_build)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   build_amd_release:
     runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
@@ -585,7 +545,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -625,7 +585,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -665,7 +625,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -705,7 +665,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -745,7 +705,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -785,7 +745,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -825,7 +785,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -865,7 +825,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -905,7 +865,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -945,7 +905,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -985,7 +945,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1025,7 +985,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1065,7 +1025,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1105,7 +1065,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1145,7 +1105,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1185,7 +1145,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1225,7 +1185,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1255,46 +1215,6 @@ jobs:
             python3 -m praktika run 'Unit tests (ubsan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  unit_tests_amd_llvm_coverage:
-    runs-on: [self-hosted, amd-large]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX2xsdm1fY292ZXJhZ2Up') }}
-    name: "Unit tests (amd_llvm_coverage)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Unit tests (amd_llvm_coverage)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Unit tests (amd_llvm_coverage)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   docker_server_image:
     runs-on: [self-hosted, style-checker]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_release, build_arm_release]
@@ -1305,7 +1225,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1345,7 +1265,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1385,7 +1305,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1425,7 +1345,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1465,7 +1385,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1505,7 +1425,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1545,7 +1465,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1585,7 +1505,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1625,7 +1545,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1665,7 +1585,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1705,7 +1625,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1745,7 +1665,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1785,7 +1705,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1825,7 +1745,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1865,7 +1785,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1905,7 +1825,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1945,7 +1865,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -1985,7 +1905,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2025,7 +1945,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2065,7 +1985,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2105,7 +2025,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2145,7 +2065,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2185,7 +2105,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2225,7 +2145,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2265,7 +2185,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2305,7 +2225,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2345,7 +2265,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2385,7 +2305,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2425,7 +2345,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2465,7 +2385,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2505,7 +2425,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2545,7 +2465,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2585,7 +2505,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2625,7 +2545,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2665,7 +2585,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2695,126 +2615,6 @@ jobs:
             python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_llvm_coverage_1_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMS8zKQ==') }}
-    name: "Stateless tests (amd_llvm_coverage, 1/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 1/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 1/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_llvm_coverage_2_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMi8zKQ==') }}
-    name: "Stateless tests (amd_llvm_coverage, 2/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 2/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 2/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  stateless_tests_amd_llvm_coverage_3_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMy8zKQ==') }}
-    name: "Stateless tests (amd_llvm_coverage, 3/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 3/3)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   stateless_tests_arm_asan_azure_parallel:
     runs-on: [self-hosted, arm-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_asan]
@@ -2825,7 +2625,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2865,7 +2665,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2905,7 +2705,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2945,7 +2745,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -2985,7 +2785,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3025,7 +2825,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3065,7 +2865,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3105,7 +2905,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3145,7 +2945,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3185,7 +2985,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3225,7 +3025,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3265,7 +3065,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3305,7 +3105,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3345,7 +3145,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3385,7 +3185,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3425,7 +3225,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3465,7 +3265,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3505,7 +3305,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3545,7 +3345,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3585,7 +3385,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3625,7 +3425,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3665,7 +3465,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3705,7 +3505,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3735,206 +3535,6 @@ jobs:
             python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_llvm_coverage_1_5:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAxLzUp') }}
-    name: "Integration tests (amd_llvm_coverage, 1/5)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 1/5)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 1/5)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  integration_tests_amd_llvm_coverage_2_5:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAyLzUp') }}
-    name: "Integration tests (amd_llvm_coverage, 2/5)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 2/5)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 2/5)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  integration_tests_amd_llvm_coverage_3_5:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAzLzUp') }}
-    name: "Integration tests (amd_llvm_coverage, 3/5)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 3/5)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 3/5)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  integration_tests_amd_llvm_coverage_4_5:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA0LzUp') }}
-    name: "Integration tests (amd_llvm_coverage, 4/5)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 4/5)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 4/5)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  integration_tests_amd_llvm_coverage_5_5:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA1LzUp') }}
-    name: "Integration tests (amd_llvm_coverage, 5/5)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 5/5)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_llvm_coverage, 5/5)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   stress_test_amd_debug:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_debug]
@@ -3945,7 +3545,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -3985,7 +3585,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4025,7 +3625,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4065,7 +3665,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4105,7 +3705,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4145,7 +3745,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4185,7 +3785,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4225,7 +3825,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4265,7 +3865,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4305,7 +3905,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4345,7 +3945,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4385,7 +3985,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4425,7 +4025,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4465,7 +4065,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4505,7 +4105,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4545,7 +4145,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4585,7 +4185,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4625,7 +4225,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4665,7 +4265,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4705,7 +4305,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4745,7 +4345,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4785,7 +4385,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4825,7 +4425,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4865,7 +4465,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4905,7 +4505,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4945,7 +4545,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -4985,7 +4585,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5025,7 +4625,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5065,7 +4665,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5105,7 +4705,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5145,7 +4745,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5185,7 +4785,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5225,7 +4825,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5265,7 +4865,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5305,7 +4905,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5345,7 +4945,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5385,7 +4985,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5425,7 +5025,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5465,7 +5065,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -5495,49 +5095,9 @@ jobs:
             python3 -m praktika run 'SQLTest' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  llvm_coverage_merge:
-    runs-on: [self-hosted, amd-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build, unit_tests_amd_llvm_coverage, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, integration_tests_amd_llvm_coverage_1_5, integration_tests_amd_llvm_coverage_2_5, integration_tests_amd_llvm_coverage_3_5, integration_tests_amd_llvm_coverage_4_5, integration_tests_amd_llvm_coverage_5_5]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TExWTSBDb3ZlcmFnZSBNZXJnZQ==') }}
-    name: "LLVM Coverage Merge"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'LLVM Coverage Merge' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'LLVM Coverage Merge' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_asan, build_arm_binary, build_llvm_coverage_build, build_amd_release, build_arm_release, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch64, build_arm_fuzzers, unit_tests_asan, unit_tests_tsan, unit_tests_msan, unit_tests_ubsan, unit_tests_amd_llvm_coverage, docker_server_image, docker_keeper_image, install_packages_amd_release, install_packages_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_amd_msan_parallel_1_2, stateless_tests_amd_msan_parallel_2_2, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_tsan_s3_storage_parallel_1_2, stateless_tests_amd_tsan_s3_storage_parallel_2_2, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, stateless_tests_arm_asan_azure_parallel, stateless_tests_arm_asan_azure_sequential, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_binary_1_5, integration_tests_amd_binary_2_5, integration_tests_amd_binary_3_5, integration_tests_amd_binary_4_5, integration_tests_amd_binary_5_5, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, integration_tests_amd_llvm_coverage_1_5, integration_tests_amd_llvm_coverage_2_5, integration_tests_amd_llvm_coverage_3_5, integration_tests_amd_llvm_coverage_4_5, integration_tests_amd_llvm_coverage_5_5, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_amd_ubsan, stress_test_amd_msan, stress_test_azure_amd_msan, stress_test_azure_amd_tsan, ast_fuzzer_amd_debug, ast_fuzzer_arm_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_arm_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan, performance_comparison_amd_release_master_head_1_6, performance_comparison_amd_release_master_head_2_6, performance_comparison_amd_release_master_head_3_6, performance_comparison_amd_release_master_head_4_6, performance_comparison_amd_release_master_head_5_6, performance_comparison_amd_release_master_head_6_6, performance_comparison_arm_release_master_head_1_6, performance_comparison_arm_release_master_head_2_6, performance_comparison_arm_release_master_head_3_6, performance_comparison_arm_release_master_head_4_6, performance_comparison_arm_release_master_head_5_6, performance_comparison_arm_release_master_head_6_6, performance_comparison_arm_release_release_base_1_6, performance_comparison_arm_release_release_base_2_6, performance_comparison_arm_release_release_base_3_6, performance_comparison_arm_release_release_base_4_6, performance_comparison_arm_release_release_base_5_6, performance_comparison_arm_release_release_base_6_6, clickbench_amd_release, clickbench_arm_release, sqltest, llvm_coverage_merge]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_tidy, build_amd_debug, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_asan, build_arm_binary, build_amd_release, build_arm_release, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch64, build_arm_fuzzers, unit_tests_asan, unit_tests_tsan, unit_tests_msan, unit_tests_ubsan, docker_server_image, docker_keeper_image, install_packages_amd_release, install_packages_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_amd_msan_parallel_1_2, stateless_tests_amd_msan_parallel_2_2, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_tsan_s3_storage_parallel_1_2, stateless_tests_amd_tsan_s3_storage_parallel_2_2, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, stateless_tests_arm_asan_azure_parallel, stateless_tests_arm_asan_azure_sequential, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_binary_1_5, integration_tests_amd_binary_2_5, integration_tests_amd_binary_3_5, integration_tests_amd_binary_4_5, integration_tests_amd_binary_5_5, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_amd_ubsan, stress_test_amd_msan, stress_test_azure_amd_msan, stress_test_azure_amd_tsan, ast_fuzzer_amd_debug, ast_fuzzer_arm_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_arm_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan, performance_comparison_amd_release_master_head_1_6, performance_comparison_amd_release_master_head_2_6, performance_comparison_amd_release_master_head_3_6, performance_comparison_amd_release_master_head_4_6, performance_comparison_amd_release_master_head_5_6, performance_comparison_amd_release_master_head_6_6, performance_comparison_arm_release_master_head_1_6, performance_comparison_arm_release_master_head_2_6, performance_comparison_arm_release_master_head_3_6, performance_comparison_arm_release_master_head_4_6, performance_comparison_arm_release_master_head_5_6, performance_comparison_arm_release_master_head_6_6, performance_comparison_arm_release_release_base_1_6, performance_comparison_arm_release_release_base_2_6, performance_comparison_arm_release_release_base_3_6, performance_comparison_arm_release_release_base_4_6, performance_comparison_arm_release_release_base_5_6, performance_comparison_arm_release_release_base_6_6, clickbench_amd_release, clickbench_arm_release, sqltest]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
@@ -5545,7 +5105,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 

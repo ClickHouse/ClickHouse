@@ -2273,28 +2273,19 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
     return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log.load(), cancellation_hook);
 }
 
-IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const
+UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const
 {
     auto metadata_snapshot = getMetadataSnapshot();
     const auto & pk = metadata_snapshot->getPrimaryKey();
 
     if (!pk.column_names.empty())
     {
-        auto bin_checksum = checksums.files.find("primary" + getIndexExtension(true));
-        if (bin_checksum == checksums.files.end())
-            bin_checksum = checksums.files.find("primary" + getIndexExtension(false));
-
-        if (bin_checksum != checksums.files.end())
-        {
-            return IndexSize{
-                .marks = index_granularity->getMarksCount(),
-                .data_compressed = bin_checksum->second.file_size,
-                .data_uncompressed = bin_checksum->second.uncompressed_size,
-            };
-        }
+        String file = "primary" + getIndexExtension(false);
+        if (checksums.files.contains("primary" + getIndexExtension(true)))
+            file = "primary" + getIndexExtension(true);
+        return getFileSizeOrZero(file);
     }
-
-    return {};
+    return 0;
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
@@ -2797,7 +2788,6 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     /// In JSON type there might be hundreds of small files that needs to be read.
     /// Set this to value from storage settings rather than true by default as this could cause starvation on huge JSON.
     settings.use_prefixes_deserialization_thread_pool = storage.getContext()->getSettingsRef()[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
-    settings.read_only_column_sample = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);

@@ -2,7 +2,6 @@
 
 #include <string>
 #include <Columns/IColumn_fwd.h>
-#include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Poco/Timespan.h>

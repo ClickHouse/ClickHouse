@@ -1,7 +1,6 @@
 #include <Formats/BuffersReader.h>
 #include <Formats/BuffersWriter.h>
 #include <Formats/FormatFactory.h>
-#include <IO/WithFileSize.h>
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>

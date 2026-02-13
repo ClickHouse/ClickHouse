@@ -437,13 +437,7 @@ void Client::refreshKeyTask()
             auto rsa_key = KeyPair::generateRSA(4096, RSA_F4);
             private_key = rsa_key.privateKey();
 
-            auto code = zk->tryCreate(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key, zkutil::CreateMode::Persistent);
-            if (code == Coordination::Error::ZNODEEXISTS)
-            {
-                /// Another node has already created the key, use it instead.
-                private_key.clear();
-                zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
-            }
+            zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
         }
     }
     catch (...)

@@ -123,7 +123,10 @@ public:
 
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
 
-    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
+    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)
+    {
+        dataflow_cache_updater = std::move(updater);
+    }
 
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }

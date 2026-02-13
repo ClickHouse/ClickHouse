@@ -19,7 +19,6 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>
@@ -53,8 +52,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
     extern DataLakeStorageSettingsString storage_aws_secret_access_key;
     extern DataLakeStorageSettingsString storage_region;
-    extern DataLakeStorageSettingsString storage_aws_role_arn;
-    extern DataLakeStorageSettingsString storage_aws_role_session_name;
     extern DataLakeStorageSettingsString storage_catalog_url;
     extern DataLakeStorageSettingsString storage_warehouse;
     extern DataLakeStorageSettingsString storage_catalog_credential;
@@ -330,8 +327,6 @@ public:
                 .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
                 .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
                 .region = (*settings)[DataLakeStorageSetting::storage_region].value,
-                .aws_role_arn = (*settings)[DataLakeStorageSetting::storage_aws_role_arn].value,
-                .aws_role_session_name = (*settings)[DataLakeStorageSetting::storage_aws_role_session_name].value
             };
 
             return std::make_shared<DataLake::GlueCatalog>(
@@ -379,15 +374,6 @@ public:
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
         ready_object_storage = disk->getObjectStorage();
-    }
-
-    bool supportsPrewhere() const override
-    {
-#if USE_AVRO
-        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
-#else
-        return false;
-#endif
     }
 
 private:

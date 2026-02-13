@@ -122,8 +122,6 @@ struct DataPartsSharedLock
     DataPartsSharedLock(DataPartsSharedLock &&) = default;
     DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
 
-    void unlock() { lock.unlock(); }
-
 private:
     std::optional<Stopwatch> wait_watch;
     std::shared_lock<DB::SharedMutex> lock;
@@ -190,7 +188,7 @@ public:
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public WithMutableContext, public IStorage, public IBackgroundOperation
+class MergeTreeData : public IStorage, public WithMutableContext
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -964,7 +962,7 @@ public:
         AlterLockHolder & table_lock_holder);
 
     static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
-    static void verifySortingKey(const KeyDescription & sorting_key);
+    static void verifySortingKey(const KeyDescription & sorting_key, const MergeTreeData::MergingParams & merging_params);
 
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
@@ -1060,15 +1058,6 @@ public:
         std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
         calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
         return secondary_index_sizes;
-    }
-
-    IndexSize getPrimaryIndexSize() const
-    {
-        /// Always keep locks order parts_lock -> sizes_lock
-        auto parts_lock = readLockParts();
-        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
-        calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
-        return primary_index_size;
     }
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
@@ -1289,8 +1278,10 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
+    /// Schedules background job to like merge/mutate/fetch an executor
+    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
     bool areBackgroundMovesNeeded() const;
 
 
@@ -1394,7 +1385,6 @@ private:
     mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
-    mutable IndexSize primary_index_size;
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
@@ -1479,10 +1469,6 @@ protected:
     /// Current set of data parts.
     /// On updates shared_parts_list/shared_ranges_in_parts should be reset (will be updated in getPossiblySharedVisibleDataPartsRanges())
     mutable DB::SharedMutex data_parts_mutex;
-
-    /// Notified when parts transition out of PreActive state (via Transaction::commit or rollback).
-    /// Used by waitForPreActivePartsInRange to avoid a race between INSERT and DROP_RANGE.
-    mutable std::condition_variable_any preactive_parts_cv;
 
     DataPartsIndexes data_parts_indexes;
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
@@ -1687,8 +1673,7 @@ protected:
         const DataPartPtr & result_part,
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
-        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-        const Strings & mutation_ids = {});
+        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
@@ -1836,7 +1821,7 @@ protected:
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
-    void startStatisticsCache();
+    void startStatisticsCache(UInt64 refresh_statistics_seconds);
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);

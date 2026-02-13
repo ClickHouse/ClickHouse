@@ -141,7 +141,7 @@ jobs:
       pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{{{ env.CHECKOUT_REF }}}}
 {JOB_ADDONS}
