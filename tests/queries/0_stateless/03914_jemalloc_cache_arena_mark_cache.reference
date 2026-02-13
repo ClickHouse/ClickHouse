@@ -1,0 +1,5 @@
+before_select	0
+after_select	1
+arena_active	1
+after_clear	0
+arena_reclaimed	1
