@@ -828,6 +828,11 @@
     </user_directories>
 
     <access_control_improvements>
+        <!-- Whether reading from a table should throw an exception if the table has row policies,
+             but none of them are for the current user.
+             By default this setting is false. -->
+        <throw_on_unmatched_row_policies>false</throw_on_unmatched_row_policies>
+
         <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
              For example, if there two users A, B and a row policy is defined only for A, then
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.

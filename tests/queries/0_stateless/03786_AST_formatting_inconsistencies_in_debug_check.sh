@@ -51,3 +51,6 @@ format_query "INSERT INTO tab2 SELECT * FROM tab EXCEPT SELECT * FROM tab;"
 
 # Test weird SELECT/EXCEPT/SELECT statement
 format_query "SELECT 1,2,3 EXCEPT SELECT 1,2,3;"
+
+# Allow alias in MODIFY ORDER BY
+format_query "ALTER TABLE \`t55\` (MODIFY ORDER BY ((\`c0\` AS \`a0\`)));"

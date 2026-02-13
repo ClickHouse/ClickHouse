@@ -83,6 +83,7 @@ public:
     Ptr cloneSelf() const;
 
     bool isAsyncInsert() const { return is_async_insert; }
+    bool isDisabled() const { return disabled; }
     struct FilterResult
     {
         std::shared_ptr<Block> filtered_block = nullptr;

@@ -16,19 +16,22 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct IdentityName
-{
-    static constexpr auto name = "identity";
-};
-
-template<typename Name>
 class FunctionIdentityBase : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentityBase<Name>>(); }
+    FunctionIdentityBase(const char * name_, [[maybe_unused]] bool is_identity_)
+        : function_name(name_)
+#if USE_EMBEDDED_COMPILER
+        , is_identity(is_identity_)
+#endif
+    {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr, const char * name, bool is_identity)
+    {
+        return std::make_shared<FunctionIdentityBase>(name, is_identity);
+    }
+
+    String getName() const override { return function_name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -46,7 +49,7 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & /*types*/, const DataTypePtr & result_type) const override
     {
-        return Name::name == IdentityName::name && canBeNativeType(result_type);
+        return is_identity && canBeNativeType(result_type);
     }
 
     llvm::Value *
@@ -55,26 +58,28 @@ public:
         return arguments[0].value;
     }
 #endif
+
+private:
+    const char * function_name;
+#if USE_EMBEDDED_COMPILER
+    bool is_identity;
+#endif
 };
 
 
-struct ScalarSubqueryResultName
-{
-    static constexpr auto name = "__scalarSubqueryResult";
-};
-
-using FunctionIdentity = FunctionIdentityBase<IdentityName>;
-using FunctionScalarSubqueryResult = FunctionIdentityBase<ScalarSubqueryResultName>;
-
-struct ActionNameName
-{
-    static constexpr auto name = "__actionName";
-};
-
-class FunctionActionName : public FunctionIdentityBase<ActionNameName>
+/// Default-constructible identity function, used as a template argument in FunctionMapToArrayAdapter
+class FunctionIdentity : public FunctionIdentityBase
 {
 public:
-    using FunctionIdentityBase::FunctionIdentityBase;
+    FunctionIdentity() : FunctionIdentityBase("identity", true) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentity>(); }
+};
+
+
+class FunctionActionName : public FunctionIdentityBase
+{
+public:
+    FunctionActionName() : FunctionIdentityBase("__actionName", false) {}
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionActionName>(); }
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
@@ -93,7 +98,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
         }
 
-        return FunctionIdentityBase<ActionNameName>::getReturnTypeImpl(arguments);
+        return FunctionIdentityBase::getReturnTypeImpl(arguments);
     }
 };
 

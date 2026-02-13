@@ -134,18 +134,43 @@ def create_parser():
 
     _yaml_parser = subparsers.add_parser("yaml", help="Generate YAML workflows")
 
-    # TODO: Merge with infra
-    _html_parser = subparsers.add_parser("html", help="Upload an HTML report page")
-    _html_parser.add_argument(
-        "--test",
-        action="store_true",
-        default="",
+    _infra_parser = subparsers.add_parser(
+        "infrastructure", help="Manage cloud infrastructure and HTML reports"
     )
-    _infra_parser = subparsers.add_parser("deploy", help="Deploy cloud infrastructure")
+    _infra_parser.add_argument(
+        "--deploy",
+        help="Deploy cloud infrastructure or upload HTML report",
+        action="store_true",
+        default=False,
+    )
+    _infra_parser.add_argument(
+        "--shutdown",
+        help="Terminate EC2 instances and/or release Dedicated Hosts",
+        action="store_true",
+        default=False,
+    )
     _infra_parser.add_argument(
         "--all",
+        help="Deploy all configured components (used with --deploy)",
         action="store_true",
-        default="",
+        default=False,
+    )
+    _infra_parser.add_argument(
+        "--only",
+        help=(
+            "Process only specified components (e.g. html ImageBuilder LaunchTemplate AutoScalingGroup Lambda DedicatedHost EC2Instance). "
+            "With --deploy: deploys only these components or uploads html report. "
+            "With --shutdown: releases DedicatedHost or terminates EC2Instance."
+        ),
+        nargs="+",
+        type=str,
+        default=None,
+    )
+    _infra_parser.add_argument(
+        "--test",
+        help="Test mode for HTML upload (creates _test.html variant)",
+        action="store_true",
+        default=False,
     )
     return parser
 
@@ -158,12 +183,47 @@ def main():
     if args.command == "yaml":
         Validator().validate()
         YamlGenerator().generate()
-    elif args.command == "deploy":
-        from .mangle import _get_infra_config
+    elif args.command == "infrastructure":
+        if not args.deploy and not args.shutdown:
+            Utils.raise_with_error(
+                "infrastructure command requires either --deploy or --shutdown flag"
+            )
 
-        _get_infra_config().deploy(all=args.all)
-    elif args.command == "html":
-        Html.prepare(args.test)
+        if args.deploy:
+            # Check if html is in the only list (case-insensitive)
+            normalized_only = (
+                [c.strip().lower() for c in args.only] if args.only else []
+            )
+            if normalized_only and "html" in normalized_only:
+                Html.prepare(args.test)
+                # Remove html from the list for subsequent infrastructure deployment
+                remaining_components = [
+                    c
+                    for c, normalized in zip(args.only, normalized_only)
+                    if normalized != "html"
+                ]
+                if remaining_components:
+                    from .mangle import _get_infra_config
+
+                    _get_infra_config().deploy(
+                        all=args.all,
+                        only=remaining_components,
+                    )
+            else:
+                from .mangle import _get_infra_config
+
+                _get_infra_config().deploy(
+                    all=args.all,
+                    only=args.only,
+                )
+
+        if args.shutdown:
+            from .mangle import _get_infra_config
+
+            _get_infra_config().shutdown(
+                force=True,
+                only=args.only,
+            )
     elif args.command == "run":
         from .mangle import _get_workflows
         from .runner import Runner
