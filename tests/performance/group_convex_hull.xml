@@ -1,0 +1,247 @@
+<test>
+    <settings>
+        <optimize_trivial_insert_select>0</optimize_trivial_insert_select>
+    </settings>
+
+    <!-- ================================================================== -->
+    <!-- Setup: tables with various geometry types                           -->
+    <!-- ================================================================== -->
+
+    <!-- Point input — 100K rows, scattered points -->
+    <create_query
+    >CREATE TABLE perf_ch_point (p Point) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_point
+        SELECT (
+            sin(number) * 1000 + cos(number * 7) * 500,
+            cos(number) * 1000 + sin(number * 13) * 500
+        )::Point
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Ring input — 100K rows, triangles at varying positions -->
+    <create_query
+    >CREATE TABLE perf_ch_ring (ring Ring) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_ring
+        SELECT
+            arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 2.5, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 0][i + 1]
+            ), range(4))
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Polygon input — 100K rows, simple squares -->
+    <create_query
+    >CREATE TABLE perf_ch_polygon (polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_polygon
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Complex polygons (180 vertices each) — 100K rows -->
+    <create_query
+    >CREATE TABLE perf_ch_poly_complex (polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_poly_complex
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number % 500) + cos(i / 90.0 * pi()) * (1 + number % 10),
+                toFloat64(intDiv(number, 500)) + sin(i / 90.0 * pi()) * (1 + number % 10)
+            ), range(180))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- MultiPolygon input — 100K rows -->
+    <create_query
+    >CREATE TABLE perf_ch_mpoly (mpoly MultiPolygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_mpoly
+        SELECT
+            [[arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- LineString input via WKT — 50K rows (smaller due to parsing overhead) -->
+    <create_query
+    >CREATE TABLE perf_ch_linestring (ls String) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_linestring
+        SELECT concat(
+            'LINESTRING (',
+            toString(number % 1000), ' ', toString(intDiv(number, 1000)), ', ',
+            toString(number % 1000 + 5), ' ', toString(intDiv(number, 1000)), ', ',
+            toString(number % 1000 + 5), ' ', toString(intDiv(number, 1000) + 5),
+            ')'
+        )
+        FROM numbers_mt(50000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- MultiLineString input via WKT — 50K rows -->
+    <create_query
+    >CREATE TABLE perf_ch_mlinestring (mls String) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_mlinestring
+        SELECT concat(
+            'MULTILINESTRING ((',
+            toString(number % 1000), ' ', toString(intDiv(number, 1000)), ', ',
+            toString(number % 1000 + 5), ' ', toString(intDiv(number, 1000)),
+            '), (',
+            toString(number % 1000), ' ', toString(intDiv(number, 1000) + 5), ', ',
+            toString(number % 1000 + 5), ' ', toString(intDiv(number, 1000) + 5),
+            '))'
+        )
+        FROM numbers_mt(50000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- GROUP BY tables -->
+
+    <!-- Points with 1000 groups — 100K rows -->
+    <create_query
+    >CREATE TABLE perf_ch_point_grouped (grp UInt32, p Point) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_point_grouped
+        SELECT
+            number % 1000 AS grp,
+            (sin(number) * 1000, cos(number) * 1000)::Point AS p
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Polygons with 1000 groups — 100K rows -->
+    <create_query
+    >CREATE TABLE perf_ch_poly_grouped (grp UInt32, polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_poly_grouped
+        SELECT
+            number % 1000 AS grp,
+            [arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Points with 10 groups — 100K rows (large groups) -->
+    <create_query
+    >CREATE TABLE perf_ch_point_grouped_10 (grp UInt32, p Point) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_point_grouped_10
+        SELECT
+            number % 10 AS grp,
+            (sin(number) * 1000 + cos(number * 7) * 500,
+             cos(number) * 1000 + sin(number * 13) * 500)::Point AS p
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- ================================================================== -->
+    <!-- Benchmark queries: basic input types                                -->
+    <!-- ================================================================== -->
+
+    <!-- Q1: Point input — baseline, most common use case -->
+    <query>SELECT groupConvexHull(p) FROM perf_ch_point FORMAT Null</query>
+
+    <!-- Q2: Ring input -->
+    <query>SELECT groupConvexHull(ring) FROM perf_ch_ring FORMAT Null</query>
+
+    <!-- Q3: Simple polygon input -->
+    <query
+    >SELECT groupConvexHull(polygon) FROM perf_ch_polygon FORMAT Null</query>
+
+    <!-- Q4: Complex polygon input (180 vertices each) -->
+    <query
+    >SELECT groupConvexHull(polygon) FROM perf_ch_poly_complex FORMAT Null</query>
+
+    <!-- Q5: MultiPolygon input -->
+    <query>SELECT groupConvexHull(mpoly) FROM perf_ch_mpoly FORMAT Null</query>
+
+    <!-- Q6: LineString input via readWKTLineString -->
+    <query
+    >SELECT groupConvexHull(readWKTLineString(ls)) FROM perf_ch_linestring FORMAT Null</query>
+
+    <!-- Q7: MultiLineString input via readWKTMultiLineString -->
+    <query
+    >SELECT groupConvexHull(readWKTMultiLineString(mls)) FROM perf_ch_mlinestring FORMAT Null</query>
+
+    <!-- ================================================================== -->
+    <!-- Benchmark queries: GROUP BY                                         -->
+    <!-- ================================================================== -->
+
+    <!-- Q8: Points grouped into 1000 groups (100 points per group) -->
+    <query
+    >SELECT grp, groupConvexHull(p) FROM perf_ch_point_grouped GROUP BY grp FORMAT Null</query>
+
+    <!-- Q9: Points grouped into 10 groups (10K points per group) -->
+    <query
+    >SELECT grp, groupConvexHull(p) FROM perf_ch_point_grouped_10 GROUP BY grp FORMAT Null</query>
+
+    <!-- Q10: Polygons grouped into 1000 groups -->
+    <query
+    >SELECT grp, groupConvexHull(polygon) FROM perf_ch_poly_grouped GROUP BY grp FORMAT Null</query>
+
+    <!-- ================================================================== -->
+    <!-- Benchmark queries: correct_geometry parameter                       -->
+    <!-- ================================================================== -->
+
+    <!-- Q11: Point with correct_geometry=1 (enabled) -->
+    <query>SELECT groupConvexHull(p, 1) FROM perf_ch_point FORMAT Null</query>
+
+    <!-- Q12: Point with correct_geometry=0 (disabled, should be faster) -->
+    <query>SELECT groupConvexHull(p, 0) FROM perf_ch_point FORMAT Null</query>
+
+    <!-- Q13: Ring with correct_geometry=0 -->
+    <query>SELECT groupConvexHull(ring, 0) FROM perf_ch_ring FORMAT Null</query>
+
+    <!-- Q14: Polygon with correct_geometry=0 -->
+    <query
+    >SELECT groupConvexHull(polygon, 0) FROM perf_ch_polygon FORMAT Null</query>
+
+    <!-- Q15: Complex polygon with correct_geometry=0 -->
+    <query
+    >SELECT groupConvexHull(polygon, 0) FROM perf_ch_poly_complex FORMAT Null</query>
+
+    <!-- Q16: MultiPolygon with correct_geometry=0 -->
+    <query
+    >SELECT groupConvexHull(mpoly, 0) FROM perf_ch_mpoly FORMAT Null</query>
+
+    <!-- Q17: GROUP BY with correct_geometry=0 -->
+    <query
+    >SELECT grp, groupConvexHull(p, 0) FROM perf_ch_point_grouped GROUP BY grp FORMAT Null</query>
+
+    <!-- Q18: GROUP BY (10 large groups) with correct_geometry=0 -->
+    <query
+    >SELECT grp, groupConvexHull(p, 0) FROM perf_ch_point_grouped_10 GROUP BY grp FORMAT Null</query>
+
+    <!-- ================================================================== -->
+    <!-- Teardown                                                            -->
+    <!-- ================================================================== -->
+
+    <drop_query>DROP TABLE IF EXISTS perf_ch_point</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_ring</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_polygon</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_poly_complex</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_mpoly</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_linestring</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_mlinestring</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_point_grouped</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_poly_grouped</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_point_grouped_10</drop_query>
+</test>
