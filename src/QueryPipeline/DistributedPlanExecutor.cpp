@@ -706,27 +706,21 @@ private:
 };
 
 
-/// Sends tasks to remote nodes.
-class DistributedQueryPlanExecutorRemote final : public DistributedQueryPlanExecutor
+class TaskToHostMap
 {
 public:
-    DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
-        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(is_cancelled_))
-        , running_tasks(8, context, is_cancelled, logger)
+    TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
     {
-        QueryStatusPtr query_status = context->getProcessListElement();
-
-        fillHostnames();
-        assignHostsForTasks();
+        fillHostnames(context_);
+        assignHostsForTasks(distributed_query_plan_);
     }
 
-    void cleanup() override
-    {
-        running_tasks.cancel();
-    }
+    const Strings & getHostnames() const { return hostnames; }
+    const std::unordered_map<String, String> & getTaskHosts() const { return task_hosts; }
+    const std::unordered_map<String, String> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
 
-protected:
-    void fillHostnames()
+private:
+    void fillHostnames(ContextPtr context)
     {
         if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
@@ -754,11 +748,9 @@ protected:
 
         if (hostnames.empty())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
-
-        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(hostnames, ", "));
     }
 
-    void assignHostsForTasks()
+    void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan)
     {
         size_t current_host = 0;
         for (const auto & [stage_id, stage] : distributed_query_plan.stages)
@@ -776,6 +768,32 @@ protected:
 //        exchange_stream_source_hosts[distributed_query_plan.final_result_stream_name] = getFQDNOrHostName();
     }
 
+private:
+    Strings hostnames;
+    std::unordered_map<String, String> task_hosts;
+    std::unordered_map<String, String> exchange_stream_source_hosts;
+};
+
+
+/// Sends tasks to remote nodes.
+class DistributedQueryPlanExecutorRemote final : public DistributedQueryPlanExecutor
+{
+public:
+    DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(is_cancelled_))
+        , task_to_host_map(distributed_query_plan_, context)
+        , running_tasks(8, context, is_cancelled, logger)
+    {
+        QueryStatusPtr query_status = context->getProcessListElement();
+        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(task_to_host_map.getHostnames(), ", "));
+    }
+
+    void cleanup() override
+    {
+        running_tasks.cancel();
+    }
+
+protected:
     struct RunningTaskInfo
     {
         String endpoint_uri;
@@ -1022,7 +1040,7 @@ protected:
 
     RunningTaskInfo startTask(const DistributedQueryTaskDescription & task_description)
     {
-        const String host = task_hosts.at(task_description.task.task_id);
+        const String host = task_to_host_map.getTaskHosts().at(task_description.task.task_id);
         String stateless_worker_endpoint_uri;
         {
             auto default_port = context->getInterserverIOAddress().second;
@@ -1066,7 +1084,7 @@ protected:
             for (const auto & input_stream : task.input_exchange_streams)
             {
                 String input_stream_name = input_stream.toString();
-                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = exchange_stream_source_hosts.at(input_stream_name);
+                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map.getExchangeStreamSourceHosts().at(input_stream_name);
             }
 
             running_tasks.addTask(stage_name, startTask(task_description));
@@ -1078,10 +1096,7 @@ protected:
         running_tasks.waitForStage(stage_name);
     }
 
-    Strings hostnames;
-    std::unordered_map<String, String> task_hosts;
-    std::unordered_map<String, String> exchange_stream_source_hosts;
-
+    const TaskToHostMap task_to_host_map;
     TaskTracker running_tasks;
 };
 
