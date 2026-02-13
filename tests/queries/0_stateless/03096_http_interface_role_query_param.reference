@@ -32,8 +32,8 @@ UNKNOWN_ROLE
 Code: 511
 UNKNOWN_ROLE
 ### Cannot set a role that is not granted to the user (single parameter)
-Code: 512
+Code: 770
 SET_NON_GRANTED_ROLE
 ### Cannot set a role that is not granted to the user (multiple parameters)
-Code: 512
+Code: 770
 SET_NON_GRANTED_ROLE

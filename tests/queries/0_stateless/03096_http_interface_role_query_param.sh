@@ -86,12 +86,12 @@ echo -ne $OUT | grep -o "UNKNOWN_ROLE"  || echo "expected UNKNOWN_ROLE error, go
 
 echo "### Cannot set a role that is not granted to the user (single parameter)"
 OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE_NOT_GRANTED" --data-binary "$SHOW_CURRENT_ROLES_QUERY")
-echo -ne $OUT | grep -o "Code: 512"            || echo "expected code 512, got: $OUT"
+echo -ne $OUT | grep -o "Code: 770"            || echo "expected code 770, got: $OUT"
 echo -ne $OUT | grep -o "SET_NON_GRANTED_ROLE" || echo "expected SET_NON_GRANTED_ROLE error, got: $OUT"
 
 echo "### Cannot set a role that is not granted to the user (multiple parameters)"
 OUT=$($CLICKHOUSE_CURL -u $TEST_USER_AUTH -sS "$CLICKHOUSE_URL&role=$TEST_ROLE1&role=$TEST_ROLE_NOT_GRANTED" --data-binary "$SHOW_CURRENT_ROLES_QUERY")
-echo -ne $OUT | grep -o "Code: 512"            || echo "expected code 512, got: $OUT"
+echo -ne $OUT | grep -o "Code: 770"            || echo "expected code 770, got: $OUT"
 echo -ne $OUT | grep -o "SET_NON_GRANTED_ROLE" || echo "expected SET_NON_GRANTED_ROLE error, got: $OUT"
 
 $CLICKHOUSE_CLIENT --query "
