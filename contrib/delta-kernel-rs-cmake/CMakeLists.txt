@@ -6,8 +6,7 @@ include(ExternalProject)
 
 set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
-# MSAN: Disabled because ring does not generate the appropriate symbols
-# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
+# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM (note: outdated with the switch back to `native-tls`)
 if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR NO_ARMV81_OR_HIGHER)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
@@ -36,7 +35,7 @@ corrosion_set_env_vars(delta_kernel_ffi
         "OPENSSL_LIBS=ssl:crypto"
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
-        "OPENSSL_INCLUDE_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/common/include/openssl")
+        "OPENSSL_INCLUDE_DIR=${OPENSSL_SOURCE_DIR}/include")
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)
