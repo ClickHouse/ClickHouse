@@ -74,7 +74,7 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
     auto patch_read_result = std::make_shared<PatchMergeReadResult>();
 
     const auto & sample_block = range_reader.getReadSampleBlock();
-    patch_read_result->block = sample_block.cloneWithColumns(read_result.columns);
+    patch_read_result->block = std::make_shared<const Block>(sample_block.cloneWithColumns(read_result.columns));
 
     patch_read_result->min_part_offset = 0;
     patch_read_result->max_part_offset = 0;

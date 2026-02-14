@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 
 namespace DB
 {
@@ -11,7 +12,7 @@ namespace DB
 struct PatchToApply
 {
     /// Blocks with data from patch parts.
-    std::vector<Block> patch_blocks;
+    std::vector<ConstBlockPtr> patch_blocks;
     /// Index of row to update in the result block.
     PaddedPODArray<UInt64> result_row_indices;
     /// Index of patch block to take the updated row from.
@@ -42,11 +43,11 @@ using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
 
 struct PatchMergeReadResult : public PatchReadResult
 {
-    Block block;
+    ConstBlockPtr block;
     UInt64 min_part_offset = 0;
     UInt64 max_part_offset = 0;
 
-    bool empty() const override { return block.rows() == 0; }
+    bool empty() const override { return !block || block->rows() == 0; }
 };
 
 struct PatchJoinReadResult : public PatchReadResult
@@ -57,7 +58,7 @@ struct PatchJoinReadResult : public PatchReadResult
 };
 
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
-PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
+PatchToApplyPtr applyPatchMerge(const Block & result_block, const ConstBlockPtr & patch_block, const PatchPartInfoForReader & patch);
 PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry);
 
 /// Updates rows in result_block from patch_block at specified indices.

@@ -91,7 +91,7 @@ private:
 
     PatchesToApply patches;
     /// Flattened blocks from all patches.
-    std::vector<Block> all_patch_blocks;
+    std::vector<ConstBlockPtr> all_patch_blocks;
     /// Index of block in the flattened patch blocks.
     IColumn::Offsets src_block_indices;
     /// Index of row in the patch block.
@@ -130,7 +130,7 @@ void CombinedPatchBuilder::build()
     }
 
     for (size_t i = 0; i < all_patch_blocks.size(); ++i)
-        versions[i] = &getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name);
+        versions[i] = &getColumnUInt64Data(*all_patch_blocks[i], PartDataVersionColumn::name);
 
     enum class RowOp
     {
@@ -232,8 +232,8 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
     {
         IColumn::Patch::Source source =
         {
-            .column = *patch_block.getByName(column_name).column,
-            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
+            .column = *patch_block->getByName(column_name).column,
+            .versions = getColumnUInt64Data(*patch_block, PartDataVersionColumn::name),
         };
 
         sources.push_back(std::move(source));
@@ -260,11 +260,11 @@ Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_c
 
         /// All blocks in one patch must have the same structure.
         for (size_t i = 1; i < patch->patch_blocks.size(); ++i)
-            assertCompatibleHeader(patch->patch_blocks[i], patch->patch_blocks[0], "patch parts");
+            assertCompatibleHeader(*patch->patch_blocks[i], *patch->patch_blocks[0], "patch parts");
 
-        Block header = patch->patch_blocks[0].cloneEmpty();
+        Block header = patch->patch_blocks[0]->cloneEmpty();
 
-        for (const auto & column : patch->patch_blocks[0])
+        for (const auto & column : *patch->patch_blocks[0])
         {
             /// Ignore columns that are not updated.
             if (!updated_columns.contains(column.name))
@@ -291,7 +291,7 @@ bool canApplyPatchesRaw(const PatchesToApply & patches)
 
         if (patches.size() > 1)
         {
-            for (const auto & column : patch->patch_blocks.front())
+            for (const auto & column : *patch->patch_blocks.front())
             {
                 if (!isPatchPartSystemColumn(column.name) && !canApplyPatchInplace(*column.column))
                     return false;
@@ -323,7 +323,7 @@ void applyPatchesToBlockRaw(
         for (const auto & patch_to_apply : patches)
         {
             chassert(patch_to_apply->patch_blocks.size() == 1);
-            const auto & patch_block = patch_to_apply->patch_blocks.front();
+            const auto & patch_block = *patch_to_apply->patch_blocks.front();
 
             IColumn::Patch::Source source =
             {
@@ -378,7 +378,7 @@ void applyPatchesToBlockCombined(
 
 }
 
-PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch)
+PatchToApplyPtr applyPatchMerge(const Block & result_block, const ConstBlockPtr & patch_block, const PatchPartInfoForReader & patch)
 {
     if (patch.source_parts.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Applying patch parts with mode {} requires only one part, got: {}", patch.mode, patch.source_parts.size());
@@ -386,16 +386,16 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
     auto patch_to_apply = std::make_shared<PatchToApply>();
 
     size_t num_rows = result_block.rows();
-    size_t patch_rows = patch_block.rows();
+    size_t patch_rows = patch_block->rows();
 
     if (num_rows == 0 || patch_rows == 0)
         return patch_to_apply;
 
-    patch_to_apply->patch_blocks.emplace_back(patch_block);
+    patch_to_apply->patch_blocks.push_back(patch_block);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesMergeMicroseconds);
 
-    const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_block.getByName("_part").column);
-    const auto & patch_offset_data = getColumnUInt64Data(patch_block, "_part_offset");
+    const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_block->getByName("_part").column);
+    const auto & patch_offset_data = getColumnUInt64Data(*patch_block, "_part_offset");
     const auto & result_offset_data = getColumnUInt64Data(result_block, "_part_offset");
 
     UInt64 first_result_offset = result_offset_data[0];
@@ -464,7 +464,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     for (const auto & block : join_entry.blocks)
     {
         if (block->rows() != 0)
-            patch_to_apply->patch_blocks.push_back(*block);
+            patch_to_apply->patch_blocks.push_back(block);
     }
 
     size_t num_rows = result_block.rows();
