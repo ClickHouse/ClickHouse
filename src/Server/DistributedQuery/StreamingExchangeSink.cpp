@@ -12,6 +12,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <sys/epoll.h>
+#include <unistd.h>
 
 
 namespace DB
@@ -31,13 +32,44 @@ StreamingExchangeSink::~StreamingExchangeSink()
 
 void StreamingExchangeSink::onStart()
 {
-    /// Set socket to non-blocking mode after handshake is finished.
-    socket.setBlocking(false);
-    socket.setSendBufferSize(1 * 1024 * 1024);
+    /// Try to extract socket from future connection
+    tryExtractSocket();
+}
 
-    /// Prepare initial in-memory buffer for serializing chunks
-    out = std::make_shared<WriteBufferFromOwnString>();
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket);
+void StreamingExchangeSink::tryExtractSocket()
+{
+    if (!socket && future_connection && future_connection->isReady())
+    {
+        LOG_TRACE(log, "Extracting socket from future connection for exchange stream {}", stream_name);
+        socket = future_connection->tryGetSocket();
+        if (!socket)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract socket from future connection");
+        }
+
+        /// Clear the eventfd by reading from it
+        int event_fd = future_connection->getEventFd();
+        uint64_t value;
+        ssize_t bytes_read = read(event_fd, &value, sizeof(value));
+        if (bytes_read != sizeof(value))
+        {
+            LOG_TEST(log, "Failed to clear eventfd, error {}", errno);
+        }
+
+        /// Clear the future connection as we no longer need it
+        future_connection.reset();
+    }
+
+    if (socket)
+    {
+        /// Set socket to non-blocking mode after handshake is finished.
+        socket->setBlocking(false);
+        socket->setSendBufferSize(1 * 1024 * 1024);
+
+        /// Prepare initial in-memory buffer for serializing chunks
+        out = std::make_shared<WriteBufferFromOwnString>();
+        in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+    }
 }
 
 /// Send data to socket until the buffer is empty or until socket would block.
@@ -52,7 +84,7 @@ void StreamingExchangeSink::sendToSocket()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No more data needed packet was not received");
 
             size_t bytes_to_send = current_send_buffer.size() - current_send_position_in_buffer;
-            ssize_t sent = socket.sendBytes(current_send_buffer.data() + current_send_position_in_buffer, static_cast<int>(bytes_to_send));
+            ssize_t sent = socket->sendBytes(current_send_buffer.data() + current_send_position_in_buffer, static_cast<int>(bytes_to_send));
             if (sent < 0)
             {
                 auto last_error = errno;
@@ -71,7 +103,7 @@ void StreamingExchangeSink::sendToSocket()
                 }
             }
 
-            LOG_TEST(log, "Sent {} bytes to exchange stream {}, fd: {}", sent, stream_name, socket.sockfd());
+            LOG_TEST(log, "Sent {} bytes to exchange stream {}, fd: {}", sent, stream_name, socket->sockfd());
 
             current_send_position_in_buffer += sent;
             total_bytes_sent += sent;
@@ -117,6 +149,10 @@ ISink::Status StreamingExchangeSink::prepare()
     if (!was_on_start_called)
         return Status::Ready;
 
+    /// If socket is not ready yet, wait for it
+    if (!socket)
+        return Status::Async;
+
     if (has_input)
         return canAddChunk() ? Status::Ready : Status::Async;
 
@@ -156,6 +192,13 @@ void StreamingExchangeSink::work()
     {
         was_on_start_called = true;
         onStart();
+        return;
+    }
+
+    /// Try to extract socket if not done yet
+    if (!socket)
+    {
+        tryExtractSocket();
         return;
     }
 
@@ -199,9 +242,23 @@ void StreamingExchangeSink::work()
 
 std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
 {
-    LOG_TEST(log, "Schedule exchange stream sink {}, fd: {}", stream_name, socket.sockfd());
+    /// If socket is not ready yet, wait on the eventfd
+    if (!socket && future_connection)
+    {
+        int fd = future_connection->getEventFd();
+        if (fd == -1)
+        {
+            /// Socket is already ready but we haven't extracted it yet
+            /// This shouldn't happen because prepare() should prevent calling scheduleForEvent in this state
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Socket is ready but scheduleForEvent was called before extraction");
+        }
+        LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
+        return {fd, EPOLL_EVENTS::EPOLLIN | EPOLL_EVENTS::EPOLLERR};
+    }
 
-    return {socket.sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
+    LOG_TEST(log, "Schedule exchange stream sink {}, fd: {}", stream_name, socket->sockfd());
+
+    return {socket->sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
 }
 
 void StreamingExchangeSink::consume(Chunk chunk)

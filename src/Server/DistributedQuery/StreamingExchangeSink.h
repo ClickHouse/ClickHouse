@@ -7,6 +7,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
+#include <Server/DistributedQuery/FutureConnection.h>
 
 namespace DB
 {
@@ -14,9 +15,9 @@ namespace DB
 class StreamingExchangeSink final : public ISink
 {
 public:
-    StreamingExchangeSink(SharedHeader header_, Poco::Net::StreamSocket socket_, String stream_name_)
+    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_)
         : ISink(std::move(header_))
-        , socket(socket_)
+        , future_connection(std::move(future_connection_))
         , stream_name(std::move(stream_name_))
     {
     }
@@ -43,7 +44,11 @@ private:
     /// Otherwise, need to wait on socket and then call this method again.
     void tryToSwitchSendBuffer();
 
-    Poco::Net::StreamSocket socket;
+    /// Try to extract socket from future connection if ready
+    void tryExtractSocket();
+
+    FutureConnectionPtr future_connection;
+    std::unique_ptr<Poco::Net::StreamSocket> socket;
     const String stream_name;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;

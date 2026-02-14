@@ -1,38 +1,72 @@
 #include <mutex>
 #include <Server/DistributedQuery/ExchangeConnections.h>
+#include <Server/DistributedQuery/FutureConnection.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TIMEOUT_EXCEEDED;
-}
-
 void ExchangeConnections::addConnection(const String & query_id, const String & exchange_stream_id, Poco::Net::StreamSocket socket)
 {
-    std::lock_guard lock(mutex);
-    auto & element = connections[query_id][exchange_stream_id];
-    element.promise.set_value(std::move(socket));
+    LOG_TRACE(log, "Adding connection for query id {} exchange stream {}", query_id, exchange_stream_id);
+
+    bool should_remove = false;
+    {
+        std::lock_guard lock(mutex);
+
+        /// Check if a FutureConnection already exists (getConnection was called first)
+        auto & element = connections[query_id][exchange_stream_id];
+        if (!element)
+        {
+            /// getConnection hasn't been called yet, create a new FutureConnection
+            /// and keep it in the map until getConnection is called
+            element = std::make_shared<FutureConnection>();
+        }
+
+        /// Set the socket on the future connection
+        element->setSocket(std::move(socket));
+
+        /// If getConnection was already called, we can remove the entry now
+        should_remove = element->wasRetrieved();
+    }
+
+    if (should_remove)
+    {
+        std::lock_guard lock(mutex);
+        connections[query_id].erase(exchange_stream_id);
+        if (connections[query_id].empty())
+            connections.erase(query_id);
+    }
 }
 
-Poco::Net::StreamSocket ExchangeConnections::getConnection(const String & query_id, const String & exchange_stream_id)
+FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, const String & exchange_stream_id)
 {
     LOG_TRACE(log, "Getting connection for query id {} exchange stream {}", query_id, exchange_stream_id);
 
-    std::shared_future<Poco::Net::StreamSocket> result;
+    FutureConnectionPtr result;
+    bool should_remove = false;
     {
         std::lock_guard lock(mutex);
+
+        /// Check if a FutureConnection already exists (addConnection was called first)
         auto & element = connections[query_id][exchange_stream_id];
-        result = element.future;
+        if (!element)
+        {
+            /// addConnection hasn't been called yet, create a new FutureConnection
+            /// It will be populated by addConnection later
+            element = std::make_shared<FutureConnection>();
+        }
+
+        /// Mark as retrieved
+        element->markRetrieved();
+
+        /// Get the FutureConnection to return
+        result = element;
+
+        /// If socket was already set (addConnection was called first), we can remove the entry now
+        should_remove = element->isReady();
     }
 
-    /// Wait until the connection is established
-    /// TODO: think how to replace this synchronous wait with returning "delayed" connection
-    if (result.wait_for(std::chrono::seconds(60)) != std::future_status::ready)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for connection to exchange stream {}", exchange_stream_id);
-
-    /// Remove the entry from the map
+    if (should_remove)
     {
         std::lock_guard lock(mutex);
         connections[query_id].erase(exchange_stream_id);
@@ -40,7 +74,7 @@ Poco::Net::StreamSocket ExchangeConnections::getConnection(const String & query_
             connections.erase(query_id);
     }
 
-    return result.get();
+    return result;
 }
 
 }

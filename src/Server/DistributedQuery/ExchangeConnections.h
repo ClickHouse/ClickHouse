@@ -3,6 +3,7 @@
 #include <Client/Connection.h>
 #include <base/defines.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Server/DistributedQuery/FutureConnection.h>
 
 #include <future>
 #include <memory>
@@ -26,17 +27,13 @@ public:
 
     void addConnection(const String & query_id, const String & exchange_stream_id, Poco::Net::StreamSocket socket);
 
-    Poco::Net::StreamSocket getConnection(const String & query_id, const String & exchange_stream_id);
+    /// Get a future connection that will be ready once the remote side connects.
+    /// Returns immediately without blocking.
+    FutureConnectionPtr getConnection(const String & query_id, const String & exchange_stream_id);
 
 private:
-    struct StreamConnection
-    {
-        std::promise<Poco::Net::StreamSocket> promise;
-        std::shared_future<Poco::Net::StreamSocket> future = promise.get_future();
-    };
-
     std::mutex mutex;
-    std::unordered_map<String, std::unordered_map<String, StreamConnection>> connections;
+    std::unordered_map<String, std::unordered_map<String, FutureConnectionPtr>> connections;
     LoggerPtr log = getLogger("ExchangeConnections");
 };
 
