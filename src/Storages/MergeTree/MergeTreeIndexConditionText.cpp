@@ -348,27 +348,109 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
     return rpn_stack[0].can_be_true;
 }
 
+static std::string formatTextSearchQueries(const std::vector<TextSearchQueryPtr> & queries)
+{
+    std::string result;
+
+    if (queries.size() > 5)
+    {
+        result += fmt::format("... {} text search queries ...", queries.size());
+        return result;
+    }
+
+    for (size_t i = 0; i < queries.size(); ++i)
+    {
+        if (i > 0)
+            result += " | ";
+
+        const auto & query = queries[i];
+        result += fmt::format("(search_mode: {}, direct_read: {}, tokens: [", query->search_mode, query->direct_read_mode);
+
+        if (query->tokens.size() > 50)
+        {
+            result += fmt::format("... {} tokens ...", query->tokens.size());
+        }
+        else
+        {
+            for (size_t j = 0; j < query->tokens.size(); ++j)
+            {
+                if (j > 0)
+                    result += ", ";
+                result += fmt::format("\"{}\"", query->tokens[j]);
+            }
+        }
+
+        result += "])";
+    }
+    return result;
+}
+
 std::string MergeTreeIndexConditionText::getDescription() const
 {
-    std::string description = fmt::format("(mode: {}; tokens: [", global_search_mode);
+    std::vector<std::string> stack;
 
-    if (all_search_tokens.size() > 50)
+    for (const auto & element : rpn)
     {
-        description += fmt::format("... {} tokens ...", all_search_tokens.size());
-    }
-    else
-    {
-        for (size_t i = 0; i < all_search_tokens.size(); ++i)
+        switch (element.function)
         {
-            if (i > 0)
-                description += ", ";
-
-            description += fmt::format("\"{}\"", all_search_tokens[i]);
+            case RPNElement::FUNCTION_EQUALS:
+            case RPNElement::FUNCTION_NOT_EQUALS:
+            case RPNElement::FUNCTION_HAS_ANY_TOKENS:
+            case RPNElement::FUNCTION_HAS_ALL_TOKENS:
+            case RPNElement::FUNCTION_IN:
+            case RPNElement::FUNCTION_NOT_IN:
+            case RPNElement::FUNCTION_MATCH:
+            {
+                stack.push_back(formatTextSearchQueries(element.text_search_queries));
+                break;
+            }
+            case RPNElement::FUNCTION_UNKNOWN:
+            {
+                stack.emplace_back("unknown");
+                break;
+            }
+            case RPNElement::FUNCTION_NOT:
+            {
+                chassert(!stack.empty());
+                auto arg = std::move(stack.back());
+                stack.back() = fmt::format("not({})", arg);
+                break;
+            }
+            case RPNElement::FUNCTION_AND:
+            {
+                chassert(stack.size() >= 2);
+                auto arg2 = std::move(stack.back());
+                stack.pop_back();
+                auto arg1 = std::move(stack.back());
+                stack.back() = fmt::format("and({}, {})", arg1, arg2);
+                break;
+            }
+            case RPNElement::FUNCTION_OR:
+            {
+                chassert(stack.size() >= 2);
+                auto arg2 = std::move(stack.back());
+                stack.pop_back();
+                auto arg1 = std::move(stack.back());
+                stack.back() = fmt::format("or({}, {})", arg1, arg2);
+                break;
+            }
+            case RPNElement::ALWAYS_FALSE:
+            {
+                stack.emplace_back("false");
+                break;
+            }
+            case RPNElement::ALWAYS_TRUE:
+            {
+                stack.emplace_back("true");
+                break;
+            }
         }
     }
 
-    description += "])";
-    return description;
+    if (stack.size() == 1)
+        return stack.front();
+
+    return "unknown";
 }
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
