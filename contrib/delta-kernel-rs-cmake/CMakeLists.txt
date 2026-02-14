@@ -35,7 +35,7 @@ corrosion_set_env_vars(delta_kernel_ffi
         "OPENSSL_LIBS=ssl:crypto"
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
-        "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl/include")
+        "OPENSSL_INCLUDE_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/common/include/")
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)
