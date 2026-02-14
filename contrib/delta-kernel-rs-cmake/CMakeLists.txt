@@ -38,7 +38,7 @@ corrosion_set_env_vars(delta_kernel_ffi
         "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/"
         # The build-script for `openssl-sys` expects all includes to be in one path
         # but the CMake build for OpenSSL results in headers in two different places
-        "CFLAGS=\"-I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/\"")
+        "CFLAGS=-I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/")
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)
