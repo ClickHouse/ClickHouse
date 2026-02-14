@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <cctype>
 #include <config.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
@@ -112,13 +113,32 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     return compression_method;
 }
 
+static bool isDigits(const String & value)
+{
+    return !value.empty() && std::all_of(value.begin(), value.end(), [](unsigned char ch) { return std::isdigit(ch); });
+}
+
+static String extractVersionStringFromMetadataFileName(const String & file_name)
+{
+    /// v<V>.metadata.json
+    if (file_name.starts_with('v'))
+    {
+        auto dot_pos = file_name.find('.');
+        return dot_pos == String::npos ? file_name.substr(1) : file_name.substr(1, dot_pos - 1);
+    }
+
+    /// <V>-<random-uuid>.metadata.json
+    auto dash_pos = file_name.find('-');
+    return dash_pos == String::npos ? file_name : file_name.substr(0, dash_pos);
+}
 
 static bool isTemporaryMetadataFile(const String & file_name)
 {
-    auto string_position = file_name.find_first_of('.');
-    if (string_position == String::npos)
-        return true;
-    String substring = String(file_name.begin(), file_name.begin() + string_position);
+    auto dot_pos = file_name.find('.');
+    if (dot_pos == String::npos || dot_pos == 0)
+        return false;
+
+    String substring = file_name.substr(0, dot_pos);
     return Poco::UUID{}.tryParse(substring);
 }
 
@@ -132,17 +152,12 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
             "Temporary metadata file '{}' should not be used for reading. It is created during commit operation and should be ignored",
             path);
     }
-    String version_str;
-    /// v<V>.metadata.json
-    if (file_name.starts_with('v'))
-        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
-    /// <V>-<random-uuid>.metadata.json
-    else
-        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
-
-    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
+    String version_str = extractVersionStringFromMetadataFileName(file_name);
+    if (!isDigits(version_str))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bad metadata file name: '{}'. Expected vN.metadata.json, N-<uuid>.metadata.json, or N where N is a number",
+            file_name);
 
     return MetadataFileWithInfo{
         .version = std::stoi(version_str),
