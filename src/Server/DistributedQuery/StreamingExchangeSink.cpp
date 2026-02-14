@@ -248,12 +248,13 @@ std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
         int fd = future_connection->getEventFd();
         if (fd == -1)
         {
-            /// Socket is already ready but we haven't extracted it yet
-            /// This shouldn't happen because prepare() should prevent calling scheduleForEvent in this state
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Socket is ready but scheduleForEvent was called before extraction");
+            tryExtractSocket();
         }
-        LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
-        return {fd, EPOLL_EVENTS::EPOLLIN | EPOLL_EVENTS::EPOLLERR};
+        else
+        {
+            LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
+            return {fd, EPOLL_EVENTS::EPOLLIN | EPOLL_EVENTS::EPOLLERR};
+        }
     }
 
     LOG_TEST(log, "Schedule exchange stream sink {}, fd: {}", stream_name, socket->sockfd());
