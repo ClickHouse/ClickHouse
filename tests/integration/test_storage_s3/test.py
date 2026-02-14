@@ -1287,6 +1287,36 @@ def test_url_reconnect_in_the_middle(started_cluster):
         assert result == "1000000\t3914219105369203805\n"
 
 
+def test_check_parquet_schema(started_cluster):
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    format_name = 'Parquet'
+    idx = random.randint(0, 1000000)
+    file_path = f'http://minio1:9001/root/test_parquet/test_check_parquet_schema_{idx}.parquet'
+    table_function = f"s3('{file_path}', structure='a Int32, b String', format='{format_name}')"
+    expected_lines = 15000
+    instance.query("DROP TABLE IF EXISTS t_s3_schema_test")
+    instance.query(f"""
+        CREATE TABLE t_s3_schema_test
+        (
+            a Int32,
+            b String
+        )
+        ENGINE = S3('{file_path}', '{format_name}')
+        SETTINGS s3_truncate_on_insert = 1
+    """)
+
+    exec_query_with_retry(
+        instance,
+        f"INSERT INTO t_s3_schema_test SELECT number, randomString(100) FROM numbers({expected_lines})",
+        timeout=300,
+    )
+
+    instance.query("DROP TABLE IF EXISTS test_check_parquet_schema")
+    instance.query_and_get_error(f"CREATE TABLE test_check_parquet_schema (a Int32, b String, c Int32) ENGINE = S3('{file_path}')")
+    instance.query_and_get_error(f"CREATE TABLE test_check_parquet_schema (d Int32, b String) ENGINE = S3('{file_path}')")
+    instance.query(f"CREATE TABLE test_check_parquet_schema (a Int32) ENGINE = S3('{file_path}')")
+
+
 # At the time of writing the actual read bytes are respectively 148 and 169, so -10% to not be flaky
 @pytest.mark.parametrize(
     "format_name,expected_bytes_read", [("Parquet", 133), ("ORC", 150)]

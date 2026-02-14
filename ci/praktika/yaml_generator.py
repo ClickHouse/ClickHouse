@@ -165,11 +165,9 @@ jobs:
         run: |
           . {ENV_SETUP_SCRIPT}
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
-          else
-            python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci 2>&1 | tee {TEMP_DIR}/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee {TEMP_DIR}/job.log
 {UPLOADS_GITHUB}\
 """
 

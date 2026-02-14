@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 
 #include <Functions/sparseGrams.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -32,6 +33,9 @@ public:
 
     virtual ~ITokenExtractor() = default;
     virtual std::unique_ptr<ITokenExtractor> clone() const = 0;
+
+    /// Returns a formatted description of the tokenizer with arguments.
+    virtual String getDescription() const = 0;
 
     /// Fast inplace implementation for regular use.
     /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
@@ -168,24 +172,6 @@ private:
     }
 };
 
-class TokenizerFactory : public boost::noncopyable
-{
-public:
-    static void isAllowedTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name);
-
-    static std::unique_ptr<ITokenExtractor> createTokenizer(
-            std::string_view tokenizer, /// internal or external tokenizer name
-            std::span<const Field> params,
-            const std::vector<String> & allowed_tokenizers,
-            std::string_view caller_name,
-            bool only_validate = false);
-
-private:
-    static UInt64 extractNgramParam(std::span<const Field> params);
-    static std::vector<String> extractSplitByStringParam(std::span<const Field> params);
-    static std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(std::span<const Field> params);
-};
-
 /// Parser extracting all ngrams from string.
 struct NgramsTokenExtractor final : public ITokenExtractorHelper<NgramsTokenExtractor>
 {
@@ -193,6 +179,7 @@ struct NgramsTokenExtractor final : public ITokenExtractorHelper<NgramsTokenExtr
 
     static const char * getName() { return "ngrambf_v1"; }
     static const char * getExternalName() { return "ngrams"; }
+    String getDescription() const override { return fmt::format("ngrams({})", n); }
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
@@ -211,6 +198,7 @@ struct SplitByNonAlphaTokenExtractor final : public ITokenExtractorHelper<SplitB
 
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "splitByNonAlpha"; }
+    String getDescription() const override { return "splitByNonAlpha"; }
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringPadded(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
@@ -229,6 +217,7 @@ struct SplitByStringTokenExtractor final : public ITokenExtractorHelper<SplitByS
 
     static const char * getName() { return "splitByString"; }
     static const char * getExternalName() { return getName(); }
+    String getDescription() const override;
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
@@ -245,6 +234,7 @@ struct ArrayTokenExtractor final : public ITokenExtractorHelper<ArrayTokenExtrac
 
     static const char * getName() { return "array"; }
     static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
@@ -262,13 +252,16 @@ struct SparseGramsTokenExtractor final : public ITokenExtractorHelper<SparseGram
     static const char * getName() { return "sparseGrams"; }
     static const char * getExternalName() { return getName(); }
 
+    String getDescription() const override;
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     std::vector<String> compactTokens(const std::vector<String> & tokens) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
-
 private:
+    size_t min_gram_length;
+    size_t max_gram_length;
+    std::optional<size_t> min_cutoff_length;
     mutable SparseGramsImpl<true> sparse_grams_iterator;
     mutable const char * previous_data = nullptr;
     mutable size_t previous_len = 0;

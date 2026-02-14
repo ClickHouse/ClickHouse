@@ -172,8 +172,8 @@ String PrometheusQueryTree::Subquery::dumpNode(const PrometheusQueryTree & tree,
 {
     String str = fmt::format("{}Subquery:", makeIndent(indent));
     str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
-    if (resolution)
-        str += fmt::format("\n{}resolution: {}", makeIndent(indent + 1), ::DB::toString(*resolution, tree.timestamp_scale));
+    if (step)
+        str += fmt::format("\n{}step: {}", makeIndent(indent + 1), ::DB::toString(*step, tree.timestamp_scale));
     str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
     return str;
 }

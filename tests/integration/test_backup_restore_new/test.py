@@ -2107,7 +2107,7 @@ def test_tables_dependency():
     for expect in expect_in_logs:
         assert any(
             [
-                instance.contains_in_log(f"RestorerFromBackup: {x}")
+                instance.contains_in_log(f"BackupMetadataFinder: {x}")
                 for x in tuple(expect)
             ]
         )

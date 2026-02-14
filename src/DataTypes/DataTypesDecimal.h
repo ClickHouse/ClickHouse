@@ -65,7 +65,7 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
     return typeid_cast<const DataTypeDecimal<T> *>(&data_type);
 }
 
-inline UInt32 getDecimalScale(const IDataType & data_type)
+inline std::optional<UInt32> tryGetDecimalScale(const IDataType & data_type)
 {
     if (const auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getScale();
@@ -79,6 +79,13 @@ inline UInt32 getDecimalScale(const IDataType & data_type)
         return date_time_type->getScale();
     if (const auto * time_type = typeid_cast<const DataTypeTime64 *>(&data_type))
         return time_type->getScale();
+    return {};
+}
+
+inline UInt32 getDecimalScale(const IDataType & data_type)
+{
+    if (auto scale = tryGetDecimalScale(data_type))
+        return *scale;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal scale from type {}", data_type.getName());
 }

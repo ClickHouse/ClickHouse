@@ -29,7 +29,7 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 
 namespace QueryPlanOptimizations
 {
-    class FullTextMatchingFunctionDAGReplacer;
+    class TextIndexDAGReplacer;
 }
 
 namespace JSONBuilder
@@ -133,6 +133,7 @@ public:
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
 
     const Nodes & getNodes() const { return nodes; }
+    NodeRawConstPtrs getNodesPointers() const;
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
     const NodeRawConstPtrs & getInputs() const { return inputs; }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
@@ -514,7 +515,7 @@ public:
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
 
-    friend class QueryPlanOptimizations::FullTextMatchingFunctionDAGReplacer;
+    friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 
     /* Create actions which calculate conjunction of selected nodes.
      * Conjunction nodes are assumed to be predicates that will be combined with AND if multiple.

@@ -115,14 +115,14 @@ public:
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
     };
 
-    /// Represents a subquery, i.e. <expression>[<range>:<resolution>]. Here resolution can be omitted, but the colon always presents.
+    /// Represents a subquery, i.e. <expression>[<range>:<step>]. Here step can be omitted, but the colon always presents.
     /// Examples: <expression>[1h:5m]
     ///           <expression>[1h:]
     class Subquery : public Node
     {
     public:
         DurationType range;
-        std::optional<DurationType> resolution;
+        std::optional<DurationType> step;
         const Node * getExpression() const { return children.at(0); }
         Subquery() { node_type = NodeType::Subquery; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;

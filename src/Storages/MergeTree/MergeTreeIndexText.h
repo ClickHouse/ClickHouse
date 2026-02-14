@@ -78,7 +78,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
-    String preprocessor;
+    ASTPtr preprocessor;
 };
 
 using PostingList = roaring::Roaring;
@@ -417,12 +417,6 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
-
-    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
-    /// 1. Arguments are named, e.g.: argument = value
-    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
-    /// 3. The preprocessor argument is a generic expression, e.g. lower(extractTextFromHTML(col))
-    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec.get(); }
 

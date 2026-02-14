@@ -455,7 +455,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
 {
     std::vector<String> tokens;
-    const String value = preprocessor->process(field.safeGet<String>());
+    const String value = preprocessor->processConstant(field.safeGet<String>());
     token_extractor->stringToTokens(value.data(), value.size(), tokens);
     return token_extractor->compactTokens(tokens);
 }
@@ -463,7 +463,7 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
 std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
 {
     std::vector<String> tokens;
-    const String value = preprocessor->process(field.safeGet<String>());
+    const String value = preprocessor->processConstant(field.safeGet<String>());
     token_extractor->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
     return token_extractor->compactTokens(tokens);
 }
@@ -471,7 +471,7 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
 std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
 {
     std::vector<String> tokens;
-    const String value = preprocessor->process(field.safeGet<String>());
+    const String value = preprocessor->processConstant(field.safeGet<String>());
     token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
     return token_extractor->compactTokens(tokens);
 }
@@ -486,9 +486,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
-    bool has_index_column = header.has(index_column_node.getColumnName());
-    bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_node.getColumnName()));
-    bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_node.getColumnName()));
+    auto index_column_name = index_column_node.getColumnName();
+    bool has_index_column = header.has(index_column_name);
+    bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_name));
+    bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_name));
 
     if (traverseMapElementValueNode(index_column_node, value_field))
     {
@@ -572,30 +573,15 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             }
         }
 
-        /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
-        const auto * function_dag_node = function_node.getDAGNode();
-        chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
-
-        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
-        chassert(adaptor != nullptr);
-
         if (function_name == "hasAnyTokens")
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, direct_read_mode, search_tokens));
-
-            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
-            search_function.setTokenExtractor(token_extractor->clone());
-            search_function.setSearchTokens(search_tokens);
         }
         else
         {
             out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, search_tokens));
-
-            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
-            search_function.setTokenExtractor(token_extractor->clone());
-            search_function.setSearchTokens(search_tokens);
         }
 
         return true;

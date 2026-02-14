@@ -567,6 +567,15 @@ void ActionsDAG::addOrReplaceInOutputs(const Node & node)
         outputs.push_back(&node);
 }
 
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getNodesPointers() const
+{
+    NodeRawConstPtrs result;
+    result.reserve(nodes.size());
+    for (const auto & node : nodes)
+        result.push_back(&node);
+    return result;
+}
+
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
 {
     NamesAndTypesList result;

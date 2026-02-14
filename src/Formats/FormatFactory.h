@@ -4,7 +4,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <base/types.h>
 #include <Common/Allocator.h>
 #include <Common/NamePrompter.h>
@@ -118,21 +117,11 @@ private:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info)>;
 
-    using RandomAccessInputCreatorWithMetadata = std::function<InputFormatPtr(
-        ReadBuffer & buf,
-        const Block & header,
-        const FormatSettings & settings,
-        const ReadSettings & read_settings,
-        bool is_remote_fs,
-        FormatParserSharedResourcesPtr parser_shared_resources,
-        FormatFilterInfoPtr format_filter_info,
-        const std::optional<RelativePathWithMetadata> & metadata)>;
-
     using OutputCreator = std::function<OutputFormatPtr(
-        WriteBuffer & buf,
-        const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr format_filter_info)>;
+            WriteBuffer & buf,
+            const Block & sample,
+            const FormatSettings & settings,
+            FormatFilterInfoPtr format_filter_info)>;
 
     /// Some input formats can have non trivial readPrefix() and readSuffix(),
     /// so in some cases there is no possibility to use parallel parsing.
@@ -146,10 +135,7 @@ private:
     /// Obtain HTTP content-type for the output format.
     using ContentTypeGetter = std::function<String(const std::optional<FormatSettings> & settings)>;
 
-    using SchemaReaderCreator = std::function<SchemaReaderPtr(
-        ReadBuffer & in,
-        const FormatSettings & settings)>;
-
+    using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
 
     /// Some formats can extract different schemas from the same source depending on
@@ -172,7 +158,6 @@ private:
         FileBucketInfoCreator file_bucket_info_creator;
         BucketSplitterCreator bucket_splitter_creator;
         RandomAccessInputCreator random_access_input_creator;
-        RandomAccessInputCreatorWithMetadata random_access_input_creator_with_metadata;
         OutputCreator output_creator;
         FileSegmentationEngineCreator file_segmentation_engine_creator;
         SchemaReaderCreator schema_reader_creator;
@@ -191,22 +176,6 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
     using FileExtensionFormats = std::unordered_map<String, String>;
 
-    InputFormatPtr getInputImpl(
-        const String & name,
-        ReadBuffer & buf,
-        const Block & sample,
-        const ContextPtr & context,
-        UInt64 max_block_size,
-        const std::optional<RelativePathWithMetadata> & metadata,
-        const std::optional<FormatSettings> & format_settings,
-        FormatParserSharedResourcesPtr parser_shared_resources,
-        FormatFilterInfoPtr format_filter_info,
-        bool is_remote_fs,
-        CompressionMethod compression,
-        bool need_only_count,
-        const std::optional<UInt64> & max_block_size_bytes,
-        const std::optional<UInt64> & min_block_size_rows,
-        const std::optional<UInt64> & min_block_size_bytes) const;
 public:
     static FormatFactory & instance();
 
@@ -222,27 +191,6 @@ public:
         const Block & sample,
         const ContextPtr & context,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt,
-        FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
-        FormatFilterInfoPtr format_filter_info = nullptr,
-        // affects things like buffer sizes and parallel reading
-        bool is_remote_fs = false,
-        // allows to do: buf -> parallel read -> decompression,
-        // because parallel read after decompression is not possible
-        CompressionMethod compression = CompressionMethod::None,
-        bool need_only_count = false,
-        const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
-        const std::optional<UInt64> & min_block_size_rows = std::nullopt,
-        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
-
-    /// overload for passing metadata from object storage
-    InputFormatPtr getInputWithMetadata(
-        const String & name,
-        ReadBuffer & buf,
-        const Block & sample,
-        const ContextPtr & context,
-        UInt64 max_block_size,
-        const std::optional<RelativePathWithMetadata> & metadata,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
         FormatFilterInfoPtr format_filter_info = nullptr,
@@ -279,14 +227,6 @@ public:
     /// Content-Type to set when sending HTTP response with this output format.
     String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
 
-    /// overload for formats that support object storage metadata
-    SchemaReaderPtr getSchemaReader(
-        const String & name,
-        ReadBuffer & buf,
-        const ContextPtr & context,
-        const RelativePathWithMetadata & metadata,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
-
     SchemaReaderPtr getSchemaReader(
         const String & name,
         ReadBuffer & buf,
@@ -315,7 +255,6 @@ public:
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
-    void registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator_with_metadata);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
     /// Register file extension for format

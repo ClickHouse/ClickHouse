@@ -920,9 +920,9 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 {
     double false_positive_rate = 0.025;
 
-    if (!index.arguments.empty())
+    if (index.arguments && !index.arguments->children.empty())
     {
-        const auto & argument = index.arguments[0];
+        auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
         false_positive_rate = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
     }
 
@@ -936,15 +936,15 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
 {
     assertIndexColumnsType(index.sample_block);
 
-    if (index.arguments.size() > 1)
+    if (index.arguments && index.arguments->children.size() > 1)
     {
         if (!attach) /// This is for backward compatibility.
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "BloomFilter index cannot have more than one parameter.");
     }
 
-    if (!index.arguments.empty())
+    if (index.arguments && !index.arguments->children.empty())
     {
-        const auto & argument = index.arguments[0];
+        auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
 
         if (!attach && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");

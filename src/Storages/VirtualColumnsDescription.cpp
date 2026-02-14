@@ -34,6 +34,14 @@ void VirtualColumnsDescription::addPersistent(String name, DataTypePtr type, AST
     add({std::move(name), std::move(type), std::move(codec), std::move(comment), VirtualsKind::Persistent});
 }
 
+std::optional<ColumnDefault> VirtualColumnsDescription::getDefault(const String & column_name) const
+{
+    auto it = container.get<1>().find(column_name);
+    if (it != container.get<1>().end() && it->default_desc.expression)
+        return it->default_desc;
+    return {};
+}
+
 std::optional<NameAndTypePair> VirtualColumnsDescription::tryGet(const String & name, VirtualsKind kind) const
 {
     auto it = container.get<1>().find(name);

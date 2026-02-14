@@ -99,3 +99,5 @@ Negative tests on preprocessor construction validations.
 - The preprocessor must have input and output values of the same type (here: String)
 - The preprocessor expression must use the column identifier
 - The preprocessor expression must use only deterministic functions
+- The preprocessor expression must be a function, not an identifier
+- The preprocessor expression must not contain arrayJoin

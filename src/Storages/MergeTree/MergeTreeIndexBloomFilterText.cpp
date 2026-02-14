@@ -4,6 +4,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -775,10 +776,14 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
 {
-    static std::vector<String> allowed_tokenizers
-        = {NgramsTokenExtractor::getName(), SplitByNonAlphaTokenExtractor::getName(), SparseGramsTokenExtractor::getBloomFilterIndexName()};
+    static std::set<ITokenExtractor::Type> allowed_tokenizers =
+    {
+        ITokenExtractor::Type::Ngrams,
+        ITokenExtractor::Type::SplitByNonAlpha,
+        ITokenExtractor::Type::SparseGrams
+    };
 
-    TokenizerFactory::isAllowedTokenizer(index.type, allowed_tokenizers, index.name);
+    FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
 
     size_t num_tokenizer_params = 0;
     /// Depending on tokenizer type, first n params are for tokenizer, then n, n+1, n+2 are for bloom filter
@@ -788,19 +793,20 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
         num_tokenizer_params = 0;
     else if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
     {
-        if (index.arguments.size() == 5)
+        if (args.size() == 5)
             num_tokenizer_params = 2;
         else
             num_tokenizer_params = 3;
     }
 
-    auto tokenizer = TokenizerFactory::createTokenizer(index.type, std::span(index.arguments).subspan(0, num_tokenizer_params), allowed_tokenizers, index.name);
+    FieldVector tokenizer_args(args.begin(), args.begin() + num_tokenizer_params);
+    auto tokenizer = TokenizerFactory::instance().get(index.type, tokenizer_args, allowed_tokenizers);
 
     size_t first_bf_param_idx = num_tokenizer_params;
     BloomFilterParameters params(
-        index.arguments[first_bf_param_idx].safeGet<size_t>(),
-        index.arguments[first_bf_param_idx+1].safeGet<size_t>(),
-        index.arguments[first_bf_param_idx+2].safeGet<size_t>());
+        args[first_bf_param_idx].safeGet<size_t>(),
+        args[first_bf_param_idx+1].safeGet<size_t>(),
+        args[first_bf_param_idx+2].safeGet<size_t>());
 
     return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
 }
@@ -827,14 +833,16 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
                 "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
+    FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+
     size_t first_bf_param_idx = 0;
 
     if (index.type == NgramsTokenExtractor::getName())
     {
-        if (index.arguments.size() != 4)
+        if (args.size() != 4)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ngrambf` index must have exactly 4 arguments");
 
-        UInt64 ngram_length = index.arguments[0].safeGet<UInt64>();
+        UInt64 ngram_length = args[0].safeGet<UInt64>();
         if (ngram_length < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ngram length must be at least 1");
 
@@ -842,17 +850,17 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
     }
     else if (index.type == SplitByNonAlphaTokenExtractor::getName())
     {
-        if (index.arguments.size() != 3)
+        if (args.size() != 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`tokenbf` index must have exactly 3 arguments");
 
         first_bf_param_idx = 0;
     }
     else if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
     {
-        if (index.arguments.size() != 5 && index.arguments.size() != 6)
+        if (args.size() != 5 && args.size() != 6)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`sparseGrams` index must have exactly 5 or 6 arguments");
 
-        if (index.arguments.size() == 5)
+        if (args.size() == 5)
             first_bf_param_idx = 2;
         else
             first_bf_param_idx = 3;
@@ -862,15 +870,15 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
     }
 
-    for (const auto & arg : index.arguments)
+    for (const auto & arg : args)
         if (arg.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "All parameters to *bf_v1 index must be unsigned integers");
 
     /// Just for validation
     BloomFilterParameters params(
-        index.arguments[first_bf_param_idx].safeGet<size_t>(),
-        index.arguments[first_bf_param_idx+1].safeGet<size_t>(),
-        index.arguments[first_bf_param_idx+2].safeGet<size_t>());
+        args[first_bf_param_idx].safeGet<size_t>(),
+        args[first_bf_param_idx+1].safeGet<size_t>(),
+        args[first_bf_param_idx+2].safeGet<size_t>());
 }
 
 }

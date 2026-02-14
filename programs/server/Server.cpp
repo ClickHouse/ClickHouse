@@ -262,10 +262,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
-    extern const ServerSettingsString parquet_metadata_cache_policy;
-    extern const ServerSettingsUInt64 parquet_metadata_cache_size;
-    extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
-    extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
@@ -2037,18 +2033,6 @@ try
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
-#endif
-#if USE_PARQUET
-    String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
-    size_t parquet_metadata_cache_size = server_settings[ServerSetting::parquet_metadata_cache_size];
-    size_t parquet_metadata_cache_max_entries = server_settings[ServerSetting::parquet_metadata_cache_max_entries];
-    double parquet_metadata_cache_size_ratio = server_settings[ServerSetting::parquet_metadata_cache_size_ratio];
-    if (parquet_metadata_cache_size > max_cache_size)
-    {
-        parquet_metadata_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_cache_size));
-    }
-    global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
 
     Names allowed_disks_table_engines;

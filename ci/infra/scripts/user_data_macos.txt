@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Script to prepare a clean macOS machine as a GitHub Actions runner
+# Based on prepare-ci-ami.sh but adapted for macOS
+
+set -xeuo pipefail
+
+echo "Running macOS runner prepare script"
+
+# Set HOME if not already set (EC2 user_data context may not have it)
+export HOME="${HOME:-/Users/ec2-user}"
+cd $HOME
+
+# If running as root, run brew/pip commands as ec2-user
+export USER="${SUDO_USER:-$(whoami)}"
+if [ "$EUID" -eq 0 ]; then
+  export USER="ec2-user"
+fi
+
+export RUNNER_VERSION=2.331.0
+export RUNNER_HOME="${HOME}/actions-runner"
+
+runner_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo x64;;
+    arm64 )
+      echo arm64;;
+  esac
+}
+
+cloudwatch_arch() {
+  case $(uname -m) in
+    x86_64 )
+      echo amd64;;
+    arm64 )
+      echo arm64;;
+  esac
+}
+
+# Check if already installed - if success marker exists, skip to cloud-init
+if [ -f /tmp/clickhouse-ci-macos-runner.success ]; then
+  echo "Success marker found - skipping installation steps"
+  echo "Jumping directly to cloud-init..."
+else
+  echo "No success marker found - proceeding with installation"
+
+  # Install Homebrew if not already installed
+  if ! sudo -u "$USER" -i command -v brew &> /dev/null; then
+    echo "Installing Homebrew..."
+    sudo -u "$USER" -i bash -c 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+
+    # Add Homebrew to PATH for Apple Silicon Macs
+    if [[ $(uname -m) == "arm64" ]]; then
+      sudo -u "$USER" -i bash -c "echo 'eval \"\$(/opt/homebrew/bin/brew shellenv)\"' >> ~/.zprofile"
+    fi
+  else
+    echo "Homebrew already installed"
+    sudo -u "$USER" -i brew update
+  fi
+
+  # Install essential tools
+  echo "Installing essential tools..."
+  sudo -u "$USER" -i brew install \
+    ca-certificates \
+    curl \
+    gh \
+    jq \
+    pigz \
+    ripgrep \
+    zstd \
+    python@3 \
+    wget \
+    unzip
+
+  # Install Python packages
+  echo "Installing Python packages..."
+  # Note: Skip pip upgrade as it's managed by Homebrew
+  if [ "$EUID" -eq 0 ]; then
+    sudo -u "$USER" -i bash -c 'pip3 install --break-system-packages boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt 2>/dev/null || pip3 install --user boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt'
+  else
+    pip3 install --break-system-packages boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt 2>/dev/null || pip3 install --user boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt
+  fi
+
+  # Download and install CloudWatch agent
+  echo "Installing Amazon CloudWatch agent..."
+  CLOUDWATCH_ARCH=$(cloudwatch_arch)
+  wget --directory-prefix=/tmp "https://s3.amazonaws.com/amazoncloudwatch-agent/darwin/${CLOUDWATCH_ARCH}/latest/amazon-cloudwatch-agent.pkg"
+  sudo installer -pkg /tmp/amazon-cloudwatch-agent.pkg -target /
+
+  # Download and configure CloudWatch agent config
+  aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text | sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null
+
+  # Start CloudWatch agent service
+  sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -s \
+    -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+  # Download and install GitHub Actions runner
+  echo "Installing GitHub Actions runner..."
+  rm -rf "$RUNNER_HOME"  # if it's a reinstall
+  mkdir -p "$RUNNER_HOME" && cd "$RUNNER_HOME"
+
+  RUNNER_ARCHIVE="actions-runner-osx-$(runner_arch)-$RUNNER_VERSION.tar.gz"
+
+  curl -O -L "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/$RUNNER_ARCHIVE"
+
+  tar xzf "./$RUNNER_ARCHIVE"
+  rm -f "./$RUNNER_ARCHIVE"
+
+  # Note: installdependencies.sh is Linux-only, macOS dependencies are handled via Homebrew above
+
+  echo "GitHub Actions runner installed at: $RUNNER_HOME"
+  echo ""
+  echo "To configure the runner, run:"
+  echo "  cd $RUNNER_HOME"
+  echo "  ./config.sh --url https://github.com/YOUR_ORG/YOUR_REPO --token YOUR_TOKEN"
+  echo ""
+  echo "To run the runner:"
+  echo "  cd $RUNNER_HOME"
+  echo "  ./run.sh"
+  echo ""
+  echo "To install as a service:"
+  echo "  cd $RUNNER_HOME"
+  echo "  ./svc.sh install"
+  echo "  ./svc.sh start"
+  echo ""
+
+  # Create a success marker
+  touch /tmp/clickhouse-ci-macos-runner.success
+  echo "Setup completed successfully!"
+fi
+
+# Download and execute cloud-init script
+INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
+aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
+exec python3 /tmp/runner-init.py --environment "$INIT_ENVIRONMENT"

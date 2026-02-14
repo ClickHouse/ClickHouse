@@ -301,6 +301,7 @@ add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
+add_object_library(clickhouse_storages_time_series_prometheus_query_to_sql Storages/TimeSeries/PrometheusQueryToSQL)
 add_object_library(clickhouse_storages_arrowflight Storages/ArrowFlight)
 add_object_library(clickhouse_client Client)
 # Always compile this file with the highest possible level of optimizations, even in Debug builds.

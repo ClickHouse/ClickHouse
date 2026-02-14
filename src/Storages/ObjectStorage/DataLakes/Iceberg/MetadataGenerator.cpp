@@ -157,7 +157,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto sum_with_parent_snapshot = [&](const char * field_name, Int64 snapshot_value)
     {
-        Int64 prev_value = parent_snapshot ? std::stoi(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
+        Int64 prev_value = parent_snapshot ? parse<Int64>(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
         summary->set(field_name, std::to_string(prev_value + snapshot_value));
     };
 

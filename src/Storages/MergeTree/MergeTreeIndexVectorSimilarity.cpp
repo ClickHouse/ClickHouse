@@ -566,20 +566,21 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 {
-    UInt64 dimensions = index.arguments[2].safeGet<UInt64>();
+    FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+    UInt64 dimensions = args[2].safeGet<UInt64>();
 
     /// Default parameters:
-    unum::usearch::metric_kind_t metric_kind = distanceFunctionToMetricKind.at(index.arguments[1].safeGet<String>());
+    unum::usearch::metric_kind_t metric_kind = distanceFunctionToMetricKind.at(args[1].safeGet<String>());
     unum::usearch::scalar_kind_t scalar_kind = unum::usearch::scalar_kind_t::bf16_k;
     UsearchHnswParams usearch_hnsw_params;
 
     /// Optional parameters:
-    const bool has_six_args = (index.arguments.size() == 6);
+    const bool has_six_args = (args.size() == 6);
     if (has_six_args)
     {
-        scalar_kind = quantizationToScalarKind.at(index.arguments[3].safeGet<String>());
-        usearch_hnsw_params = {.connectivity  = index.arguments[4].safeGet<UInt64>(),
-                               .expansion_add = index.arguments[5].safeGet<UInt64>()};
+        scalar_kind = quantizationToScalarKind.at(args[3].safeGet<String>());
+        usearch_hnsw_params = {.connectivity  = args[4].safeGet<UInt64>(),
+                               .expansion_add = args[5].safeGet<UInt64>()};
 
         /// Special handling for binary quantization:
         if (scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
@@ -591,52 +592,53 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
 {
-    const bool has_three_args = (index.arguments.size() == 3);
-    const bool has_six_args = (index.arguments.size() == 6);
+    FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+    const bool has_three_args = (args.size() == 3);
+    const bool has_six_args = (args.size() == 6);
 
     /// Check number and type of arguments
     if (!has_three_args && !has_six_args)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have three or six arguments");
-    if (index.arguments[0].getType() != Field::Types::String)
+    if (args[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (method) must be of type String");
-    if (index.arguments[1].getType() != Field::Types::String)
+    if (args[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
-    if (index.arguments[2].getType() != Field::Types::UInt64)
+    if (args[2].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (dimensions) must be of type UInt64");
     if (has_six_args)
     {
-        if (index.arguments[3].getType() != Field::Types::String)
+        if (args[3].getType() != Field::Types::String)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Fourth argument of vector similarity index (quantization) must be of type String");
-        if (index.arguments[4].getType() != Field::Types::UInt64)
+        if (args[4].getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Fifth argument of vector similarity index (hnsw_max_connections_per_layer) must be of type UInt64");
-        if (index.arguments[5].getType() != Field::Types::UInt64)
+        if (args[5].getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Sixth argument of vector similarity index (hnsw_candidate_list_size_for_construction) must be of type UInt64");
     }
 
     /// Check that passed arguments are supported
-    if (!methods.contains(index.arguments[0].safeGet<String>()))
+    if (!methods.contains(args[0].safeGet<String>()))
         throw Exception(ErrorCodes::INCORRECT_DATA, "First argument (method) of vector similarity index is not supported. Supported methods are: {}", joinByComma(methods));
-    if (!distanceFunctionToMetricKind.contains(index.arguments[1].safeGet<String>()))
+    if (!distanceFunctionToMetricKind.contains(args[1].safeGet<String>()))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector similarity index is not supported. Supported distance function are: {}", joinByComma(distanceFunctionToMetricKind));
-    if (index.arguments[2].safeGet<UInt64>() == 0)
+    if (args[2].safeGet<UInt64>() == 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (dimensions) of vector similarity index must be > 0");
     if (has_six_args)
     {
-        if (!quantizationToScalarKind.contains(index.arguments[3].safeGet<String>()))
+        if (!quantizationToScalarKind.contains(args[3].safeGet<String>()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
 
         /// More checks for binary quantization
-        if (quantizationToScalarKind.at(index.arguments[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k)
+        if (quantizationToScalarKind.at(args[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k)
         {
-            if (distanceFunctionToMetricKind.at(index.arguments[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
+            if (distanceFunctionToMetricKind.at(args[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index can only be used with the cosine distance as distance function");
-            if (index.arguments[2].safeGet<UInt64>() % 8 != 0)
+            if (args[2].safeGet<UInt64>() % 8 != 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index requires that the dimension is a multiple of 8");
         }
 
         /// Call Usearch's own parameter validation method for HNSW-specific parameters
-        UInt64 connectivity = index.arguments[4].safeGet<UInt64>();
-        UInt64 expansion_add = index.arguments[5].safeGet<UInt64>();
+        UInt64 connectivity = args[4].safeGet<UInt64>();
+        UInt64 expansion_add = args[5].safeGet<UInt64>();
         UInt64 expansion_search = default_expansion_search;
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)

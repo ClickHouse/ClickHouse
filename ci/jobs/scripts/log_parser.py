@@ -507,7 +507,9 @@ class FuzzerLogParser:
 
         if not (tables or table_files or table_finctions):
             print("WARNING: No tables found in query command")
-            return [failed_query + ";" if not failed_query.endswith(";") else failed_query]
+            return [
+                failed_query + ";" if not failed_query.endswith(";") else failed_query
+            ]
 
         # Get all write commands for found tables
         commands_to_reproduce = []
@@ -531,8 +533,7 @@ class FuzzerLogParser:
 
         # Ensure all commands end with a semicolon
         commands_to_reproduce = [
-            cmd + ";" if not cmd.endswith(";") else cmd
-            for cmd in commands_to_reproduce
+            cmd + ";" if not cmd.endswith(";") else cmd for cmd in commands_to_reproduce
         ]
 
         return commands_to_reproduce

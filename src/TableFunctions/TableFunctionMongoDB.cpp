@@ -16,6 +16,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/TableFunctionMongoDB.h>
 
 namespace DB
@@ -77,6 +78,18 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'mongodb' must have arguments.");
 
     ASTs & args = func_args.arguments->children;
+
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
+    {
+        if (!named_collection->has("structure"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required key (structure) is not specified.");
+
+        structure = named_collection->get<String>("structure");
+        named_collection->remove("structure");
+        configuration = std::make_shared<MongoDBConfiguration>(StorageMongoDB::getConfigurationFromCollection(named_collection, context));
+        return;
+    }
+
     if ((args.size() < 3 || args.size() > 4) && (args.size() < 6 || args.size() > 8))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Incorrect argument count for table function '{}'. Usage: "
@@ -84,6 +97,8 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
                         getName());
 
     ASTs main_arguments;
+    main_arguments.reserve(args.size() - 1);
+    const size_t structure_position = args.size() <= 4 ? 2 : 5;
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
@@ -94,9 +109,7 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
             else if (arg_name == "options" || arg_name == "oid_columns")
                 main_arguments.push_back(arg_value);
         }
-        else if (args.size() >= 6 && i == 5)
-            structure = checkAndGetLiteralArgument<String>(args[i], "structure");
-        else if (args.size() <= 4 && i == 2)
+        else if (i == structure_position)
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
         else
             main_arguments.push_back(args[i]);
@@ -131,6 +144,7 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory)
                     .examples = {
                         {"Fetch collection by URI", "SELECT * FROM mongodb('mongodb://root:clickhouse@localhost:27017/database', 'example_collection', 'key UInt64, data String')", ""},
                         {"Fetch collection over TLS", "SELECT * FROM mongodb('localhost:27017', 'database', 'example_collection', 'root', 'clickhouse', 'key UInt64, data String', 'tls=true')", ""},
+                        {"Fetch collection by named collection configuration with overrides", "SELECT * FROM mongodb(mongodb_creds, collection='example_collection', structure='key UInt64, data String')", ""},
                     },
                     .category = FunctionDocumentation::Category::TableFunction
             },

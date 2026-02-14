@@ -972,7 +972,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                         total_bytes += block.bytes();
                         auto ticket_info = calls_data->createTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
                         arrow::flight::FlightEndpoint endpoint;
-                        endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+                        endpoint.ticket = arrow::flight::Ticket{ticket_info->ticket};
                         endpoint.expiration_time = ticket_info->expiration_time;
                         endpoints.emplace_back(endpoint);
                     }
@@ -1132,7 +1132,7 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
             if (poll_info->ticket)
             {
                 arrow::flight::FlightEndpoint endpoint;
-                endpoint.ticket = arrow::flight::Ticket{.ticket = *poll_info->ticket};
+                endpoint.ticket = arrow::flight::Ticket{*poll_info->ticket};
                 endpoint.expiration_time = calls_data->getTicketExpirationTime(*poll_info->ticket);
                 endpoints.emplace_back(endpoint);
             }

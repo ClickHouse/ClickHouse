@@ -87,6 +87,9 @@ public:
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
+    TokenExtractorPtr getTokenExtractor() const { return token_extractor; }
+    MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
+
 private:
     /// Uses RPN like KeyCondition
     struct RPNElement

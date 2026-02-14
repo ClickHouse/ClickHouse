@@ -41,10 +41,13 @@ def run_endpoint(cluster):
     logging.info("S3 endpoint started")
 
 
-def fail_request(cluster, request):
+def fail_request(cluster, request, method=None):
+    url = "http://resolver:8080/fail_request/{}".format(request)
+    if method:
+        url += "/{}".format(method)
     response = cluster.exec_in_container(
         cluster.get_container_id("resolver"),
-        ["curl", "-s", "http://resolver:8080/fail_request/{}".format(request)],
+        ["curl", "-s", url],
     )
     assert response == "OK", 'Expected "OK", but got "{}"'.format(response)
 
@@ -133,8 +136,11 @@ def test_write_failover(
     success_count = 0
 
     for request in range(request_count + debug_request_count + 1):
-        # Fail N-th request to S3.
-        fail_request(cluster, request + 1)
+        # Fail N-th PUT request to S3.
+        # Use PUT method filter to avoid counting background GET/DELETE
+        # requests (e.g. cleanup of failed parts) that could consume the
+        # fail counter and make the test flaky.
+        fail_request(cluster, request + 1, "PUT")
 
         data = "('2020-03-01',0,'data'),('2020-03-01',1,'data')"
         try:

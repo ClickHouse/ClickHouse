@@ -26,42 +26,23 @@ namespace
   * notIn(x, set) - and NOT IN.
   */
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
-struct FunctionInName;
-
-template <> struct FunctionInName<false, false, true, false> { static constexpr auto name = "in"; };
-template <> struct FunctionInName<false, true, true, false> { static constexpr auto name = "globalIn"; };
-template <> struct FunctionInName<true, false, true, false> { static constexpr auto name = "notIn"; };
-template <> struct FunctionInName<true, true, true, false> { static constexpr auto name = "globalNotIn"; };
-template <> struct FunctionInName<false, false, false, false> { static constexpr auto name = "nullIn"; };
-template <> struct FunctionInName<false, true, false, false> { static constexpr auto name = "globalNullIn"; };
-template <> struct FunctionInName<true, false, false, false> { static constexpr auto name = "notNullIn"; };
-template <> struct FunctionInName<true, true, false, false> { static constexpr auto name = "globalNotNullIn"; };
-template <> struct FunctionInName<false, false, true, true> { static constexpr auto name = "inIgnoreSet"; };
-template <> struct FunctionInName<false, true, true, true> { static constexpr auto name = "globalInIgnoreSet"; };
-template <> struct FunctionInName<true, false, true, true> { static constexpr auto name = "notInIgnoreSet"; };
-template <> struct FunctionInName<true, true, true, true> { static constexpr auto name = "globalNotInIgnoreSet"; };
-template <> struct FunctionInName<false, false, false, true> { static constexpr auto name = "nullInIgnoreSet"; };
-template <> struct FunctionInName<false, true, false, true> { static constexpr auto name = "globalNullInIgnoreSet"; };
-template <> struct FunctionInName<true, false, false, true> { static constexpr auto name = "notNullInIgnoreSet"; };
-template <> struct FunctionInName<true, true, false, true> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
-
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
 class FunctionIn : public IFunction
 {
 public:
+    FunctionIn(String name_, bool negative_, bool null_is_skipped_, bool ignore_set_)
+        : function_name(std::move(name_)), negative(negative_), null_is_skipped(null_is_skipped_), ignore_set(ignore_set_) {}
+
     /// ignore_set flag means that we don't use set from the second argument, just return zero column.
     /// It is needed to perform type analysis without creation of set.
-    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(String name, bool negative, bool null_is_skipped, bool ignore_set)
     {
-        return std::make_shared<FunctionIn>();
+        return std::make_shared<FunctionIn>(std::move(name), negative, null_is_skipped, ignore_set);
     }
 
     String getName() const override
     {
-        return name;
+        return function_name;
     }
 
     size_t getNumberOfArguments() const override
@@ -104,7 +85,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
-        if constexpr (ignore_set)
+        if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         if (input_rows_count == 0)
             return ColumnUInt8::create();
@@ -168,12 +149,8 @@ public:
         if (columns_of_key_columns.size() == 1)
         {
             auto & arg = columns_of_key_columns.at(0);
-            const auto * col = arg.column.get();
-            if (const auto * const_col = typeid_cast<const ColumnConst *>(col))
-            {
-                col = &const_col->getDataColumn();
+            if (typeid_cast<const ColumnConst *>(arg.column.get()))
                 is_const = true;
-            }
         }
 
         auto res = set->execute(columns_of_key_columns, negative);
@@ -186,27 +163,42 @@ public:
 
         return res;
     }
+
+private:
+    String function_name;
+    bool negative;
+    bool null_is_skipped;
+    bool ignore_set;
 };
 
-template<bool ignore_set>
-void registerFunctionsInImpl(FunctionFactory & factory)
+void registerFunctionsInImpl(FunctionFactory & factory, bool ignore_set)
 {
-    factory.registerFunction<FunctionIn<false, false, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, true, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, false, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, true, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, false, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, true, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, false, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, true, false, ignore_set>>();
+    const char * suffix = ignore_set ? "IgnoreSet" : "";
+    auto reg = [&](const char * name, bool negative_, bool null_is_skipped_)
+    {
+        String full_name = String(name) + suffix;
+        factory.registerFunction(full_name, [negative_, null_is_skipped_, ignore_set, n = full_name](ContextPtr)
+        {
+            return FunctionIn::create(n, negative_, null_is_skipped_, ignore_set);
+        });
+    };
+
+    reg("in", false, true);
+    reg("globalIn", false, true);
+    reg("notIn", true, true);
+    reg("globalNotIn", true, true);
+    reg("nullIn", false, false);
+    reg("globalNullIn", false, false);
+    reg("notNullIn", true, false);
+    reg("globalNotNullIn", true, false);
 }
 
 }
 
 REGISTER_FUNCTION(In)
 {
-    registerFunctionsInImpl<false>(factory);
-    registerFunctionsInImpl<true>(factory);
+    registerFunctionsInImpl(factory, false);
+    registerFunctionsInImpl(factory, true);
 }
 
 }

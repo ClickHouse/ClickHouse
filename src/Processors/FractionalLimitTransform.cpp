@@ -15,6 +15,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void FractionalLimitTransform::finalizeLimits()
+{
+    /// Fractions depend on the final total number of rows, so we can only compute the integral
+    /// limit/offset once all input is read.
+    if (limits_are_final)
+        return;
+
+    limit_rows = static_cast<UInt64>(std::ceil(static_cast<double>(total_input_rows) * limit_fraction));
+    offset_rows += static_cast<UInt64>(std::ceil(static_cast<double>(total_input_rows) * offset_fraction));
+
+    if (with_ties && rows_processed < limit_rows + offset_rows)
+        ties_last_row = {};
+
+    limits_are_final = true;
+}
+
 FractionalLimitTransform::FractionalLimitTransform(
     SharedHeader header_,
     Float64 limit_fraction_,
@@ -26,7 +42,7 @@ FractionalLimitTransform::FractionalLimitTransform(
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , limit_fraction(limit_fraction_)
     , offset_fraction(offset_fraction_)
-    , offset(offset_)
+    , offset_rows(offset_)
     , with_ties(with_ties_)
     , limit_with_ties_sort_description(std::move(limit_with_ties_sort_description_))
 {
@@ -41,22 +57,22 @@ FractionalLimitTransform::FractionalLimitTransform(
 
     ports_data.resize(num_streams);
 
-    size_t cur_stream = 0;
+    size_t stream_idx = 0;
     for (auto & input : inputs)
     {
-        ports_data[cur_stream].input_port = &input;
-        ++cur_stream;
+        ports_data[stream_idx].input_port = &input;
+        ++stream_idx;
     }
 
-    cur_stream = 0;
+    stream_idx = 0;
     for (auto & output : outputs)
     {
-        ports_data[cur_stream].output_port = &output;
-        ++cur_stream;
+        ports_data[stream_idx].output_port = &output;
+        ++stream_idx;
     }
 
     for (const auto & desc : limit_with_ties_sort_description)
-        sort_column_positions.push_back(header_->getPositionByName(desc.column_name));
+        sort_key_positions.push_back(header_->getPositionByName(desc.column_name));
 }
 
 Chunk FractionalLimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
@@ -73,31 +89,35 @@ Chunk FractionalLimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UI
 }
 
 
-IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+FractionalLimitTransform::Status FractionalLimitTransform::prepare()
 {
-    /// Check can we still pull data from input?
-    if (num_finished_ports != ports_data.size())
+    if (allOutputsFinished())
     {
-        bool has_full_port = false;
-        auto process = [&](size_t pos)
+        /// Nobody needs data: stop sources.
+        for (auto & port : ports_data)
+            port.input_port->close();
+        return Status::Finished;
+    }
+
+    /// Check can we still pull data from input?
+    if (num_finished_input_ports != ports_data.size())
+    {
+        auto process_port = [&](size_t port_idx)
         {
-            auto status = pullData(ports_data[pos]);
+            auto status = pullData(ports_data[port_idx]);
 
             switch (status)
             {
                 case IProcessor::Status::Finished:
                 {
-                    if (!ports_data[pos].is_finished)
+                    if (!ports_data[port_idx].is_input_finished)
                     {
-                        ports_data[pos].is_finished = true;
-                        ++num_finished_ports;
+                        ports_data[port_idx].is_input_finished = true;
+                        ++num_finished_input_ports;
                     }
                     return;
                 }
                 case IProcessor::Status::NeedData:
-                    return;
-                case IProcessor::Status::PortFull:
-                    has_full_port = true;
                     return;
                 default:
                     throw Exception(
@@ -107,24 +127,93 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
             }
         };
 
-        for (auto pos : updated_input_ports)
-            process(pos);
+        for (size_t port_idx = 0; port_idx < ports_data.size(); ++port_idx)
+            process_port(port_idx);
 
-        for (auto pos : updated_output_ports)
-            process(pos);
+        /// Without fractional offset we can push chunks early before reading all inputs.
+        if (offset_fraction == 0.0)
+        {
+            bool pushed_any = false;
+            while (!cached_chunks.empty())
+            {
+                auto * output = getAvailableOutputPort();
+                if (!output)
+                {
+                    if (num_finished_input_ports == ports_data.size())
+                        finalizeLimits();
 
-        if (has_full_port)
-            return Status::PortFull;
+                    return Status::PortFull;
+                }
 
-        if (num_finished_ports != ports_data.size())
+                auto & front_chunk = cached_chunks.front();
+                UInt64 chunk_rows = front_chunk.getNumRows();
+
+                /// When integral OFFSET ends inside the first cached chunk, we must skip that prefix.
+                UInt64 offset_rows_remaining = 0;
+                if (rows_processed < offset_rows)
+                    offset_rows_remaining = offset_rows - rows_processed;
+
+                /// If we push this whole chunk now, would it exceed the current fractional LIMIT
+                /// computed from the number of rows already read?
+                const UInt64 limit_rows_for_current_input = static_cast<UInt64>(
+                    std::ceil(static_cast<double>(total_input_rows) * limit_fraction));
+                if (limit_rows_for_current_input + offset_rows_remaining < chunk_rows + early_pushed_rows)
+                    break;
+
+                /// If we still have an integral offset that didn't cause the chunk
+                /// to be dropped entirely above then its offset is in part of the chunk => split it
+                /// Notice that it only happens once
+                if (offset_rows_remaining)
+                {
+                    /// offset_rows_remaining is guaranteed to be < chunk_rows here: cached_chunks.front() is the
+                    /// first chunk that crosses the integral OFFSET boundary. Otherwise the whole chunk would still
+                    /// be within OFFSET and would have been dropped in pullData().
+                    if (offset_rows_remaining >= chunk_rows)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Remaining offset ({}) must be less than chunk rows ({})",
+                            offset_rows_remaining,
+                            chunk_rows);
+
+                    const UInt64 num_columns = front_chunk.getNumColumns();
+                    auto columns = front_chunk.detachColumns();
+
+                    const UInt64 rows_after_offset = chunk_rows - offset_rows_remaining;
+                    for (UInt64 i = 0; i < num_columns; ++i)
+                        columns[i] = columns[i]->cut(offset_rows_remaining, rows_after_offset);
+                    front_chunk.setColumns(std::move(columns), rows_after_offset);
+
+                    chunk_rows = rows_after_offset;
+                    rows_processed += offset_rows_remaining;
+                }
+
+                rows_processed += chunk_rows;
+                early_pushed_rows += chunk_rows;
+                if (with_ties && rows_processed == limit_rows_for_current_input + offset_rows)
+                    ties_last_row = makeChunkWithPreviousRow(front_chunk, chunk_rows - 1);
+
+                output->push(std::move(front_chunk));
+                cached_chunks.pop_front();
+                pushed_any = true;
+            }
+
+            if (pushed_any)
+            {
+                if (num_finished_input_ports == ports_data.size())
+                    finalizeLimits();
+                return Status::PortFull;
+            }
+        }
+
+        if (num_finished_input_ports != ports_data.size())
             /// Some input ports still available => we can read more data
             return Status::NeedData;
 
-        /// Calculate integral limit and offset values.
-        limit = static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * limit_fraction));
-        offset += static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * offset_fraction));
-        if (with_ties && rows_read_from_cache < limit + offset)
-            previous_row_chunk = {};
+        finalizeLimits();
+    }
+    else if (!limits_are_final)
+    {
+        finalizeLimits();
     }
 
     /// If we reached here all input ports are finished.
@@ -142,17 +231,43 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
     return Status::Finished;
 }
 
-FractionalLimitTransform::Status FractionalLimitTransform::prepare()
+bool FractionalLimitTransform::allOutputsFinished() const
 {
-    if (ports_data.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port FractionalLimitTransform");
+    for (const auto & data : ports_data)
+        if (!data.output_port->isFinished())
+            return false;
+    return true;
+}
 
-    return prepare({0}, {0});
+OutputPort * FractionalLimitTransform::getAvailableOutputPort()
+{
+    const size_t num_outputs = ports_data.size();
+
+    if (num_outputs == 0)
+        return nullptr;
+
+    for (size_t i = 0; i < num_outputs; ++i)
+    {
+        const size_t idx = (next_output_port + i) % num_outputs;
+
+        auto & output = *ports_data[idx].output_port;
+        if (output.isFinished())
+            continue;
+
+        if (!output.canPush())
+            continue;
+
+        next_output_port = (idx + 1) % num_outputs;
+        return &output;
+    }
+
+    return nullptr;
 }
 
 FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & data)
 {
     auto & input = *data.input_port;
+
     /// Check can input?
     if (input.isFinished())
         return Status::Finished;
@@ -163,20 +278,20 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
     data.current_chunk = input.pull();
 
-    auto rows = data.current_chunk.getNumRows();
+    const UInt64 chunk_rows = data.current_chunk.getNumRows();
 
     if (rows_before_limit_at_least)
-        rows_before_limit_at_least->add(rows);
+        rows_before_limit_at_least->add(chunk_rows);
 
     /// Process block.
 
-    rows_cnt += rows;
+    total_input_rows += chunk_rows;
 
     /// Ignore chunk if it should be offsetted
-    if (rows_cnt <= offset)
+    if (total_input_rows <= offset_rows)
     {
         /// As if it was put in cache then evicted due to offset.
-        rows_read_from_cache += rows;
+        rows_processed += chunk_rows;
 
         data.current_chunk.clear();
 
@@ -188,66 +303,17 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
         return Status::NeedData;
     }
 
-    chunks_cache.push_back({data.output_port, std::move(data.current_chunk)});
+    cached_chunks.push_back(std::move(data.current_chunk));
 
     /// This optimizes if offset_fraction is set but the above block optimizes if integral offset is set and both can't be non-zero.
     ///
     /// Detect blocks that will 100% get removed by the fractional offset and remove them as early as possible.
-    /// example: if we have 10 blocks with same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
-    while (!chunks_cache.empty() && static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * offset_fraction)) >= chunks_cache.front().chunk.getNumRows() + rows_read_from_cache)
+    /// Example: if we have 10 blocks with same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
+    const UInt64 fractional_offset_rows = static_cast<UInt64>(std::ceil(static_cast<double>(total_input_rows) * offset_fraction));
+    while (!cached_chunks.empty() && fractional_offset_rows >= cached_chunks.front().getNumRows() + rows_processed)
     {
-        rows_read_from_cache += chunks_cache.front().chunk.getNumRows();
-        chunks_cache.pop_front();
-    }
-
-    /// If offset_fraction is zero we can detect blocks that
-    /// will 100% get pushed and push them as early as possible.
-    if (offset_fraction == 0 && !chunks_cache.empty())
-    {
-        auto & output = *chunks_cache.front().output_port;
-        /// Check can output?
-        if (output.isFinished())
-        {
-            chunks_cache.pop_front();
-            return Status::Finished;
-        }
-        if (!output.canPush())
-            return Status::PortFull;
-
-        auto & cache_chunk = chunks_cache.front().chunk;
-        auto num_rows = cache_chunk.getNumRows();
-
-        UInt64 remaining_offset = 0;
-        if (rows_read_from_cache < offset)
-            remaining_offset = offset - rows_read_from_cache;
-
-        UInt64 curr_limit = static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * limit_fraction));
-        if (curr_limit + remaining_offset >= num_rows + outputed_rows_cnt)
-        {
-            /// If we still have an integral offset that didn't cause the chunk
-            /// to be dropped entirely above then its offset in part of the chunk => split it
-            if (remaining_offset)
-            {
-                auto num_columns = cache_chunk.getNumColumns();
-                auto columns = cache_chunk.detachColumns();
-
-                for (UInt64 i = 0; i < num_columns; ++i)
-                    columns[i] = columns[i]->cut(remaining_offset, num_rows - remaining_offset);
-                chunks_cache.front().chunk.setColumns(std::move(columns), num_rows - remaining_offset);
-
-                num_rows -= remaining_offset;
-                rows_read_from_cache += remaining_offset;
-            }
-
-            rows_read_from_cache += num_rows;
-            outputed_rows_cnt += num_rows;
-            if (with_ties && rows_read_from_cache == curr_limit + offset)
-                previous_row_chunk = makeChunkWithPreviousRow(chunks_cache.front().chunk, num_rows - 1);
-
-            output.push(std::move(chunks_cache.front().chunk));
-            chunks_cache.pop_front();
-            return Status::PortFull;
-        }
+        rows_processed += cached_chunks.front().getNumRows();
+        cached_chunks.pop_front();
     }
 
     if (input.isFinished())
@@ -259,63 +325,58 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
 FractionalLimitTransform::Status FractionalLimitTransform::pushData()
 {
-    /// If a specific output port is finished, drop all its chunks.
-    while (!chunks_cache.empty() && chunks_cache.front().output_port->isFinished())
-        chunks_cache.pop_front();
-
-    if (chunks_cache.empty())
-        return Status::Finished;
-
-    auto & output = *chunks_cache.front().output_port;
-
-    if (!output.canPush())
-        return Status::PortFull;
-
-    /// Check if we reached limit.
-    bool is_limit_reached = rows_read_from_cache >= offset + limit && !previous_row_chunk;
-    if (is_limit_reached)
+    /// Drain the cache while we have an output that can accept data. Return PortFull only if
+    /// all outputs are currently blocked; output finishing is handled by prepare().
+    while (!cached_chunks.empty())
     {
-        output.finish();
-        return Status::Finished;
+        /// Check if we reached limit.
+        const bool is_limit_reached = rows_processed >= offset_rows + limit_rows && !ties_last_row;
+        if (is_limit_reached)
+            return Status::Finished;
+
+        auto * output = getAvailableOutputPort();
+        if (!output)
+            return Status::PortFull;
+
+        /// The early removal of blocks by offset and fractional_offset at pullData() should have detected
+        /// all chunks that will be dropped entirely, but we may still need to offset inside the first block
+        /// and drop a portion of it.
+
+        auto & chunk = cached_chunks.front();
+        const UInt64 chunk_rows = chunk.getNumRows();
+        rows_processed += chunk_rows;
+
+        if (chunk_rows <= std::numeric_limits<UInt64>::max() - offset_rows && rows_processed >= offset_rows + chunk_rows
+            && rows_processed <= offset_rows + limit_rows)
+        {
+            /// Return the whole chunk.
+            /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
+            if (with_ties && rows_processed == offset_rows + limit_rows)
+                ties_last_row = makeChunkWithPreviousRow(chunk, chunk_rows - 1);
+        }
+        else
+            /// This function may be heavy to execute. But it happens no more than twice.
+            splitChunk(chunk);
+
+        output->push(std::move(chunk));
+        cached_chunks.pop_front();
     }
 
-    /// The early removal of blocks by offset and fractional_offset at pullData() should have detected
-    /// all chunks that will be dropped entirely, but we may still need to offset inside the first block
-    /// and drop a portion of it.
-
-    UInt64 rows = chunks_cache.front().chunk.getNumRows();
-    rows_read_from_cache += rows;
-
-    if (rows <= std::numeric_limits<UInt64>::max() - offset && rows_read_from_cache >= offset + rows && rows_read_from_cache <= offset + limit)
-    {
-        /// Return the whole chunk.
-
-        /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-        if (with_ties && rows_read_from_cache == offset + limit)
-            previous_row_chunk = makeChunkWithPreviousRow(chunks_cache.front().chunk, rows - 1);
-    }
-    else
-        /// This function may be heavy to execute in prepare. But it happens no more than twice, and makes code simpler.
-        splitChunk(chunks_cache.front().chunk);
-
-    output.push(std::move(chunks_cache.front().chunk));
-    chunks_cache.pop_front();
-
-    return Status::PortFull;
+    return Status::Finished;
 }
 
 
 void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
 {
     auto current_chunk_sort_columns = extractSortColumns(current_chunk.getColumns());
-    UInt64 num_rows = current_chunk.getNumRows();
-    UInt64 num_columns = current_chunk.getNumColumns();
+    const UInt64 chunk_rows = current_chunk.getNumRows();
+    const UInt64 num_columns = current_chunk.getNumColumns();
 
-    if (previous_row_chunk && rows_read_from_cache >= offset + limit)
+    if (ties_last_row && rows_processed >= offset_rows + limit_rows)
     {
-        /// Scan until the first row, which is not equal to previous_row_chunk (for WITH TIES)
+        /// Scan until the first row, which is not equal to ties_last_row (for WITH TIES)
         UInt64 current_row_num = 0;
-        for (; current_row_num < num_rows; ++current_row_num)
+        for (; current_row_num < chunk_rows; ++current_row_num)
         {
             if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
                 break;
@@ -323,9 +384,9 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
 
         auto columns = current_chunk.detachColumns();
 
-        if (current_row_num < num_rows)
+        if (current_row_num < chunk_rows)
         {
-            previous_row_chunk = {};
+            ties_last_row = {};
             for (UInt64 i = 0; i < num_columns; ++i)
                 columns[i] = columns[i]->cut(0, current_row_num);
         }
@@ -335,82 +396,82 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
     }
 
     /// return a piece of the block
-    UInt64 start = 0;
+    UInt64 cut_start = 0;
 
     /// ------------[....(...).]
-    /// <----------------------> rows_read_from_cache
-    ///             <----------> num_rows
-    /// <---------------> offset
-    ///             <---> start
+    /// <----------------------> rows_processed
+    ///             <----------> chunk_rows
+    /// <---------------> offset_rows
+    ///             <---> cut_start
 
-    assert(offset < rows_read_from_cache);
+    assert(offset_rows < rows_processed);
 
-    if (offset + num_rows > rows_read_from_cache)
-        start = offset + num_rows - rows_read_from_cache;
+    if (offset_rows + chunk_rows > rows_processed)
+        cut_start = offset_rows + chunk_rows - rows_processed;
 
     /// ------------[....(...).]
-    /// <----------------------> rows_read_from_cache
-    ///             <----------> num_rows
-    /// <---------------> offset
+    /// <----------------------> rows_processed
+    ///             <----------> chunk_rows
+    /// <---------------> offset_rows
     ///                  <---> limit
-    ///                  <---> length
-    ///             <---> start
+    ///                  <---> cut_length
+    ///             <---> cut_start
 
     /// Or:
 
     /// -----------------(------[....)....]
-    /// <---------------------------------> rows_read_from_cache
-    ///                         <---------> num_rows
-    /// <---------------> offset
+    /// <---------------------------------> rows_processed
+    ///                         <---------> chunk_rows
+    /// <---------------> offset_rows
     ///                  <-----------> limit
-    ///                         <----> length
-    ///                         0 = start
+    ///                         <----> cut_length
+    ///                         0 = cut_start
 
-    UInt64 length = num_rows - start;
+    UInt64 cut_length = chunk_rows - cut_start;
 
-    if (offset + limit < rows_read_from_cache)
+    if (offset_rows + limit_rows < rows_processed)
     {
-        if (offset + limit < rows_read_from_cache - num_rows)
-            length = 0;
+        if (offset_rows + limit_rows < rows_processed - chunk_rows)
+            cut_length = 0;
         else
-            length = offset + limit - (rows_read_from_cache - num_rows) - start;
+            cut_length = offset_rows + limit_rows - (rows_processed - chunk_rows) - cut_start;
     }
 
     /// Check if other rows in current block equals to last one in limit
-    /// when rows_read_from_cache >= offset + limit.
-    if (with_ties && offset + limit <= rows_read_from_cache && length)
+    /// when rows_processed >= offset_rows + limit_rows.
+    if (with_ties && offset_rows + limit_rows <= rows_processed && cut_length)
     {
-        UInt64 current_row_num = start + length;
-        previous_row_chunk = makeChunkWithPreviousRow(current_chunk, current_row_num - 1);
+        UInt64 current_row_num = cut_start + cut_length;
+        ties_last_row = makeChunkWithPreviousRow(current_chunk, current_row_num - 1);
 
-        for (; current_row_num < num_rows; ++current_row_num)
+        for (; current_row_num < chunk_rows; ++current_row_num)
         {
             if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
             {
-                previous_row_chunk = {};
+                ties_last_row = {};
                 break;
             }
         }
 
-        length = current_row_num - start;
+        cut_length = current_row_num - cut_start;
     }
 
-    if (length == num_rows)
+    if (cut_length == chunk_rows)
         return;
 
     auto columns = current_chunk.detachColumns();
 
     for (UInt64 i = 0; i < num_columns; ++i)
-        columns[i] = columns[i]->cut(start, length);
+        columns[i] = columns[i]->cut(cut_start, cut_length);
 
-    current_chunk.setColumns(std::move(columns), length);
+    current_chunk.setColumns(std::move(columns), cut_length);
 }
 
 ColumnRawPtrs FractionalLimitTransform::extractSortColumns(const Columns & columns) const
 {
     ColumnRawPtrs res;
     res.reserve(limit_with_ties_sort_description.size());
-    for (size_t pos : sort_column_positions)
+    for (size_t pos : sort_key_positions)
         res.push_back(columns[pos].get());
 
     return res;
@@ -418,11 +479,11 @@ ColumnRawPtrs FractionalLimitTransform::extractSortColumns(const Columns & colum
 
 bool FractionalLimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const
 {
-    assert(current_chunk_sort_columns.size() == previous_row_chunk.getNumColumns());
-    size_t size = current_chunk_sort_columns.size();
-    const auto & previous_row_sort_columns = previous_row_chunk.getColumns();
-    for (size_t i = 0; i < size; ++i)
-        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
+    assert(current_chunk_sort_columns.size() == ties_last_row.getNumColumns());
+    const size_t num_sort_columns = current_chunk_sort_columns.size();
+    const auto & ties_last_row_sort_columns = ties_last_row.getColumns();
+    for (size_t i = 0; i < num_sort_columns; ++i)
+        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *ties_last_row_sort_columns[i], 1))
             return false;
     return true;
 }

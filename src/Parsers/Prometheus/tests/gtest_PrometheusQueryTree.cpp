@@ -806,7 +806,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
             offset: 300
             Subquery:
                 range: 300
-                resolution: 10
+                step: 10
                 BinaryOperator(<)
                     BinaryOperator(-)
                         Function(time)
@@ -821,7 +821,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     Function(avg_over_time):
         Subquery:
             range: 120
-            resolution: 10
+            step: 10
             Function(rate):
                 RangeSelector:
                     range: 60
@@ -936,7 +936,7 @@ PrometheusQueryTree(RANGE_VECTOR):
         offset: -10
         Subquery:
             range: 300
-            resolution: 60
+            step: 60
             InstantSelector:
                 __name__ EQ 'http_requests_total'
 )");
