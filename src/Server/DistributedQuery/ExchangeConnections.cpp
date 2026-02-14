@@ -23,7 +23,7 @@ void ExchangeConnections::addConnection(const String & query_id, const String & 
         }
 
         /// Set the socket on the future connection
-        element->setSocket(std::move(socket));
+        element->setSocket(socket);
 
         /// If getConnection was already called, we can remove the entry now
         should_remove = element->wasRetrieved();
