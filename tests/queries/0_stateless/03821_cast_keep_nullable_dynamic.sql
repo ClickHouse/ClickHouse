@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-settings
 -- Tests for cast_keep_nullable with Dynamic/JSON types
 
 SET cast_keep_nullable = 1;
