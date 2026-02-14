@@ -7,6 +7,8 @@
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -19,9 +21,12 @@
 #include <Formats/NativeWriter.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <Common/PODArray.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -32,6 +37,8 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
@@ -88,6 +95,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool allow_suspicious_codecs;
@@ -97,8 +105,12 @@ namespace Setting
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsBool implicit_select;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool low_cardinality_allow_in_native_format;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool partial_result_on_first_cancel;
@@ -117,6 +129,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsBool detach_non_readonly_queries;
 }
 
 namespace ServerSetting
@@ -198,6 +211,34 @@ void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo &
         && (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
     {
         client_info.client_name = "ClickHouse client";
+    }
+}
+
+/// Returns true if the query is a "write" query (non-readonly), e.g. INSERT, INSERT...SELECT, DELETE, etc.
+bool isNonReadOnlyQuery(const IAST * ast)
+{
+    if (!ast)
+        return false;
+    switch (ast->getQueryKind())
+    {
+        case IAST::QueryKind::Insert:
+        case IAST::QueryKind::Delete:
+        case IAST::QueryKind::Update:
+        case IAST::QueryKind::Create:
+        case IAST::QueryKind::Drop:
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::Move:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Backup:
+        case IAST::QueryKind::Restore:
+        case IAST::QueryKind::Copy:
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -584,6 +625,68 @@ void TCPHandler::runImpl()
             /// If query received, then settings in query_context has been updated.
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(query_state->query_context);
+
+            /// Detach path: for non-readonly queries when detach_non_readonly_queries is on, run the query in a background thread and return query_id immediately.
+            /// Skip when async_insert is set (preserve async-insert queue semantics). Only detach when the query does not need data from the client (e.g. INSERT...SELECT, not INSERT FORMAT ...).
+            const auto & settings_ref = query_state->query_context->getSettingsRef();
+            if (settings_ref[Setting::detach_non_readonly_queries] && !settings_ref[Setting::async_insert])
+            {
+                try
+                {
+                    const size_t max_query_size = settings_ref[Setting::max_query_size] ? settings_ref[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+                    ParserQuery parser(query_state->query.data() + query_state->query.size(), settings_ref[Setting::allow_settings_after_format_in_insert], settings_ref[Setting::implicit_select]);
+                    ASTPtr ast = parseQuery(parser, query_state->query.data(), query_state->query.data() + query_state->query.size(), "", max_query_size, settings_ref[Setting::max_parser_depth], settings_ref[Setting::max_parser_backtracks]);
+
+                    if (ast && isNonReadOnlyQuery(ast.get()))
+                    {
+                        const auto * insert_ast = ast->as<ASTInsertQuery>();
+                        bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
+                        if (!insert_needs_client_data)
+                        {
+                            const String query_id = query_state->query_context->getClientInfo().current_query_id;
+                            ContextMutablePtr async_context = Context::createCopy(query_state->query_context);
+                            async_context->setProgressCallback(nullptr);
+                            String query_copy = query_state->query;
+
+                            std::thread([async_context, query_copy, query_id]()
+                            {
+                                setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
+                                ThreadStatus thread_status;
+                                CurrentThread::QueryScope async_query_scope = CurrentThread::QueryScope::create(async_context);
+                                try
+                                {
+                                    PODArray<char> discard_buf;
+                                    WriteBufferFromVector<PODArray<char>> discard_ostr(discard_buf);
+                                    executeQuery(
+                                        std::make_unique<ReadBufferFromString>(query_copy),
+                                        discard_ostr,
+                                        async_context, SetResultDetailsFunc{}, QueryFlags{}, std::nullopt,
+                                        HandleExceptionInOutputFormatFunc{}, QueryFinishCallback{}, HTTPContinueCallback{});
+                                }
+                                catch (...) { tryLogCurrentException(getLogger("TCPHandler"), "Detached native non-readonly query failed"); }
+                            }).detach();
+
+                            /// Send result block with query_id (single column, single row)
+                            auto col = ColumnString::create();
+                            col->insertData(query_id.data(), query_id.size());
+                            Block block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});
+
+                            {
+                                std::lock_guard lock(*callback_mutex);
+                                sendData(*query_state, block);
+                                sendLogs(*query_state);
+                                sendEndOfStream(*query_state);
+                                query_state->finalizeOut(out);
+                            }
+                            return;
+                        }
+                    }
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Cannot run native query in detach mode, falling back to sync");
+                }
+            }
 
             /// Sync timeouts on client and server during current query to avoid dangling queries on server.
             /// It should be reset at the end of query.

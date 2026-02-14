@@ -11,7 +11,9 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
@@ -24,6 +26,7 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
@@ -32,6 +35,9 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/IAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
@@ -50,6 +56,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 
@@ -59,10 +66,17 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool add_http_cors_header;
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool async_insert;
     extern const SettingsBool cancel_http_readonly_queries_on_client_close;
     extern const SettingsBool enable_http_compression;
+    extern const SettingsBool detach_non_readonly_queries;
+    extern const SettingsBool implicit_select;
     extern const SettingsUInt64 http_headers_progress_interval_ms;
     extern const SettingsUInt64 http_max_request_param_data_size;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
     extern const SettingsUInt64 http_response_buffer_size;
     extern const SettingsBool http_wait_end_of_query;
@@ -88,6 +102,35 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Returns true if the query is a "write" query (non-readonly), e.g. INSERT, INSERT...SELECT, DELETE, etc.
+bool isNonReadOnlyQuery(const IAST * ast)
+{
+    if (!ast)
+        return false;
+    switch (ast->getQueryKind())
+    {
+        case IAST::QueryKind::Insert:
+        case IAST::QueryKind::Delete:
+        case IAST::QueryKind::Update:
+        case IAST::QueryKind::Create:
+        case IAST::QueryKind::Drop:
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::Move:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Backup:
+        case IAST::QueryKind::Restore:
+        case IAST::QueryKind::Copy:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (config.has("http_options_response"))
@@ -263,7 +306,7 @@ void HTTPHandler::processQuery(
 
         /// Some parameters (database, default_format, everything used in the code above) do not
         /// belong to the Settings class.
-        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
+        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "query", "stacktrace", "role",
             "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
             "database", "default_format"};
 
@@ -445,7 +488,27 @@ void HTTPHandler::processQuery(
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
-    const auto & query = getQuery(request, params, context);
+    constexpr size_t max_post_body_size = 128 * 1024 * 1024; // 128 MiB
+    String query = getQuery(request, params, context);
+    /// When query is only in POST body (no ?query= in URL), getQuery() returns empty because
+    /// HTMLForm only parses the URI. Read the body once here so the rest of the handler (and detach path) can use it.
+    /// Skip when decompress=1: the body is in compressed format and must be consumed by the normal pipeline, not as raw query text.
+    /// Skip when async_insert=1: the body is query+data for the async-insert queue and must be read by that pipeline.
+    bool query_from_body = false;
+    if (query.empty()
+        && request.getMethod() == HTTPServerRequest::HTTP_POST
+        && !has_external_data
+        && !params.getParsedLast<bool>("decompress", false)
+        && !settings[Setting::async_insert])
+    {
+        WriteBufferFromOwnString body_query;
+        LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
+        copyData(limit, body_query);
+        query = body_query.str();
+        boost::trim_right(query);
+        if (!query.empty())
+            query_from_body = true;
+    }
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
@@ -491,6 +554,114 @@ void HTTPHandler::processQuery(
             if (!request.checkPeerConnected())
                 context->killCurrentQuery();
         });
+    }
+
+    /// Detach path: for non-readonly queries (e.g. INSERT-SELECT) when detach_non_readonly_queries is on,
+    /// run the query in a background thread and return immediately with query_id.
+    /// Supports both query in URL (?query=...) and query in POST body (e.g. curl -X POST --data-binary "INSERT ...").
+    /// We skip this path when async_insert=1 so that the server's async-insert queue semantics (and wait_for_async_insert) are preserved.
+    /// Prepared-statement parameters from the URL (param_xxx) are already on the context and are copied into the background thread's context.
+    /// Also check params directly so the detach path is taken when the client sends detach_non_readonly_queries=1 in the URL.
+    const bool want_detach_non_readonly = settings[Setting::detach_non_readonly_queries]
+        || params.getParsedLast<bool>("detach_non_readonly_queries", false);
+    if (want_detach_non_readonly
+        && !settings[Setting::async_insert]
+        && request.getMethod() == HTTPServerRequest::HTTP_POST
+        && !has_external_data)
+    {
+        String query_to_parse;
+        PODArray<char> body_data;
+        const bool query_was_in_body = query_from_body;
+        auto restore_input_for_sync = [&]()
+        {
+            if (query_was_in_body)
+            {
+                in_param = std::make_unique<ReadBufferFromString>(String(body_data.data(), body_data.size()));
+                in_post_maybe_compressed = std::make_unique<ReadBufferFromString>(String());
+            }
+            else
+            {
+                in_param = std::make_unique<ReadBufferFromString>(query);
+                in_post_maybe_compressed = std::make_unique<ReadBufferFromString>(String(body_data.data(), body_data.size()));
+            }
+        };
+
+        try
+        {
+            const size_t max_query_size_val = settings[Setting::max_query_size] ? settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+            if (query.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty query");
+            if (query_from_body)
+                body_data.insert(body_data.end(), query.data(), query.data() + query.size());
+
+            query_to_parse = query;
+            boost::trim_right(query_to_parse);
+            if (query_to_parse.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty query after trim");
+            if (!query_from_body)
+            {
+                LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
+                WriteBufferFromVector<PODArray<char>> body_buf(body_data);
+                copyData(limit, body_buf);
+            }
+
+            ParserQuery parser(query_to_parse.data() + query_to_parse.size(), settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            ASTPtr ast;
+            if (query_was_in_body)
+            {
+                const char * pos = query_to_parse.data();
+                const char * end = pos + query_to_parse.size();
+                ast = parseQueryAndMovePosition(parser, pos, end, "", false, max_query_size_val, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else
+                ast = parseQuery(parser, query_to_parse.data(), query_to_parse.data() + query_to_parse.size(), "", max_query_size_val, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            if (ast && isNonReadOnlyQuery(ast.get()))
+            {
+                const String query_id = context->getClientInfo().current_query_id;
+                ContextMutablePtr async_context = Context::createCopy(context);
+                async_context->setProgressCallback(nullptr);
+
+                PODArray<char> async_body_data = std::move(body_data);
+                std::thread([query_was_in_body, query, body_for_thread = std::move(async_body_data), async_context, query_id]() mutable
+                {
+                    setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
+                    ThreadStatus thread_status;
+                    CurrentThread::QueryScope async_query_scope = CurrentThread::QueryScope::create(async_context);
+                    try
+                    {
+                        String full_input = query_was_in_body
+                            ? String(body_for_thread.data(), body_for_thread.size())
+                            : (body_for_thread.empty() ? query : query + String(body_for_thread.data(), body_for_thread.size()));
+                        PODArray<char> discard_buf;
+                        WriteBufferFromVector<PODArray<char>> discard_ostr(discard_buf);
+                        executeQuery(
+                            std::make_unique<ReadBufferFromString>(full_input),
+                            discard_ostr,
+                            async_context, SetResultDetailsFunc{}, QueryFlags{}, std::nullopt,
+                            HandleExceptionInOutputFormatFunc{}, QueryFinishCallback{}, HTTPContinueCallback{});
+                    }
+                    catch (...) { tryLogCurrentException(getLogger("HTTPHandler"), "Detached HTTP non-readonly query failed"); }
+                }).detach();
+
+                in_post_maybe_compressed.reset();
+                applyHTTPResponseHeaders(response, http_response_headers_override);
+                response.setStatus(HTTPResponse::HTTP_OK);
+                response.add("X-ClickHouse-Query-Id", query_id);
+                response.setContentType("text/plain; charset=UTF-8");
+                response.sendBuffer(query_id.data(), query_id.size());
+                used_output.cancel();
+                releaseOrCloseSession(session_id, close_session);
+                return;
+            }
+            restore_input_for_sync();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot run HTTP query in detach mode, falling back to sync");
+            if (query_was_in_body || !body_data.empty())
+                restore_input_for_sync();
+        }
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
