@@ -203,7 +203,7 @@ ManifestFileContent::ManifestFileContent(
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    schema_processor.addIcebergTableSchema(schema_object);
+    schema_processor.addIcebergTableSchema(schema_object, context);
 
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {

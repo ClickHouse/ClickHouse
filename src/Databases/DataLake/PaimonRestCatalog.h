@@ -89,9 +89,17 @@ public:
 
     bool existsTable(const String & database_name, const String & table_name) const override;
 
-    void getTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
+    void getTableMetadata(
+        const String & database_name,
+        const String & table_name,
+        DB::ContextPtr context_,
+        TableMetadata & result) const override;
 
-    bool tryGetTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
+    bool tryGetTableMetadata(
+        const String & database_name,
+        const String & table_name,
+        DB::ContextPtr context_,
+        TableMetadata & result) const override;
 
     std::optional<StorageType> getStorageType() const override { return storage_type; }
 
