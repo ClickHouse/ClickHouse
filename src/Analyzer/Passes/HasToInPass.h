@@ -6,12 +6,8 @@ namespace DB
 {
 
 /** Rewrite 'has(const_array, x)' to 'in(x, const_array)' when the first argument is a constant array.
-  *
-  * The 'in' function can be more efficient for constant arrays because it can pre-build a set
-  * for faster lookups, especially when the same constant array is used multiple times.
-  *
-  * Example: SELECT has([1, 2, 3], x) FROM table;
-  * Result: SELECT in(x, [1, 2, 3]) FROM table;
+  * The has() implementation has to handle both const/non-const arrays and it uses Field.
+  * With a medium to large array, has() is significantly slower than in() implementation.
   */
 class RewriteHasToInPass final : public IQueryTreePass
 {

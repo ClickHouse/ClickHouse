@@ -38,7 +38,7 @@ public:
         if (has_function_arguments_nodes.size() != 2)
             return;
 
-        /// Check if the first argument is a constant array
+        /// Verify that the first argument is a constant array
         const auto * first_arg_constant = has_function_arguments_nodes[0]->as<ConstantNode>();
         if (!first_arg_constant)
             return;
@@ -49,10 +49,7 @@ public:
             return;
 
         /// Rewrite has(const_array, elem) -> in(elem, const_array)
-        /// Swap the arguments
         std::swap(has_function_arguments_nodes[0], has_function_arguments_nodes[1]);
-
-        /// Resolve the function as 'in' function
         resolveOrdinaryFunctionNodeByName(*has_function_node, "in", getContext());
     }
 };
