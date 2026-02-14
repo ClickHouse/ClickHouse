@@ -11,6 +11,8 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
@@ -21,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -513,17 +516,28 @@ public:
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(first_argument_type.get());
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(first_argument_type.get());
+        const DataTypeObject * object_type = checkAndGetDataType<DataTypeObject>(first_argument_type.get());
 
         DataTypePtr inner_type;
 
         /// If map is first argument only has(map_column, key) function is supported
         if constexpr (std::is_same_v<ConcreteAction, HasAction>)
         {
-            if (!array_type && !map_type)
+            if (!array_type && !map_type && !object_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array or map. Actual {}",
+                    "First argument for function {} must be an array, map or object. Actual {}",
                     getName(),
                     first_argument_type->getName());
+
+            if (object_type)
+            {
+                if (!isStringOrFixedString(second_argument_type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Second argument for function {} must be String when the first argument is Object. Actual {}",
+                        getName(), second_argument_type->getName());
+
+                return std::make_shared<DataTypeUInt8>();
+            }
 
             inner_type = map_type ? map_type->getKeyType() : array_type->getNestedType();
         }
@@ -556,6 +570,9 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         if (auto res = executeMap(arguments, result_type))
+            return res;
+
+        if (auto res = executeObject(arguments, result_type))
             return res;
 
         if (auto res = executeArrayLowCardinality(arguments))
@@ -899,6 +916,162 @@ private:
         arguments_copy[0].name = arguments[0].name;
 
         return executeArrayImpl(arguments_copy, result_type);
+    }
+
+    ColumnPtr executeObject(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/) const
+    {
+        if constexpr (!std::is_same_v<ConcreteAction, HasAction>)
+            return nullptr;
+
+        const auto * object_type = checkAndGetDataType<DataTypeObject>(arguments[0].type.get());
+        if (!object_type)
+            return nullptr;
+
+        auto non_const_object_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto & object_column = assert_cast<const ColumnObject &>(*non_const_object_column);
+        const auto & path_column = *arguments[1].column;
+        const size_t input_rows_count = object_column.size();
+
+        if (input_rows_count == 0)
+            return ColumnUInt8::create();
+
+        auto res_col = ColumnUInt8::create(input_rows_count);
+        auto & res_data = res_col->getData();
+
+        const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
+        const auto & shared_offsets = object_column.getSharedDataOffsets();
+
+        auto check_shared = [&](size_t row, const String & path) -> bool
+        {
+            if (!shared_paths)
+                return false;
+
+            size_t start = (row == 0) ? 0 : shared_offsets[row - 1];
+            size_t end = shared_offsets[row];
+            if (start >= end)
+                return false;
+
+            // 1. Exact match
+            size_t pos = ColumnObject::findPathLowerBoundInSharedData(path, *shared_paths, start, end);
+            if (pos < end && shared_paths->getDataAt(pos) == path)
+                return true;
+
+            // 2. Prefix match (path + ".")
+            String prefix = path + ".";
+            pos = ColumnObject::findPathLowerBoundInSharedData(prefix, *shared_paths, start, end);
+            if (pos < end)
+            {
+                auto s = shared_paths->getDataAt(pos);
+                if (std::string_view(s).starts_with(prefix))
+                    return true;
+            }
+            return false;
+        };
+
+        if (isColumnConst(path_column))
+        {
+            const String path = String(path_column.getDataAt(0));
+            String prefix = path + ".";
+
+            std::vector<const IColumn *> relevant_columns;
+
+            // Collect exact and prefix matches from Typed Paths (O(N_paths) scan due to unordered_map)
+            const auto & typed_paths = object_column.getTypedPaths();
+            if (auto it = typed_paths.find(path); it != typed_paths.end())
+                relevant_columns.push_back(it->second.get());
+
+            for (const auto & [key, col] : typed_paths)
+            {
+                if (std::string_view(key).starts_with(prefix))
+                    relevant_columns.push_back(col.get());
+            }
+
+            // Collect exact and prefix matches from Dynamic Paths
+            const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
+            if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
+                relevant_columns.push_back(it->second);
+
+            for (const auto & [key, col] : dynamic_paths)
+            {
+                if (std::string_view(key).starts_with(prefix))
+                    relevant_columns.push_back(col);
+            }
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                bool found = false;
+                for (const auto * col : relevant_columns)
+                {
+                    if (!col->isNullAt(i))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                    found = check_shared(i, path);
+
+                res_data[i] = found;
+            }
+        }
+        else
+        {
+            // Non-const path: Use efficient per-row lookup
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const String path = String(path_column.getDataAt(i));
+
+                String prefix = path + ".";
+                bool found = false;
+
+                // Typed
+                const auto & typed_paths = object_column.getTypedPaths();
+                if (auto it = typed_paths.find(path); it != typed_paths.end() && !it->second->isNullAt(i))
+                    found = true;
+
+                if (!found)
+                {
+                    for (const auto & [key, col] : typed_paths)
+                    {
+                        if (std::string_view(key).starts_with(prefix) && !col->isNullAt(i))
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                // Dynamic
+                if (!found)
+                {
+                    const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
+                    if (auto it = dynamic_paths.find(path); it != dynamic_paths.end() && !it->second->isNullAt(i))
+                        found = true;
+
+                    if (!found)
+                    {
+                        for (const auto & [key, col] : dynamic_paths)
+                        {
+                            if (std::string_view(key).starts_with(prefix) && !col->isNullAt(i))
+                            {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Shared
+                if (!found)
+                    found = check_shared(i, path);
+
+                res_data[i] = found;
+            }
+        }
+
+        return res_col;
     }
 
     static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments)
