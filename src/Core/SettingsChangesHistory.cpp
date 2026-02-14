@@ -51,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
+            {"atomic_create_as_select", false, true, "Ensure atomicity of CREATE TABLE ... AS SELECT queries in Atomic databases"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

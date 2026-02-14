@@ -4223,6 +4223,11 @@ Possible values:
 - 0 — Queries will be executed with delay.
 - 1 — Queries will be executed without delay.
 )", 0) \
+    DECLARE(Bool, atomic_create_as_select, true, R"(
+Ensures atomicity of CREATE TABLE ... AS SELECT queries in Atomic databases.
+
+When enabled, the table is only created if the SELECT query completes successfully.
+)", 0) \
     DECLARE(Bool, enable_scalar_subquery_optimization, true, R"(
 If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
 )", 0) \

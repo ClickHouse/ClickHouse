@@ -117,6 +117,7 @@ namespace Setting
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
+    extern const SettingsBool atomic_create_as_select;
     extern const SettingsFloat create_replicated_merge_tree_fault_injection_probability;
     extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
     extern const SettingsUInt64 database_replicated_allow_explicit_uuid;
@@ -1788,8 +1789,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         chassert(!ddl_guard);
         return doCreateOrReplaceTable(create, properties, mode);
     }
+    bool isCreateTableAsSelect = create.select && !create.attach && !create.is_create_empty && !create.is_ordinary_view && !create.is_materialized_view && !create.is_window_view;
 
-    if (isCreateTableAsSelect && !create.isTemporary()
+    if (getContext()->getSettingsRef()[Setting::atomic_create_as_select] && isCreateTableAsSelect && !create.isTemporary()
         && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated"))
     {
         chassert(!ddl_guard);
