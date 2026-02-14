@@ -10,7 +10,7 @@ FROM system.one
 SELECT modulo(10, 3)
 FROM system.one
 Unary operators
-SELECT negate(5)
+SELECT -5
 FROM system.one
 SELECT not(true)
 FROM system.one
@@ -55,7 +55,7 @@ SELECT
     plus(1, multiply(2, 3)),
     minus(5, 1),
     not(true),
-    negate(10)
+    -10
 FROM system.one
 SELECT and(equals(1, 1), less(2, 3))
 FROM system.one
@@ -64,7 +64,7 @@ FROM system.one
 Nested unary operators
 SELECT not(not(true))
 FROM system.one
-SELECT negate(negate(5))
+SELECT negate(-5)
 FROM system.one
 SELECT not(not(not(false)))
 FROM system.one
@@ -74,9 +74,9 @@ FROM system.one
 SELECT notLike(\'test\', \'x%\')
 FROM system.one
 IN operator
-SELECT in(1, tuple(1, 2, 3))
+SELECT in(1, (1, 2, 3))
 FROM system.one
-SELECT notIn(1, tuple(4, 5, 6))
+SELECT notIn(1, (4, 5, 6))
 FROM system.one
 IS NULL operator
 SELECT isNull(_CAST(NULL, \'Nullable(Nothing)\'))
@@ -102,7 +102,7 @@ SELECT
     multiply(5, 6),
     divide(7, 8),
     modulo(9, 2),
-    negate(10),
+    -10,
     not(true),
     equals(11, 11),
     notEquals(12, 13),

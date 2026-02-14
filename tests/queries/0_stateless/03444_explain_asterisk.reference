@@ -9,7 +9,7 @@ SELECT
     `isZeroOrNull(10)` AS `t3.isZeroOrNull(10)`,
     `_--t3.10` AS `t3.10`,
     `assumeNotNull(materialize(10))` AS `t3.assumeNotNull(materialize(10))`,
-    `10 IS NOT NULL` AS `t3.10 IS NOT NULL`,
+    `isNotNull(10)` AS `t3.isNotNull(10)`,
     x AS `t3.x`
 FROM
 (
@@ -25,15 +25,15 @@ FROM
             a,
             b
         FROM t2
-    ) AS t2 ON if(t2.b AS `_--t2.b` > 0, t2.a AS `_--t2.a`, 0) = a AS `_--t1.a`
-    WHERE if(t2.b AS `_--t2.b` > 0, t2.a AS `_--t2.a`, 0) = a AS `_--t1.a`
+    ) AS t2 ON equals(if(greater(t2.b AS `_--t2.b`, 0), t2.a AS `_--t2.a`, 0), a AS `_--t1.a`)
+    WHERE equals(if(greater(t2.b AS `_--t2.b`, 0), t2.a AS `_--t2.a`, 0), a AS `_--t1.a`)
 ) AS `--.s`
 CROSS JOIN
 (
     SELECT
         x,
         `assumeNotNull(materialize(10))`,
-        `10 IS NOT NULL`,
+        `isNotNull(10)`,
         `isZeroOrNull(10)`,
         `toNullable(10)`,
         `10` AS `_--t3.10`,
@@ -50,13 +50,13 @@ CROSS JOIN
             10 AS `10_1`,
             10 AS `10_2`,
             assumeNotNull(materialize(10)),
-            10 IS NOT NULL,
+            isNotNull(10),
             a AS x
         FROM t3__fuzz_0
-        WHERE toNullable(toUInt256(1)) + a = b
+        WHERE equals(plus(toNullable(toUInt256(1)), a), b)
     ) AS t3
 ) AS `--.t`
-WHERE if(`_--t2.b` > 0, `_--t2.a`, 0) = `_--t1.a`
+WHERE equals(if(greater(`_--t2.b`, 0), `_--t2.a`, 0), `_--t1.a`)
 ORDER BY
     x ASC NULLS FIRST,
     `_--t2.a` DESC NULLS LAST,
@@ -78,12 +78,12 @@ FROM t1, t2,
         *,
         *,
         assumeNotNull(materialize(10)),
-        10 IS NOT NULL,
+        isNotNull(10),
         a AS x
     FROM t3__fuzz_0
-    WHERE toNullable(toUInt256(1)) + a = b
+    WHERE equals(plus(toNullable(toUInt256(1)), a), b)
 ) AS t3
-WHERE if(t2.b > 0, t2.a, 0) = t1.a
+WHERE equals(if(greater(t2.b, 0), t2.a, 0), t1.a)
 ORDER BY
     t3.x ASC NULLS FIRST,
     t2.a DESC NULLS LAST,
