@@ -37,7 +37,7 @@ int arenaFlags(size_t alignment)
 {
     int flags = MALLOCX_ARENA(DB::JemallocCacheArena::getArenaIndex()) | MALLOCX_TCACHE_NONE;
     if (alignment > MALLOC_MIN_ALIGNMENT)
-        flags |= static_cast<int>(MALLOCX_ALIGN(alignment));
+        flags |= MALLOCX_ALIGN(alignment);
     return flags;
 }
 
