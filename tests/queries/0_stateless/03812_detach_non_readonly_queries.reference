@@ -1,0 +1,21 @@
+=== HTTP: Sync mode (default): INSERT-SELECT waits for completion ===
+Sync response body length: 0
+Sync has X-ClickHouse-Query-Id header: yes
+=== HTTP: Detach non-readonly mode: INSERT-SELECT returns immediately with query_id ===
+Detach non-readonly response body (query_id): <query_id>
+=== HTTP: SELECT remains synchronous even with detach_non_readonly_queries=1 ===
+SELECT result: 3
+Rows in table after HTTP detached inserts: 3
+=== HTTP: Detach non-readonly INSERT with body data returns query_id ===
+Detach non-readonly INSERT with body response: <query_id>
+=== HTTP: Detach non-readonly with query in POST body only (no query= param) ===
+Detach non-readonly POST body-only response (query_id): <query_id>
+HTTP final row count: 5
+=== Native: Sync mode (default): INSERT...SELECT waits for completion ===
+Sync insert done
+=== Native: Detach non-readonly mode: INSERT...SELECT returns immediately with query_id ===
+Detach response (query_id): <query_id>
+=== Native: SELECT remains synchronous even with detach_non_readonly_queries=1 ===
+SELECT result: 7
+Rows in table: 7
+OK

@@ -51,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
+            {"detach_non_readonly_queries", false, false, "New setting to detach non-readonly queries (run in background thread) and return query_id immediately."},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

@@ -2222,6 +2222,10 @@ Write exception in output format to produce valid output. Works with JSON and XM
     DECLARE(UInt64, http_response_buffer_size, 0, R"(
 The number of bytes to buffer in the server memory before sending a HTTP response to the client or flushing to disk (when http_wait_end_of_query is enabled).
 )", 0) \
+    DECLARE(Bool, detach_non_readonly_queries, false, R"(
+When enabled, non-readonly queries (e.g. INSERT...SELECT, DELETE, CREATE) submitted are detached: the server returns immediately with a result block containing query_id and runs the query in a background thread.
+Does not apply to INSERT queries that expect data from the client (INSERT INTO t FORMAT ...); only queries that do not need additional input are detached. Distinct from async_insert.
+)", 0) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
