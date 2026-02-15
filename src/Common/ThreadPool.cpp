@@ -304,7 +304,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 // Failed to create the thread, restore capacity
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
                 std::lock_guard lock(mutex); // needed to change first_exception.
-                return on_error("failed to start the thread");
+                return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
             }
         }
         // capacity gets reloaded by (unsuccessful) compare_exchange_weak
@@ -372,7 +372,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             {
                 // If thread creation fails, restore the pool capacity and return an error.
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                return on_error("failed to start the thread");
+                return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
             }
             adding_new_thread = true;
         }

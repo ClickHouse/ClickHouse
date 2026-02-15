@@ -58,3 +58,6 @@ format_query "ALTER TABLE \`t55\` (MODIFY ORDER BY ((\`c0\` AS \`a0\`)));"
 # Complex tuple expression with index
 format_query "select (tab.*).2 from tab;"
 format_query "with (((1,1),1),1) as t1 select t1.1.1.1;"
+
+# Array with tuple element access (should not add extra parens around array)
+format_query "SELECT [['hello']].1;"

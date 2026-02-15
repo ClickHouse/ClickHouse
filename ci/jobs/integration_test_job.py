@@ -8,7 +8,11 @@ from typing import List, Tuple
 from more_itertools import tail
 
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
+from ci.jobs.scripts.integration_tests_configs import (
+    IMAGES_ENV,
+    LLVM_COVERAGE_SKIP_PREFIXES,
+    get_optimal_test_batch,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result, ResultTranslator
 from ci.praktika.utils import ContextManager, Shell, Utils
@@ -192,6 +196,17 @@ def get_parallel_sequential_tests_to_run(
         str(p.relative_to("./tests/integration/"))
         for p in Path("./tests/integration/").glob("test_*/test*.py")
     ]
+
+    if "amd_llvm_coverage" in (job_options or ""):
+        before = len(test_files)
+        test_files = [
+            f
+            for f in test_files
+            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+        ]
+        print(
+            f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
+        )
 
     assert len(test_files) > 100
 

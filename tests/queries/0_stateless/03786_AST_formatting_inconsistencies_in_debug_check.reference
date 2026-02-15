@@ -70,3 +70,7 @@ Original:          with (((1,1),1),1) as t1 select t1.1.1.1;
 format(original):  WITH (((1, 1), 1), 1) AS t1 SELECT ((t1.1).1).1
 format(formatted): WITH (((1, 1), 1), 1) AS t1 SELECT ((t1.1).1).1
 
+Original:          SELECT [['hello']].1;
+format(original):  SELECT [['hello']].1
+format(formatted): SELECT [['hello']].1
+

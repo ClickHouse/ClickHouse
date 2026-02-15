@@ -2,7 +2,9 @@
 #include <Columns/ColumnDecimal.h>
 
 #if USE_EMBEDDED_COMPILER
+#    include <DataTypes/DataTypeDateTime64.h>
 #    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeTime64.h>
 #    include <Columns/ColumnConst.h>
 #    include <Columns/ColumnNullable.h>
 
@@ -139,6 +141,50 @@ llvm::Value * nativeCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type,
     }
     auto * from_native_type = toNativeType(b, from_type);
     auto * to_native_type = toNativeType(b, to_type);
+
+    /// Handle scale conversion for DateTime/DateTime64/Time/Time64 types.
+    /// When converting between types with different scales (e.g., DateTime with implicit
+    /// scale 0 to DateTime64 with scale 3), we need to multiply/divide by the appropriate
+    /// power of 10, not just cast the integer value.
+    /// Note: Decimal types are NOT handled here because JIT-compiled aggregate functions
+    /// (e.g., avg) already manage Decimal scale conversion themselves.
+    {
+        auto get_effective_scale = [](const DataTypePtr & type) -> std::optional<UInt32>
+        {
+            WhichDataType which(type);
+            if (which.isDateTime() || which.isTime())
+                return 0u;
+            if (which.isDateTime64())
+                return typeid_cast<const DataTypeDateTime64 *>(type.get())->getScale();
+            if (which.isTime64())
+                return typeid_cast<const DataTypeTime64 *>(type.get())->getScale();
+            return std::nullopt;
+        };
+
+        auto from_scale = get_effective_scale(from_type);
+        auto to_scale = get_effective_scale(to_type);
+
+        if (from_scale && to_scale && *from_scale != *to_scale)
+        {
+            /// First widen/narrow the integer type if needed.
+            if (from_native_type != to_native_type)
+                value = b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));
+
+            UInt32 scale_diff = (*to_scale > *from_scale) ? (*to_scale - *from_scale) : (*from_scale - *to_scale);
+            unsigned bit_width = to_native_type->getIntegerBitWidth();
+            llvm::APInt scale_factor(bit_width, 1);
+            for (UInt32 i = 0; i < scale_diff; ++i)
+                scale_factor *= 10;
+            auto * scale_constant = llvm::ConstantInt::get(b.getContext(), scale_factor);
+
+            if (*to_scale > *from_scale)
+                value = b.CreateMul(value, scale_constant);
+            else
+                value = b.CreateSDiv(value, scale_constant);
+
+            return value;
+        }
+    }
 
     if (from_native_type == to_native_type)
         return value;

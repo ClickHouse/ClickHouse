@@ -134,7 +134,7 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        for _ in range(20):
+        for _ in range(60):
             res = Shell.check(
                 "/mc ls clickminio/test | grep -q .",
                 verbose=True,

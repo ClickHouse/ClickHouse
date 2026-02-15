@@ -67,11 +67,6 @@ class Job:
 
         enable_gh_auth: bool = False
 
-        # If True, the job runs without AWS credentials (e.g. on GitHub-hosted macOS runners).
-        # Skips S3 report upload, CIDB, artifact download, open issues check, etc.
-        # The job result is communicated solely via GitHub Actions status.
-        no_aws: bool = False
-
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
 

@@ -176,7 +176,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_snapshot,
-        read_from_merge_tree_step ? read_from_merge_tree_step->getConditionSelectivityEstimator() : nullptr,
+        read_from_merge_tree_step ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
         queried_columns,
         storage.supportedPrewhereColumns(),
         getLogger("QueryPlanOptimizePrewhere")};

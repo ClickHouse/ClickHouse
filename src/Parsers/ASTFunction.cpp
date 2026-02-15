@@ -544,7 +544,15 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         /// Little hack: Expression like this: (tab.*).1 (tab contains single tuple column)
                         /// causes inconsistent formatting because it is formatted as tab.*.1 which is invalid.
                         /// So when child 0 has more than one element, we surround it with parens.
-                        if (arguments->children[0]->size() > 1)
+                        /// Exception: array and tuple functions format with their own brackets ([...] and (...)),
+                        /// which are already unambiguous with .N syntax. Adding extra parens around them
+                        /// would cause inconsistent formatting when re-parsed, because the parser's fast path
+                        /// creates ASTLiteral (size=1, no parens) while ASTFunction has size>1.
+                        const auto * left_func = arguments->children[0]->as<ASTFunction>();
+                        bool left_needs_parens = arguments->children[0]->size() > 1
+                            && !(left_func && (left_func->name == "array" || left_func->name == "tuple"));
+
+                        if (left_needs_parens)
                         {
                             nested_need_parens.need_parens = false; /// Don't want duplicate parens
                             ostr << '(';
@@ -555,7 +563,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         nested_need_parens.allow_moving_operators_before_parens = false;
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
 
-                        if (arguments->children[0]->size() > 1)
+                        if (left_needs_parens)
                             ostr << ')';
 
                         ostr << ".";

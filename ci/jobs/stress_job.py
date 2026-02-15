@@ -59,6 +59,8 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
 
 
 def get_additional_envs(info, check_name: str) -> List[str]:
+    from ci.jobs.ci_utils import is_extended_run
+
     result = []
     if not info.is_local_run:
         azure_connection_string = Shell.get_output(
@@ -76,6 +78,10 @@ def get_additional_envs(info, check_name: str) -> List[str]:
 
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+
+    result.append(
+        f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
+    )
 
     return result
 

@@ -145,7 +145,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     for (const auto * child : sort_column_node_children)
     {
-        if (child->type == ActionsDAG::ActionType::ALIAS) /// new analyzer
+        if (child->type == ActionsDAG::ActionType::ALIAS) /// the analyzer
         {
             const auto * search_column_node = child->children.at(0);
             if (search_column_node->type == ActionsDAG::ActionType::INPUT)

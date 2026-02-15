@@ -60,5 +60,12 @@ echo "
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&query_id=${query_id_base}_interactive_high" --data-binary @- -vvv 2>&1 \
     | grep "Summary" | grep -v 'Access-Control-Expose-Headers' | grep -cv '"read_rows":"0"'
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+# Wait for query_log entries from parallel replicas queries.
+# There is a race between HTTP response being sent and the query_log entry being written.
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    count=$($CLICKHOUSE_CLIENT --query "SELECT count(DISTINCT initial_query_id) FROM system.query_log WHERE event_date >= yesterday() AND initial_query_id LIKE '${query_id_base}%'")
+    [ "$count" -ge 2 ] && break
+    sleep 0.5
+done
 involved_parallel_replicas "${query_id_base}"

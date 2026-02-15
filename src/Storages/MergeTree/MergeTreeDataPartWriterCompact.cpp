@@ -24,7 +24,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-    const ColumnsStatistics & stats_to_recalc,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -33,7 +32,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         data_part_name_, logger_name_, serializations_,
         data_part_storage_, index_granularity_info_, storage_settings_,
         columns_list_, metadata_snapshot_, virtual_columns_,
-        indices_to_recalc_, stats_to_recalc, marks_file_extension_,
+        indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, std::move(index_granularity_),
         static_cast<WrittenOffsetSubstreams *>(nullptr))
     , plain_file(getDataPartStorage().writeFile(
@@ -213,7 +212,6 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     }
 
     result_block = permuteBlockIfNeeded(result_block, permutation);
-    calculateAndSerializeStatistics(result_block);
 
     if (header.empty())
         header = result_block.cloneEmpty();
@@ -544,7 +542,6 @@ void MergeTreeDataPartWriterCompact::fillChecksums(MergeTreeDataPartChecksums & 
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterCompact::finish(bool sync)
@@ -557,7 +554,6 @@ void MergeTreeDataPartWriterCompact::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
-    finishStatisticsSerialization(sync);
 }
 
 void MergeTreeDataPartWriterCompact::cancel() noexcept

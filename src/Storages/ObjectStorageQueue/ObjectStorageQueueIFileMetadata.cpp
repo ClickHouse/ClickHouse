@@ -520,9 +520,8 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
             !zk_client->exists(failed_node_path),
             fmt::format("Expected path {} not to exist while finalizing {}", failed_node_path, path));
 
-        chassert(
-            zk_client->exists(processed_node_path),
-            fmt::format("Expected path {} to exist while finalizing {}", processed_node_path, path));
+        /// NOTE: we don't check that processed_node_path exists here because the cleanup thread
+        /// may have already removed it (e.g. when `s3queue_tracked_files_limit` is reached).
     });
 #endif
 }

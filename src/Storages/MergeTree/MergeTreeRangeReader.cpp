@@ -373,10 +373,16 @@ void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_, GranuleOffse
 
 void MergeTreeRangeReader::ReadResult::adjustLastGranule()
 {
-    size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
-
     if (rows_per_granule.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
+
+    /// When no rows were physically read (e.g., all columns are defaults/missing,
+    /// or a constant PREWHERE expression), the granule sizes were determined from
+    /// the index granularity and are already accurate. No adjustment is needed.
+    if (num_read_rows == 0)
+        return;
+
+    size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (num_rows_to_subtract > rows_per_granule.back())
     {
@@ -1076,7 +1082,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    result.num_rows = result.numReadRows();
+    /// When no columns were physically read (e.g., constant PREWHERE expression),
+    /// numReadRows() is 0 but total_rows_per_granule has the correct row count
+    /// from the index granularity. Use it so the reading chain can continue
+    /// to subsequent readers that read actual data columns.
+    result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());
 

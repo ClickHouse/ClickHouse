@@ -23,7 +23,6 @@ SELECT
     ProfileEvents['MergeExecuteMilliseconds'] > 0,
     ProfileEvents['MergeHorizontalStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeHorizontalStageExecuteMilliseconds'] > 0,
-    ProfileEvents['UserTimeMicroseconds'] > 0,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_merge_profile_events_1' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
@@ -54,7 +53,6 @@ SELECT
     ProfileEvents['MergeHorizontalStageExecuteMilliseconds'] > 0,
     ProfileEvents['MergeVerticalStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeVerticalStageExecuteMilliseconds'] > 0,
-    ProfileEvents['UserTimeMicroseconds'] > 0,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_merge_profile_events_2' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
@@ -89,7 +87,6 @@ SELECT
     ProfileEvents['MergeProjectionStageExecuteMilliseconds'] > 0,
     ProfileEvents['MergeExecuteMilliseconds'] <= duration_ms,
     ProfileEvents['MergeTotalMilliseconds'] <= duration_ms,
-    ProfileEvents['UserTimeMicroseconds'] > 0,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_merge_profile_events_3' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
