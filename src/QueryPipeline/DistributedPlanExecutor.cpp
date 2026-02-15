@@ -192,6 +192,8 @@ public:
 
     Chunk getChunk()
     {
+        LOG_TEST(log, "Waiting for chunk from exchange '{}'", name);
+
         Chunk chunk;
         {
             std::unique_lock lock(mutex);
@@ -200,7 +202,7 @@ public:
             chunks.pop_front();
         }
 
-        LOG_TEST(log, "Getting chunk from exchange '{}', rows {}", name, chunk.getNumRows());
+        LOG_TEST(log, "Got chunk from exchange '{}', rows {}", name, chunk.getNumRows());
 
         return chunk;
     }
@@ -426,6 +428,13 @@ ExchangeLookupPtr createExchangeLookup(
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context)
 {
+    bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
+    if (run_locally)
+    {
+        LOG_DEBUG(getLogger("createExchangeLookup"), "`distributed_plan_execute_locally` setting is enabled, using in-memory queues for all exchanges");
+        return std::make_shared<ExchangeViaChunks>(query_id);
+    }
+
     ExchangeLookupPtr streaming_exchanges;
 #ifdef OS_LINUX
     auto streaming_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
