@@ -651,20 +651,29 @@ protected:
         stage_tasks[stage_name] = std::move(started_tasks);
     }
 
-    bool waitForStage(const String & stage_name, std::optional<UInt64> /*timeout_ms*/) override
+    bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
     {
         auto & started_tasks = stage_tasks[stage_name];
 
-        /// TODO: periodically check for cancellation
         for (auto & task : started_tasks)
-            task.wait();
+        {
+            if (timeout_ms.has_value())
+            {
+                if (task.wait_for(std::chrono::milliseconds(timeout_ms.value())) != std::future_status::ready)
+                    return false;
+            }
+            else
+            {
+                task.wait();
+            }
+        }
 
         auto tasks = std::move(started_tasks);
         started_tasks.clear();
 
         /// Throw exception if any task failed
         for (auto & task : tasks)
-            task.get(); /// TODO: add timeout
+            task.get();
 
         return true;
     }
