@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-msan, no-parallel, no-debug, no-random-detach
+-- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-parallel, no-debug, no-random-detach
 
 DROP TABLE IF EXISTS t_patch_join_cache;
 
