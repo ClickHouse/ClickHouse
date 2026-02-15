@@ -59,14 +59,17 @@ def started_cluster():
 
 
 def execute_spark_query(node, query_text):
-    # Kill any lingering Spark processes and remove stale Derby metastore lock
+    # Kill any lingering Spark processes and remove the Derby metastore
     # before starting a new Spark session. The metastore_db is created inside
     # /spark-3.5.4-bin-hadoop3/ because spark-sql is run with cd to that directory.
+    # We remove the entire metastore_db (not just the lock file) because after
+    # SIGKILL the database can be left in a corrupted state, causing the next
+    # Spark session to hang during initialization.
     node.exec_in_container(
         [
             "bash",
             "-c",
-            """pkill -9 -f 'org.apache.spark' 2>/dev/null; rm -rf /spark-3.5.4-bin-hadoop3/metastore_db/dbex.lck""",
+            """pkill -9 -f 'org.apache.spark' 2>/dev/null; sleep 1; rm -rf /spark-3.5.4-bin-hadoop3/metastore_db""",
         ],
         nothrow=True,
     )

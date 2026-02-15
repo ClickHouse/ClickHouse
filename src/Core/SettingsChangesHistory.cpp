@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
-            {"use_parquet_metadata_cache", true, true, "Enables cache of parquet file metadata."},
+            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_statistics_cache", false, true, "Enable statistics cache"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
             {"atomic_create_as_select", false, true, "Ensure atomicity of CREATE TABLE ... AS SELECT queries in Atomic databases"},
+            {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -548,7 +549,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
-            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
+            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with the analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
             {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
             {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
@@ -1050,7 +1051,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
             {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
             {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
-            {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
+            {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
         });

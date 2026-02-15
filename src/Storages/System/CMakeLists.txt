@@ -35,10 +35,17 @@ add_dependencies(generate-source generate-contributors)
 
 set(GENERATED_LICENSES_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.generated.cpp")
 
-add_custom_command(
-    OUTPUT StorageSystemLicenses.generated.cpp
-    COMMAND ./StorageSystemLicenses.sh "${CMAKE_SOURCE_DIR}" > ${GENERATED_LICENSES_SRC}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+# Generate license data at configure time to avoid creating a build-time dependency
+# that blocks all downstream targets (table_functions, server-lib, etc.) via the
+# CMake order-only dependency chain.
+execute_process(
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemLicenses.sh "${CMAKE_SOURCE_DIR}"
+    OUTPUT_FILE ${GENERATED_LICENSES_SRC}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    RESULT_VARIABLE LICENSES_RESULT)
+if (NOT LICENSES_RESULT EQUAL 0)
+    message(WARNING "Failed to generate StorageSystemLicenses.generated.cpp")
+endif()
 
 list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
 

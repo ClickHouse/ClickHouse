@@ -50,6 +50,7 @@ class IMergeTreeReader;
 class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
+class PackedFilesReader;
 
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -169,7 +170,9 @@ public:
     void remove();
 
     ColumnsStatistics loadStatistics() const;
+    ColumnsStatistics loadStatistics(const Names & required_columns) const;
     Estimates getEstimates() const;
+    void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -667,6 +670,11 @@ private:
 
     mutable IndexSizeByName secondary_index_sizes;
 
+    /// PackedFilesReader for statistics archive.
+    /// Lazily loaded on first access to loadStatistics when packed format is used.
+    mutable std::mutex statistics_reader_mutex;
+    mutable std::unique_ptr<PackedFilesReader> statistics_reader TSA_GUARDED_BY(statistics_reader_mutex);
+
 protected:
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
@@ -736,7 +744,7 @@ private:
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates;
+    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
@@ -779,6 +787,10 @@ private:
     /// any specifial compression.
     void loadDefaultCompressionCodec();
     void loadSourcePartsSet();
+
+    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
+    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
+    PackedFilesReader * getStatisticsPackedReader() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
     void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;

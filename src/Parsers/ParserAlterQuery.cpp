@@ -142,7 +142,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
     ParserPartition parser_partition;
-    ParserExpression parser_exp_elem;
+    ParserExpressionWithOptionalAlias parser_exp_elem(false);
     ParserList parser_assignment_list(
         std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma),
         /* allow_empty = */ false);

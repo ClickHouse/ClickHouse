@@ -1854,7 +1854,13 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         if (!getActiveContainingPart(missing_name))
             parts_to_fetch.push_back(missing_name);
 
-    paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
+    /// The paranoid check looks for parts that exist in ZooKeeper and are covered by another ZK part,
+    /// but don't exist in the in-memory data_parts set. When outdated parts are still being loaded
+    /// asynchronously, a covered part may exist on disk but not yet be in the data_parts set,
+    /// causing a false positive. Skip the check on the first (optimistic) call; it will run on the
+    /// second call after `waitForOutdatedPartsToBeLoaded` in `checkParts`.
+    if (!incomplete_list_of_outdated_parts)
+        paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
     waitForUnexpectedPartsToBeLoaded();
 
@@ -6004,7 +6010,7 @@ void StorageReplicatedMergeTree::read(
         readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
         return;
     }
-    /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
+    /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
     if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
     {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);

@@ -110,13 +110,23 @@ public:
     void finishRequest(ResourceRequest * request) override
     {
         // Update state on request departure
-        std::unique_lock lock(mutex);
-        bool was_active = active();
-        requests--;
-        cost -= request->cost;
+        bool should_activate = false;
+        {
+            std::unique_lock lock(mutex);
+            bool was_active = active();
+            requests--;
+            cost -= request->cost;
 
-        // Schedule activation on transition from inactive state
-        if (!was_active && active())
+            // Check if we need to schedule activation on transition from inactive state
+            should_activate = !was_active && active();
+        }
+
+        // Schedule activation outside the lock to avoid lock-order-inversion (potential deadlock):
+        // - Scheduler thread: EventQueue::mutex -> activation_mutex -> SemaphoreConstraint::mutex (in activateChild)
+        // - Worker thread: SemaphoreConstraint::mutex -> EventQueue::mutex (in scheduleActivation)
+        // By releasing our mutex first, we break this cycle. Double-activation is safe because
+        // enqueueActivation() checks is_linked() and skips if already queued.
+        if (should_activate)
             scheduleActivation();
     }
 

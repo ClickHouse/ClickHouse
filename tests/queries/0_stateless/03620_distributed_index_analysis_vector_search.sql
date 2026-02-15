@@ -13,7 +13,7 @@ CREATE TABLE dist_vec
 )
 Engine=MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8, distributed_index_analysis_min_parts_to_activate = 0, distributed_index_analysis_min_indexes_size_to_activate = 10;
+SETTINGS index_granularity = 8, distributed_index_analysis_min_parts_to_activate = 0, distributed_index_analysis_min_indexes_bytes_to_activate = 10;
 
 SYSTEM STOP MERGES dist_vec;
 

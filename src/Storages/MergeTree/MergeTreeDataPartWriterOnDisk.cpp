@@ -11,8 +11,7 @@
 
 namespace ProfileEvents
 {
-extern const Event MergeTreeDataWriterSkipIndicesCalculationMicroseconds;
-extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
+    extern const Event MergeTreeDataWriterSkipIndicesCalculationMicroseconds;
 }
 
 namespace DB
@@ -40,7 +39,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const StorageMetadataPtr & metadata_snapshot_,
     const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeIndices & indices_to_recalc_,
-    const ColumnsStatistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -50,13 +48,12 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
         storage_settings_, columns_list_, metadata_snapshot_, virtual_columns_, settings_, std::move(index_granularity_))
     , skip_indices(indices_to_recalc_)
-    , stats(stats_to_recalc_)
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
     , compute_granularity(index_granularity->empty())
     , compress_primary_key(settings.compress_primary_key)
     , written_offset_substreams(written_offset_substreams_)
-    , execution_stats(skip_indices.size(), stats.size())
+    , execution_stats(skip_indices.size())
     , log(getLogger(logger_name_ + " (DataPartWriter)"))
 {
     if (settings.blocks_are_granules_size && !index_granularity->empty())
@@ -70,7 +67,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
-    initStatistics();
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept
@@ -83,9 +79,6 @@ void MergeTreeDataPartWriterOnDisk::cancel() noexcept
         index_compressor_stream->cancel();
     if (index_source_hashing_stream)
         index_source_hashing_stream->cancel();
-
-    for (auto & stream : stats_streams)
-        stream->cancel();
 
     for (auto & stream : skip_indices_streams_holders)
         stream->cancel();
@@ -122,22 +115,6 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
         for (const auto & type : primary_key_types)
             index_serializations.push_back(type->getDefaultSerialization());
-    }
-}
-
-void MergeTreeDataPartWriterOnDisk::initStatistics()
-{
-    for (const auto & stat_ptr : stats)
-    {
-        auto stats_filename = replaceFileNameToHashIfNeeded(escapeForFileName(stat_ptr->getStatisticName()), *storage_settings, data_part_storage.get());
-        stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
-                                       stats_filename,
-                                       data_part_storage,
-                                       stats_filename,
-                                       STATS_FILE_SUFFIX,
-                                       default_codec,
-                                       settings.max_compress_block_size,
-                                       settings.query_write_settings));
     }
 }
 
@@ -227,17 +204,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
     /// Store block with last index row to write final mark at the end of column
     if (with_final_mark)
         last_index_block = primary_index_block;
-}
-
-void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block & block)
-{
-    for (size_t i = 0; i < stats.size(); ++i)
-    {
-        const auto & stat_ptr = stats[i];
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->getColumnName()).column);
-        execution_stats.statistics_build_us[i] += watch.elapsed();
-    }
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
@@ -367,69 +333,6 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
             stream->preFinalize();
             stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
         }
-    }
-}
-
-void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
-{
-    for (auto & stream : stats_streams)
-    {
-        stream->finalize();
-        if (sync)
-            stream->sync();
-    }
-
-    if (!stats.empty() && log->is(Poco::Message::PRIO_DEBUG))
-    {
-        UInt64 total_us = 0;
-        std::string stats_str;
-
-        /// Create pairs of (index, time_us) for sorting
-        std::vector<std::pair<size_t, UInt64>> stat_times;
-        stat_times.reserve(stats.size());
-
-        for (size_t i = 0; i < stats.size(); ++i)
-        {
-            stat_times.emplace_back(i, execution_stats.statistics_build_us[i]);
-            total_us += execution_stats.statistics_build_us[i];
-        }
-
-        /// If there are many statistics, show only the slowest ones
-        constexpr size_t max_stats_to_show = 10;
-        if (stats.size() > max_stats_to_show)
-        {
-            std::partial_sort(
-                stat_times.begin(),
-                stat_times.begin() + max_stats_to_show,
-                stat_times.end(),
-                [](const auto & a, const auto & b) { return a.second > b.second; });
-            stat_times.resize(max_stats_to_show);
-        }
-
-        for (size_t i = 0; i < stat_times.size(); ++i)
-        {
-            if (i > 0)
-                stats_str += ", ";
-            auto [idx, time_us] = stat_times[i];
-            stats_str += fmt::format("{}: {} ms", stats[idx]->getColumnName(), time_us / 1000);
-        }
-
-        if (stats.size() > max_stats_to_show)
-            stats_str += fmt::format(" (showing {} slowest out of {})", max_stats_to_show, stats.size());
-
-        LOG_DEBUG(
-            log, "Spent {} ms calculating {} statistics for the part {}: [{}]", total_us / 1000, stats.size(), data_part_name, stats_str);
-    }
-}
-
-void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
-{
-    for (size_t i = 0; i < stats.size(); i++)
-    {
-        auto & stream = *stats_streams[i];
-        stats[i]->serialize(stream.compressed_hashing);
-        stream.preFinalize();
-        stream.addToChecksums(checksums, true);
     }
 }
 

@@ -58,3 +58,19 @@ Original:          SELECT 1,2,3 EXCEPT SELECT 1,2,3;
 format(original):  (SELECT 1, 2, 3) EXCEPT (SELECT 1, 2, 3)
 format(formatted): (SELECT 1, 2, 3) EXCEPT (SELECT 1, 2, 3)
 
+Original:          ALTER TABLE `t55` (MODIFY ORDER BY ((`c0` AS `a0`)));
+format(original):  ALTER TABLE t55 (MODIFY ORDER BY c0 AS a0)
+format(formatted): ALTER TABLE t55 (MODIFY ORDER BY c0 AS a0)
+
+Original:          select (tab.*).2 from tab;
+format(original):  SELECT (tab.*).2 FROM tab
+format(formatted): SELECT (tab.*).2 FROM tab
+
+Original:          with (((1,1),1),1) as t1 select t1.1.1.1;
+format(original):  WITH (((1, 1), 1), 1) AS t1 SELECT ((t1.1).1).1
+format(formatted): WITH (((1, 1), 1), 1) AS t1 SELECT ((t1.1).1).1
+
+Original:          SELECT [['hello']].1;
+format(original):  SELECT [['hello']].1
+format(formatted): SELECT [['hello']].1
+

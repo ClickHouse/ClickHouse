@@ -2356,7 +2356,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
             query_id=query_id,
         )
     )

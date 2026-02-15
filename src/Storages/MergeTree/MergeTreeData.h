@@ -527,7 +527,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, ContextPtr local_context) const override;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
     bool supportsFinal() const override;
 
@@ -1771,7 +1771,9 @@ protected:
         using PartLoadingInfos = std::vector<PartLoadingInfo>;
 
         /// Builds a tree from the list of part infos.
-        static PartLoadingTree build(PartLoadingInfos nodes);
+        /// @param relative_data_path - path to the table data directory on disks,
+        ///   used to check for transaction metadata when parts intersect.
+        static PartLoadingTree build(PartLoadingInfos nodes, const String & relative_data_path);
 
         /// Traverses a tree and call @func on each node.
         /// If recursive is false traverses only the top level.
@@ -1783,6 +1785,7 @@ protected:
         /// because rearranging tree to the new root is not supported.
         void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk);
         std::unordered_map<String, NodePtr> root_by_partition;
+        String relative_data_path;
     };
 
     using PartLoadingTreeNodes = std::vector<PartLoadingTree::NodePtr>;

@@ -4788,7 +4788,7 @@ Propagate WITH statements to UNION queries and all subqueries
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
 If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
 
-Note that this is a compatibility setting for new analyzer to allow running some invalid queries that old analyzer could execute.
+Note that this is a compatibility setting for the analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0) \
     DECLARE(Bool, aggregate_functions_null_for_empty, false, R"(
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -5161,14 +5161,6 @@ Whether to delete all iceberg files on drop or not.
 )", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, use_parquet_metadata_cache, true, R"(
-If turned on, parquet format may utilize the parquet metadata cache.
 
 Possible values:
 
@@ -7016,7 +7008,7 @@ Uses replicas from cluster_for_parallel_replicas.
 
 - [distributed_index_analysis_for_non_shared_merge_tree](#distributed_index_analysis_for_non_shared_merge_tree)
 - [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
-- [distributed_index_analysis_min_indexes_size_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_size_to_activate)
+- [distributed_index_analysis_min_indexes_bytes_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_bytes_to_activate)
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).

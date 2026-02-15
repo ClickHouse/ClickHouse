@@ -17,7 +17,7 @@ SELECT *
 FROM t_parquet_prefetcher_read_big_at
 ORDER BY a,c
 FORMAT Null
-SETTINGS log_comment = 'test_03723_parquet_prefetcher_read_big_at', use_parquet_metadata_cache = 0;
+SETTINGS log_comment = 'test_03723_parquet_prefetcher_read_big_at';
 -- Ensure that profiling is available for analysis
 SYSTEM FLUSH LOGS query_log;
 -- Check profiling data to visualize what logic has been used

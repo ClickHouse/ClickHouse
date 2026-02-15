@@ -40,6 +40,7 @@ public:
     void add(VirtualColumnDescription desc);
     void addEphemeral(String name, DataTypePtr type, String comment);
     void addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment);
+    std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
     size_t size() const { return container.size(); }
     bool empty() const { return container.empty(); }

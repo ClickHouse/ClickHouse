@@ -153,6 +153,7 @@
             display: grid;
             grid-template-rows: auto 1fr auto;
             grid-template-areas: "databases-icon" "contents" "github-icon";
+            cursor: e-resize;
         }
 
         #main
@@ -1201,13 +1202,31 @@ async function loadTables(server_address, user, password, database, container) {
 }
 
 let databases_toggle = document.getElementById('databases-toggle');
-databases_toggle.addEventListener('click', e => {
+
+let menu_elem = document.getElementById('menu');
+
+function toggleDatabases() {
     if (!databases_toggle.dataset['opened']) {
-        loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(() => databases_toggle.dataset['opened'] = 1);
+        loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(() => {
+            databases_toggle.dataset['opened'] = 1;
+            menu_elem.style.cursor = 'w-resize';
+        });
     } else {
         delete databases_toggle.dataset['opened'];
+        menu_elem.style.cursor = 'e-resize';
         let databases_elem = document.getElementById('databases');
         while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
+    }
+}
+
+databases_toggle.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleDatabases();
+});
+
+document.getElementById('menu').addEventListener('click', e => {
+    if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle')) {
+        toggleDatabases();
     }
 });
 
@@ -1301,7 +1320,7 @@ async function postImpl(posted_request_num, query)
     url += '&default_format=' + default_format + '&enable_http_compression=1';
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
-    url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save';
+    url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
 
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
@@ -2661,7 +2680,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         'add_http_cors_header=1' +
         '&enable_http_compression=1' +
-        '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save' +
+        '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore' +
         '&default_format=' + encodeURIComponent(format) +
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);

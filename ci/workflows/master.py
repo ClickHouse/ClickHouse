@@ -33,6 +33,7 @@ workflow = Workflow.Config(
             )
             for job in JobConfigs.special_build_jobs
         ],
+        JobConfigs.smoke_tests_macos,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
@@ -57,14 +58,6 @@ workflow = Workflow.Config(
         # *JobConfigs.sqlancer_master_jobs,
         JobConfigs.sqltest_master_job,
         JobConfigs.llvm_coverage_merge_job,
-        # macOS smoke tests on GitHub-hosted runners (no AWS credentials)
-        # Explicit dependency on darwin builds since artifact-based requires was removed
-        *[
-            job.set_dependency(
-                [j.name for j in JobConfigs.special_build_jobs if "darwin" in j.name]
-            )
-            for job in JobConfigs.macos_smoke_test_jobs
-        ],
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -77,6 +70,7 @@ workflow = Workflow.Config(
         ArtifactConfigs.parser_memory_profiler,
         *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_html_report,
+        ArtifactConfigs.llvm_coverage_info_file,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,

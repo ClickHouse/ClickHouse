@@ -1,10 +1,12 @@
 #include <Core/Settings.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/LogsLevel.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Formats/FormatFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -15,7 +17,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
-#include <Common/logger_useful.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -108,19 +110,69 @@ void resolveSchemaAndFormat(
         format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
     }
 
-    validateSupportedColumns(columns, *configuration);
+    validateColumns(columns, configuration);
 }
 
-void validateSupportedColumns(
-    ColumnsDescription & columns,
-    const StorageObjectStorageConfiguration & configuration)
+void validateColumns(
+    const ColumnsDescription & columns,
+    StorageObjectStorageConfigurationPtr configuration,
+    bool validate_schema_with_remote,
+    ObjectStoragePtr object_storage,
+    const std::optional<FormatSettings> * format_settings,
+    const std::string * sample_path,
+    ContextPtr context,
+    const NamesAndTypesList * hive_partition_columns_to_read_from_file_path,
+    const ColumnsDescription * columns_in_table_or_function_definition,
+    LoggerPtr log)
 {
     if (!columns.hasOnlyOrdinary())
     {
         /// We don't allow special columns.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
-            configuration.getTypeName());
+            configuration ? configuration->getTypeName() : "object storage");
+    }
+
+    /// If schema validation parameters are not provided, skip schema consistency check.
+    /// validateColumns is only called with full arguments from StorageObjectStorage when
+    /// resolveSchemaAndFormat was not used (validate_schema_with_remote == true).
+    if (!object_storage || !configuration || !format_settings || !sample_path || !context
+        || !hive_partition_columns_to_read_from_file_path || !columns_in_table_or_function_definition || !log)
+        return;
+
+    /// We don't check csv and tsv formats because they change column names.
+    if (!validate_schema_with_remote
+        || configuration->format == "CSV"
+        || configuration->format == "TSV")
+        return;
+
+    /// Verify that explicitly specified columns exist in the schema inferred from data.
+    String sample_path_schema = *sample_path;
+    std::optional<ColumnsDescription> schema_file;
+    try
+    {
+        schema_file = StorageObjectStorage::resolveSchemaFromData(
+            object_storage,
+            configuration,
+            *format_settings,
+            sample_path_schema,
+            context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "while verifying schema consistency", LogsLevel::debug);
+    }
+    if (schema_file)
+    {
+        auto hive_partitioning_columns = hive_partition_columns_to_read_from_file_path->getNameSet();
+        for (const auto & column : *columns_in_table_or_function_definition)
+            if (!schema_file->tryGet(column.name) && !hive_partitioning_columns.contains(column.name))
+            {
+                String hive_columns;
+                for (const auto & hive_column : hive_partitioning_columns)
+                    hive_columns += hive_column + ";";
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find column {} in schema {}, hive columns {}", column.name, schema_file->toString(false), hive_columns);
+            }
     }
 }
 

@@ -241,7 +241,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
         if (reading->getContext()->getSettingsRef()[Setting::use_statistics])
         {
-            if (auto estimator = reading->getConditionSelectivityEstimator())
+            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames()))
             {
                 auto prewhere_info = reading->getPrewhereInfo();
                 const ActionsDAG::Node * prewhere_node = prewhere_info

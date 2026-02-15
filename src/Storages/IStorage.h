@@ -133,7 +133,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts &, ContextPtr) const;
+    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.

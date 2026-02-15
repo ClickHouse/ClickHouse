@@ -679,6 +679,9 @@ def test_short_disconnection_doesnt_stop_backup():
         assert get_num_system_processes(initiator, backup_id=backup_id) >= 1
 
         # Dropping connection for less than `failure_after_host_disconnected_for_seconds`
+        # When using faster_zk_disconnect_detect.xml (session_timeout_ms=5000),
+        # the drop duration must be short enough to avoid ZK session expiry.
+        max_drop_seconds = 1 if use_faster_zk_disconnect_detect else 4
         with PartitionManager() as pm:
             random_sleep(4)
             node_to_drop_zk_connection = random_node()
@@ -686,7 +689,7 @@ def test_short_disconnection_doesnt_stop_backup():
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
-            random_sleep(4)
+            random_sleep(max_drop_seconds)
             print(
                 f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
@@ -733,6 +736,9 @@ def test_short_disconnection_doesnt_stop_restore():
         assert get_num_system_processes(initiator, restore_id=restore_id) >= 1
 
         # Dropping connection for less than `failure_after_host_disconnected_for_seconds`
+        # When using faster_zk_disconnect_detect.xml (session_timeout_ms=5000),
+        # the drop duration must be short enough to avoid ZK session expiry.
+        max_drop_seconds = 1 if use_faster_zk_disconnect_detect else 3
         with PartitionManager() as pm:
             random_sleep(3)
             node_to_drop_zk_connection = random_node()
@@ -740,7 +746,7 @@ def test_short_disconnection_doesnt_stop_restore():
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
-            random_sleep(3)
+            random_sleep(max_drop_seconds)
             print(
                 f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )

@@ -1,8 +1,8 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
@@ -33,6 +33,30 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool hasMaterializedTextIndex(
+    const StorageSnapshotPtr & storage_snapshot,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const String & virtual_column_name)
+{
+    if (!storage_snapshot->virtual_columns)
+        return false;
+
+    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(virtual_column_name);
+    if (!virtual_column)
+        return false;
+
+    /// Name of the text index is embedded as a comment to the virtual column.
+    const auto & text_index_name = virtual_column->comment;
+    for (const auto & index_desc : storage_snapshot->metadata->getSecondaryIndices())
+    {
+        if (index_desc.type == "text" && index_desc.name == text_index_name)
+            if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
+                return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
+    }
+
+    return false;
+}
 
 /// Columns absent in part may depend on other absent columns so we are
 /// searching all required physical columns recursively. Return true if found at
@@ -72,7 +96,11 @@ bool injectRequiredColumnsRecursively(
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
-        if (column_in_part)
+        if (column_in_part
+            /// If the column was dropped by a pending mutation that hasn't been applied yet,
+            /// the data in this part is stale. Treat it as missing so that the default value is used.
+            /// This can happen if the column was dropped and then re-added with the same name.
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part)))
         {
             if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {
@@ -80,9 +108,9 @@ bool injectRequiredColumnsRecursively(
                 return true;
             }
         }
-        /// TODO: correctly determine whether the index is present in the part
-        else if (isTextIndexVirtualColumn(column_name_in_part))
+        else if (isTextIndexVirtualColumn(column_name_in_part) && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part))
         {
+            /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
             return true;
         }
@@ -90,13 +118,14 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->metadata->getColumns().getDefault(column_name);
-    if (!column_default)
+    const auto column_default = storage_snapshot->getDefault(column_name);
+    ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
+    if (!default_expression)
         return false;
 
     /// collect identifiers required for evaluation
     IdentifierNameSet identifiers;
-    column_default->expression->collectIdentifierNames(identifiers);
+    default_expression->collectIdentifierNames(identifiers);
 
     bool result = false;
     for (const auto & identifier : identifiers)
@@ -149,10 +178,21 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        /// Use part's own columns to find the minimum size column.
-        /// This ensures we find a column that actually exists in this part,
-        /// even if the table metadata has changed (e.g., all columns were dropped and new ones added).
-        const auto & available_columns = data_part_info_for_reader.getColumns();
+        /// Use the intersection of part columns and metadata columns to find the minimum size column.
+        /// The column must exist both physically in the part (to be readable) and in the current metadata
+        /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
+        /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
+        const auto & part_columns = data_part_info_for_reader.getColumns();
+        NamesAndTypesList available_columns;
+        for (const auto & column : part_columns)
+        {
+            if (storage_snapshot->tryGetColumn(options, column.name))
+                available_columns.push_back(column);
+        }
+
+        if (available_columns.empty())
+            available_columns = part_columns;
+
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column

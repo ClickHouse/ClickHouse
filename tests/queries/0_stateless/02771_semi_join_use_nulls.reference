@@ -16,7 +16,7 @@ SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
 ;
-0	\N
+0	0
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
@@ -57,7 +57,7 @@ SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS va
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
 ;
-0	\N
+0	0
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
@@ -172,7 +172,7 @@ SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
 ;
-0	\N
+0	0
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 SEMI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
@@ -213,7 +213,7 @@ SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS va
 SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
 ;
-0	\N
+0	0
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
@@ -318,7 +318,7 @@ SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
 USING (id)
 ;
-0	\N
+0	0
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
 USING (id)
@@ -328,7 +328,7 @@ SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
 ;
-0	\N
+0	0
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
@@ -342,12 +342,12 @@ SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
 ON a.id = d.id
 ;
-0	\N
+0	0
 SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
 ON a.id = d.idd
 ;
-0	\N
+0	0
 SELECT *
 FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 SEMI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
@@ -359,7 +359,7 @@ SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS va
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
 USING (id)
 ;
-0	\N
+0	0
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
 USING (id)
@@ -369,7 +369,7 @@ SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS va
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
 ;
-0	\N
+0	0
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
 USING (id)
@@ -383,12 +383,12 @@ SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS va
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
 ON a.id = d.id
 ;
-0	\N
+0	0
 SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
 ON a.id = d.idd
 ;
-0	\N
+0	0
 SELECT *
 FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 SEMI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d

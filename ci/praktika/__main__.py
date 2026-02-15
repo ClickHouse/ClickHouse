@@ -18,7 +18,13 @@ def create_parser():
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     run_parser = subparsers.add_parser("run", help="Run a CI job")
-    run_parser.add_argument("job", help="Name of the job to run", type=str)
+    run_parser.add_argument(
+        "job",
+        help="Name of the job to run",
+        type=str,
+        nargs="?",
+        default=None,
+    )
     run_parser.add_argument(
         "--workflow",
         help=(
@@ -134,18 +140,43 @@ def create_parser():
 
     _yaml_parser = subparsers.add_parser("yaml", help="Generate YAML workflows")
 
-    # TODO: Merge with infra
-    _html_parser = subparsers.add_parser("html", help="Upload an HTML report page")
-    _html_parser.add_argument(
-        "--test",
-        action="store_true",
-        default="",
+    _infra_parser = subparsers.add_parser(
+        "infrastructure", help="Manage cloud infrastructure and HTML reports"
     )
-    _infra_parser = subparsers.add_parser("deploy", help="Deploy cloud infrastructure")
+    _infra_parser.add_argument(
+        "--deploy",
+        help="Deploy cloud infrastructure or upload HTML report",
+        action="store_true",
+        default=False,
+    )
+    _infra_parser.add_argument(
+        "--shutdown",
+        help="Terminate EC2 instances and/or release Dedicated Hosts",
+        action="store_true",
+        default=False,
+    )
     _infra_parser.add_argument(
         "--all",
+        help="Deploy all configured components (used with --deploy)",
         action="store_true",
-        default="",
+        default=False,
+    )
+    _infra_parser.add_argument(
+        "--only",
+        help=(
+            "Process only specified components (e.g. html ImageBuilder LaunchTemplate AutoScalingGroup Lambda DedicatedHost EC2Instance). "
+            "With --deploy: deploys only these components or uploads html report. "
+            "With --shutdown: releases DedicatedHost or terminates EC2Instance."
+        ),
+        nargs="+",
+        type=str,
+        default=None,
+    )
+    _infra_parser.add_argument(
+        "--test",
+        help="Test mode for HTML upload (creates _test.html variant)",
+        action="store_true",
+        default=False,
     )
     return parser
 
@@ -158,19 +189,62 @@ def main():
     if args.command == "yaml":
         Validator().validate()
         YamlGenerator().generate()
-    elif args.command == "deploy":
-        from .mangle import _get_infra_config
+    elif args.command == "infrastructure":
+        if not args.deploy and not args.shutdown:
+            Utils.raise_with_error(
+                "infrastructure command requires either --deploy or --shutdown flag"
+            )
 
-        _get_infra_config().deploy(all=args.all)
-    elif args.command == "html":
-        Html.prepare(args.test)
+        if args.deploy:
+            # Check if html is in the only list (case-insensitive)
+            normalized_only = (
+                [c.strip().lower() for c in args.only] if args.only else []
+            )
+            if normalized_only and "html" in normalized_only:
+                Html.prepare(args.test)
+                # Remove html from the list for subsequent infrastructure deployment
+                remaining_components = [
+                    c
+                    for c, normalized in zip(args.only, normalized_only)
+                    if normalized != "html"
+                ]
+                if remaining_components:
+                    from .mangle import _get_infra_config
+
+                    _get_infra_config().deploy(
+                        all=args.all,
+                        only=remaining_components,
+                    )
+            else:
+                from .mangle import _get_infra_config
+
+                _get_infra_config().deploy(
+                    all=args.all,
+                    only=args.only,
+                )
+
+        if args.shutdown:
+            from .mangle import _get_infra_config
+
+            _get_infra_config().shutdown(
+                force=True,
+                only=args.only,
+            )
     elif args.command == "run":
         from .mangle import _get_workflows
         from .runner import Runner
 
         workflows = _get_workflows(
             name=args.workflow or None, default=not bool(args.workflow)
-        )
+        ) # it actually returns only default workflow when there is no --workflow
+        if args.job is None:
+            for workflow in workflows:
+                print(
+                    f"Workflow [{workflow.name}] has jobs:\n"
+                    "  \"" + f'"\n  "'.join([job.name for job in workflow.jobs]) + '"'
+                    )
+            Utils.exit_with_error("Job name is required to run a job.")
+
         job_workflow_pairs = []
         for workflow in workflows:
             jobs = workflow.find_jobs(args.job, lazy=True)
@@ -178,13 +252,13 @@ def main():
                 for job in jobs:
                     job_workflow_pairs.append((job, workflow))
         if not job_workflow_pairs:
-            Utils.raise_with_error(
+            Utils.exit_with_error(
                 f"Failed to find job [{args.job}] workflow [{args.workflow}]"
             )
         elif len(job_workflow_pairs) > 1:
             for job, wf in job_workflow_pairs:
                 print(f"Job: [{job.name}], Workflow [{wf.name}]")
-            Utils.raise_with_error(
+            Utils.exit_with_error(
                 f"More than one job [{args.job}]: {[(wf.name, job.name) for job, wf in job_workflow_pairs]}"
             )
         else:

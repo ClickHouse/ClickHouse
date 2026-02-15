@@ -29,10 +29,10 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
+    MACOS_ARM_SMALL = ["self-hosted", "arm_macos_small"]
+    MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
-    # GitHub-hosted macOS runners for native smoke tests
-    MACOS_ARM = ["macos-14"]  # Apple Silicon (M1/M2/M3)
 
 
 class CIFiles:
@@ -328,6 +328,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     PR_BODY = "PR formatter"
     FAST_TEST = "Fast test"
+    SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -354,7 +355,6 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
-    MACOS_SMOKE_TEST = "macOS smoke test"
 
 
 class ToolSet:
@@ -374,6 +374,7 @@ class ArtifactNames:
     LLVM_COVERAGE_HTML_REPORT = (
         "LLVM_COVERAGE_HTML_REPORT"  # .tar.gz file with html report
     )
+    LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     CH_AMD_ASAN = "CH_AMD_ASAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
@@ -503,6 +504,11 @@ class ArtifactConfigs:
         name=ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
+    )
+    llvm_coverage_info_file = Artifact.Config(
+        name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/llvm_coverage.info",
     )
     clickhouse_debians = Artifact.Config(
         name="*",

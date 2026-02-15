@@ -180,7 +180,7 @@ struct SelectQueryInfo
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
-    /// New analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
+    /// The analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
     /// Example: x IN (1, 2, 3)
     PreparedSetsPtr prepared_sets;
 

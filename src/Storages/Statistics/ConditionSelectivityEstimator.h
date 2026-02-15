@@ -73,7 +73,7 @@ public:
         Float64 selectivity;
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
-        void finalize(const ColumnEstimators & column_estimators_);
+        void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
@@ -88,7 +88,7 @@ private:
         UInt64 estimateCardinality() const;
     };
 
-    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const;
+    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
@@ -109,7 +109,7 @@ class ConditionSelectivityEstimatorBuilder
 {
 public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
-    void addStatistics(ColumnStatisticsPtr column_stats);
+    void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
     void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;

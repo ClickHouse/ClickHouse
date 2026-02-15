@@ -231,7 +231,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Check workflows are up to date")
         commands = [
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f"sh -c 'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n \"$changed\" ]; then echo \"ERROR: workflows are outdated. Changed files:\"; printf \"%s\\n\" \"$changed\"; exit 1; fi'",
+            f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
         ]
 
         return Result.from_commands_run(
@@ -467,6 +467,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             unaffected_jobs_with_artifacts = {}
             all_required_artifacts = set()
 
+            # Build set of all job names for quick lookup
+            job_names = {j.name for j in workflow.jobs}
+
             for job in workflow.jobs:
                 # Skip native Praktika jobs
                 if _is_praktika_job(job.name):
@@ -491,7 +494,16 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     if job.provides:
                         # for cases when artifact report is used instead of real artifacts
                         affected_artifacts.append(job.name)
-                    all_required_artifacts.update(job.requires)
+                    # Only add artifact names to all_required_artifacts
+                    # Job names in requirements indicate ordering-only dependencies
+                    for req in job.requires:
+                        if req not in job_names:
+                            # Not a job name, must be an artifact name
+                            all_required_artifacts.add(req)
+                        else:
+                            print(
+                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as ordering-only dependency"
+                            )
                 else:
                     print(f"Job [{job.name}] is not affected by the change")
                     if not job.provides:
@@ -504,13 +516,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                         )
                         unaffected_jobs_with_artifacts[job.name] = job.provides
 
+            print(f"All required artifacts [{all_required_artifacts}]")
+            print(f"Affected artifacts [{affected_artifacts}]")
             for job_name, artifacts in unaffected_jobs_with_artifacts.items():
                 if (
                     any(a in all_required_artifacts for a in artifacts)
                     or job_name in all_required_artifacts
                 ):
                     print(
-                        f"NOTE: Job [{job_name}] provides required artifacts — cannot be skipped"
+                        f"NOTE: Job [{job_name}] provides required artifacts - cannot be skipped"
                     )
                 else:
                     workflow_config.set_job_as_filtered(

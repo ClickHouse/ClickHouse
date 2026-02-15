@@ -1,0 +1,16 @@
+Fully materialized
+200
+200
+-- use text index reader for all parts
+1
+1
+-- verify all parts have a materialized index
+1
+Partially materialized
+200
+200
+-- use text index reader for parts have a materialized index
+1
+1
+-- verify some parts do not have a materialized index
+1
