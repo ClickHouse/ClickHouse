@@ -1163,15 +1163,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
 
         /// If table doesn't store data on disk, the data will be lost after detach.
         /// If table has lock for any action, it will be removed after detach.
-        /// If table supports transactions, DETACH/ATTACH can cause LOGICAL_ERROR
-        /// when data parts reference TIDs that were already cleaned from TransactionLog.
         /// Since it will affect future queries do not detach in those cases.
         auto [database, table] = catalog.tryGetDatabaseAndTable(table_id, context);
         if (!database
             || !database->supportsDetachingTables()
             || !table
             || !table->storesDataOnDisk()
-            || table->supportsTransactions()
             || context->getActionLocksManager()->hasAny(table))
             continue;
 
