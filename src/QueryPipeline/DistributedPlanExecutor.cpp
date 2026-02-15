@@ -39,6 +39,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -608,7 +609,7 @@ protected:
         std::thread([promise = std::move(task_promise), thread_group = CurrentThread::getGroup(), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
         {
             ThreadStatus thread_status;
-            CurrentThread::attachToGroup(thread_group);
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
 
             try
             {
