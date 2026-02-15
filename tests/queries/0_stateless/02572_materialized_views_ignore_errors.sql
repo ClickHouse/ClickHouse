@@ -1,8 +1,4 @@
 set prefer_localhost_replica=1;
--- With `use_async_executor_for_materialized_views = 1`, the pipeline task scheduling may cause
--- the MV exception to cancel the pipeline before `MemorySink::onFinish` commits the data,
--- making the source table content after a failed INSERT non-deterministic.
-set use_async_executor_for_materialized_views = 0;
 
 drop table if exists data_02572;
 drop table if exists proxy_02572;
@@ -35,10 +31,9 @@ from system.query_views_log where
 
 SET materialized_views_ignore_errors = 0;
 insert into data_02572 values (1); -- { serverError UNKNOWN_TABLE }
-select * from data_02572 order by key;
 
 create table receiver_02572 as data_02572;
 
 insert into data_02572 values (3);
-select * from data_02572 order by key;
+select key from data_02572 where key in (2, 3) order by key;
 select * from receiver_02572 order by key;

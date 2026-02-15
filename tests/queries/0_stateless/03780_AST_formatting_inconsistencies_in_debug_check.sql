@@ -42,3 +42,11 @@ DROP TABLE tab2;
 
 SELECT 'Test weird SELECT/EXCEPT/SELECT statement:';
 SELECT 1,2,3 EXCEPT SELECT 1,2,3;
+
+SELECT 'Testing complex tuple expressions with indexes:';
+CREATE TABLE tab (c1 Tuple(int, int));
+INSERT INTO tab VALUES (tuple(1,1));
+SELECT (tab.*).2 FROM tab;
+DROP TABLE tab;
+
+WITH (((1,1),1),1) AS t1 SELECT t1.1.1.1;

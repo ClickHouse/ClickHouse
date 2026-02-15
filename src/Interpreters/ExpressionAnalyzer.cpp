@@ -2132,7 +2132,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             ///
             /// As a temporary solution, we add converting actions to the next chain.
             /// Hopefully, later we can
-            /// * use a new analyzer where this issue is absent
+            /// * use the analyzer where this issue is absent
             /// * or remove ExpressionActionsChain completely and re-implement its logic on top of the query plan
             {
                 for (auto & col : columns_before_aggregation)

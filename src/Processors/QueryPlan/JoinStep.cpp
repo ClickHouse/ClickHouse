@@ -275,7 +275,7 @@ void JoinStep::updateOutputHeader()
     if (!use_new_analyzer)
     {
         if (swap_streams)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without new analyzer");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without the analyzer");
         output_header = join_algorithm_header;
         return;
     }

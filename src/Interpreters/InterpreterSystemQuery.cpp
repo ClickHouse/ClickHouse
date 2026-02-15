@@ -1057,7 +1057,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
     }
 
-    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
+    replicated_db->restoreDatabaseInKeeper(getContext());
 
     LOG_TRACE(log, "Replicated database {} was restored.", database_name);
 }
@@ -1098,6 +1098,14 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     });
     table->is_being_restarted = true;
     table->flushAndShutdown();
+
+    /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
+    /// The table is removed from the in-memory tables map between detach and attach, making it
+    /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
+    std::optional<DatabaseReplicated::RestartReplicaGuard> restart_guard;
+    if (auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get()))
+        restart_guard.emplace(*replicated_db);
+
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -1151,6 +1159,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     }
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
+    restart_guard.reset();
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
 
@@ -1337,7 +1346,7 @@ bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, co
 
 void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database)
 {
-    for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+    for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
         dropStorageReplica(query_replica, iterator->table());
 
     LOG_TRACE(log, "Dropped storage replica from {} of database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));

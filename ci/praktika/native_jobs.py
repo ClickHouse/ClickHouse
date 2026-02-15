@@ -231,7 +231,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Check workflows are up to date")
         commands = [
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f"sh -c 'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n \"$changed\" ]; then echo \"ERROR: workflows are outdated. Changed files:\"; printf \"%s\\n\" \"$changed\"; exit 1; fi'",
+            f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
         ]
 
         return Result.from_commands_run(

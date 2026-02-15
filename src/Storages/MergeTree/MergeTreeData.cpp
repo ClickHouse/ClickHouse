@@ -813,7 +813,7 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
 }
 
 ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator(
-    const RangesInDataParts & parts, ContextPtr local_context) const
+    const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const
 {
     if (!local_context->getSettingsRef()[Setting::use_statistics])
         return nullptr;
@@ -836,10 +836,10 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         try
         {
             auto parts_lock = readLockParts();
-            auto stats = part.data_part->loadStatistics();
+            auto stats = part.data_part->loadStatistics(required_columns);
             estimator_builder.markDataPart(part.data_part);
-            for (const auto & stat : stats)
-                estimator_builder.addStatistics(stat);
+            for (const auto & [column_name, stat] : stats)
+                estimator_builder.addStatistics(column_name, stat);
         }
         catch (...)
         {
@@ -1695,6 +1695,14 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
     if (!current_ptr)
         current_ptr = std::make_shared<Node>(MergeTreePartInfo{}, "", disk);
 
+    /// Check if a part directory has transaction version metadata on disk.
+    auto has_transaction_metadata = [&](const String & part_name, const DiskPtr & part_disk) -> bool
+    {
+        if (relative_data_path.empty())
+            return false;
+        return part_disk->existsFile(fs::path(relative_data_path) / part_name / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+    };
+
     auto * current = current_ptr.get();
     while (true)
     {
@@ -1711,6 +1719,17 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             }
             if (!prev_info.isDisjoint(info))
             {
+                if (has_transaction_metadata(name, disk) || has_transaction_metadata(prev->second->name, prev->second->disk))
+                {
+                    /// If one of the intersecting parts was involved in a transaction,
+                    /// it's likely a result of a rolled-back transaction that left a part on disk.
+                    /// Skip the part for now; the proper fix should handle transaction metadata
+                    /// before building the parts loading tree.
+                    LOG_WARNING(getLogger("MergeTreeData"), "Skipping part {} because it intersects part {}"
+                        " and one of them has transaction metadata (likely a rolled-back transaction)",
+                        name, prev->second->name);
+                    return;
+                }
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects previous part {}. It is a bug or a result of manual intervention",
                     name, prev->second->name);
@@ -1728,6 +1747,13 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             }
             if (!next_info.isDisjoint(info))
             {
+                if (has_transaction_metadata(name, disk) || has_transaction_metadata(it->second->name, it->second->disk))
+                {
+                    LOG_WARNING(getLogger("MergeTreeData"), "Skipping part {} because it intersects part {}"
+                        " and one of them has transaction metadata (likely a rolled-back transaction)",
+                        name, it->second->name);
+                    return;
+                }
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects next part {}. It is a bug or a result of manual intervention",
                     name, it->second->name);
@@ -1756,7 +1782,7 @@ void MergeTreeData::PartLoadingTree::traverse(bool recursive, Func && func)
 }
 
 MergeTreeData::PartLoadingTree
-MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes)
+MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes, const String & relative_data_path_)
 {
     std::sort(nodes.begin(), nodes.end(), [](const auto & lhs, const auto & rhs)
     {
@@ -1764,6 +1790,7 @@ MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes)
     });
 
     PartLoadingTree tree;
+    tree.relative_data_path = relative_data_path_;
     for (const auto & [info, name, disk] : nodes)
         tree.add(info, name, disk);
     return tree;
@@ -1939,7 +1966,11 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
         if (!res.part->version.creation_csn)
         {
-            auto min = TransactionLog::getCSNAndAssert(res.part->version.creation_tid, res.part->version.creation_csn);
+            /// Use getCSN instead of getCSNAndAssert here because during part loading
+            /// we may encounter parts from rolled-back transactions whose TIDs have
+            /// been cleaned up from the transaction log (tail_ptr moved past them).
+            /// This is not a bug — the part should simply be treated as rolled back.
+            auto min = TransactionLog::getCSN(res.part->version.creation_tid);
             if (!min)
             {
                 /// Transaction that created this part was not committed. Remove part.
@@ -1955,7 +1986,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
         if (!version.removal_tid.isEmpty() && !version.removal_csn)
         {
-            auto max = TransactionLog::getCSNAndAssert(version.removal_tid, version.removal_csn);
+            auto max = TransactionLog::getCSN(version.removal_tid);
             if (max)
             {
                 LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has removal_tid={}, setting removal_csn={}",
@@ -2287,7 +2318,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     for (auto & disk_parts : unexpected_parts_to_load_by_disk)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(unexpected_parts_to_load));
 
-    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
+    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load), relative_data_path);
 
     size_t num_parts = 0;
     PartLoadingTreeNodes active_parts;
@@ -2529,7 +2560,7 @@ try
         }
     }
 
-    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
+    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load), relative_data_path);
 
     PartLoadingTreeNodes parts_to_add;
 
@@ -2618,8 +2649,8 @@ try
             auto parts_lock = readLockParts();
             auto stats = data_part->loadStatistics();
             estimator_builder.markDataPart(data_part);
-            for (const auto & stat : stats)
-                estimator_builder.addStatistics(stat);
+            for (const auto & [column_name, stat] : stats)
+                estimator_builder.addStatistics(column_name, stat);
         }
         catch (...)
         {
@@ -8585,7 +8616,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo &) const
 {
-    /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
+    /// with the analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
     if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         const auto & settings = query_context->getSettingsRef();
@@ -10367,7 +10398,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         metadata_snapshot,
         columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        ColumnsStatistics{},
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::PrehistoricTID,
@@ -10382,7 +10412,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     out.write(block);
     /// Here is no projections as no data inside
     out.finalizeIndexGranularity();
-    out.finalizePart(new_data_part, sync_on_insert);
+    out.finalizePart(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync_on_insert);
 
     new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));

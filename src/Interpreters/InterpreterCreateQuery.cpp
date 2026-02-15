@@ -2657,6 +2657,19 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
+    /// Ensure the old detached table instance is destroyed before we remove
+    /// transaction metadata files. Otherwise the old table's parts still hold
+    /// in-memory version metadata referencing those files, and the debug
+    /// assertion in removeIfNeeded() → assertHasValidVersionMetadata() will
+    /// fail when the old storage is destroyed later.
+    if (create.uuid != UUIDHelpers::Nil)
+    {
+        if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
+            database->waitDetachedTableNotInUse(create.uuid);
+        else
+            database->checkDetachedTableNotInUse(create.uuid);
+    }
+
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))
     {

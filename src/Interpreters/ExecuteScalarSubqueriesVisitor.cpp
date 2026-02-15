@@ -72,7 +72,7 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
         /// and assign an alias for 02367_optimize_trivial_count_with_array_join to pass. Otherwise it will fail in
         /// ArrayJoinedColumnsVisitor (`No alias for non-trivial value in ARRAY JOIN: _a`)
         /// This looks 100% as a incomplete code working on top of a bug, but this code has already been made obsolete
-        /// by the new analyzer, so it's an inconvenience we can live with until we deprecate it.
+        /// by the analyzer, so it's an inconvenience we can live with until we deprecate it.
         if (child == tables->array_join)
             return true;
         return false;

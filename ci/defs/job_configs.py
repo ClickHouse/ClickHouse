@@ -11,22 +11,6 @@ from ci.defs.defs import (
     RunnerLabels,
 )
 
-# macOS smoke test job - runs on GitHub-hosted macOS runners without Docker
-# no_aws=True because GitHub-hosted macOS runners have no AWS credentials;
-# the binary is downloaded via public HTTP inside the job script.
-common_macos_smoke_test_job_config = Job.Config(
-    name=JobNames.MACOS_SMOKE_TEST,
-    runs_on=[],  # from parametrize
-    command="python3 ./ci/jobs/macos_smoke_test.py",
-    no_aws=True,
-    digest_config=Job.CacheDigestConfig(
-        include_paths=[
-            "./ci/jobs/macos_smoke_test.py",
-        ],
-    ),
-    timeout=600,
-)
-
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
 BINARY_DOCKER_COMMAND = (
@@ -142,12 +126,12 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/log_parser.py",
         ],
     ),
-    timeout=3600 * 2,
+    timeout=3600 * 3,
 )
 common_integration_test_job_config = Job.Config(
     name=JobNames.INTEGRATION,
     runs_on=[],  # from parametrize
-    command="python3 ./ci/jobs/integration_test_job.py --options '{PARAMETER}'", # use --session-timeout 60 to debug
+    command="python3 ./ci/jobs/integration_test_job.py --options '{PARAMETER}'",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
@@ -1183,21 +1167,13 @@ class JobConfigs:
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
             *LLVM_ARTIFACTS_LIST,
         ],
-        provides=[ArtifactNames.LLVM_COVERAGE_HTML_REPORT, ArtifactNames.LLVM_COVERAGE_INFO_FILE],
+        provides=[
+            ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
+            ArtifactNames.LLVM_COVERAGE_INFO_FILE,
+        ],
         command="python3 ./ci/jobs/merge_llvm_coverage_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/merge_llvm_coverage_job.py"],
         ),
         timeout=3600,
-    )
-    # macOS smoke tests - run on GitHub-hosted macOS runners (no Docker)
-    # No `requires` here because artifact download from S3 needs AWS credentials
-    # which are not available on GitHub-hosted macOS runners.
-    # The dependency on the build job is set via set_dependency in the workflow.
-    # The binary is downloaded via public HTTP inside the job script.
-    macos_smoke_test_jobs = common_macos_smoke_test_job_config.parametrize(
-        Job.ParamSet(
-            parameter="arm_darwin",
-            runs_on=RunnerLabels.MACOS_ARM,
-        ),
     )

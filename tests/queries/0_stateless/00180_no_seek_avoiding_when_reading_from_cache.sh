@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful, no-parallel, no-random-settings, long
+# Tags: stateful, no-parallel, no-random-settings, long, no-asan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

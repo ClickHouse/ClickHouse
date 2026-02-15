@@ -784,7 +784,10 @@ void optimizeTreeSecondPass(
             if (frame.next_child == 0)
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
-                    break;
+                {
+                    stack.pop_back();
+                    continue;
+                }
             }
 
             /// Traverse all children first.

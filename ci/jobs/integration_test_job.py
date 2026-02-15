@@ -522,15 +522,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
-    if not is_targeted_check:
-        session_timeout_parallel = 3600 * 2
-        session_timeout_sequential = 3600
-    else:
-        # For targeted jobs, use a shorter session timeout to keep feedback fast.
-        # If this timeout is exceeded but all completed tests have passed, the
-        # targeted check will not fail solely because the session timed out.
-        session_timeout_parallel = 1200
-        session_timeout_sequential = 1200
+    session_timeout_parallel = 3600 * 2
+    session_timeout_sequential = 3600
 
     if is_llvm_coverage:
         session_timeout_parallel = 7200

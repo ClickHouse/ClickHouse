@@ -548,6 +548,11 @@ class Utils:
     def cpu_count():
         return multiprocessing.cpu_count()
 
+    @staticmethod
+    def exit_with_error(error_message: str) -> None:
+        print(f"ERROR: {error_message}")
+        sys.exit(1)
+
     # deprecated: unnecessary lines in traceback + ide linting issues
     # switch to regular raise Ex() inplace
     @staticmethod

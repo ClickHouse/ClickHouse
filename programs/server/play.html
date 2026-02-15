@@ -153,6 +153,7 @@
             display: grid;
             grid-template-rows: auto 1fr auto;
             grid-template-areas: "databases-icon" "contents" "github-icon";
+            cursor: e-resize;
         }
 
         #main
@@ -1023,6 +1024,31 @@ function checkURL() {
 url_elem.addEventListener('input', checkURL);
 checkURL();
 
+async function auxiliaryQuery(server_address, user, password, query, url_params = '') {
+    let url = server_address +
+        (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        'add_http_cors_header=1&default_format=JSON' + url_params;
+    if (user) url += '&user=' + encodeURIComponent(user);
+    if (password) url += '&password=' + encodeURIComponent(password);
+
+    let response;
+    try {
+        response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+    } catch (e) {
+        clear();
+        renderError("Network error");
+        return false;
+    }
+    if (!response.ok) {
+        clear();
+        renderError(await response.text());
+        return false;
+    }
+    clearElement('error');
+    document.getElementById('logo-container').style.display = 'block';
+    return await response.json();
+}
+
 async function getServerStatus(server_address, user, password) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
@@ -1043,24 +1069,16 @@ let load_databases_request_num = 0;
 async function loadDatabases(server_address, user, password) {
     ++load_databases_request_num;
     const current_load_databases_request_num = load_databases_request_num;
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSON';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
 
-    let response = await fetch(url, {
-        method: "POST",
-        body: `SELECT database, database = currentDatabase() AS current
+    let json = await auxiliaryQuery(server_address, user, password,
+        `SELECT database, database = currentDatabase() AS current
             FROM system.databases WHERE database != 'INFORMATION_SCHEMA'
             ORDER BY
                 database = 'information_schema',
                 database = 'system',
                 database != 'default',
-                database`,
-        headers: { 'Authorization': 'never' } });
-    if (!response.ok) return false;
-    json = await response.json();
+                database`);
+    if (!json) return false;
 
     if (current_load_databases_request_num != load_databases_request_num) return false;
 
@@ -1097,7 +1115,7 @@ async function loadDatabases(server_address, user, password) {
 
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
-                loadTables(server_address, user, password, elem.database, database).then(() => database.dataset['opened'] = 1);
+                loadTables(server_address, user, password, elem.database, database).then(ok => { if (ok !== false) database.dataset['opened'] = 1; });
             } else {
                 delete database.dataset['opened'];
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
@@ -1110,20 +1128,12 @@ let load_tables_request_num = 0;
 async function loadTables(server_address, user, password, database, container) {
     ++load_tables_request_num;
     const current_load_tables_request_num = load_tables_request_num;
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSON';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-    url += '&param_database=' + encodeURIComponent(database);
 
-    let response = await fetch(url, {
-        method: "POST",
-        body: `SELECT table, engine, total_rows, total_bytes FROM system.tables WHERE database = {database:String}
+    let json = await auxiliaryQuery(server_address, user, password,
+        `SELECT table, engine, total_rows, total_bytes FROM system.tables WHERE database = {database:String}
             ORDER BY table LIKE '.inner%', table`,
-        headers: { 'Authorization': 'never' } });
-    if (!response.ok) return false;
-    json = await response.json();
+        '&param_database=' + encodeURIComponent(database));
+    if (!json) return false;
 
     if (current_load_tables_request_num != load_tables_request_num) return false;
 
@@ -1201,13 +1211,33 @@ async function loadTables(server_address, user, password, database, container) {
 }
 
 let databases_toggle = document.getElementById('databases-toggle');
-databases_toggle.addEventListener('click', e => {
+
+let menu_elem = document.getElementById('menu');
+
+function toggleDatabases() {
     if (!databases_toggle.dataset['opened']) {
-        loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(() => databases_toggle.dataset['opened'] = 1);
+        loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(ok => {
+            if (ok !== false) {
+                databases_toggle.dataset['opened'] = 1;
+                menu_elem.style.cursor = 'w-resize';
+            }
+        });
     } else {
         delete databases_toggle.dataset['opened'];
+        menu_elem.style.cursor = 'e-resize';
         let databases_elem = document.getElementById('databases');
         while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
+    }
+}
+
+databases_toggle.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleDatabases();
+});
+
+document.getElementById('menu').addEventListener('click', e => {
+    if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle')) {
+        toggleDatabases();
     }
 });
 
@@ -1301,7 +1331,7 @@ async function postImpl(posted_request_num, query)
     url += '&default_format=' + default_format + '&enable_http_compression=1';
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
-    url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save';
+    url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
 
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
@@ -1563,17 +1593,26 @@ if (window.location.hash) {
 }
 
 let in_flight = false;
+
+// Favicon changes to gray while a query is running, to indicate progress on the browser tab.
+const favicon_default = document.querySelector('link[rel="icon"]').href;
+const favicon_running = 'data:image/svg+xml;base64,' + btoa(atob(favicon_default.split(',')[1]).replace('#ff0', '#bbb'));
+
+function setFavicon(href) { document.querySelector('link[rel="icon"]').href = href; }
+
 async function post()
 {
     ++request_num;
     document.body.scrollTo(0, 0);
     let query = await getQueryUnderCursor();
     in_flight = true;
+    setFavicon(favicon_running);
     let run = document.getElementById('run');
     run.innerText = 'Stop';
     await postImpl(request_num, query);
     run.blur();
     run.innerText = 'Run';
+    setFavicon(favicon_default);
     in_flight = false;
 }
 
@@ -2661,7 +2700,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         'add_http_cors_header=1' +
         '&enable_http_compression=1' +
-        '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save' +
+        '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore' +
         '&default_format=' + encodeURIComponent(format) +
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);

@@ -162,6 +162,7 @@ struct FormatSettings
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
+        bool output_date_as_uint16 = false;
     } arrow{};
 
     struct

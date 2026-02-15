@@ -58,14 +58,6 @@ workflow = Workflow.Config(
         # *JobConfigs.sqlancer_master_jobs,
         JobConfigs.sqltest_master_job,
         JobConfigs.llvm_coverage_merge_job,
-        # macOS smoke tests on GitHub-hosted runners (no AWS credentials)
-        # Explicit dependency on darwin builds since artifact-based requires was removed
-        *[
-            job.set_dependency(
-                [j.name for j in JobConfigs.special_build_jobs if "darwin" in j.name]
-            )
-            for job in JobConfigs.macos_smoke_test_jobs
-        ],
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
