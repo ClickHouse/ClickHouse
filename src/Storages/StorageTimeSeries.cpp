@@ -17,6 +17,7 @@
 
 #include <base/insertAtEnd.h>
 #include <filesystem>
+#include <set>
 
 
 namespace DB
@@ -412,16 +413,98 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
 
 
 void StorageTimeSeries::read(
-    QueryPlan & /* query_plan */,
-    const Names & /* column_names */,
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
-    QueryProcessingStage::Enum /* processed_stage */,
-    size_t /* max_block_size */,
-    size_t /* num_streams */)
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SELECT is not supported by storage {} yet", getName());
+    /// Route SELECT to the appropriate inner/target table based on the requested columns.
+    /// Data table columns: id, timestamp, value
+    /// Tags table columns: id, metric_name, tags, all_tags, min_time, max_time
+    /// Metrics table columns: metric_family_name, type, unit, help
+
+    std::set<String> data_columns = {
+        TimeSeriesColumnNames::ID,
+        TimeSeriesColumnNames::Timestamp,
+        TimeSeriesColumnNames::Value
+    };
+
+    std::set<String> tags_columns = {
+        TimeSeriesColumnNames::ID,
+        TimeSeriesColumnNames::MetricName,
+        TimeSeriesColumnNames::Tags,
+        TimeSeriesColumnNames::AllTags,
+        TimeSeriesColumnNames::MinTime,
+        TimeSeriesColumnNames::MaxTime
+    };
+
+    std::set<String> metrics_columns = {
+        TimeSeriesColumnNames::MetricFamilyName,
+        TimeSeriesColumnNames::Type,
+        TimeSeriesColumnNames::Unit,
+        TimeSeriesColumnNames::Help
+    };
+
+    bool needs_data = false;
+    bool needs_tags = false;
+    bool needs_metrics = false;
+
+    for (const auto & col : column_names)
+    {
+        if (data_columns.contains(col))
+            needs_data = true;
+        else if (tags_columns.contains(col))
+            needs_tags = true;
+        else if (metrics_columns.contains(col))
+            needs_metrics = true;
+        else
+            needs_data = true; /// Default: unknown columns go to data table
+    }
+
+    /// If nothing specific was requested, default to data table
+    if (!needs_data && !needs_tags && !needs_metrics)
+        needs_data = true;
+
+    /// For now, only support reading from a single target table.
+    /// Multi-table joins would require a more complex query plan.
+    ViewTarget::Kind target_kind;
+    if (needs_metrics && !needs_data && !needs_tags)
+        target_kind = ViewTarget::Metrics;
+    else if (needs_tags && !needs_data && !needs_metrics)
+        target_kind = ViewTarget::Tags;
+    else
+        target_kind = ViewTarget::Data;
+
+    auto target_table = getTargetTable(target_kind, local_context);
+    auto target_metadata = target_table->getInMemoryMetadataPtr();
+    auto target_snapshot = target_table->getStorageSnapshot(target_metadata, local_context);
+
+    /// Filter column names to only those that exist in the target table
+    Names target_column_names;
+    const auto & target_columns = target_metadata->columns;
+    for (const auto & col : column_names)
+    {
+        if (target_columns.has(col))
+            target_column_names.push_back(col);
+    }
+
+    /// If no matching columns, select all from target
+    if (target_column_names.empty())
+        target_column_names = target_columns.getOrdinary().getNames();
+
+    target_table->read(
+        query_plan,
+        target_column_names,
+        target_snapshot,
+        query_info,
+        local_context,
+        processed_stage,
+        max_block_size,
+        num_streams);
 }
 
 
