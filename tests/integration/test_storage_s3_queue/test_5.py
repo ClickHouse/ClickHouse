@@ -421,6 +421,11 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
             "SELECT value FROM system.events WHERE name = 'S3ListObjects' SETTINGS system_events_show_zero_values=1"
         )
     )
+    baseline_processed_files = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueProcessedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    )
 
     put_s3_file_content(
         started_cluster,
@@ -448,9 +453,15 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
             "SELECT value FROM system.events WHERE name = 'S3ListObjects' SETTINGS system_events_show_zero_values=1"
         )
     ) - baseline_list_calls
+    processed_files_delta = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueProcessedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    ) - baseline_processed_files
 
     # With StartAfter, the restart should list only the tail of the prefix.
     assert list_calls_delta <= 2, f"Unexpected S3 list call count: {list_calls_delta}"
+    assert processed_files_delta == 1, f"Unexpected processed files count: {processed_files_delta}"
 
 
 def test_failed_commit(started_cluster):
