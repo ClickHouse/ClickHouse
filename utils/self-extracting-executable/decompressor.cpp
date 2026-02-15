@@ -196,19 +196,65 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
 
     /// Read metadata from end of file
+    if (info_in.st_size < static_cast<off_t>(sizeof(MetaData)))
+    {
+        std::cerr << "Error: input file is too small to contain metadata" << std::endl;
+        if (0 != munmap(input, info_in.st_size))
+            perror("munmap");
+        return 1;
+    }
+
     MetaData metadata = *reinterpret_cast<MetaData*>(input + info_in.st_size - sizeof(MetaData));
+
+    off_t metadata_boundary = info_in.st_size - static_cast<off_t>(sizeof(MetaData));
 
     /// Prepare to read information about files and decompress them
     off_t files_pointer = le64toh(metadata.start_of_files_data);
     size_t decompressed_full_size = 0;
 
+    if (files_pointer < 0 || files_pointer >= metadata_boundary)
+    {
+        std::cerr << "Error: invalid start_of_files_data offset in metadata" << std::endl;
+        if (0 != munmap(input, info_in.st_size))
+            perror("munmap");
+        return 1;
+    }
+
     /// Read files metadata and check if decompression is possible
-    off_t check_pointer = le64toh(metadata.start_of_files_data);
+    off_t check_pointer = files_pointer;
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
     {
+        if (check_pointer < 0 || check_pointer + static_cast<off_t>(sizeof(FileData)) > metadata_boundary)
+        {
+            std::cerr << "Error: file metadata entry " << i << " is out of bounds" << std::endl;
+            if (0 != munmap(input, info_in.st_size))
+                perror("munmap");
+            return 1;
+        }
+
         FileData data = *reinterpret_cast<FileData*>(input + check_pointer);
         decompressed_full_size += le64toh(data.uncompressed_size);
-        check_pointer += sizeof(FileData) + le64toh(data.name_length);
+        off_t name_length = le64toh(data.name_length);
+        off_t next_pointer = check_pointer + sizeof(FileData) + name_length;
+
+        if (name_length < 0 || next_pointer > metadata_boundary)
+        {
+            std::cerr << "Error: file name for entry " << i << " extends out of bounds" << std::endl;
+            if (0 != munmap(input, info_in.st_size))
+                perror("munmap");
+            return 1;
+        }
+
+        if (le64toh(data.start) < 0 || le64toh(data.end) < le64toh(data.start)
+            || le64toh(data.end) > static_cast<uint64_t>(info_in.st_size))
+        {
+            std::cerr << "Error: compressed data range for entry " << i << " is out of bounds" << std::endl;
+            if (0 != munmap(input, info_in.st_size))
+                perror("munmap");
+            return 1;
+        }
+
+        check_pointer = next_pointer;
     }
 
     /// Check free space
