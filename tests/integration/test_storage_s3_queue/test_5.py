@@ -371,6 +371,88 @@ def test_filtering_files(started_cluster, mode):
     )
 
 
+def test_ordered_start_after_avoids_deep_relisting(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_start_after_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    initial_files = 1100
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 60000,
+            "polling_max_timeout_ms": 60000,
+            "polling_backoff_ms": 0,
+        },
+    )
+
+    files = [(f"{files_path}/file_{i:04d}.csv", i) for i in range(initial_files)]
+    generate_random_files(
+        started_cluster,
+        files_path,
+        initial_files,
+        start_ind=0,
+        row_num=1,
+        files=files,
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    for _ in range(60):
+        if initial_files == get_count():
+            break
+        time.sleep(1)
+    assert initial_files == get_count()
+
+    node.query(f"DROP TABLE {table_name}_mv SYNC")
+    baseline_list_calls = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3ListObjects' SETTINGS system_events_show_zero_values=1"
+        )
+    )
+
+    put_s3_file_content(
+        started_cluster,
+        f"{files_path}/file_{initial_files:04d}.csv",
+        b"1,2,3\n",
+    )
+
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        create_dst_table_first=False,
+        dst_table_exists=True,
+    )
+
+    expected_rows = initial_files + 1
+    for _ in range(30):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    list_calls_delta = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'S3ListObjects' SETTINGS system_events_show_zero_values=1"
+        )
+    ) - baseline_list_calls
+
+    # With StartAfter, the restart should list only the tail of the prefix.
+    assert list_calls_delta <= 2, f"Unexpected S3 list call count: {list_calls_delta}"
+
+
 def test_failed_commit(started_cluster):
     node = started_cluster.instances["instance"]
 

@@ -126,7 +126,7 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
     return wb.str();
 }
 
-std::vector<std::optional<std::string>> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(
+std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(
     const std::filesystem::path & zk_path_,
     size_t buckets_num_,
     ObjectStorageQueuePartitioningMode partitioning_mode_,
@@ -162,24 +162,19 @@ std::vector<std::optional<std::string>> ObjectStorageQueueOrderedFileMetadata::g
             processed_node_paths.size(), responses.size());
     }
 
-    std::vector<std::optional<std::string>> result;
+    std::vector<std::string> result;
     result.reserve(processed_node_paths.size());
 
     for (size_t i = 0; i < responses.size(); ++i)
     {
         if (responses[i].error == Coordination::Error::ZNONODE || responses[i].data.empty())
-        {
-            result.emplace_back(std::nullopt);
             continue;
-        }
 
         if (responses[i].error != Coordination::Error::ZOK)
             throw zkutil::KeeperException::fromPath(responses[i].error, processed_node_paths[i]);
 
         auto metadata = NodeMetadata::fromString(responses[i].data);
-        if (metadata.file_path.empty())
-            result.emplace_back(std::nullopt);
-        else
+        if (!metadata.file_path.empty())
             result.emplace_back(std::move(metadata.file_path));
     }
 

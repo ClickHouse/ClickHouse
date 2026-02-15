@@ -296,17 +296,20 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
     const size_t buckets = std::max<size_t>(getBucketsNum(), 1);
     const auto last_processed_paths = ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(
         zookeeper_path, buckets, partitioning_mode, zookeeper_name, log);
+    if (last_processed_paths.size() != buckets)
+        return std::nullopt;
+
     std::optional<std::string> min_path;
 
     /// One Keeper multi-read for all buckets to avoid O(buckets) round-trips.
     for (const auto & last : last_processed_paths)
     {
-        if (!last.has_value() || last->empty())
+        if (last.empty())
             return std::nullopt;
 
         /// Use the smallest processed key across buckets to avoid skipping unprocessed files.
-        if (!min_path || *last < *min_path)
-            min_path = *last;
+        if (!min_path || last < *min_path)
+            min_path = last;
     }
 
     return min_path;
