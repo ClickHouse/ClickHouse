@@ -2,6 +2,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -408,51 +409,6 @@ std::shared_ptr<ICustomResourceHolder> makeTemporaryFilesCleaner(ObjectStoragePt
     return std::make_shared<TemporaryFilesInObjectStorageCleaner>(object_storage_, object_storage_path_, temporary_files_);
 }
 
-
-/// Implements distributed query plan execution logic by executing stages according to dependencies between them.
-class DistributedQueryPlanExecutor
-{
-public:
-    virtual ~DistributedQueryPlanExecutor() = default;
-
-    void execute();
-
-    virtual void cleanup() = 0;
-
-private:
-    void startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages);
-
-protected:
-    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
-        : unique_query_id(unique_query_id_)
-        , distributed_query_plan(distributed_query_plan_)
-        , context(std::move(context_))
-        , query_status(context->getProcessListElement())
-        , is_cancelled(std::move(is_cancelled_))
-    {
-    }
-
-    virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
-    virtual void waitForStage(const String & stage_name) = 0;
-
-    void checkCancelled() const
-    {
-        if (query_status)
-            query_status->checkTimeLimit();
-
-        if (*is_cancelled)
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-    }
-
-    const UUID unique_query_id;
-    const DistributedQueryPlan & distributed_query_plan;
-    ContextPtr context;
-    QueryStatusPtr query_status;
-    std::shared_ptr<std::atomic<bool>> is_cancelled;
-    LoggerPtr logger = getLogger("DistributedQueryPlanExecutor");
-};
-
-
 TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storage_, const String & object_storage_path_,
     const Strings & input_temporary_files_, const Strings & output_temporary_files_)
 {
@@ -685,7 +641,7 @@ protected:
         stage_tasks[stage_name] = std::move(started_tasks);
     }
 
-    void waitForStage(const String & stage_name) override
+    bool waitForStage(const String & stage_name, std::optional<UInt64> /*timeout_ms*/) override
     {
         auto & started_tasks = stage_tasks[stage_name];
 
@@ -698,7 +654,9 @@ protected:
 
         /// Throw exception if any task failed
         for (auto & task : tasks)
-            task.get();
+            task.get(); /// TODO: add timeout
+
+        return true;
     }
 
 private:
@@ -828,7 +786,7 @@ protected:
         }
 
         /// Wait for all tasks of the stage to finish
-        void waitForStage(const String & stage_name)
+        bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms)
         {
             LOG_DEBUG(logger, "Waiting for stage {} to finish", stage_name);
 
@@ -840,7 +798,7 @@ protected:
 
                 /// Is already finished?
                 if (stage->started_tasks == stage->finished_tasks)
-                    return;
+                    return true;
 
                 /// Create a future that will be signaled by the last finishing task of this stage
                 if (!stage_results.contains(stage_name))
@@ -849,8 +807,18 @@ protected:
                 finished = stage_results.at(stage_name);
             }
 
-            while (finished.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
-                checkCancelled();
+            bool stage_finished = false;
+            if (timeout_ms.has_value())
+            {
+                stage_finished = (finished.wait_for(std::chrono::milliseconds(timeout_ms.value())) == std::future_status::ready);
+            }
+            else
+            {
+                finished.wait();
+                stage_finished = true;
+            }
+            checkCancelled();
+            return stage_finished;
         }
 
         /// Cancel all unfinished tasks
@@ -1080,14 +1048,34 @@ protected:
         }
     }
 
-    void waitForStage(const String & stage_name) override
+    bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
     {
-        running_tasks.waitForStage(stage_name);
+        return running_tasks.waitForStage(stage_name, timeout_ms);
     }
 
     TaskToHostMapPtr task_to_host_map;
     TaskTracker running_tasks;
 };
+
+
+DistributedQueryPlanExecutor::DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
+    : unique_query_id(unique_query_id_)
+    , distributed_query_plan(distributed_query_plan_)
+    , context(std::move(context_))
+    , query_status(context->getProcessListElement())
+    , is_cancelled(std::move(is_cancelled_))
+    , logger(getLogger("DistributedQueryPlanExecutor"))
+{
+}
+
+void DistributedQueryPlanExecutor::checkCancelled() const
+{
+    if (query_status)
+        query_status->checkTimeLimit();
+
+    if (*is_cancelled)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+}
 
 void DistributedQueryPlanExecutor::startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages)
 {
@@ -1108,7 +1096,7 @@ void DistributedQueryPlanExecutor::startStageWithDependencies(const String & sta
         }
 
         for (const auto & dependency : dependencies_to_wait)
-            waitForStage(dependency);
+            waitForStage(dependency, std::nullopt);
     }
 
     const auto & stage = distributed_query_plan.stages.at(stage_name);
@@ -1121,9 +1109,9 @@ void DistributedQueryPlanExecutor::startStageWithDependencies(const String & sta
     executed_stages.insert(stage_name);
 }
 
-void DistributedQueryPlanExecutor::execute()
+void DistributedQueryPlanExecutor::start()
 {
-    LOG_DEBUG(logger, "Executing distributed query, unique id: {}", toString(unique_query_id));
+    LOG_DEBUG(logger, "Starting distributed query, unique id: {}", toString(unique_query_id));
 
     /// Execute stages in topological order
     {
@@ -1134,10 +1122,26 @@ void DistributedQueryPlanExecutor::execute()
 
     /// Wait for all stages to finish
     for (const auto & [stage_name, _] : distributed_query_plan.stages)
-        waitForStage(stage_name);
+        running_stages.push_back(stage_name);
 }
 
-void executeDistributedQuery(
+bool DistributedQueryPlanExecutor::execute()
+{
+    if (running_stages.empty())
+        return true;
+
+    auto & stage_name = running_stages.front();
+    bool stage_finished = waitForStage(stage_name, 100);
+    if (stage_finished)
+    {
+        LOG_DEBUG(logger, "Stage '{}' finished", stage_name);
+        running_stages.pop_front();
+    }
+
+    return false;
+}
+
+std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     const UUID & unique_query_id,
     const DistributedQueryPlan & distributed_query_plan,
     TaskToHostMapPtr task_to_host_map,
@@ -1151,16 +1155,7 @@ void executeDistributedQuery(
     else
         executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, is_cancelled);
 
-    try
-    {
-        executor->execute();
-        executor->cleanup();
-    }
-    catch (...)
-    {
-        executor->cleanup();
-        throw;
-    }
+    return executor;
 }
 
 }

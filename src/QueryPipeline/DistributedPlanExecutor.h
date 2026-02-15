@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/Progress.h>
+#include <deque>
 
 namespace DB
 {
@@ -31,7 +32,41 @@ using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
 
 struct DistributedQueryPlan;
 
-void executeDistributedQuery(
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
+/// Implements distributed query plan execution logic by executing stages according to dependencies between them.
+class DistributedQueryPlanExecutor
+{
+public:
+    virtual ~DistributedQueryPlanExecutor() = default;
+
+    void start();
+    bool execute(); /// Returns true if the execution is finished, false if it is still in progress and should be called again later.
+
+    virtual void cleanup() = 0;
+
+private:
+    void startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages);
+
+protected:
+    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_);
+
+    virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
+    virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
+
+    void checkCancelled() const;
+
+    const UUID unique_query_id;
+    const DistributedQueryPlan & distributed_query_plan;
+    ContextPtr context;
+    QueryStatusPtr query_status;
+    std::shared_ptr<std::atomic<bool>> is_cancelled;
+    std::deque<String> running_stages;
+    LoggerPtr logger;
+};
+
+std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     const UUID & unique_query_id,
     const DistributedQueryPlan & distributed_query_plan,
     TaskToHostMapPtr task_to_host_map,

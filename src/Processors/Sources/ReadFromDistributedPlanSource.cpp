@@ -8,15 +8,31 @@
 namespace DB
 {
 
-Chunk ReadFromDistributedPlanSource::generate()
+std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
 {
     if (!started)
     {
         started = true;
-        executeDistributedQuery(unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::getQueryContext(), cancellation_flag);
+        distributed_query_executor = createDistributedQueryExecutor(unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::getQueryContext(), cancellation_flag);
+        distributed_query_executor->start();
     }
 
-    return {};
+    try
+    {
+        const bool query_finished = distributed_query_executor->execute();
+        if (query_finished)
+        {
+            distributed_query_executor->cleanup();
+            return Chunk();
+        }
+    }
+    catch (...)
+    {
+        distributed_query_executor->cleanup();
+        throw;
+    }
+
+    return std::nullopt;
 }
 
 void ReadFromDistributedPlanSource::onCancel() noexcept

@@ -544,8 +544,21 @@ try
 
     query_context->setSetting("distributed_plan_execute_locally", 1);
     auto cancellation_flag = std::make_shared<std::atomic<bool>>(false);
+
     /// Just execute the distributed query plan without checking the result
-    executeDistributedQuery(query_uuid, distributed_query_plan, nullptr, query_context, cancellation_flag);
+    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation_flag);
+
+    try
+    {
+        executor->start();
+        while (!executor->execute());
+        executor->cleanup();
+    }
+    catch (...)
+    {
+        executor->cleanup();
+        throw;
+    }
 }
 catch (Exception & e)
 {
