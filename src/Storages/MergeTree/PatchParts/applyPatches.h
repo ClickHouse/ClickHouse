@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Common/PODArray.h>
@@ -39,22 +40,43 @@ struct PatchReadResult
     virtual bool empty() const = 0;
 };
 
-using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
+using PatchReadResultPtr = std::shared_ptr<PatchReadResult>;
 
 struct PatchMergeReadResult : public PatchReadResult
 {
-    ConstBlockPtr block;
-    UInt64 min_part_offset = 0;
-    UInt64 max_part_offset = 0;
+    struct BlockInfo
+    {
+        ConstBlockPtr block;
+        UInt64 min_part_offset = 0;
+        UInt64 max_part_offset = 0;
+    };
 
-    bool empty() const override { return !block || block->rows() == 0; }
+    std::deque<BlockInfo> blocks;
+
+    void addBlock(ConstBlockPtr blk, UInt64 min_offset, UInt64 max_offset)
+    {
+        blocks.push_back({std::move(blk), min_offset, max_offset});
+    }
+
+    void evict(UInt64 min_part_offset)
+    {
+        while (!blocks.empty() && blocks.front().max_part_offset < min_part_offset)
+            blocks.pop_front();
+    }
+
+    UInt64 lastMaxPartOffset() const
+    {
+        return blocks.empty() ? 0 : blocks.back().max_part_offset;
+    }
+
+    bool empty() const override { return blocks.empty(); }
 };
 
 struct PatchJoinReadResult : public PatchReadResult
 {
-    PatchJoinCache::Entries entries;
+    PatchJoinCache::EntryPtr entry;
 
-    bool empty() const override { return entries.empty(); }
+    bool empty() const override { return !entry; }
 };
 
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.

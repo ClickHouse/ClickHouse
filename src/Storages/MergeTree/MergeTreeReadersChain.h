@@ -79,7 +79,7 @@ private:
 
     RangeReaders range_readers;
     MergeTreePatchReaders patch_readers;
-    std::vector<std::deque<PatchReadResultPtr>> patches_results;
+    std::vector<PatchReadResultPtr> patches_results;
 
     bool is_initialized = false;
     LoggerPtr log = getLogger("MergeTreeReadersChain");

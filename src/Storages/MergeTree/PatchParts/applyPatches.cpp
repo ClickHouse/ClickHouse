@@ -459,17 +459,13 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     std::shared_lock lock(join_entry.mutex);
 
     auto patch_to_apply = std::make_shared<PatchToApply>();
-    patch_to_apply->patch_blocks.reserve(join_entry.blocks.size());
-
-    for (const auto & block : join_entry.blocks)
-    {
-        if (block->rows() != 0)
-            patch_to_apply->patch_blocks.push_back(block);
-    }
 
     size_t num_rows = result_block.rows();
     if (num_rows == 0 || join_entry.hash_map.empty())
         return patch_to_apply;
+
+    /// Snapshot the block under shared lock. Column pointers are shared, no deep copy.
+    patch_to_apply->patch_blocks.push_back(std::make_shared<const Block>(join_entry.block));
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
 
@@ -481,7 +477,6 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 
     size_t size_to_reserve = std::min(num_rows, join_entry.hash_map.size());
     patch_to_apply->result_row_indices.reserve(size_to_reserve);
-    patch_to_apply->patch_block_indices.reserve(size_to_reserve);
     patch_to_apply->patch_row_indices.reserve(size_to_reserve);
 
     struct IteratorsPair
@@ -551,10 +546,9 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 
             if (iterators.it != iterators.end && iterators.it->first == result_block_offset[row])
             {
-                const auto & [patch_block_index, patch_row_index] = iterators.it->second;
+                UInt32 patch_row_index = iterators.it->second;
 
                 patch_to_apply->result_row_indices.push_back(row);
-                patch_to_apply->patch_block_indices.push_back(patch_block_index);
                 patch_to_apply->patch_row_indices.push_back(patch_row_index);
             }
         }

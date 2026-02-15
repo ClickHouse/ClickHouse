@@ -67,20 +67,22 @@ MergeTreePatchReaderMerge::MergeTreePatchReaderMerge(PatchPartInfoForReader patc
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Merge, got {}", patch_part.mode);
 }
 
-PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
+PatchReadResultPtr MergeTreePatchReaderMerge::createResult() const
+{
+    return std::make_shared<PatchMergeReadResult>();
+}
+
+MergeTreePatchReaderMerge::ReadBlockInfo MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
 {
     MarkRanges ranges_to_read = {range};
     auto read_result = readPatchRanges(ranges_to_read);
-    auto patch_read_result = std::make_shared<PatchMergeReadResult>();
 
     const auto & sample_block = range_reader.getReadSampleBlock();
-    patch_read_result->block = std::make_shared<const Block>(sample_block.cloneWithColumns(read_result.columns));
-
-    patch_read_result->min_part_offset = 0;
-    patch_read_result->max_part_offset = 0;
+    ReadBlockInfo info;
+    info.block = std::make_shared<const Block>(sample_block.cloneWithColumns(read_result.columns));
 
     if (read_result.num_rows == 0)
-        return patch_read_result;
+        return info;
 
     size_t offset_pos = sample_block.getPositionByName("_part_offset");
     size_t part_name_pos = sample_block.getPositionByName("_part");
@@ -92,56 +94,51 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
 
     if (patch_begin != part_name_col.size() && patch_end != 0)
     {
-        patch_read_result->min_part_offset = offset_data[patch_begin];
-        patch_read_result->max_part_offset = offset_data[patch_end - 1];
+        info.min_part_offset = offset_data[patch_begin];
+        info.max_part_offset = offset_data[patch_end - 1];
     }
 
-    return patch_read_result;
+    return info;
 }
 
-std::vector<PatchReadResultPtr> MergeTreePatchReaderMerge::readPatches(
+void MergeTreePatchReaderMerge::readPatches(
     MarkRanges & ranges,
     const ReadResult & main_result,
     const Block & /*result_header*/,
-    const PatchReadResult * last_read_patch)
+    PatchReadResult & result)
 {
-    std::vector<PatchReadResultPtr> results;
-
-    while (!ranges.empty() && (!last_read_patch || needNewPatch(main_result, *last_read_patch)))
-    {
-        auto result = readPatch(ranges.front());
-        ranges.pop_front();
-        last_read_patch = result.get();
-        results.push_back(std::move(result));
-    }
-
-    return results;
-}
-
-std::vector<PatchToApplyPtr> MergeTreePatchReaderMerge::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
-{
-    const auto & patch_merge_data = typeid_cast<const PatchMergeReadResult &>(patch_result);
-    return {applyPatchMerge(result_block, patch_merge_data.block, patch_part)};
-}
-
-bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const
-{
-    const auto & old_patch_result = typeid_cast<const PatchMergeReadResult &>(old_patch);
-
-    if (!main_result.max_part_offset.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Min/max part offset must be set in RangeReader for reading patch parts");
-
-    return *main_result.max_part_offset > old_patch_result.max_part_offset;
-}
-
-bool MergeTreePatchReaderMerge::needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const
-{
-    const auto & old_patch_result = typeid_cast<const PatchMergeReadResult &>(old_patch);
+    auto & merge_result = typeid_cast<PatchMergeReadResult &>(result);
 
     if (!main_result.min_part_offset.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Min/max part offset must be set in RangeReader for reading patch parts");
 
-    return *main_result.min_part_offset <= old_patch_result.max_part_offset;
+    merge_result.evict(*main_result.min_part_offset);
+
+    while (!ranges.empty() && (merge_result.empty() || needNewPatch(main_result, merge_result)))
+    {
+        auto block_info = readPatch(ranges.front());
+        ranges.pop_front();
+        merge_result.addBlock(std::move(block_info.block), block_info.min_part_offset, block_info.max_part_offset);
+    }
+}
+
+std::vector<PatchToApplyPtr> MergeTreePatchReaderMerge::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
+{
+    const auto & merge_result = typeid_cast<const PatchMergeReadResult &>(patch_result);
+    std::vector<PatchToApplyPtr> patches;
+
+    for (const auto & block_info : merge_result.blocks)
+        patches.push_back(applyPatchMerge(result_block, block_info.block, patch_part));
+
+    return patches;
+}
+
+bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, const PatchMergeReadResult & result) const
+{
+    if (!main_result.max_part_offset.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Min/max part offset must be set in RangeReader for reading patch parts");
+
+    return *main_result.max_part_offset > result.lastMaxPartOffset();
 }
 
 MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_)
@@ -150,6 +147,18 @@ MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_
 {
     if (patch_part.mode != PatchMode::Join)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Join, got {}", patch_part.mode);
+}
+
+PatchReadResultPtr MergeTreePatchReaderJoin::createResult() const
+{
+    auto result = std::make_shared<PatchJoinReadResult>();
+    if (patch_join_cache)
+        result->entry = patch_join_cache->getEntry(patch_part.part->getPartName());
+
+    if (!result->entry)
+        result->entry = std::make_shared<PatchJoinCache::Entry>();
+
+    return result;
 }
 
 static MinMaxStat getResultBlockStat(const Block & result_block, const String & column_name)
@@ -176,31 +185,27 @@ static void filterReadRanges(MarkRanges & all_ranges, const MarkRanges & read_ra
     }
 }
 
-std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
+void MergeTreePatchReaderJoin::readPatches(
     MarkRanges & ranges,
     const ReadResult & main_result,
     const Block & result_header,
-    const PatchReadResult * /*last_read_patch*/)
+    PatchReadResult & result)
 {
-    std::vector<PatchReadResultPtr> results;
+    auto & join_result = typeid_cast<PatchJoinReadResult &>(result);
     const auto & sample_block = range_reader.getSampleBlock();
 
     if (ranges.empty())
-        return results;
+        return;
 
     MarkRanges ranges_to_read = ranges;
     auto result_block = result_header.cloneWithColumns(main_result.columns);
-    auto patch_read_result = std::make_shared<PatchJoinReadResult>();
 
     if (!patch_join_cache)
     {
         ranges.clear();
         auto read_result = readPatchRanges(ranges_to_read);
-        auto & entry = patch_read_result->entries.emplace_back(std::make_shared<PatchJoinCache::Entry>());
-
-        entry->addBlock(sample_block.cloneWithColumns(read_result.columns));
-        results.push_back(std::move(patch_read_result));
-        return results;
+        join_result.entry->addBlock(sample_block.cloneWithColumns(read_result.columns));
+        return;
     }
 
     const auto * loaded_part_info = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_part.part.get());
@@ -219,29 +224,30 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     }
 
     if (ranges_to_read.empty())
-        return results;
+        return;
 
-    auto reader = [this, &sample_block](const MarkRanges & task_ranges)
+    filterReadRanges(ranges, ranges_to_read);
+
+    auto unread = join_result.entry->getUnreadRanges(ranges_to_read);
+    if (unread.empty())
+        return;
+
+    auto read_block = [this, &sample_block](const MarkRanges & task_ranges)
     {
         auto read_result = readPatchRanges(task_ranges);
         return sample_block.cloneWithColumns(read_result.columns);
     };
 
-    filterReadRanges(ranges, ranges_to_read);
-    patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), ranges_to_read, std::move(reader));
-    results.push_back(std::move(patch_read_result));
-    return results;
+    auto block = read_block(unread);
+    join_result.entry->addBlock(std::move(block), unread);
 }
 
 std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
 {
-    const auto & patch_join_result = typeid_cast<const PatchJoinReadResult &>(patch_result);
-    std::vector<PatchToApplyPtr> patches;
-
-    for (const auto & entry : patch_join_result.entries)
-        patches.push_back(applyPatchJoin(result_block, *entry));
-
-    return patches;
+    const auto & join_result = typeid_cast<const PatchJoinReadResult &>(patch_result);
+    if (!join_result.entry)
+        return {};
+    return {applyPatchJoin(result_block, *join_result.entry)};
 }
 
 MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache)

@@ -35,7 +35,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
-    extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 
 namespace MergeTreeSetting
@@ -142,7 +141,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         ranges_in_patch_parts.optimize();
 
         patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
-        patch_join_cache = std::make_shared<PatchJoinCache>(storage.getContext()->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]);
+        patch_join_cache = std::make_shared<PatchJoinCache>();
         patch_join_cache->init(ranges_in_patch_parts);
     }
 
