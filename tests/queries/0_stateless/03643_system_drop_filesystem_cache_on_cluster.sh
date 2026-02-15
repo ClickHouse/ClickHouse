@@ -23,7 +23,7 @@ SYSTEM SYNC FILESYSTEM CACHE '$disk_name' ON CLUSTER 'test_shard_localhost';
 """
 
 $CLICKHOUSE_CLIENT --query """
-SYSTEM DROP FILESYSTEM CACHE '$disk_name' ON CLUSTER 'test_shard_localhost';
+SYSTEM CLEAR FILESYSTEM CACHE '$disk_name' ON CLUSTER 'test_shard_localhost';
 """
 
 $CLICKHOUSE_CLIENT --query """

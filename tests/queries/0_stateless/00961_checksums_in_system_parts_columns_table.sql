@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+-- add_minmax_index_for_numeric_columns=0: More files
 
 DROP TABLE IF EXISTS test_00961;
 
@@ -12,7 +13,8 @@ CREATE TABLE test_00961 (d Date, a String, b UInt8, x String, y Int8, z UInt32)
     ratio_of_defaults_for_sparse_serialization = 1,
     serialization_info_version = 'basic',
     replace_long_file_name_to_hash = 0,
-    auto_statistics_types = '';
+    auto_statistics_types = '',
+    add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO test_00961 VALUES ('2000-01-01', 'Hello, world!', 123, 'xxx yyy', -123, 123456789);
 

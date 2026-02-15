@@ -92,7 +92,7 @@ size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_extern
     auto available_system_memory = getMostStrictAvailableSystemMemory();
     if (available_system_memory.has_value())
     {
-        size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
+        size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
 
         LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
             formatReadableSizeWithBinarySuffix(ratio_in_bytes),
@@ -593,7 +593,7 @@ void SortingStep::serialize(Serialization & ctx) const
     writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> SortingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "SortingStep must have one input stream");

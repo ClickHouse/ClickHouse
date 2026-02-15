@@ -122,10 +122,6 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         res_columns[1]->insert(DATABASE_CONTEXT);
         res_columns[2]->insertDefault();
 
-        /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
-        if (database_ptr->getEngineName() == "Lazy")
-            continue;
-
         for (auto iterator = database_ptr->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
         {
             const auto & table_name = iterator->name();
@@ -247,13 +243,19 @@ void fillDataWithMergeTreeSettings(MutableColumns & res_columns, const ContextPt
 void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    const auto & setting_names = settings.getAllRegisteredNames();
-    for (const auto & setting_name : setting_names)
+    const auto & setting_registered_names = settings.getAllRegisteredNames();
+    const auto & setting_alias_names = settings.getAllAliasNames();
+    auto insertNames = [&](const auto & names)
     {
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(SETTING_CONTEXT);
-        res_columns[2]->insertDefault();
-    }
+        for (const auto & name : names)
+        {
+            res_columns[0]->insert(name);
+            res_columns[1]->insert(SETTING_CONTEXT);
+            res_columns[2]->insertDefault();
+        }
+    };
+    insertNames(setting_registered_names);
+    insertNames(setting_alias_names);
 }
 
 void fillDataWithKeywords(MutableColumns & res_columns)

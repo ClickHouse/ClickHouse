@@ -23,7 +23,7 @@ SELECT CAST(CAST(\'0.1\', \'Decimal(4, 4)\') * 5, \'Float64\') AS c
 0	UInt8
 SELECT
     CAST(number, \'UInt8\') AS c,
-    toTypeName(c)
+    toTypeName(CAST(number, \'UInt8\') AS c)
 FROM numbers(1)
 1970-01-11
 SELECT CAST((((0 + 1) + 2) + 3) + 4, \'Date\') AS c

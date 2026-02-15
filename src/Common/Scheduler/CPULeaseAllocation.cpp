@@ -52,6 +52,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_SCHEDULER_NODE;
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
@@ -299,9 +300,10 @@ size_t CPULeaseAllocation::upscale()
     return max_threads;
 }
 
-void CPULeaseAllocation::downscale(size_t thread_num)
+void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
 {
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
+    if (!shutdown_)
+        ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
 
     chassert(threads.leased[thread_num]);
     threads.leased.reset(thread_num);
@@ -461,7 +463,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
 
     if (shutdown) // Allocation is being destroyed, worker thread should stop
     {
-        downscale(lease.slot_id);
+        downscale(lease.slot_id, /* shutdown = */ true);
         lease.reset();
         return false;
     }
@@ -503,10 +505,12 @@ bool CPULeaseAllocation::renew(Lease & lease)
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
             acquired_increment.sub(1);
 
-            if (!waitForGrant(lock, thread_num) || shutdown)
+            bool wait_succeeded = waitForGrant(lock, thread_num);
+            if (!wait_succeeded || shutdown)
             {
                 // Timeout or exception or shutdown - worker thread should stop
-                downscale(thread_num);
+                // Only count as downscale if actually timed out, not just shutdown
+                downscale(thread_num, /* shutdown = */ wait_succeeded);
                 lease.reset();
                 return false;
             }
@@ -609,7 +613,18 @@ void CPULeaseAllocation::release(Lease & lease)
 
     // Report the last chunk of consumed resource
     std::unique_lock lock{mutex};
-    consume(lock, delta_ns);
+    try
+    {
+        consume(lock, delta_ns);
+    }
+    catch (const Exception & e)
+    {
+        // `consume` may call `schedule` which may call `enqueueRequest` on a scheduler queue
+        // that is being destructed (e.g. when a workload is dropped while queries are still running).
+        // Since `release` is called from Lease destructor, we must not throw.
+        if (e.code() != ErrorCodes::INVALID_SCHEDULER_NODE)
+            throw;
+    }
 
     // Release the slot
     downscale(lease.slot_id);

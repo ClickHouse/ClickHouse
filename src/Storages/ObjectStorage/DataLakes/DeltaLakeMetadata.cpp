@@ -498,12 +498,10 @@ struct DeltaLakeMetadataImpl
 
         std::atomic<int> is_stopped{0};
 
-        std::unique_ptr<parquet::arrow::FileReader> reader;
-        THROW_ARROW_NOT_OK(
-            parquet::arrow::OpenFile(
-                asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES),
-                arrow::default_memory_pool(),
-                &reader));
+        auto open_file_res = parquet::arrow::OpenFile(
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool());
+        THROW_ARROW_NOT_OK(open_file_res.status());
+        auto reader = *std::move(open_file_res);
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
@@ -745,7 +743,7 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
     {
         ReadBufferFromString in(value);
         DateTime64 time = 0;
-        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(check_type.get())->getTimeZone());
         return time;
     }
 

@@ -74,6 +74,8 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
+    void drop() override;
+
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
@@ -182,7 +184,7 @@ public:
     ReadFromStorageLogStep(
         const Names & column_names_,
         ContextPtr local_context_,
-        StorageLog & storage_,
+        std::shared_ptr<StorageLog> storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         size_t max_block_size_,
         size_t num_streams_
@@ -203,7 +205,7 @@ public:
 private:
     const Names column_names;
     ContextPtr local_context;
-    StorageLog & storage;
+    std::shared_ptr<StorageLog> storage;
     const StorageSnapshotPtr storage_snapshot;
     const size_t max_block_size;
     const size_t num_streams;

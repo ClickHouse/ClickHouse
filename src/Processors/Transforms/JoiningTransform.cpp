@@ -62,6 +62,14 @@ OutputPort & JoiningTransform::getFinishedSignal()
 
 IProcessor::Status JoiningTransform::prepare()
 {
+    /// Check if we can fully skip reading left side when right side is empty
+    if (inputs.size() > 1)
+    {
+        auto & last_in = inputs.back();
+        if (last_in.isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
+            stop_reading = true;
+    }
+
     auto & output = outputs.front();
     auto & on_finish_output = outputs.back();
 
@@ -325,14 +333,15 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 void FillingRightJoinSideTransform::work()
 {
     auto & input = inputs.front();
+    auto num_rows = chunk.getNumRows();
     auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (for_totals)
         join->setTotals(block);
     else
     {
-        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, block.rows());
-        stop_reading = !join->addBlockToJoin(block);
+        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
+        stop_reading = !join->addBlockToJoin(block, num_rows, true);
     }
 
     if (input.isFinished() && !join->supportParallelJoin())

@@ -9,7 +9,7 @@ if (SANITIZE STREQUAL "undefined")
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
-
+set(WITH_COVERAGE OFF)
 # add_contrib cmake_folder[ base_folder1[, ...base_folderN]]
 function(add_contrib cmake_folder)
     if (ARGN)
@@ -49,6 +49,7 @@ add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
+add_contrib (libllvmlibc-cmake llvm-project)
 add_contrib (llvm-project-cmake llvm-project)
 
 enable_dummy_launchers_if_needed()
@@ -132,7 +133,7 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (aklomp-base64-cmake aklomp-base64)
+add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
@@ -220,6 +221,8 @@ add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobuf
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
+add_contrib(simdcomp-cmake simdcomp)
+
 add_contrib (numactl-cmake numactl)
 
 # Google Cloud Cpp
@@ -244,6 +247,8 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
+
+add_contrib (libcotp-cmake libcotp)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

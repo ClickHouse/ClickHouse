@@ -2,16 +2,11 @@
 
 #if USE_H3
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
-#include <constants.h>
 #include <h3api.h>
 
 
@@ -82,7 +77,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            const UInt8 res = isValidDirectedEdge(edge);
+            const auto res = static_cast<UInt8>(isValidDirectedEdge(edge));
             dst_data[row] = res;
         }
 

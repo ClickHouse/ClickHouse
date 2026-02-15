@@ -1,5 +1,6 @@
 [libfuzzer]
 timeout = 20
 
-[CI]
-FUZZER_ARGS = true
+[fuzzer_arguments]
+--max_execution_time=10
+--max_parser_backtracks=10000

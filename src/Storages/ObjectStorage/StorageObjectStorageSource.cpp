@@ -1,5 +1,6 @@
 #include <memory>
 #include <optional>
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/setThreadName.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -11,6 +12,7 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -26,6 +28,7 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -383,7 +386,6 @@ Chunk StorageObjectStorageSource::generate()
                 },
                 read_context);
 
-
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
             {
@@ -440,6 +442,23 @@ Chunk StorageObjectStorageSource::generate()
                 }
             }
 #endif
+
+            /// Convert any Const columns to full columns before returning.
+            /// This is necessary because when chunks with different Const values (e.g., partition columns
+            /// from different files in DeltaLake) are squashed together during INSERT, the squashing code
+            /// doesn't properly handle merging Const columns with different constant values.
+            /// By converting to full columns here, we ensure the values are preserved correctly.
+            if (chunk.hasColumns())
+            {
+                size_t chunk_num_rows = chunk.getNumRows();
+                auto columns = chunk.detachColumns();
+                for (auto & column : columns)
+                {
+                    if (column->isConst())
+                        column = column->cloneResized(chunk_num_rows)->convertToFullColumnIfConst();
+                }
+                chunk.setColumns(std::move(columns), chunk_num_rows);
+            }
 
             return chunk;
         }
@@ -612,7 +631,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto mapper = configuration->getColumnMapperForObject(object_info);
             if (!mapper)
                 return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, nullptr, nullptr);
+            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
         }();
 
         LOG_DEBUG(
@@ -643,26 +662,37 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
+        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
-        std::optional<ActionsDAG> transformer;
-        if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)
+        if (object_info->data_lake_metadata
+            && object_info->data_lake_metadata->excluded_rows
+            && object_info->data_lake_metadata->excluded_rows->size() > 0)
         {
-            transformer = object_info->data_lake_metadata->transform->clone();
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
+            });
+        }
+
+        std::optional<ActionsDAG> schema_transform;
+        if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
+        {
+            schema_transform = object_info->data_lake_metadata->schema_transform->clone();
             /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            transformer->removeUnusedActions(read_from_format_info.requested_columns.getNames());
+            schema_transform->removeUnusedActions(read_from_format_info.requested_columns.getNames());
         }
-        if (!transformer)
+        if (!schema_transform)
         {
-            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info))
-                transformer = schema_transformer->clone();
+            auto transform = configuration->getSchemaTransformer(context_, object_info);
+            if (transform)
+                schema_transform = transform->clone();
         }
 
-        if (transformer.has_value())
+        if (schema_transform.has_value())
         {
-            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(transformer.value()));
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(schema_transform.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
@@ -736,11 +766,20 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 || object_storage->getType() == ObjectStorageType::S3);
     }
 
+    bool use_page_cache = !use_distributed_cache && !use_filesystem_cache
+        && effective_read_settings.page_cache && effective_read_settings.use_page_cache_for_object_storage;
+
     /// We need object metadata for two cases:
     /// 1. object size suggests whether we need to use prefetch
-    /// 2. object etag suggests a cache key in case we use filesystem cache
+    /// 2. object etag suggests a cache key in case we use filesystem cache or page cache
     if (!object_info.metadata)
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
+
+    if (use_page_cache && object_info.metadata->etag.empty())
+    {
+        LOG_WARNING(log, "Cannot use page cache, no etag specified");
+        use_page_cache = false;
+    }
 
     const auto & object_size = object_info.metadata->size_bytes;
 
@@ -769,9 +808,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         const std::string path = object_info.getPath();
         StoredObject object(path, "", object_size);
-        auto read_buffer_creator = [object, nested_buffer_read_settings, object_storage]()
+        auto read_buffer_creator = [path, object_size, modified_read_settings, object_storage]()
         {
-            return object_storage->readObject(object, nested_buffer_read_settings);
+            return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings.withNestedBuffer(/* seekable */false));
         };
 
         impl = std::make_unique<ReadBufferFromDistributedCache>(
@@ -817,7 +856,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 object_info.getPath(),
                 cache_key,
                 cache,
-                FileCache::getCommonUser(),
+                FileCache::getCommonOrigin(),
                 read_buffer_creator,
                 use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
@@ -827,7 +866,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
 
-            LOG_TEST(
+            LOG_TRACE(
                 log,
                 "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
                 filesystem_cache_name,
@@ -844,11 +883,19 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings);
     }
 
+    if (use_page_cache)
+    {
+        PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
+        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
+    }
+
     if (!use_async_buffer)
+    {
+        LOG_TRACE(log, "Downloading object {} of size {} without initial prefetch", object_info.getPath(), object_size);
         return impl;
+    }
 
-    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
-
+    LOG_TRACE(log, "Downloading object {} of size {} with initial prefetch", object_info.getPath(), object_size);
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size
         && impl->isCached();
 

@@ -525,25 +525,35 @@ def main():
         )
         my_prs_number_and_title = json.loads(my_prs_number_and_title)
         pr_menu = []
-        pr_menu.append((f"Process commit sha on master", 0))
-        pr_menu.append((f"Enter PR number manually", 1))
         for pr_dict in my_prs_number_and_title:
             pr_number = pr_dict["number"]
             pr_title = pr_dict["title"]
             pr_menu.append((f"#{pr_number}: {pr_title}", pr_number))
 
-        selected_pr = UserPrompt.select_from_menu(pr_menu, "Select a PR to merge")
-        if selected_pr[1] == 1:
-            # PR numbers are expected to be in the range 80000-100000 for recent PRs
-            pr_number = UserPrompt.get_number(
-                "Enter PR number", lambda x: x > 80000 and x < 100000
-            )
-        elif selected_pr[1] == 0:
-            is_master_commit = True
-            commit_sha = UserPrompt.get_string(
-                "Enter commit sha", validator=lambda x: len(x) == 40
-            )
-            pr_number = None
+        def is_pr_number(s):
+            try:
+                num = int(s.lstrip("#"))
+                return 10000 < num < 150_000
+            except ValueError:
+                return False
+
+        def is_commit_sha(s):
+            return len(s) == 40 and all(c in "0123456789abcdef" for c in s.lower())
+
+        selected_pr = UserPrompt.select_from_menu(
+            pr_menu,
+            "Select a PR from the list, or manually enter a commit sha or PR number",
+            validator=lambda x: is_pr_number(x) or is_commit_sha(x),
+        )
+        if isinstance(selected_pr, str):
+            if is_commit_sha(selected_pr):
+                is_master_commit = True
+                commit_sha = selected_pr
+                pr_number = None
+            elif is_pr_number(selected_pr):
+                pr_number = int(selected_pr.lstrip("#"))
+            else:
+                raise Exception(f"Unrecognized input: {selected_pr}")
         else:
             pr_number = selected_pr[1]
 
@@ -628,7 +638,9 @@ def main():
             not issue_catalog
             or issue_catalog.updated_at < datetime.now().timestamp() - 10 * 60
         ):
-            issue_catalog = TestCaseIssueCatalog.from_gh(verbose=False)
+            issue_catalog = TestCaseIssueCatalog.from_gh(
+                verbose=False, repo="ClickHouse/ClickHouse"
+            )
             issue_catalog.dump()
         print(f"Loaded {len(issue_catalog.active_test_issues)} active issues from gh\n")
         print("Checking failures against open issues...\n")
@@ -777,10 +789,14 @@ def main():
         sys.exit(0)
 
     if Shell.check(
-        f"gh pr view {pr_number} --json isDraft --jq '.isDraft' | grep -q true"
+        f"gh pr view {pr_number} --json isDraft --jq '.isDraft' --repo ClickHouse/ClickHouse | grep -q true"
     ):
         if UserPrompt.confirm(f"It's a draft PR. Do you want to undraft it?"):
-            Shell.check(f"gh pr ready {pr_number}", strict=True, verbose=True)
+            Shell.check(
+                f"gh pr ready {pr_number} --repo ClickHouse/ClickHouse",
+                strict=True,
+                verbose=True,
+            )
         else:
             sys.exit(0)
 
@@ -789,7 +805,7 @@ def main():
         mergeable_check_status, sha=head_sha
     )
 
-    if Shell.check(f"gh pr merge {pr_number} --auto"):
+    if Shell.check(f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse"):
         # Check if PR was successfully added to the merge queue
         # uncomment/fix if GH misses became regular
         # merge_status = Shell.check(

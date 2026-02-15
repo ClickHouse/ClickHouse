@@ -99,11 +99,6 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::string normalizeUuid(const std::string & uuid);
 
-/// Parse transform and argument from input parameter
-/// "x" -> {"identity", "x"}
-/// "identity(x)" -> {"identity", "x"}
-/// "bucket(16, x)" -> {"bucket[16]", "x"}
-std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i);
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 
 KeyDescription getSortingKeyDescriptionFromMetadata(

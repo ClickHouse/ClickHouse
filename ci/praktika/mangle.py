@@ -51,7 +51,7 @@ def _get_workflows(
                 continue
         elif py_file.name != Settings.DEFAULT_LOCAL_TEST_WORKFLOW:
             print(
-                f"--workflow is not set. Default workflow is [{Settings.DEFAULT_LOCAL_TEST_WORKFLOW}]. Skip [{py_file.name}]"
+                f"Skip [{py_file.name}]"
             )
             continue
         module_name = py_file.name.removeprefix(".py")
@@ -245,5 +245,5 @@ def _update_workflow_with_native_jobs(workflow):
                 to_visit.extend(job_map[artifact_map[dep_name]].requires)
                 all_deps.add(artifact_map[dep_name])
             else:
-                assert False, f"dependency [{dep_name}] not found"
+                assert False, f"dependency [{dep_name}] not found, [{job.name}]"
         job.requires = sorted(list(all_deps))

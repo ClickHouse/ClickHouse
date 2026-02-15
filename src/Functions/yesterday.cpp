@@ -12,7 +12,7 @@ namespace DB
 class ExecutableFunctionYesterday : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionYesterday(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionYesterday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
 
     String getName() const override { return "yesterday"; }
 
@@ -74,7 +74,7 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
         auto day_num = DateLUT::instance().toDayNum(time(nullptr)) - 1;
-        return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
+        return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(static_cast<UInt16>(day_num)));
     }
 };
 

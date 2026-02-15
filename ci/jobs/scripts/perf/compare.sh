@@ -811,8 +811,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 --
 create view test_runs as
     select test,
-        -- Default to 7 runs if there are only 'short' queries in the test, and
-        -- we can't determine the number of runs.
+        -- Default to 7 runs if we can't determine the number of runs.
         if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
     from (
         select

@@ -447,7 +447,7 @@ bool HashJoin::empty() const
 
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    return isInnerOrRight(getKind()) && data->empty;
+    return (isInnerOrRight(getKind()) || isCrossOrComma(getKind())) && data->rows_to_join == 0;
 }
 
 size_t HashJoin::getTotalRowCount() const
@@ -460,7 +460,9 @@ size_t HashJoin::getTotalRowCount() const
     if (data->type == Type::CROSS)
     {
         for (const auto & columns : data->columns)
-            res += columns.columns_info.columns.at(0)->size();
+        {
+            res += columns.selector.size();
+        }
     }
     else
     {
@@ -619,6 +621,18 @@ bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
     return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), check_limits);
 }
 
+bool HashJoin::addBlockToJoin(const Block & source_block, size_t num_rows, bool check_limits)
+{
+    auto materialized = materializeColumnsFromRightBlock(source_block);
+    /// When PREWHERE consumes all columns from the right table (e.g., in a cross join),
+    /// the block has zero columns and Block::rows() returns 0 even though the chunk
+    /// contained actual rows. Use the provided num_rows from the Chunk in this case.
+    size_t rows = materialized.rows();
+    if (rows == 0 && num_rows != 0 && !materialized.columns())
+        rows = num_rows;
+    return addBlockToJoin(materialized, ScatteredBlock::Selector(rows), check_limits);
+}
+
 bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits)
 {
     if (!data)
@@ -728,9 +742,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         data->allocated_size += data_allocated_bytes;
         doDebugAsserts();
 
-        if (rows)
-            data->empty = false;
-
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
         const auto & onexprs = table_join->getClauses();
         for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
@@ -760,7 +771,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             {
                 ///  - build mask in the source block row space
                 ///  - set bits only for rows that belong to THIS slot (by selector)
-                not_joined_map = ColumnUInt8::create(block.rows(), 0);
+                not_joined_map = ColumnUInt8::create(block.rows(), static_cast<UInt8>(0));
                 const auto & sel = stored_columns->selector;
 
                 auto mark_if_needed = [&](size_t row)
@@ -802,7 +813,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             all_values_unique);
 
                         if (flag_per_row)
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns);
+                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns, stored_columns->selector);
                     });
             }
 
@@ -979,9 +990,8 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
         if (enough_data())
             break;
 
-        auto process_right_block = [&](const ColumnsInfo & columns_info)
+        auto process_right_block = [&](const ColumnsInfo & columns_info, size_t rows_right)
         {
-            size_t rows_right = columns_info.columns.at(0)->size();
             rows_added += rows_right;
 
             for (size_t col_num = 0; col_num < num_existing_columns; ++col_num)
@@ -1022,17 +1032,18 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
             /// The following statement cannot be substituted with `process_right_block(!have_compressed ? block_right : block_right.decompress())`
             /// because it will lead to copying of `block_right` even if its branch is taken (because common type of `block_right` and `block_right.decompress()` is `Block`).
             if (!join.have_compressed)
-                process_right_block(scattered_columns.columns_info);
+                process_right_block(scattered_columns.columns_info, scattered_columns.selector.size());
             else
             {
-                chassert(scattered_columns.selector.size() == scattered_columns.columns_info.columns.at(0)->size()); /// Compression only happens for cross join and scattering only for concurrent hash
+                chassert(scattered_columns.columns_info.columns.empty()
+                    || scattered_columns.selector.size() == scattered_columns.columns_info.columns.at(0)->size()); /// Compression only happens for cross join and scattering only for concurrent hash
 
                 Columns new_columns;
                 new_columns.reserve(scattered_columns.columns_info.columns.size());
                 for (const auto & column : scattered_columns.columns_info.columns)
                     new_columns.emplace_back(column->decompress());
 
-                process_right_block(ColumnsInfo(std::move(new_columns)));
+                process_right_block(ColumnsInfo(std::move(new_columns)), scattered_columns.selector.size());
             }
         }
 
@@ -1056,7 +1067,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
                     break;
                 }
 
-                process_right_block(ColumnsInfo(block_right.getColumns()));
+                process_right_block(ColumnsInfo(block_right.getColumns()), block_right.rows());
             }
         }
 
@@ -1368,7 +1379,7 @@ struct AdderNonJoined
                 for (size_t j = 0; j < columns_right.size(); ++j)
                 {
                     if (const auto * replicated_column = it->columns_info->replicated_columns[j])
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(mapped.row_num));
+                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(it->row_num));
                     else
                         columns_right[j]->insertFrom(*it->columns_info->columns[j], it->row_num);
                 }
@@ -1890,7 +1901,7 @@ void HashJoin::tryRerangeRightTableData()
     if (!data
         || data->sorted
         || data->columns.empty()
-        || data->maps.size() > 1
+        || data->maps.size() != 1
         || data->rows_to_join > table_join->sortRightMaximumTableRows()
         || data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
     {

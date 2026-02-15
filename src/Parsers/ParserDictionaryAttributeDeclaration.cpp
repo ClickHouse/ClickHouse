@@ -87,7 +87,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
         break;
     }
 
-    auto attribute_declaration = std::make_shared<ASTDictionaryAttributeDeclaration>();
+    auto attribute_declaration = make_intrusive<ASTDictionaryAttributeDeclaration>();
     node = attribute_declaration;
     tryGetIdentifierNameInto(name, attribute_declaration->name);
 

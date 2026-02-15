@@ -1322,6 +1322,11 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
     ],
 )
 def test_concurrent_alter_modify(start_cluster, name, engine):
+    r1 = node1.is_built_with_llvm_coverage()
+    r2 = node2.is_built_with_llvm_coverage()
+    if r1 or r2:
+        pytest.skip("Flaky under llvm_coverage")
+    
     try:
         node1.query_with_retry(
             """
@@ -1559,7 +1564,8 @@ def test_rename(start_cluster):
         with pytest.raises(QueryRuntimeException):
             node1.query("SELECT COUNT() FROM default.renaming_table")
 
-        node1.query("CREATE DATABASE IF NOT EXISTS test")
+        node1.query("DROP DATABASE IF EXISTS test")
+        node1.query("CREATE DATABASE test")
         node1.query("RENAME TABLE default.renaming_table1 TO test.renaming_table2")
         assert node1.query("SELECT COUNT() FROM test.renaming_table2") == "50\n"
 

@@ -80,7 +80,6 @@ public:
 
     StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
 
-    DiskObjectStoragePtr createDiskObjectStorage() override { return delegate->createDiskObjectStorage(); }
     ObjectStoragePtr getObjectStorage() override { return delegate->getObjectStorage(); }
     NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
@@ -107,6 +106,7 @@ public:
     void removeFile(const String &) override { throwNotAllowed(); }
     void removeFileIfExists(const String &) override { throwNotAllowed(); }
     ReservationPtr reserve(UInt64 /*bytes*/) override { throwNotAllowed(); }
+    ReservationPtr reserve(UInt64 /*bytes*/, const ReservationConstraints & /*constraints*/) override { throwNotAllowed(); }
     void removeRecursive(const String &) override { throwNotAllowed(); }
     void removeSharedFile(const String &, bool) override { throwNotAllowed(); }
     void removeSharedFileIfExists(const String &, bool) override { throwNotAllowed(); }

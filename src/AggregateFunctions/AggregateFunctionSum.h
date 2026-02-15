@@ -170,7 +170,7 @@ struct AggregateFunctionSumData
                 uint8_t flag = (condition_map[i] != add_if_zero);
 
                 T mask{};
-                std::memset(&mask, masks[flag], sizeof(T));
+                std::memset(&mask, static_cast<int>(masks[flag]), sizeof(T));
 
                 Impl::add(local_sum, ptr[i] & mask);
             }
@@ -546,7 +546,8 @@ public:
         size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
 
         for (size_t i = from; i < to; ++i)
-            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
+            if (places[offsets[i]])
+                add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

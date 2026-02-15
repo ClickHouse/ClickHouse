@@ -25,8 +25,12 @@ def get_run_command(
     image: DockerImage,
     buzzhouse: bool,
 ) -> str:
+    from ci.jobs.ci_utils import is_extended_run
+
+    minutes = 60 if is_extended_run() else 30
     envs = [
         f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
+        f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
 
     env_str = " ".join(envs)
@@ -80,11 +84,10 @@ def run_fuzz_job(check_name: str):
     Shell.check(command=run_command, verbose=True)
 
     # Fix file ownership after running docker as root
-    logging.info("Fixing file ownership after running docker as root")
+    logging.info("Fuzzer: Fixing file ownership after running docker as root")
     uid = os.getuid()
     gid = os.getgid()
-    chown_cmd = f"docker run --rm --user root --volume {cwd}:{cwd} --workdir={cwd} {docker_image} sh -c 'find {temp_dir} -user root -exec chown {uid}:{gid} {{}} +'"
-    logging.info("Run ownership fix command: %s", chown_cmd)
+    chown_cmd = f"docker run --rm --user root --volume {cwd}:/repo --workdir=/repo {docker_image} chown -R {uid}:{gid} /repo"
     Shell.check(chown_cmd, verbose=True)
 
     fuzzer_log = workspace_path / "fuzzer.log"
@@ -126,10 +129,17 @@ def run_fuzz_job(check_name: str):
     if server_died:
         # Server died - status will be determined after OOM checks
         is_failed = True
-    elif fuzzer_exit_code in (0, 143):
-        # normal exit with timeout
+    elif fuzzer_exit_code in (0, 137, 143):
+        # normal exit with timeout or OOM kill
         is_failed = False
         status = Result.Status.SUCCESS
+        if fuzzer_exit_code == 0:
+            info.append("Fuzzer exited with success")
+        elif fuzzer_exit_code == 137:
+            info.append("Fuzzer killed")
+        else:
+            info.append("Fuzzer exited with timeout")
+        info.append("\n")
     elif fuzzer_exit_code in (227,):
         # BuzzHouse exception, it means a query oracle failed, or
         # an unwanted exception was found
@@ -143,20 +153,16 @@ def run_fuzz_job(check_name: str):
         info.append(f"ERROR: {error_info}")
     else:
         status = Result.Status.ERROR
-        if fuzzer_exit_code == 137:
-            # Killed.
-            info.append("ERROR: Fuzzer killed")
-        else:
-            # The server was alive, but the fuzzer returned some error. This might
-            # be some client-side error detected by fuzzing, or a problem in the
-            # fuzzer itself. Don't grep the server log in this case, because we will
-            # find a message about normal server termination (Received signal 15),
-            # which is confusing.
-            info.append("Client failure (see logs)")
-            info.append("---\nFuzzer log (last 200 lines):")
-            info.extend(
-                Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
-            )
+        # The server was alive, but the fuzzer returned some error. This might
+        # be some client-side error detected by fuzzing, or a problem in the
+        # fuzzer itself. Don't grep the server log in this case, because we will
+        # find a message about normal server termination (Received signal 15),
+        # which is confusing.
+        info.append("Client failure (see logs)")
+        info.append("---\nFuzzer log (last 200 lines):")
+        info.extend(
+            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
+        )
 
     if is_failed:
         if is_sanitized:

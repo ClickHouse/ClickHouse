@@ -95,10 +95,6 @@ public:
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
 
-    const std::string & getCacheConfigName() const { return cache_config_name; }
-
-    ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }
-
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }

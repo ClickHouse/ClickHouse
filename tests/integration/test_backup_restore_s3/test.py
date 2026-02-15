@@ -184,11 +184,12 @@ def new_backup_name():
 
 
 def get_events_for_query(node, query_id: str) -> Dict[str, int]:
+    # Flush logs separately with a longer timeout because query_log is stored
+    # on S3 (policy_s3_plain_rewritable) and can be slow to flush under CI load.
+    node.query("SYSTEM FLUSH LOGS", timeout=300)
     events = TSV(
         node.query(
             f"""
-            SYSTEM FLUSH LOGS;
-
             WITH arrayJoin(ProfileEvents) as pe
             SELECT pe.1, pe.2
             FROM system.query_log
@@ -226,6 +227,11 @@ def check_backup_and_restore(
 ):
     node = cluster.instances["node"]
     optimize_table_query = "OPTIMIZE TABLE data FINAL;" if optimize_table else ""
+
+    # Truncate query_log before running backup/restore so that SYSTEM FLUSH LOGS
+    # later only needs to flush this test's entries to S3 (query_log uses
+    # policy_s3_plain_rewritable), avoiding the 180s flush timeout.
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
 
     node.query(
         f"""
@@ -383,6 +389,55 @@ def test_backup_to_s3_named_collection(cluster):
     backup_name = new_backup_name()
     backup_destination = f"S3(named_collection_s3_backups, '{backup_name}')"
     check_backup_and_restore(cluster, storage_policy, backup_destination)
+
+
+def test_backup_to_s3_named_collection_sql(cluster):
+    """Test backup using a named collection created via SQL (not XML config)."""
+    node = cluster.instances["node"]
+    storage_policy = "default"
+    backup_name = new_backup_name()
+
+    # Create a named collection via SQL
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION IF NOT EXISTS sql_named_collection_s3_backup AS
+            url = 'http://minio1:9001/root/data/backups',
+            access_key_id = 'minio',
+            secret_access_key = '{minio_secret_key}'
+        """
+    )
+
+    try:
+        backup_destination = f"S3(sql_named_collection_s3_backup, '{backup_name}')"
+        check_backup_and_restore(cluster, storage_policy, backup_destination)
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS sql_named_collection_s3_backup")
+
+
+def test_backup_to_s3_named_collection_sql_with_overrides(cluster):
+    """Test backup using a SQL named collection with key-value overrides."""
+    node = cluster.instances["node"]
+    storage_policy = "default"
+    backup_name = new_backup_name()
+
+    # Create a named collection via SQL with a placeholder URL
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION IF NOT EXISTS sql_named_collection_s3_backup_override AS
+            url = 'http://minio1:9001/root/data/placeholder',
+            access_key_id = 'minio',
+            secret_access_key = '{minio_secret_key}'
+        """
+    )
+
+    try:
+        # Override the URL via key-value argument
+        backup_destination = f"S3(sql_named_collection_s3_backup_override, url='http://minio1:9001/root/data/backups/{backup_name}')"
+        check_backup_and_restore(cluster, storage_policy, backup_destination)
+    finally:
+        node.query(
+            "DROP NAMED COLLECTION IF EXISTS sql_named_collection_s3_backup_override"
+        )
 
 
 def test_backup_to_s3_multipart(cluster):
@@ -957,6 +1012,9 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk(cluster):
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
 
+    # Truncate query_log to limit data size, avoiding timeouts under sanitizers
+    instance.query("TRUNCATE TABLE IF EXISTS system.query_log")
+    instance.query("SELECT 1")
     instance.query("SYSTEM FLUSH LOGS")
 
     backup_query_id = uuid.uuid4().hex

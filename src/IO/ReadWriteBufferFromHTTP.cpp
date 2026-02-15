@@ -418,12 +418,12 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
         /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
         if (getOffset() != 0)
         {
-            /// Retry 200OK
+            /// Retry 200 OK
             if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
             {
                 String explanation = fmt::format(
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
-                    *read_range.begin, read_range.end ? toString(*read_range.end) : "-",
+                    getOffset(), read_range.end ? toString(*read_range.end) : "-",
                     toString(response.getStatus()), response.getReason());
 
                 /// it is retriable error
@@ -437,7 +437,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
             throw Exception(
                 ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                 "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
-                *read_range.begin,
+                getOffset(),
                 read_range.end ? toString(*read_range.end) : "-",
                 toString(response.getStatus()),
                 response.getReason());

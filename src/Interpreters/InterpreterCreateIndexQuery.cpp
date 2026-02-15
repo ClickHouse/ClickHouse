@@ -11,6 +11,7 @@
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/AlterCommands.h>
 
 namespace DB
@@ -75,9 +76,9 @@ BlockIO InterpreterCreateIndexQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
-        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {});
+        return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {}, std::move(guard));
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);

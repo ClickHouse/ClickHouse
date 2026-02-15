@@ -26,6 +26,8 @@ public:
     virtual bool nestedColumnIsNullable() const = 0;
     virtual void nestedToNullable() = 0;
     virtual void nestedRemoveNullable() = 0;
+    /// Returns an empty dictionary with nullable nested type and all required special values.
+    virtual MutableColumnPtr cloneEmptyNullable() const = 0;
 
     /// Returns array with StringViewHash calculated for each row of getNestedNotNullableColumn() column.
     /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).

@@ -3,21 +3,23 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Functions/CastOverloadResolver.h>
-#include <Functions/IFunction.h>
-#include <DataTypes/DataTypeString.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -412,6 +414,27 @@ WindowTransform::~WindowTransform()
     }
 }
 
+Columns & WindowTransform::inputAt(const RowNumber & x)
+{
+    assert(x.block >= first_block_number);
+    assert(x.block - first_block_number < blocks.size());
+    return blocks[x.block - first_block_number].input_columns;
+}
+
+WindowTransformBlock & WindowTransform::blockAt(const UInt64 block_number)
+{
+    assert(block_number >= first_block_number);
+    assert(block_number - first_block_number < blocks.size());
+    return blocks[block_number - first_block_number];
+}
+
+MutableColumns & WindowTransform::outputAt(const RowNumber & x)
+{
+    assert(x.block >= first_block_number);
+    assert(x.block - first_block_number < blocks.size());
+    return blocks[x.block - first_block_number].output_columns;
+}
+
 void WindowTransform::advancePartitionEnd()
 {
     if (partition_ended)
@@ -609,7 +632,12 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     assertValid(frame_start);
 
-    if (frame_start <= partition_start)
+    // When moving backwards (PRECEDING) and we hit the start of available data
+    // (offset_left < 0), the logical position is before partition_start.
+    // We must check offset_left < 0 first because partition_start might point
+    // to a block that has already been freed, making the comparison unreliable.
+    if (frame_start <= partition_start
+        || (window_description.frame.begin_preceding && offset_left < 0))
     {
         // Got to the beginning of partition and can't go further back.
         frame_start = partition_start;
@@ -627,12 +655,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     // Handled the equality case above. Now the frame start is inside the
     // partition, if we walked all the offset, it's final.
-    assert(partition_start < frame_start);
     frame_started = offset_left == 0;
-
-    // If we ran into the start of data (offset left is negative), we won't be
-    // able to make progress. Should have handled this case above.
-    assert(offset_left >= 0);
 }
 
 
@@ -854,7 +877,12 @@ void WindowTransform::advanceFrameEndRowsOffset()
         return;
     }
 
-    if (moved_row <= partition_start)
+    // When moving backwards (PRECEDING) and we hit the start of available data
+    // (offset_left < 0), the logical position is before partition_start.
+    // We must check offset_left < 0 first because partition_start might point
+    // to a block that has already been freed, making the comparison unreliable.
+    if (moved_row <= partition_start
+        || (window_description.frame.end_preceding && offset_left < 0))
     {
         // Clamp to the start of partition.
         frame_end = partition_start;
@@ -865,10 +893,6 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Frame end inside partition, if we walked all the offset, it's final.
     frame_end = moved_row;
     frame_ended = offset_left == 0;
-
-    // If we ran into the start of data (offset left is negative), we won't be
-    // able to make progress. Should have handled this case above.
-    assert(offset_left >= 0);
 }
 
 void WindowTransform::advanceFrameEndRangeOffset()
@@ -2216,7 +2240,7 @@ public:
         }
 
         UInt64 remaining_rows = state.current_partition_rows;
-        Float64 percent_rank_denominator = remaining_rows == 1 ? 1 : remaining_rows - 1;
+        Float64 percent_rank_denominator = remaining_rows == 1 ? 1 : static_cast<Float64>(remaining_rows - 1);
 
         while (remaining_rows > 0)
         {
@@ -2323,7 +2347,7 @@ public:
         }
 
         UInt64 remaining_rows = state.current_partition_rows;
-        Float64 cume_dist_denominator = remaining_rows;
+        Float64 cume_dist_denominator = static_cast<Float64>(remaining_rows);
 
         while (remaining_rows > 0)
         {
@@ -2382,13 +2406,16 @@ public:
     }
 };
 
-// ClickHouse-specific variant of lag/lead that respects the window frame.
-template <bool is_lead>
-struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
+// ClickHouse-specific lag/lead family implementation.
+/// `full_partition_default_frame` controls whether the function supplies a default window frame:
+/// - `true` (used by `lag`/`lead`): use the full-partition ROWS frame (UNBOUNDED PRECEDING .. UNBOUNDED FOLLOWING).
+/// - `false` (used by `lagInFrame`/`leadInFrame`): no default frame, so the caller-provided frame is respected.
+template <bool is_lead, bool full_partition_default_frame>
+struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
 {
     FunctionBasePtr func_cast = nullptr;
 
-    WindowFunctionLagLeadInFrame(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+    WindowFunctionLagLeadImpl(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
         : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
     {
         if (!parameters.empty())
@@ -2450,7 +2477,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
 
     }
 
-    ColumnPtr castColumn(const Columns & columns, const std::vector<size_t> & idx) override
+    ColumnPtr castColumn(const Columns & columns, const VectorWithMemoryTracking<size_t> & idx) override
     {
         if (!func_cast)
             return nullptr;
@@ -2480,6 +2507,17 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
     }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        if constexpr (!full_partition_default_frame)
+            return {};
+
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::ROWS;
+        frame.end_type = WindowFrame::BoundaryType::Unbounded;
+        return frame;
+    }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
@@ -2536,6 +2574,12 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
         }
     }
 };
+
+template <bool is_lead>
+using WindowFunctionLagLead = WindowFunctionLagLeadImpl<is_lead, true>;
+
+template <bool is_lead>
+using WindowFunctionLagLeadInFrame = WindowFunctionLagLeadImpl<is_lead, false>;
 
 struct WindowFunctionNthValue final : public StatelessWindowFunction
 {
@@ -2716,9 +2760,9 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
             const auto & column = transform->blockAt(transform->current_row.block).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
             const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->current_row.row);
 
-            Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
-            result = (time_elapsed > 0) ? (metric_diff * ts_scale_multiplier / time_elapsed  * interval_duration) : 0;
-            state.previous_timestamp = curr_timestamp;
+            Float64 time_elapsed = static_cast<Float64>(curr_timestamp) - state.previous_timestamp;
+            result = (time_elapsed > 0) ? (metric_diff * static_cast<Float64>(ts_scale_multiplier) / time_elapsed  * interval_duration) : 0;
+            state.previous_timestamp = static_cast<Float64>(curr_timestamp);
         }
         else
         {
@@ -2830,7 +2874,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
+            return std::make_shared<WindowFunctionLagLead<false>>(
                 name, argument_types, parameters);
         }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
@@ -2844,7 +2888,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
+            return std::make_shared<WindowFunctionLagLead<true>>(
                 name, argument_types, parameters);
         }, properties}, AggregateFunctionFactory::Case::Insensitive);
 

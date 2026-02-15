@@ -54,7 +54,7 @@ WHERE (query_id =
     WHERE current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
     ORDER BY event_time DESC
     LIMIT 1
-)) AND (symbol LIKE '%Source%'); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
+)) AND (symbol LIKE '%Source%');
 
 
 WITH addressToSymbol(arrayJoin(trace)) AS symbol
@@ -131,5 +131,5 @@ WITH (
     ) AS t)
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '');
 
-set joined_subquery_requires_alias=0, enable_analyzer=0; -- the query is invalid with a new analyzer
+set joined_subquery_requires_alias=0, enable_analyzer=0; -- the query is invalid with the analyzer
 SELECT number, number / 2 AS n, j1, j2 FROM remote('127.0.0.{2,3}', system.numbers) GLOBAL ANY LEFT JOIN (SELECT number / 3 AS n, number AS j1, 'Hello' AS j2 FROM system.numbers LIMIT 1048577) USING (n) LIMIT 10 format Null;

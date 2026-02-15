@@ -33,7 +33,7 @@ MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition
         expression_ast = select.prewhere()->clone();
 
     expression_cnf = std::make_unique<CNFQuery>(
-        expression_ast ? TreeCNFConverter::toCNF(expression_ast) : CNFQuery::AndGroup{});
+        expression_ast ? TreeCNFConverter::toCNF(expression_ast.get()) : CNFQuery::AndGroup{});
 
     addConstraints(constraints);
 }
@@ -52,7 +52,7 @@ void MergeTreeIndexhypothesisMergedCondition::addIndex(const MergeTreeIndexPtr &
     // TODO: move to index hypothesis
     std::vector<ASTPtr> compare_hypotheses_data;
     std::vector<CNFQuery::OrGroup> hypotheses_data;
-    const auto cnf = TreeCNFConverter::toCNF(hypothesis_index->index.expression_list_ast->children.front()).pullNotOutFunctions();
+    const auto cnf = TreeCNFConverter::toCNF(hypothesis_index->index.expression_list_ast->children.front().get()).pullNotOutFunctions();
 
     for (const auto & group : cnf.getStatements())
     {

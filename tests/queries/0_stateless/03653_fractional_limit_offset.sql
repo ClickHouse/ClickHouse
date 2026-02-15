@@ -89,7 +89,7 @@ LIMIT 10
 OFFSET 0.99999;
 
 SET enable_analyzer=1;
-SELECT 'New Analyzer';
+SELECT 'Analyzer';
 
 SELECT 'Fractional Limit Only:';
 SELECT number FROM numbers(10)    LIMIT 0.1;

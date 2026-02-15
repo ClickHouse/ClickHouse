@@ -33,6 +33,8 @@ namespace ErrorCodes
     DECLARE(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
     DECLARE(UInt64, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
     DECLARE(UInt64, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
+    DECLARE(UInt64, metadata_cache_size_bytes, 1_GiB, "Size in bytes for the in-memory cache for metadata received from ZooKeeper", 0) \
+    DECLARE(UInt64, metadata_cache_size_elements, 10000, "Size in elements for the in-memory cache for metadata received from ZooKeeper", 0) \
     DECLARE(UInt64, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
     DECLARE(UInt64, polling_max_timeout_ms, 10 * 60 * 1000, "Maximum timeout before next polling", 0) \
     DECLARE(UInt64, polling_backoff_ms, 30 * 1000, "Polling backoff", 0) \
@@ -50,6 +52,10 @@ namespace ErrorCodes
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
+    DECLARE(ObjectStorageQueuePartitioningMode, partitioning_mode, ObjectStorageQueuePartitioningMode::NONE, "Partitioning strategy: NONE (no partitioning, default), HIVE (path-based like date=2025-01-01/city=NY), or REGEX (extract from filename using partition_regex)", 0) \
+    DECLARE(String, partition_regex, "", "Regex to extract named capture groups from filename. All named groups are captured. Use partition_component to specify which group is the partition key. Example: '(?P<hostname>[^_]+)_(?P<timestamp>[^_]+)_(?P<sequence>\\d+)'", 0) \
+    DECLARE(String, partition_component, "", "Name of the capture group from partition_regex to use as partition key. Required when using partitioning_mode='regex'. Example: 'hostname'", 0) \
+    DECLARE(ObjectStorageQueueBucketingMode, bucketing_mode, ObjectStorageQueueBucketingMode::PATH, "Bucketing strategy for Ordered mode parallel processing: PATH (hash full file path, default), PARTITION (hash partition key, requires partitioning_mode != NONE)", 0) \
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
@@ -59,7 +65,7 @@ namespace ErrorCodes
     DECLARE(String, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
     DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to", 0) \
     DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string", 0) \
-    DECLARE(Bool, use_hive_partitioning, false, "Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", 0) \
+    DECLARE(Bool, use_hive_partitioning, false, "DEPRECATED: Use partitioning_mode='hive' instead. Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", 0) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
     OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \
@@ -232,7 +238,7 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

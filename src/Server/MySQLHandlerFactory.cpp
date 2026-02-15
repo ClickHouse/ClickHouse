@@ -57,7 +57,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, bool secure_required
 #endif
 }
 
-Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
+Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
     uint32_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());

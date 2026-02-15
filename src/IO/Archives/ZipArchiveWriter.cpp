@@ -88,6 +88,7 @@ public:
             password_cstr,
             /* crc_for_crypting= */ 0,
             /* zip64= */ true);
+        archive_writer_->rethrowStoredException();
         checkResultCode(code);
     }
 
@@ -121,6 +122,8 @@ private:
             return;
         chassert(zip_handle);
         int code = zipWriteInFileInZip(zip_handle, working_buffer.begin(), static_cast<uint32_t>(offset()));
+        if (auto writer = archive_writer.lock())
+            writer->rethrowStoredException();
         checkResultCode(code);
     }
 
@@ -131,7 +134,11 @@ private:
             int code = zipCloseFileInZip(zip_handle);
             zip_handle = nullptr;
             if (throw_if_error)
+            {
+                if (auto writer = archive_writer.lock())
+                    writer->rethrowStoredException();
                 checkResultCode(code);
+            }
         }
     }
 
@@ -154,6 +161,9 @@ private:
 
 /// Provides a set of functions allowing the minizip library to write its output
 /// to a WriteBuffer instead of an ordinary file in the local filesystem.
+///
+/// C++ exceptions must not propagate through the minizip C library (undefined behavior).
+/// All callbacks catch exceptions and store them for later re-throwing in C++ code.
 class ZipArchiveWriter::StreamInfo
 {
 public:
@@ -185,7 +195,24 @@ public:
 
     WriteBuffer & getWriteBuffer() { return *write_buffer; }
 
+    /// Re-throws a stored exception from a callback, if any.
+    void rethrowIfNeeded()
+    {
+        if (stored_exception)
+        {
+            auto ex = stored_exception;
+            stored_exception = nullptr;
+            std::rethrow_exception(ex);
+        }
+    }
+
 private:
+    void storeException()
+    {
+        if (!stored_exception)
+            stored_exception = std::current_exception();
+    }
+
     /// We do nothing in openFileFunc() and in closeFileFunc() because we already have `write_buffer` (file is already opened).
     static void * openFileFunc(void * opaque, const void *, int) { return opaque; }
     static int closeFileFunc(void *, void *) { return ZIP_OK; }
@@ -193,31 +220,60 @@ private:
     static unsigned long writeFileFunc(void * opaque, void *, const void * buf, unsigned long size) // NOLINT(google-runtime-int)
     {
         auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
-        stream_info->write_buffer->write(reinterpret_cast<const char *>(buf), size);
-        return size;
+        try
+        {
+            stream_info->write_buffer->write(reinterpret_cast<const char *>(buf), size);
+            return size;
+        }
+        catch (...)
+        {
+            stream_info->storeException();
+            return 0;
+        }
     }
 
-    static int testErrorFunc(void *, void *) { return ZIP_OK; }
+    static int testErrorFunc(void * opaque, void *)
+    {
+        auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
+        return stream_info->stored_exception ? ZIP_ERRNO : ZIP_OK;
+    }
 
     static ZPOS64_T tellFunc(void * opaque, void *)
     {
         auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
-        auto pos = stream_info->write_buffer->count() - stream_info->start_offset;
-        return pos;
+        try
+        {
+            auto pos = stream_info->write_buffer->count() - stream_info->start_offset;
+            return pos;
+        }
+        catch (...)
+        {
+            stream_info->storeException();
+            return static_cast<ZPOS64_T>(-1);
+        }
     }
 
-    static long seekFunc(void *, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
+    static long seekFunc(void * opaque, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek is not implemented");
+        auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
+        if (!stream_info->stored_exception)
+            stream_info->stored_exception = std::make_exception_ptr(
+                Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek is not implemented"));
+        return -1;
     }
 
-    static unsigned long readFileFunc(void *, void *, void *, unsigned long) // NOLINT(google-runtime-int)
+    static unsigned long readFileFunc(void * opaque, void *, void *, unsigned long) // NOLINT(google-runtime-int)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile is not implemented");
+        auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
+        if (!stream_info->stored_exception)
+            stream_info->stored_exception = std::make_exception_ptr(
+                Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile is not implemented"));
+        return 0;
     }
 
     std::unique_ptr<WriteBuffer> write_buffer;
     UInt64 start_offset;
+    std::exception_ptr stored_exception;
 };
 
 
@@ -303,6 +359,7 @@ void ZipArchiveWriter::finalize()
     {
         int code = zipClose(zip_handle, /* global_comment= */ nullptr);
         zip_handle = nullptr;
+        rethrowStoredExceptionLocked();
         checkResultCode(code);
     }
 
@@ -332,6 +389,8 @@ void ZipArchiveWriter::cancel() noexcept
         stream_info->getWriteBuffer().cancel();
         stream_info.reset();
     }
+
+    finalized = true;
 }
 
 void ZipArchiveWriter::setCompression(const String & compression_method_, int compression_level_)
@@ -451,6 +510,18 @@ void ZipArchiveWriter::endWritingFile()
 void ZipArchiveWriter::checkResultCode(int code) const
 {
     checkResultCodeImpl(code, path_to_archive);
+}
+
+void ZipArchiveWriter::rethrowStoredException()
+{
+    std::lock_guard lock{mutex};
+    rethrowStoredExceptionLocked();
+}
+
+void ZipArchiveWriter::rethrowStoredExceptionLocked()
+{
+    if (stream_info)
+        stream_info->rethrowIfNeeded();
 }
 
 }

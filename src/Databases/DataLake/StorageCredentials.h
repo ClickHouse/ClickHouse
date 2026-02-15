@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Types.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace DB::ErrorCodes
@@ -36,10 +36,25 @@ public:
         if (engine_args.size() != 1)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Storage credentials specified in AST already");
 
-        engine_args.push_back(std::make_shared<DB::ASTLiteral>(access_key_id));
-        engine_args.push_back(std::make_shared<DB::ASTLiteral>(secret_access_key));
+        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(access_key_id));
+        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(secret_access_key));
         if (!session_token.empty())
-            engine_args.push_back(std::make_shared<DB::ASTLiteral>(session_token));
+            engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(session_token));
+    }
+
+    const String & getAccessKeyId() const
+    {
+        return access_key_id;
+    }
+
+    const String & getSecretAccessKey() const
+    {
+        return secret_access_key;
+    }
+
+    const String & getSessionToken() const
+    {
+        return session_token;
     }
 
 private:
@@ -61,7 +76,7 @@ public:
         if (engine_args.size() != 1)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Storage credentials specified in AST already");
 
-        engine_args.push_back(std::make_shared<DB::ASTLiteral>(sas_token));
+        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(sas_token));
     }
 
 private:

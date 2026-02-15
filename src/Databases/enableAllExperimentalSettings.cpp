@@ -28,6 +28,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_experimental_correlated_subqueries", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
+    context->setSetting("allow_experimental_nullable_tuple_type", 1);
 
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
     context->setSetting("allow_suspicious_fixed_string_types", 1);
@@ -66,7 +67,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
-    context->setSetting("allow_experimental_qbit_type", 1);
 }
 
 }

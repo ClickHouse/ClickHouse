@@ -64,6 +64,8 @@ static struct InitFiu
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(distributed_cache_fail_continue_request) \
+    ONCE(distributed_cache_fail_choose_server) \
+    REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
@@ -85,6 +87,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(terminate_with_exception) \
+    ONCE(terminate_with_std_exception) \
+    ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
@@ -115,6 +120,7 @@ static struct InitFiu
     REGULAR(output_format_sleep_on_progress) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
@@ -127,12 +133,21 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
+    PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
+    REGULAR(mt_select_parts_to_mutate_no_free_threads) \
+    REGULAR(mt_select_parts_to_mutate_max_part_size) \
+    REGULAR(rmt_merge_selecting_task_no_free_threads) \
+    REGULAR(rmt_merge_selecting_task_max_part_size) \
     PAUSEABLE_ONCE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
     ONCE(shared_set_full_update_fails_when_initializing) \
-    PAUSEABLE(after_kill_part_pause) \
-    ONCE(parallel_replicas_reading_response_timeout)
-
+    PAUSEABLE(after_snapshot_clean_pause) \
+    ONCE(parallel_replicas_reading_response_timeout) \
+    ONCE(database_iceberg_gcs) \
+    REGULAR(rmt_delay_execute_drop_range) \
+    REGULAR(rmt_delay_commit_part) \
+    ONCE(local_object_storage_network_error_during_remove) \
+    ONCE(parallel_replicas_check_read_mode_always)
 
 namespace FailPoints
 {
@@ -161,6 +176,12 @@ struct FailPointChannel
     /// Threads record the epoch when they start waiting, and only wake up
     /// if the current epoch is greater than their recorded epoch.
     size_t resume_epoch = 0;
+
+    /// Pause epoch: incremented each time a thread pauses at this failpoint.
+    /// Used by waitForPause to distinguish new pauses from stale ones:
+    /// after a notify, waitForPause waits for pause_epoch > resume_epoch,
+    /// ensuring the pause happened after the most recent resume.
+    size_t pause_epoch = 0;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -237,6 +258,7 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
     /// Signal that a thread has reached and paused at this failpoint
     ++channel->pause_count;
+    ++channel->pause_epoch;
     channel->pause_cv.notify_all();
 
     /// Wait for resume_epoch to be incremented by notify or disable
@@ -257,9 +279,12 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
 
     auto channel = iter->second;
 
-    /// Wait until at least one thread has paused at this failpoint
+    /// Wait until a thread has paused at this failpoint after the most recent resume.
+    /// Using pause_epoch > resume_epoch instead of pause_count > 0 avoids a race:
+    /// after NOTIFY, the task thread may not have decremented pause_count yet,
+    /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
-        return channel->pause_count > 0;
+        return channel->pause_epoch > channel->resume_epoch;
     });
 }
 

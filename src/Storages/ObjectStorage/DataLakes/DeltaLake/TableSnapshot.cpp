@@ -3,6 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>
@@ -30,6 +31,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
+#include <roaring/roaring.hh>
 
 
 namespace fs = std::filesystem;
@@ -85,7 +87,7 @@ class TableSnapshot::Iterator final : public DB::IObjectIterator
 public:
     Iterator(
         std::shared_ptr<KernelSnapshotState> kernel_snapshot_state_,
-        const std::string & data_prefix_,
+        KernelHelperPtr helper_,
         const ReadSchema & read_schema_,
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
@@ -99,7 +101,7 @@ public:
         bool enable_engine_predicate_,
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
-        , data_prefix(data_prefix_)
+        , helper(helper_)
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
@@ -154,6 +156,10 @@ public:
         if (thread.joinable())
             thread.join();
     }
+
+    const std::string & getDataPath() const { return helper->getDataPath(); }
+
+    const std::string & getTableLocation() const { return helper->getTableLocation(); }
 
     void setScanException()
     {
@@ -343,7 +349,7 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::CDvInfo * /* dv_info */,
+        const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * /* deprecated */)
     {
@@ -354,8 +360,9 @@ public:
             return;
         }
 
-        std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
+        std::string full_path = fs::path(context->getDataPath()) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
         auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        object->data_lake_metadata.emplace();
 
         if (transform && !context->partition_columns.empty())
         {
@@ -365,20 +372,46 @@ public:
                 context->expression_schema,
                 context->enable_expression_visitor_logging);
 
-            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
-
             LOG_TEST(
                 context->log,
-                "Scanned file: {}, size: {}, num records: {}, transform: {}",
+                "Scanned file: {}, size: {}, num records: {}, transform: {}, has dv info: {}",
                 object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
-                parsed_transform->dumpNames());
+                parsed_transform->dumpNames(), dv_info && dv_info->has_vector);
+
+            object->data_lake_metadata->schema_transform = std::move(parsed_transform);
         }
         else
         {
             LOG_TEST(
                 context->log,
-                "Scanned file: {}, size: {}, num records: {}",
-                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
+                "Scanned file: {}, size: {}, num records: {}, has db info: {}",
+                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
+                dv_info && dv_info->has_vector);
+        }
+
+        if (dv_info && dv_info->has_vector)
+        {
+            /// `row_indexes_from_dv` returns a vector of row indexes
+            /// that should be *removed* from the result set
+            ffi::KernelRowIndexArray row_indexes = KernelUtils::unwrapResult(
+                ffi::row_indexes_from_dv(
+                    dv_info->info,
+                    context->kernel_snapshot_state->engine.get(),
+                    KernelUtils::toDeltaString(context->getTableLocation())),
+                "row_indexes_from_dv");
+
+            SCOPE_EXIT({
+                ffi::free_row_indexes(row_indexes);
+            });
+
+            LOG_TEST(context->log, "Row indexes size: {}", row_indexes.len);
+
+            auto bitmap = std::make_shared<DB::DataLakeObjectMetadata::ExcludedRows>();
+            for (size_t i = 0; i < row_indexes.len; ++i)
+            {
+                bitmap->add(row_indexes.ptr[i]);
+            }
+            object->data_lake_metadata->excluded_rows = std::move(bitmap);
         }
 
         {
@@ -398,7 +431,7 @@ private:
     std::optional<PartitionPruner> pruner;
     std::optional<DB::ActionsDAG> filter;
 
-    const std::string data_prefix;
+    KernelHelperPtr helper;
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
@@ -548,7 +581,7 @@ DB::ObjectIterator TableSnapshot::iterate(
     initSnapshot();
     return std::make_shared<TableSnapshot::Iterator>(
         kernel_snapshot_state,
-        helper->getDataPath(),
+        helper,
         getReadSchema(),
         getTableSchema(),
         getPhysicalNamesMap(),

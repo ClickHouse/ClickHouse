@@ -1,7 +1,7 @@
 SET enable_analyzer = 1;
 
 SET query_plan_optimize_join_order_limit = 10;
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
 SET correlated_subqueries_use_in_memory_buffer = 1;
@@ -10,6 +10,7 @@ SET enable_parallel_replicas = 0;
 
 SET query_plan_optimize_join_order_algorithm = 'dpsize';
 SET query_plan_join_swap_table = 'auto';
+SET enable_join_runtime_filters = 0;
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,
@@ -78,3 +79,66 @@ WHERE
     )
 )
 WHERE explain ilike '%ReadFrom%' or explain ilike '%JoinLogical%' or explain ilike '% Type: %' or explain ilike '%Save%';
+
+
+-- Test output now
+
+CREATE VIEW v_query1 AS 
+SELECT
+    sum(l_extendedprice) / 7.0 AS avg_yearly
+FROM
+    lineitem,
+    part
+WHERE
+    p_partkey = l_partkey
+    AND l_quantity < (
+        SELECT
+            0.2 * avg(l_quantity)
+        FROM
+            lineitem
+        WHERE
+            l_partkey = p_partkey
+    );
+
+CREATE VIEW v_query2 AS 
+SELECT
+    sum(l_extendedprice) / 7.0 AS avg_yearly
+FROM
+    (SELECT l_quantity, p_partkey, l_extendedprice FROM lineitem, part WHERE p_partkey = l_partkey) AS lp
+WHERE
+    l_quantity < (
+        SELECT
+            0.2 * avg(l_quantity)
+        FROM
+            lineitem
+        WHERE
+            l_partkey = p_partkey
+    );
+    
+-------------------------------------------
+SET correlated_subqueries_use_in_memory_buffer = 1;
+
+SELECT * FROM v_query1;
+SELECT * FROM v_query2;
+
+SET query_plan_optimize_join_order_limit = 0;
+
+SELECT * FROM v_query1;
+SELECT * FROM v_query2;
+
+-------------------------------------------
+SET query_plan_optimize_join_order_limit = 10;
+SET correlated_subqueries_use_in_memory_buffer = 0;
+
+SELECT * FROM v_query1;
+SELECT * FROM v_query2;
+
+SET query_plan_optimize_join_order_limit = 0;
+
+SELECT * FROM v_query1;
+SELECT * FROM v_query2;
+
+DROP VIEW IF EXISTS v_query1;
+DROP VIEW IF EXISTS v_query2;
+DROP TABLE IF EXISTS lineitem;
+DROP TABLE IF EXISTS part;

@@ -120,10 +120,10 @@ public:
         UInt32 src_scale = getDecimalScale(*arguments[0].type);
         Int64 multiplier_msec = DecimalUtils::scaleMultiplier<DateTime64>(3);
         Int64 multiplier_src = DecimalUtils::scaleMultiplier<DateTime64>(src_scale);
-        auto factor = multiplier_msec / static_cast<double>(multiplier_src);
+        auto factor = static_cast<double>(multiplier_msec) / static_cast<double>(multiplier_src);
 
         for (size_t i = 0; i < input_rows_count; ++i)
-            res_data[i] = std::llround(src_data[i] * factor - epoch) << time_shift;
+            res_data[i] = std::llround(static_cast<double>(src_data[i]) * factor - static_cast<double>(epoch)) << time_shift;
 
         return col_res;
     }

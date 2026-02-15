@@ -131,13 +131,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
     {
         case TypeIndex::UInt8:
         {
-            assert_cast<ColumnUInt8 &>(column).insertValue(value);
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            assert_cast<ColumnUInt16 &>(column).insertValue(value);
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         }
         case TypeIndex::DateTime: [[fallthrough]];
@@ -154,13 +154,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
-            assert_cast<ColumnInt8 &>(column).insertValue(value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
-            assert_cast<ColumnInt16 &>(column).insertValue(value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];

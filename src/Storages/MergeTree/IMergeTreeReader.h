@@ -135,6 +135,11 @@ protected:
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
 
+    /// Returns true if the column at position @pos in columns_to_read was dropped
+    /// by a pending mutation that hasn't been applied to this part yet.
+    /// Such columns should not be read from the part; defaults should be used instead.
+    bool isColumnDroppedByPendingMutation(size_t pos) const;
+
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;

@@ -32,14 +32,13 @@ namespace
 {
 
 /// If 'is_utf8' - measure offset and length in code points instead of bytes.
-template <bool is_utf8>
 class FunctionSubstring : public IFunction
 {
 public:
-    static constexpr auto name = is_utf8 ? "substringUTF8" : "substring";
+    FunctionSubstring(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSubstring>(); }
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, bool is_utf8) { return std::make_shared<FunctionSubstring>(name, is_utf8); }
+    String getName() const override { return function_name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -53,7 +52,7 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
                             "passed {}, should be 2 or 3", getName(), number_of_arguments);
 
-        if constexpr (is_utf8)
+        if (is_utf8)
         {
             /// UTF8 variant is not available for FixedString and Enum arguments.
             if (!isString(arguments[0]))
@@ -151,7 +150,7 @@ public:
         if (column_length_const)
             length = column_length_const->getInt(0);
 
-        if constexpr (is_utf8)
+        if (is_utf8)
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
             {
@@ -214,6 +213,10 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
         }
     }
+
+private:
+    const char * function_name;
+    bool is_utf8;
 };
 
 }
@@ -224,7 +227,7 @@ REGISTER_FUNCTION(Substring)
 Returns the substring of a string `s` which starts at the specified byte index `offset`.
 Byte counting starts from 1 with the following logic:
 - If `offset` is `0`, an empty string is returned.
-- If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning.
+- If `offset` is negative, the substring starts `offset` characters from the end of the string, rather than from the beginning.
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 )";
@@ -251,12 +254,12 @@ An optional argument `length` specifies the maximum number of bytes the returned
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_utf8 = R"(
-Returns the substring of a string `s` which starts at the specified byte index `offset` for Unicode code points.
-Byte counting starts from `1` with the following logic:
+Returns the substring of a string `s` which starts at the specified code point index `offset`.
+Code point counting starts from `1` with the following logic:
 - If `offset` is `0`, an empty string is returned.
-- If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning.
+- If `offset` is negative, the substring starts `offset` code points from the end of the string, rather than from the beginning.
 
-An optional argument `length` specifies the maximum number of bytes the returned substring may have.
+An optional argument `length` specifies the maximum number of code points the returned substring may have.
 
 :::note
 This function assumes that the string contains valid UTF-8 encoded text.
@@ -269,7 +272,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         {"offset", "The starting position of the substring in `s`.", {"Int", "UInt"}},
         {"length", "The maximum length of the substring. Optional.", {"Int", "UInt"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_utf8 = {"Returns a substring of `s` with `length` many bytes, starting at index `offset`.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_utf8 = {"Returns a substring of `s` with `length` many code points, starting at code point index `offset`.", {"String"}};
     FunctionDocumentation::Examples examples_utf8 = {
     {
         "Usage example",
@@ -279,12 +282,16 @@ If this assumption is violated, no exception is thrown and the result is undefin
     };
     FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
-    factory.registerFunction<FunctionSubstring<false>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("substring",
+        [](ContextPtr){ return FunctionSubstring::create("substring", false); },
+        documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("substr", "substring", FunctionFactory::Case::Insensitive); // MySQL alias
     factory.registerAlias("mid", "substring", FunctionFactory::Case::Insensitive); /// MySQL alias
     factory.registerAlias("byteSlice", "substring", FunctionFactory::Case::Insensitive); /// resembles PostgreSQL's get_byte function, similar to ClickHouse's bitSlice
 
-    factory.registerFunction<FunctionSubstring<true>>(documentation_utf8);
+    factory.registerFunction("substringUTF8",
+        [](ContextPtr){ return FunctionSubstring::create("substringUTF8", true); },
+        documentation_utf8);
 }
 
 }

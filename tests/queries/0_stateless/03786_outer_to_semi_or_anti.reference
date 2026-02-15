@@ -1,0 +1,35 @@
+Expression ((Project names + Projection))
+Actions: COLUMN Const(UInt8) -> 1 UInt8 : 0
+Positions: 0
+  Filter (WHERE)
+  Filter column: equals(__table3.c0, materialize(1_UInt8)) (removed)
+  Actions: INPUT : 0 -> __table3.c0 UInt8 : 0
+           COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 1
+           FUNCTION materialize(1_UInt8 :: 1) -> materialize(1_UInt8) UInt8 : 2
+           FUNCTION equals(__table3.c0 :: 0, materialize(1_UInt8) :: 2) -> equals(__table3.c0, materialize(1_UInt8)) UInt8 : 1
+  Positions: 1
+    JoinLogical
+    Join: tx ⋉ tz
+    ResultRows: unknown
+    Type: LEFT
+    Strictness: SEMI
+    Locality: UNSPECIFIED
+    Expression: 
+    Expression:
+    Actions: INPUT :: 0 -> __table1.1 UInt8 : 0
+             INPUT :: 1 -> __table3.c0 UInt8 : 1
+    Positions: 1
+    Expression Sources:
+    __table1.1: {0}
+    __table3.c0: {1}
+      Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+      Actions: INPUT :: 0 -> dummy UInt8 : 0
+               COLUMN Const(UInt8) -> __table1.1 UInt8 : 1
+      Positions: 1
+        ReadFromSystemOne
+      Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+      Actions: INPUT :: 0 -> dummy UInt8 : 0
+               COLUMN Const(UInt8) -> __table3.c0 UInt8 : 1
+      Positions: 1
+        ReadFromSystemOne
+1

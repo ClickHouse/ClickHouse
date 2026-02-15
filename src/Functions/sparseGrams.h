@@ -366,7 +366,7 @@ public:
                 end = reinterpret_cast<Pos>(&src_data[current_src_offset]);
                 impl.set(start, end);
                 while (impl.get(start, end))
-                    res_data.push_back(hasher(start, end - start));
+                    res_data.push_back(static_cast<UInt32>(hasher(start, end - start)));
 
                 res_offsets_data.push_back(res_data.size());
             }

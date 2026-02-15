@@ -192,7 +192,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (port > 65535)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad value for 'port' entry");
 
-        params.port = port;
+        params.port = static_cast<UInt16>(port);
     }
     else
         params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);

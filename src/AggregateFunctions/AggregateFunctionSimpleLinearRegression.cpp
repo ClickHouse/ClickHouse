@@ -5,7 +5,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
@@ -72,12 +71,12 @@ struct AggregateFunctionSimpleLinearRegressionData final
 
     Float64 getK() const
     {
-        Float64 divisor = sum_xx * count - sum_x * sum_x;
+        Float64 divisor = sum_xx * static_cast<Float64>(count) - sum_x * sum_x;
 
         if (divisor == 0)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return (sum_xy * count - sum_x * sum_y) / divisor;
+        return (sum_xy * static_cast<Float64>(count) - sum_x * sum_y) / divisor;
     }
 
     Float64 getB(Float64 k) const
@@ -85,7 +84,7 @@ struct AggregateFunctionSimpleLinearRegressionData final
         if (count == 0)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return (sum_y - k * sum_x) / count;
+        return (sum_y - k * sum_x) / static_cast<Float64>(count);
     }
 };
 

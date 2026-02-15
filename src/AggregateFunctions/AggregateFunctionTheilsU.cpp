@@ -27,8 +27,8 @@ struct TheilsUData : CrossTabData
         Float64 h_a = 0.0;
         for (const auto & [key, value] : count_a)
         {
-            Float64 value_float = value;
-            Float64 prob_a = value_float / count;
+            Float64 value_float = static_cast<Float64>(value);
+            Float64 prob_a = value_float / static_cast<Float64>(count);
             h_a += prob_a * log(prob_a);
         }
 
@@ -38,9 +38,9 @@ struct TheilsUData : CrossTabData
         Float64 dep = 0.0;
         for (const auto & [key, value] : count_ab)
         {
-            Float64 value_ab = value;
-            Float64 value_b = count_b.at(key.items[UInt128::_impl::little(1)]);
-            Float64 prob_ab = value_ab / count;
+            Float64 value_ab = static_cast<Float64>(value);
+            Float64 value_b = static_cast<Float64>(count_b.at(key.items[UInt128::_impl::little(1)]));
+            Float64 prob_ab = value_ab / static_cast<Float64>(count);
             Float64 prob_a_given_b = value_ab / value_b;
             dep += prob_ab * log(prob_a_given_b);
         }

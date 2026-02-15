@@ -1,6 +1,6 @@
 SET enable_analyzer=1;
 
-SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')
+SELECT explain
 FROM (
 
 EXPLAIN

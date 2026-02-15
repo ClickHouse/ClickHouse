@@ -61,6 +61,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
+#include <Core/DeduplicateInsert.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/Block.h>
@@ -97,8 +98,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
-    extern const SettingsBool insert_deduplicate;
-    extern const SettingsBool async_insert_deduplicate;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
@@ -487,7 +486,7 @@ DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, Storage
             || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         && (*storage_merge_tree->getSettings())[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
     {
-        auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
+        auto sign_column_check_constraint = make_intrusive<ASTConstraintDeclaration>();
         sign_column_check_constraint->name = "_implicit_sign_column_constraint";
         sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
 
@@ -495,8 +494,8 @@ DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, Storage
         valid_values_array.emplace_back(-1);
         valid_values_array.emplace_back(1);
 
-        auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
-        auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
+        auto valid_values_ast = make_intrusive<ASTLiteral>(std::move(valid_values_array));
+        auto sign_column_ast = make_intrusive<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
         sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTOperator("in", std::move(sign_column_ast), std::move(valid_values_ast)));
 
         auto constraints_ast = constraints.getConstraints();
@@ -588,7 +587,6 @@ private:
         {
         }
     };
-
 
     QueryPipeline process(Block data_block, Chunk::ChunkInfoCollection && chunk_infos)
     {
@@ -724,7 +722,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();
     insert_null_as_default = as_insert_query && as_insert_query->select && settings[Setting::insert_null_as_default];
 
-    deduplicate_blocks = async_insert ? settings[Setting::async_insert_deduplicate] : settings[Setting::insert_deduplicate];
+    deduplicate_blocks = isDeduplicationEnabledForInsert(async_insert, settings);
     deduplicate_blocks_in_dependent_materialized_views = deduplicate_blocks && settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
     materialized_views_ignore_errors = settings[Setting::materialized_views_ignore_errors];
     /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled
@@ -734,9 +732,6 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
     collectAllDependencies();
-
-    LOG_TEST(logger, "InsertDependenciesBuilder created for table {} with query: {}, debugTree:\n{}",
-        init_table_id.getFullTableName(), init_query->formatForLogging(), debugTree());
 
     auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
         { return isView(storage.first) || storage.second->supportsParallelInsert();});
@@ -759,11 +754,6 @@ struct SquashingTransformContext
 
 std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
-    LOG_DEBUG(
-        logger,
-        "createChainWithDependenciesForAllStreams called, sink_stream_size={}, squash_parallel_inserts={} deduplicate_blocks={} deduplicate_blocks_in_dependent_materialized_views={}",
-        sink_stream_size, squash_parallel_inserts, deduplicate_blocks, deduplicate_blocks_in_dependent_materialized_views);
-
     std::vector<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
@@ -1028,7 +1018,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 {
     const auto & parent = path.parent(1);
     const auto & current = path.current();
-    LOG_TEST(logger, "observePath {}", path.debugInfo());
 
     auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
@@ -1500,7 +1489,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
     const auto & view_type = view_types.at(view_id);
     const auto & inner_table_id = inner_tables.at(view_id);
 
-    UInt64 elapsed_ms = thread_group->getThreadsTotalElapsedMs();
+    UInt64 elapsed_ms = thread_group->getGroupElapsedMs();
 
     UInt64 min_query_duration = settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds();
     if (min_query_duration && elapsed_ms <= min_query_duration)

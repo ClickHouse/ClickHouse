@@ -1,6 +1,5 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
-#include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
@@ -8,6 +7,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -713,7 +713,7 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
     UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
 
     String host = config->getString("dictionary.source.clickhouse.host", "localhost");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
+    UInt16 port = static_cast<UInt16>(config->getUInt("dictionary.source.clickhouse.port", default_port));
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
 
