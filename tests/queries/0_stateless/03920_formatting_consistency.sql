@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Test that AST formatting is consistent for a wide variety of SQL constructs.
 -- In debug builds, the server verifies that format(parse(query)) == format(parse(format(parse(query)))),
 -- and aborts on inconsistency. This test simply runs many SQL constructs to trigger that check.
