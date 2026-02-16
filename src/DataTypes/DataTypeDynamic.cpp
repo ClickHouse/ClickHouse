@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -153,7 +154,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         return nullptr;
     }
 
-    const auto & dynamic_serialization = assert_cast<const SerializationDynamic &>(*data.serialization);
+    const auto & dynamic_serialization = assert_cast<const SerializationDynamic &>(*removeNamedSerialization(data.serialization));
     auto subcolumn_serialization = dynamic_serialization.createSerializationForType(subcolumn_type);
     std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(subcolumn_serialization);
     res->type = subcolumn_type;
