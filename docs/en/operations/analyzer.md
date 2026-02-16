@@ -14,14 +14,14 @@ You can read more details about how it works [here](/guides/developer/understand
 
 ## Known incompatibilities {#known-incompatibilities}
 
-Despite fixing a large number of bugs and introducing new optimizations, it also introduces some breaking changes in ClickHouse behaviour. Please read the following changes to determine how to rewrite your queries for the new analyzer.
+Despite fixing a large number of bugs and introducing new optimizations, it also introduces some breaking changes in ClickHouse behaviour. Please read the following changes to determine how to rewrite your queries for the analyzer.
 
 ### Invalid queries are no longer optimized {#invalid-queries-are-no-longer-optimized}
 
 The previous query planning infrastructure applied AST-level optimizations before the query validation step.
 Optimizations could rewrite the initial query to be valid and executable.
 
-In the new analyzer, query validation takes place before the optimization step.
+In the analyzer, query validation takes place before the optimization step.
 This means that invalid queries which were previously possible to execute, are now unsupported.
 In such cases, the query must be fixed manually.
 
@@ -63,7 +63,7 @@ GROUP BY n
 
 ### `CREATE VIEW` with an invalid query {#create-view-with-invalid-query}
 
-The new analyzer always performs type-checking.
+The analyzer always performs type-checking.
 Previously, it was possible to create a `VIEW` with an invalid `SELECT` query.
 It would then fail during the first `SELECT` or `INSERT` (in the case of `MATERIALIZED VIEW`).
 
@@ -105,7 +105,7 @@ If `b` is not present in `t1`, the query will fail with an error.
 
 #### Changes in behavior with `JOIN USING` and `ALIAS`/`MATERIALIZED` columns {#changes-in-behavior-with-join-using-and-aliasmaterialized-columns}
 
-In the new analyzer, using `*` in a `JOIN USING` query that involves `ALIAS` or `MATERIALIZED` columns will include those columns in the result-set by default.
+In the analyzer, using `*` in a `JOIN USING` query that involves `ALIAS` or `MATERIALIZED` columns will include those columns in the result-set by default.
 
 For example:
 
@@ -120,11 +120,11 @@ SELECT * FROM t1
 FULL JOIN t2 USING (payload);
 ```
 
-In the new analyzer, the result of this query will include the `payload` column along with `id` from both tables.
+In the analyzer, the result of this query will include the `payload` column along with `id` from both tables.
 In contrast, the previous analyzer would only include these `ALIAS` columns if specific settings (`asterisk_include_alias_columns` or `asterisk_include_materialized_columns`) were enabled,
 and the columns might appear in a different order.
 
-To ensure consistent and expected results, especially when migrating old queries to the new analyzer, it is advisable to specify columns explicitly in the `SELECT` clause rather than using `*`.
+To ensure consistent and expected results, especially when migrating old queries to the analyzer, it is advisable to specify columns explicitly in the `SELECT` clause rather than using `*`.
 
 #### Handling of type modifiers for columns in the `USING` clause {#handling-of-type-modifiers-for-columns-in-using-clause}
 
@@ -173,7 +173,7 @@ FORMAT PrettyCompact
 
 ### Incompatible function arguments types {#incompatible-function-arguments-types}
 
-In the new analyzer, type inference happens during initial query analysis.
+In the analyzer, type inference happens during initial query analysis.
 This change means that type checks are done before short-circuit evaluation; thus, the `if` function arguments must always have a common supertype.
 
 For example, the following query fails with `There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not`:
@@ -184,7 +184,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 ### Heterogeneous clusters {#heterogeneous-clusters}
 
-The new analyzer significantly changes the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers with different `enable_analyzer` setting values.
+The analyzer significantly changes the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers with different `enable_analyzer` setting values.
 
 ### Mutations are interpreted by previous analyzer {#mutations-are-interpreted-by-previous-analyzer}
 
@@ -194,7 +194,7 @@ The status can be checked [here](https://github.com/ClickHouse/ClickHouse/issues
 
 ### Unsupported features {#unsupported-features}
 
-The list of features that the new analyzer currently doesn't support is given below:
+The list of features that the analyzer currently doesn't support is given below:
 
 - Annoy index.
 - Hypothesis index. Work in progress [here](https://github.com/ClickHouse/ClickHouse/pull/48381).
@@ -242,7 +242,7 @@ Solution: Update your SQL patterns as follows:
 
 Error: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Exception code: 215 
 
-Cause: The old analyzer allowed selecting columns not present in the GROUP BY clause (often picking an arbitrary value). The new analyzer adheres to standard SQL: every selected column must be either an aggregate or a grouping key. 
+Cause: The old analyzer allowed selecting columns not present in the GROUP BY clause (often picking an arbitrary value). The analyzer adheres to standard SQL: every selected column must be either an aggregate or a grouping key. 
 
 Solution: Wrap the column in `any()`, `argMax()`, or add it to the GROUP BY.
 
@@ -261,7 +261,7 @@ SELECT user_id, device_id FROM table GROUP BY user_id, device_id
 
 Error: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Exception code: 179
 
-Cause: The old analyzer permitted defining multiple Common Table Expressions (WITH ...) with the same name shadowing the earlier one. The new analyzer forbids this ambiguity. 
+Cause: The old analyzer permitted defining multiple Common Table Expressions (WITH ...) with the same name shadowing the earlier one. The analyzer forbids this ambiguity. 
 
 Solution: Rename duplicate CTEs to be unique.
 
@@ -283,7 +283,7 @@ SELECT * FROM processed_data;
 
 Error: `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` Exception code: 207
 
-Cause: The query references a column name present in multiple tables within a JOIN without specifying the source table. The old analyzer often guessed the column based on internal logic, the new analyzer requires explicit name. 
+Cause: The query references a column name present in multiple tables within a JOIN without specifying the source table. The old analyzer often guessed the column based on internal logic, the analyzer requires explicit name. 
 
 Solution: Fully qualify the column with table_alias.column_name.
 
@@ -299,7 +299,7 @@ SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
 
 Error: `Table expression modifiers FINAL are not supported for subquery...` or `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`). Exception codes: 1, 181 
 
-Cause: FINAL is a modifier for table storage (specifically [Shared]ReplacingMergeTree). The new analyzer rejects FINAL when applied to:
+Cause: FINAL is a modifier for table storage (specifically [Shared]ReplacingMergeTree). The analyzer rejects FINAL when applied to:
 - Subqueries or derived tables (e.g., FROM (SELECT ...) FINAL).
 - Table engines that do not support it (e.g., SharedMergeTree). 
 
@@ -317,6 +317,6 @@ SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
 
 Error: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. Exception code: 46
 
-Cause: Function names are case-sensitive or strictly mapped in the new analyzer. `countdistinct` (all lowercase) is no longer resolved automatically. 
+Cause: Function names are case-sensitive or strictly mapped in the analyzer. `countdistinct` (all lowercase) is no longer resolved automatically. 
 
 Solution: Use the standard `countDistinct` (camelCase) or the ClickHouse specific uniq.

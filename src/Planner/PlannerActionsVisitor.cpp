@@ -203,9 +203,19 @@ public:
                     chassert(exists_argument != nullptr);
 
                     const auto & table_alias = exists_argument->getAlias();
-                    chassert(!table_alias.empty());
-
-                    result = fmt::format("exists({})", table_alias);
+                    if (!table_alias.empty())
+                    {
+                        result = fmt::format("exists({})", table_alias);
+                    }
+                    else
+                    {
+                        /// The alias may be empty when EXISTS was constant-folded into a ConstantNode
+                        /// and its source expression is being traversed to reconstruct the action node name.
+                        /// In this case, createUniqueAliasesIfNecessary did not visit the subquery argument
+                        /// because it is not a child of ConstantNode. Use the tree hash as a stable identifier.
+                        auto hash = exists_argument->getTreeHash();
+                        result = fmt::format("exists({}_{})", hash.low64, hash.high64);
+                    }
                     break;
                 }
                 else if (function_node.getFunctionName() == "__getScalar")

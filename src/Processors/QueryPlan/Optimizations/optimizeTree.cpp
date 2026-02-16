@@ -530,8 +530,7 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        if (optimization_settings.direct_read_from_text_index)
-            optimizeDirectReadFromTextIndex(stack, nodes);
+        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index);
 
         auto & frame = stack.back();
 
@@ -785,7 +784,10 @@ void optimizeTreeSecondPass(
             if (frame.next_child == 0)
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
-                    break;
+                {
+                    stack.pop_back();
+                    continue;
+                }
             }
 
             /// Traverse all children first.

@@ -12,7 +12,14 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1
 
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM async_inserts_2156 ORDER BY id"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+# Wait for both async insert queries to appear in query_log.
+# There is a race between HTTP response being sent and the query_log entry being written.
+for _ in $(seq 1 60); do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query ILIKE 'INSERT INTO async_inserts_2156 VALUES%' AND type = 'QueryFinish'")
+    [ "$count" -ge 2 ] && break
+    sleep 0.5
+done
 
 ${CLICKHOUSE_CLIENT} -q "SELECT query, arrayExists(x -> x LIKE '%async_inserts_2156', tables), \
         query_kind, Settings['async_insert'] FROM system.query_log \

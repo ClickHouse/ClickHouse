@@ -318,7 +318,7 @@ def test_alter_settings(started_cluster):
         )
 
     expected_rows = files_to_generate
-    for _ in range(100):
+    for _ in range(300):
         if expected_rows == get_count():
             break
         time.sleep(1)

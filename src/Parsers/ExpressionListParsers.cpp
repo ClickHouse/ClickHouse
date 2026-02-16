@@ -1,5 +1,4 @@
 #include <string_view>
-#include <unordered_map>
 
 #include <base/scope_guard.h>
 
@@ -2766,6 +2765,10 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                 layers.back()->pushOperand(std::move(tmp));
                 return Action::OPERATOR;
             }
+
+            /// If subquery starts with a valid "SELECT" or "EXPLAIN", but failed later. It means there is a syntax error.
+            if (subquery_parser.startsWithValidSelectOrExplain())
+                return Action::NONE;
 
             ++pos;
             layers.push_back(std::make_unique<RoundBracketsLayer>());

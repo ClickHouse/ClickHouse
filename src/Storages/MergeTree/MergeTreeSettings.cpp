@@ -652,7 +652,7 @@ namespace ErrorCodes
     Possible values:
     - true, false
     )", false) \
-    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, false, R"(
+    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
     If settings `min_age_to_force_merge_seconds` and
     `min_age_to_force_merge_on_partition_only` should respect setting
     `max_bytes_to_merge_at_max_space_in_pool`.
@@ -1795,42 +1795,42 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
-    )", BETA) \
+    )", 0) \
     DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
     Activates rescheduling of coordinated merges tasks. It can be useful even when
     shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
     statistics and help with cold start.
-    )", BETA) \
+    )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
     Enables coordinated merges strategy
-    )", BETA) \
+    )", 0) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
     Number of merge entries that coordinator should prepare and distribute across workers
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
-    )", BETA) \
+    )", 0) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
     Number of merges that coordinator can request from MergerMutator at once
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
     Time between runs of merge coordinator election thread
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
     Minimum time between runs of merge coordinator thread
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
     Maximum time between runs of merge coordinator thread
-    )", BETA) \
+    )", 0) \
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
     Time changing factor for delay of coordinator thread
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
     Timeout that merge worker thread will use if it is needed to update it's state after immediate action
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
-    )", BETA) \
+    )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
@@ -2070,10 +2070,10 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
     Minimal number of parts to activated distributed index analysis
-    )", 0) \
-    DECLARE(UInt64, distributed_index_analysis_min_indexes_size_to_activate, 1_GiB, R"(
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, distributed_index_analysis_min_indexes_bytes_to_activate, 1_GiB, R"(
     Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
-    )", 0) \
+    )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
     Batch size for ZooKeeper multi-create get-part requests when cloning replica.
     )", 0) \

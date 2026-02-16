@@ -44,6 +44,24 @@ build_digest_config = Job.CacheDigestConfig(
     with_git_submodules=True,
 )
 
+fast_test_digest_config = Job.CacheDigestConfig(
+    include_paths=[
+        "./ci/jobs/fast_test.py",
+        "./tests/queries/0_stateless/",
+        "./tests/config/",
+        "./tests/clickhouse-test",
+        "./src",
+        "./contrib/",
+        "./.gitmodules",
+        "./CMakeLists.txt",
+        "./PreLoad.cmake",
+        "./cmake",
+        "./base",
+        "./programs",
+        "./rust",
+    ],
+)
+
 common_build_job_config = Job.Config(
     name=JobNames.BUILD,
     runs_on=[],  # from parametrize()
@@ -108,7 +126,7 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/log_parser.py",
         ],
     ),
-    timeout=3600 * 2,
+    timeout=3600 * 3,
 )
 common_integration_test_job_config = Job.Config(
     name=JobNames.INTEGRATION,
@@ -148,24 +166,19 @@ class JobConfigs:
         command="python3 ./ci/jobs/fast_test.py",
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
+        digest_config=fast_test_digest_config,
+        result_name_for_cidb="Tests",
+    )
+    smoke_tests_macos = Job.Config(
+        name=JobNames.SMOKE_TEST_MACOS,
+        runs_on=RunnerLabels.MACOS_AMD_SMALL,
+        command="python3 ./ci/jobs/smoke_test.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/jobs/fast_test.py",
-                "./tests/queries/0_stateless/",
-                "./tests/config/",
-                "./tests/clickhouse-test",
-                "./src",
-                "./contrib/",
-                "./.gitmodules",
-                "./CMakeLists.txt",
-                "./PreLoad.cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./rust",
+                "./ci/jobs/smoke_test.py",
             ],
         ),
-        result_name_for_cidb="Tests",
+        requires=[ArtifactNames.CH_AMD_DARWIN_BIN],
     )
     tidy_build_arm_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
@@ -435,6 +448,31 @@ class JobConfigs:
             parameter="amd_asan, flaky check",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, flaky check",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_msan, flaky check",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_ubsan, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_debug, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
@@ -1139,6 +1177,33 @@ class JobConfigs:
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
     )
+    toolchain_build_jobs = Job.Config(
+        name=JobNames.BUILD_TOOLCHAIN,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/build_toolchain.py",
+        run_in_docker=BINARY_DOCKER_COMMAND,
+        timeout=8 * 3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/build_toolchain.py"],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd64",
+            runs_on=RunnerLabels.AMD_LARGE,
+            provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD],
+        ),
+        Job.ParamSet(
+            parameter="aarch64",
+            runs_on=RunnerLabels.ARM_LARGE,
+            provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM],
+        ),
+    )
+    update_toolchain_dockerfile_job = Job.Config(
+        name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
+        enable_gh_auth=True,
+    )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",
         runs_on=RunnerLabels.ARM_MEDIUM,
@@ -1154,7 +1219,10 @@ class JobConfigs:
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
             *LLVM_ARTIFACTS_LIST,
         ],
-        provides=[ArtifactNames.LLVM_COVERAGE_HTML_REPORT],
+        provides=[
+            ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
+            ArtifactNames.LLVM_COVERAGE_INFO_FILE,
+        ],
         command="python3 ./ci/jobs/merge_llvm_coverage_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/merge_llvm_coverage_job.py"],

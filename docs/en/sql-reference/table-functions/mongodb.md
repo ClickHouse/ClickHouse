@@ -15,7 +15,9 @@ Allows `SELECT` queries to be performed on data that is stored on a remote Mongo
 ## Syntax {#syntax}
 
 ```sql
-mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]])
+mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]]);
+mongodb(uri, collection, structure[, oid_columns]);
+mongodb(named_collection_name[, <arg>=<value>...]);
 ```
 
 ## Arguments {#arguments}
@@ -51,6 +53,15 @@ mongodb(uri, collection, structure[, oid_columns])
 | `collection`  | Remote collection name.                                                                                |
 | `structure`   | The schema for the ClickHouse table returned from this function.                                       |
 | `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
+:::
+
+You can pass the arguments using a named collection:
+
+```sql
+mongodb(_named_collection_[, host][, port][, database][, collection][, user][, password][, structure][, options][, oid_columns])
+-- or
+mongodb(_named_collection_[, uri][, structure][, oid_columns])
+```
 
 ## Returned value {#returned_value}
 
@@ -95,6 +106,20 @@ SELECT * FROM mongodb(
     'mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
     'my_collection',
     'log_type String, host String, command String'
+)
+```
+
+or:
+
+```sql
+CREATE NAMED COLLECTION mongo_creds AS
+       uri='mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
+       collection='default_collection';
+
+SELECT * FROM mongodb(
+        mongo_creds,
+        collection = 'my_collection',
+        structure = 'log_type String, host String, command String'
 )
 ```
 
