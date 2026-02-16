@@ -30,6 +30,10 @@ def venv_pip():
     return VENV_DIR / "bin" / "pip"
 
 
+def install_packages():
+    run(["sudo", "apt", "install", "-y", "pypy3", "pypy3-dev", "pypy3-venv"])
+
+
 def install_dependencies():
     run([str(venv_pip()), "install", "--upgrade", "pip", "setuptools", "wheel"])
     if Path("requirements.txt").exists():
@@ -46,11 +50,12 @@ def build_package():
 
 
 def main():
+    install_packages()
     ensure_venv()
     install_dependencies()
     run_tests()
     build_package()
-    print("\n✅ Build completed successfully.")
+    print("\nBuild completed successfully.")
 
 
 if __name__ == "__main__":
