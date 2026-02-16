@@ -39,3 +39,16 @@ WHERE (small.sid = (big.bid + 1) % 5000);
 SELECT count()
 FROM small, big
 WHERE (small.sid = (big.bid + 1) % 5000);
+
+SELECT '------------';
+
+-- Check with big table read bucket count not matching join bucket count
+EXPLAIN SELECT count()
+FROM big, small
+WHERE (small.sid = (big.bid + 1) % 5000)
+SETTINGS distributed_plan_default_shuffle_join_bucket_count=5, distributed_plan_default_reader_bucket_count=2;
+
+SELECT count()
+FROM big, small
+WHERE (small.sid = (big.bid + 1) % 5000)
+SETTINGS distributed_plan_default_shuffle_join_bucket_count=5, distributed_plan_default_reader_bucket_count=2;

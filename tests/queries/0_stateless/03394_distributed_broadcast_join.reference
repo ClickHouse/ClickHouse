@@ -43,3 +43,18 @@ Expression ((Project names + Projection))
                 Expression
                   ReadFromMergeTree (default.big)
 20000
+------------
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ShuffleExchange (any scatter)
+              Filter
+                ReadFromMergeTree (default.big)
+            BroadcastExchange
+              BuildRuntimeFilter (Build runtime join filter on __table2.sid)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (default.small)
+20000
