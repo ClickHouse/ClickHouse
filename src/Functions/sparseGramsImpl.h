@@ -1,14 +1,11 @@
 #pragma once
 
-#include <optional>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionTokens.h>
-#include <Common/UTF8Helpers.h>
 #include <Common/Exception.h>
-#include <base/types.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/UTF8Helpers.h>
+#include <Functions/FunctionHelpers.h>
+#include <base/types.h>
+#include <optional>
 
 namespace DB
 {
@@ -16,16 +13,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-/** Functions that finds all substrings win minimal length n
-  * such their border (n-1)-grams' hashes are more than hashes of every (n-1)-grams' in substring.
-  * As a hash function use zlib crc32, which is crc32-ieee with 0xffffffff as initial value
-  *
-  * sparseGrams(s)
-  */
 
 struct CRC32CHasher
 {
@@ -116,7 +105,6 @@ private:
         }
 
     private:
-
         Pos data = nullptr;
         Pos end = nullptr;
         size_t n = 0;
@@ -307,78 +295,5 @@ public:
         }
     }
 };
-
-template <bool is_utf8>
-class SparseGramsHashes : public IFunction
-{
-public:
-    static constexpr auto name = is_utf8 ? "sparseGramsHashesUTF8" : "sparseGramsHashes";
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<SparseGramsHashes>(); }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
-    {
-        SparseGramsImpl<is_utf8>::checkArguments(*this, args);
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        SparseGramsImpl<is_utf8> impl;
-        impl.init(arguments, false);
-
-        CRC32CHasher hasher;
-
-        auto col_res = ColumnUInt32::create();
-        auto & res_data = col_res->getData();
-
-        auto col_res_offsets = ColumnArray::ColumnOffsets::create();
-        auto & res_offsets_data = col_res_offsets->getData();
-
-        auto string_arg = arguments[impl.strings_argument_position].column.get();
-
-        if (const auto * col_string = checkAndGetColumn<ColumnString>(string_arg))
-        {
-            const auto & src_data = col_string->getChars();
-            const auto & src_offsets = col_string->getOffsets();
-
-            res_offsets_data.reserve(input_rows_count);
-            res_data.reserve(src_data.size());
-
-            ColumnString::Offset current_src_offset = 0;
-            Pos start{};
-            Pos end{};
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                start = reinterpret_cast<Pos>(&src_data[current_src_offset]);
-                current_src_offset = src_offsets[i];
-                end = reinterpret_cast<Pos>(&src_data[current_src_offset]);
-                impl.set(start, end);
-                while (impl.get(start, end))
-                    res_data.push_back(static_cast<UInt32>(hasher(start, end - start)));
-
-                res_offsets_data.push_back(res_data.size());
-            }
-
-            return ColumnArray::create(std::move(col_res), std::move(col_res_offsets));
-        }
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
-    }
-};
-
-using FunctionSparseGrams = FunctionTokens<SparseGramsImpl<false>>;
-using FunctionSparseGramsUTF8 = FunctionTokens<SparseGramsImpl<true>>;
 
 }
