@@ -368,72 +368,94 @@ function App() {
     return () => clearTimeout(timer)
   }, [data, nameParams, theme])
 
-  const createStatusCell = (result: TestResult) => {
+  const createPopoverContent = (result: TestResult, navigateUrl?: string) => {
+    return (
+      <Container orientation='vertical' gap='sm' padding='md' style={{ maxWidth: '800px', maxHeight: '600px', overflow: 'auto' }}>
+        {navigateUrl && (
+          <Link href={navigateUrl} style={{ textDecoration: 'none' }}>
+            <Button
+              type="primary"
+              label="Go to job results"
+              style={{ width: '100%' }}
+            />
+          </Link>
+        )}
+        {result.info && (
+          <Container orientation='vertical' gap='xs'>
+            <Text style={{ fontWeight: 600 }}>Info:</Text>
+            <Text style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '12px' }}>
+              {result.info}
+            </Text>
+          </Container>
+        )}
+        {result.links && result.links.length > 0 && (
+          <Container orientation='vertical' gap='xs'>
+            <Text style={{ fontWeight: 600 }}>Links:</Text>
+            <Container orientation='vertical' gap='xs'>
+              {result.links.map((link, linkIndex) => (
+                <Link
+                  key={linkIndex}
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: '12px' }}
+                >
+                  {getLastPartOfUrl(link)}
+                </Link>
+              ))}
+            </Container>
+          </Container>
+        )}
+        {result.results && result.results.length > 0 && (
+          <Container orientation='vertical' gap='xs'>
+            <Text style={{ fontWeight: 600 }}>Subresults ({result.results.length}):</Text>
+            <Table
+              headers={[
+                { label: 'Status' },
+                { label: 'Name' },
+              ]}
+              rows={result.results.map((subresult, subindex) => ({
+                id: `sub-${subindex}`,
+                items: [
+                  { label: wrapWithPopover(subresult.status, subresult) },
+                  { label: wrapWithPopover(subresult.name, subresult) },
+                ],
+              }))}
+              size="sm"
+            />
+          </Container>
+        )}
+      </Container>
+    )
+  }
+
+  const wrapWithPopover = (content: React.ReactNode, result: TestResult, navigateUrl?: string) => {
     const hasAdditionalInfo = result.info ||
                                (result.links && result.links.length > 0) ||
-                               (result.results && result.results.length > 0)
+                               (result.results && result.results.length > 0) ||
+                               navigateUrl
 
     if (!hasAdditionalInfo) {
-      return result.status
+      return <div style={{ width: '100%', height: '100%' }}>{content}</div>
     }
 
     return (
       <Popover>
-        <Popover.Trigger>
-          <Button
-            type="empty"
-            label={result.status}
-            style={{ padding: 0, minWidth: 'auto', height: 'auto' }}
-          />
+        <Popover.Trigger asChild>
+          <div style={{
+            width: '100%',
+            height: '100%',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            margin: '-8px -12px',
+            padding: '8px 12px'
+          }}>
+            {content}
+          </div>
         </Popover.Trigger>
         <Popover.Content side="right" showArrow>
-          <Container orientation='vertical' gap='sm' padding='md' style={{ maxWidth: '800px', maxHeight: '600px', overflow: 'auto' }}>
-            {result.info && (
-              <Container orientation='vertical' gap='xs'>
-                <Text style={{ fontWeight: 600 }}>Info:</Text>
-                <Text style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '12px' }}>
-                  {result.info}
-                </Text>
-              </Container>
-            )}
-            {result.links && result.links.length > 0 && (
-              <Container orientation='vertical' gap='xs'>
-                <Text style={{ fontWeight: 600 }}>Links:</Text>
-                <Container orientation='vertical' gap='xs'>
-                  {result.links.map((link, linkIndex) => (
-                    <Link
-                      key={linkIndex}
-                      href={link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ fontSize: '12px' }}
-                    >
-                      {getLastPartOfUrl(link)}
-                    </Link>
-                  ))}
-                </Container>
-              </Container>
-            )}
-            {result.results && result.results.length > 0 && (
-              <Container orientation='vertical' gap='xs'>
-                <Text style={{ fontWeight: 600 }}>Subresults ({result.results.length}):</Text>
-                <Table
-                  headers={[
-                    { label: 'Status' },
-                    { label: 'Name' },
-                  ]}
-                  rows={result.results.map((subresult, subindex) => ({
-                    id: `sub-${subindex}`,
-                    items: [
-                      { label: createStatusCell(subresult) },
-                      { label: subresult.name },
-                    ],
-                  }))}
-                  size="sm"
-                />
-              </Container>
-            )}
-          </Container>
+          {createPopoverContent(result, navigateUrl)}
         </Popover.Content>
       </Popover>
     )
@@ -447,30 +469,21 @@ function App() {
   ]
 
   const rows = data?.results?.map((result, index) => {
-    // Determine if name should be clickable
-    // Only clickable if max_N > 0 OR status is success/failure/error
+    // Determine if navigation should be available
+    // Only available if max_N > 0 OR status is success/failure/error
     const maxNameIndex = nameParams.length - 1
     const isClickableStatus = ['success', 'failure', 'error'].includes(result.status.toLowerCase())
     const shouldBeClickable = maxNameIndex > 0 || isClickableStatus
 
+    const navigateUrl = shouldBeClickable ? buildUrlWithNewName(result.name) : undefined
+
     return {
       id: index,
       items: [
-        { label: createStatusCell(result) },
-        {
-          label: shouldBeClickable ? (
-            <Link
-              href={buildUrlWithNewName(result.name)}
-              style={{ textDecoration: 'none' }}
-            >
-              {result.name}
-            </Link>
-          ) : (
-            result.name
-          )
-        },
-        { label: formatDuration(result.duration) },
-        { label: formatTime(result.start_time) },
+        { label: wrapWithPopover(result.status, result, navigateUrl) },
+        { label: wrapWithPopover(result.name, result, navigateUrl) },
+        { label: wrapWithPopover(formatDuration(result.duration), result, navigateUrl) },
+        { label: wrapWithPopover(formatTime(result.start_time), result, navigateUrl) },
       ],
     }
   }) || []
