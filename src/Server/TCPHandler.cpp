@@ -1318,8 +1318,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
             /// Reset pipeline because it may hold write lock for some storages.
-            state.io.pipeline.cancel();
-            state.io.pipeline.reset();
+            state.io.resetPipeline(/*cancel=*/true);
             if (settings[Setting::wait_for_async_insert])
             {
                 size_t timeout_ms = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
@@ -1760,19 +1759,25 @@ bool TCPHandler::receiveProxyHeader()
 namespace
 {
 
-std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Util::AbstractConfiguration& config)
+std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Util::AbstractConfiguration & config, bool is_secure)
 {
+    std::string tcp_port_config = is_secure ? "tcp_port_secure" : "tcp_port";
+    std::string http_port_config = is_secure ? "https_port" : "http_port";
+
     std::string result = fmt::format(
         "HTTP/1.0 400 Bad Request\r\n\r\n"
         "Port {} is for clickhouse-client program\r\n",
-        config.getString("tcp_port"));
+        config.getString(tcp_port_config));
 
-    if (config.has("http_port"))
+    if (config.has(http_port_config))
     {
         result += fmt::format(
             "You must use port {} for HTTP.\r\n",
-            config.getString("http_port"));
+            config.getString(http_port_config));
     }
+
+    result += "You can also use the /play endpoint for interactive queries\r\n"
+              "and the /dashboard endpoint for the Dashboard.\r\n";
 
     return result;
 }
@@ -1813,7 +1818,7 @@ void TCPHandler::receiveHello()
           */
         if (packet_type == 'G' || packet_type == 'P')
         {
-            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
+            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config(), socket().secure()), *out);
             out->next();
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }

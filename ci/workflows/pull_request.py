@@ -1,6 +1,13 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.defs import (
+    BASE_BRANCH,
+    DOCKERS,
+    SECRETS,
+    ArtifactConfigs,
+    ArtifactNames,
+    JobNames,
+)
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
@@ -55,6 +62,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
+        JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
         JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
@@ -118,15 +126,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
-        # macOS smoke tests on GitHub-hosted runners (no AWS credentials)
-        # Explicit dependency on darwin builds since artifact-based requires was removed
-        *[
-            job.set_dependency(
-                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                + [j.name for j in JobConfigs.special_build_jobs if "darwin" in j.name]
-            )
-            for job in JobConfigs.macos_smoke_test_jobs
-        ],
+        *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -137,6 +137,8 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.parser_memory_profiler,
+        ArtifactConfigs.toolchain_pgo_bolt_amd,
+        ArtifactConfigs.toolchain_pgo_bolt_arm,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,

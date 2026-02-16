@@ -400,14 +400,6 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
-        case Type::CLEAR_PARQUET_METADATA_CACHE:
-# if USE_PARQUET
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
-            system_context->clearParquetMetadataCache();
-            break;
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
-# endif
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -1065,7 +1057,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
     }
 
-    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
+    replicated_db->restoreDatabaseInKeeper(getContext());
 
     LOG_TRACE(log, "Replicated database {} was restored.", database_name);
 }
@@ -1106,6 +1098,14 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     });
     table->is_being_restarted = true;
     table->flushAndShutdown();
+
+    /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
+    /// The table is removed from the in-memory tables map between detach and attach, making it
+    /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
+    std::optional<DatabaseReplicated::RestartReplicaGuard> restart_guard;
+    if (auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get()))
+        restart_guard.emplace(*replicated_db);
+
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -1159,6 +1159,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     }
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
+    restart_guard.reset();
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
 
@@ -2008,7 +2009,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
-        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:

@@ -115,7 +115,7 @@ extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
-extern const SettingsBool allow_experimental_insert_into_iceberg;
+extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool iceberg_delete_data_on_drop;
 extern const SettingsBool iceberg_allow_nanosecond_timestamps;
@@ -615,12 +615,12 @@ void IcebergMetadata::mutate(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const std::optional<FormatSettings> & format_settings)
 {
-    if (!context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg].value)
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Iceberg mutations is experimental. "
-            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+            "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
     DB::Iceberg::mutate(
@@ -658,12 +658,12 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
 
 void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
 {
-    if (!context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg].value)
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Alter iceberg is experimental. "
-            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+            "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
     Iceberg::alter(params, context, object_storage, data_lake_settings, persistent_components, write_format);
@@ -1177,7 +1177,7 @@ SinkToStoragePtr IcebergMetadata::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    if (context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
+    if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
     }
@@ -1186,7 +1186,7 @@ SinkToStoragePtr IcebergMetadata::write(
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Insert into iceberg is experimental. "
-            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+            "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 }
 

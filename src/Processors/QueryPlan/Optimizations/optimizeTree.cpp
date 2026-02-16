@@ -374,10 +374,6 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
-    // Some tests fail because on uninitialized `MergeTreeData::SnapshotData`
-    if (optimization_settings.enable_full_text_index)
-        return;
-
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
@@ -784,7 +780,10 @@ void optimizeTreeSecondPass(
             if (frame.next_child == 0)
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
-                    break;
+                {
+                    stack.pop_back();
+                    continue;
+                }
             }
 
             /// Traverse all children first.

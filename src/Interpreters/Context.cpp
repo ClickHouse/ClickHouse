@@ -1,3 +1,4 @@
+#include <atomic>
 #include <map>
 #include <set>
 #include <optional>
@@ -44,7 +45,6 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -539,9 +539,6 @@ struct ContextSharedPart : boost::noncopyable
 #if USE_AVRO
     mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
 #endif
-#if USE_PARQUET
-    mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
-#endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -684,8 +681,7 @@ struct ContextSharedPart : boost::noncopyable
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
 
 #if USE_NURAFT
-    mutable std::mutex keeper_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
 
     ContextSharedPart()
@@ -4138,49 +4134,6 @@ void Context::clearIcebergMetadataFilesCache() const
 }
 #endif
 
-#if USE_PARQUET
-void Context::setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->parquet_metadata_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache has been already created.");
-
-    shared->parquet_metadata_cache = std::make_shared<ParquetMetadataCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
-}
-
-void Context::updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->parquet_metadata_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
-
-    size_t max_size_in_bytes = config.getUInt64("parquet_metadata_cache_size", DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("parquet_metadata_cache_max_entries", DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES);
-    shared->parquet_metadata_cache->setMaxSizeInBytes(max_size_in_bytes);
-    shared->parquet_metadata_cache->setMaxCount(max_entries);
-}
-
-std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->parquet_metadata_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
-    return shared->parquet_metadata_cache;
-}
-
-void Context::clearParquetMetadataCache() const
-{
-    auto cache = getParquetMetadataCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-#endif
-
 void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -4872,9 +4825,7 @@ void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-
-    if (shared->keeper_dispatcher)
+    if (std::atomic_load_explicit(&shared->keeper_dispatcher, std::memory_order_relaxed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
@@ -4893,8 +4844,9 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
                      "will wait for Keeper synchronously");
         }
 
-        shared->keeper_dispatcher = std::make_shared<KeeperDispatcher>();
-        shared->keeper_dispatcher->initialize(config, is_standalone_app, start_async, getMacros());
+        auto dispatcher = std::make_shared<KeeperDispatcher>();
+        dispatcher->initialize(config, is_standalone_app, start_async, getMacros());
+        std::atomic_store_explicit(&shared->keeper_dispatcher, dispatcher, std::memory_order_relaxed);
     }
 #endif
 }
@@ -4902,41 +4854,44 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
 #if USE_NURAFT
 std::shared_ptr<KeeperDispatcher> Context::getKeeperDispatcher() const
 {
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-    if (!shared->keeper_dispatcher)
+    auto dispatcher = tryGetKeeperDispatcher();
+    if (!dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->keeper_dispatcher;
+    return dispatcher;
 }
 
 std::shared_ptr<KeeperDispatcher> Context::tryGetKeeperDispatcher() const
 {
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-    return shared->keeper_dispatcher;
+    return std::atomic_load_explicit(&shared->keeper_dispatcher, std::memory_order_relaxed);
+}
+
+void Context::setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const
+{
+    std::atomic_store_explicit(&shared->keeper_dispatcher, dispatcher, std::memory_order_relaxed);
 }
 #endif
 
 void Context::shutdownKeeperDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-    if (shared->keeper_dispatcher)
+    if (auto dispatcher = tryGetKeeperDispatcher())
     {
-        shared->keeper_dispatcher->shutdown();
-        shared->keeper_dispatcher.reset();
+        dispatcher->shutdown();
+        setKeeperDispatcher(nullptr);
     }
 #endif
 }
 
 
-void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config)
+void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config) const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-    if (!shared->keeper_dispatcher)
+    auto dispatcher = tryGetKeeperDispatcher();
+    if (!dispatcher)
         return;
 
-    shared->keeper_dispatcher->updateConfiguration(config, getMacros());
+    dispatcher->updateConfiguration(config, getMacros());
 #endif
 }
 
@@ -5818,19 +5773,19 @@ String trim(const String & text)
 
 }
 
-void Context::setDashboardsConfig(const ConfigurationPtr & config)
+void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("dashboards", keys);
+    config.keys("dashboards", keys);
 
     Dashboards dashboards;
     for (const auto & key : keys)
     {
         const auto & prefix = "dashboards." + key + ".";
         dashboards.push_back({
-            { "dashboard", config->getString(prefix + "dashboard") },
-            { "title",     config->getString(prefix + "title") },
-            { "query",     trim(config->getString(prefix + "query")) },
+            { "dashboard", config.getString(prefix + "dashboard") },
+            { "title",     config.getString(prefix + "title") },
+            { "query",     trim(config.getString(prefix + "query")) },
         });
     }
 

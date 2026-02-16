@@ -203,7 +203,7 @@ function fuzz
     # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
     # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
     # a reasonable time.
-    timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client \
+    timeout --verbose --signal TERM --kill-after=5m --preserve-status "${FUZZ_TIME_LIMIT:-30m}" clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \

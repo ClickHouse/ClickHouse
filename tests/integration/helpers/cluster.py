@@ -3016,7 +3016,12 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 for node in nodes:
-                    conn = self.get_kazoo_client(node)
+                    # Use low retries/timeout per attempt since the outer loop
+                    # already retries. This avoids kazoo's internal thread join
+                    # hanging indefinitely (a known kazoo bug where
+                    # ConnectionHandler.stop joins the connection thread
+                    # without a timeout).
+                    conn = self.get_kazoo_client(node, timeout=5.0, retries=1)
                     conn.get_children("/")
                     conn.stop()
                 logging.debug("All instances of ZooKeeper started: %s", nodes)
@@ -3030,7 +3035,7 @@ class ClickHouseCluster:
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         ) from err
 
-    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=50):
+    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=120):
         retries = 0
         while True:
             if check_kafka_is_available(kafka_docker_id, kafka_port):
@@ -4101,7 +4106,7 @@ class ClickHouseCluster:
             certfile=self.zookeeper_certfile,
             keyfile=self.zookeeper_keyfile,
         )
-        zk.start()
+        zk.start(timeout=timeout)
         return zk
 
     def run_kazoo_commands_with_retries(
