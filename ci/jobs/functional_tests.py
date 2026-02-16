@@ -573,6 +573,11 @@ def main():
             for r in test_result.results:
                 r.set_label(BUGFIX_BUILD_TYPES[0])
             all_bugfix_sub_results = list(test_result.results)
+            # Save server logs from the first build type before they get mixed with the next
+            Shell.run(
+                f"cp -r {CH.log_dir} {CH.log_dir}_{BUGFIX_BUILD_TYPES[0]}",
+                verbose=True,
+            )
 
             for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
                 print(f"\n=== Bugfix validation with {bugfix_bt} ===")
@@ -582,6 +587,7 @@ def main():
                 )
                 Shell.run(f"chmod +x {ch_path}/clickhouse", verbose=True)
                 CH.terminate()
+                CH.clean_logs()
                 CH.start()
                 CH.wait_ready()
 
@@ -599,6 +605,11 @@ def main():
                     r.set_label(bugfix_bt)
                 all_bugfix_sub_results.extend(bt_result.results)
                 debug_files += ft_res_processor_bt.debug_files
+                # Save server logs for this build type
+                Shell.run(
+                    f"cp -r {CH.log_dir} {CH.log_dir}_{bugfix_bt}",
+                    verbose=True,
+                )
 
             test_result.results = all_bugfix_sub_results
 
@@ -718,7 +729,9 @@ def main():
         has_failure = False
         for r in test_result.results:
             r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
+            if r.status in (Result.StatusExtended.FAIL, Result.StatusExtended.ERROR):
+                # Both test failures and crashes (e.g. sanitizer errors) count as
+                # successful bug reproduction
                 r.status = Result.StatusExtended.OK
                 has_failure = True
             elif r.status == Result.StatusExtended.OK:
@@ -728,7 +741,7 @@ def main():
             test_result.set_failed().set_info("Failed to reproduce the bug")
         else:
             # For bugfix validation, the expected behavior is:
-            # - At least one test must fail (bug reproduced)
+            # - At least one test must fail or crash (bug reproduced)
             # - The overall Tests result is treated as success in that case
             test_result.set_success()
 

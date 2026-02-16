@@ -765,7 +765,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         for r in R.results:
             # invert statuses
             r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
+            if r.status in (Result.StatusExtended.FAIL, Result.StatusExtended.ERROR):
+                # Both test failures and crashes (e.g. sanitizer errors) count as
+                # successful bug reproduction
                 r.status = Result.StatusExtended.OK
                 has_failure = True
             elif r.status == Result.StatusExtended.OK:
