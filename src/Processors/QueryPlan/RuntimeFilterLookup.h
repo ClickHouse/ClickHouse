@@ -52,10 +52,6 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     virtual void merge(const IRuntimeFilter * source) = 0;
 
-    /// Returns the min/max range of the filter values, if available.
-    /// Used by MinMax data skipping index to prune granules.
-    virtual std::optional<std::pair<Field, Field>> getMinMaxRange() const { return std::nullopt; }
-
     /// Usage statistics
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
@@ -220,8 +216,6 @@ public:
     void merge(const IRuntimeFilter * source) override;
 
     static bool isDataTypeSupported(const DataTypePtr & data_type);
-
-    std::optional<std::pair<Field, Field>> getMinMaxRange() const override;
 
 private:
     void switchToMinMax();

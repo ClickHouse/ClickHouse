@@ -259,13 +259,6 @@ bool MinMaxRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
     return isNativeNumber(data_type);
 }
 
-std::optional<std::pair<Field, Field>> MinMaxRuntimeFilter::getMinMaxRange() const
-{
-    if (!inserts_are_finished || !use_minmax)
-        return std::nullopt;
-    return std::make_pair(min_value, max_value);
-}
-
 void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 {
     if (inserts_are_finished)
