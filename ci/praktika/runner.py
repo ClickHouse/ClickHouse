@@ -825,14 +825,14 @@ class Runner:
         setup_env_code = -10
         prerun_code = -10
         run_code = -10
-        print("REMOVEME 2", Info().env.WORKFLOW_CONFIG)
-
         if res and not local_run:
             print(
                 f"\n\n=== Setup env script [{job.name}], workflow [{workflow.name}] ==="
             )
             try:
                 setup_env_code = self._setup_env(workflow, job)
+                print("REMOVEME 2", Info().env.WORKFLOW_CONFIG)
+
                 # Source the bash script and capture the environment variables
                 res = setup_env_code == 0
                 if not res:
