@@ -1486,6 +1486,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         if (currently_merging_mutating_parts.contains(part))
             continue;
 
+        /// Skip parts in partitions where merges/mutations are blocked (e.g. by REPLACE PARTITION).
+        /// This check must be inside selectPartsToMutate (under currently_processing_in_background_mutex)
+        /// to prevent a race where a mutation is selected after the partition blocker is set
+        /// but before stopMergesAndWaitForPartition finishes waiting.
+        if (merger_mutator.merges_blocker.isCancelledForPartition(part->info.getPartitionId()))
+            continue;
+
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
         if (mutations_begin_it == mutations_end_it)
             continue;
@@ -2556,16 +2563,22 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     String partition_id;
 
+    /// The merges_blocker must live until the end of the function to prevent background mutations
+    /// from starting on parts in the target partition between when we stop waiting and when we
+    /// actually remove old parts via removePartsInRangeFromWorkingSet. Without this, a mutation
+    /// could "resurrect" old data by completing on an already-removed part and adding a new version
+    /// of it back to the working set.
+    ActionLock merges_blocker;
     if (is_all)
     {
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
-        auto merges_blocker = stopMergesAndWait();
+        merges_blocker = stopMergesAndWait();
     }
     else
     {
         partition_id = getPartitionIDFromQuery(partition, local_context);
-        auto merges_blocker = stopMergesAndWaitForPartition(partition_id);
+        merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();

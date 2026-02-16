@@ -393,7 +393,8 @@ try
 
             bool should_ask_password = !asked_password && is_interactive &&
                 (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD) &&
-                !config().has("password") && !config().getBool("ask-password", false);
+                !config().has("password") && !config().getBool("ask-password", false) &&
+                !config().has("ssh-key-file");
 
             if (should_ask_password)
             {
