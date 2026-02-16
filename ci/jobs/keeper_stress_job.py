@@ -32,13 +32,13 @@ TEMP_DIR = f"{REPO_DIR}/ci/tmp"
 DEFAULT_TIMEOUT = 1200
 DEFAULT_READY_TIMEOUT = 1200
 
-GRAFANA_KEEPER_STRESS_RUN_DETAILS_BASE = (
-    "https://grafana.clickhouse-prd.com/d/keeper-stress-run-details/keeper-stress-tests-e28094-run-details"
-)
-
-GRAFANA_KEEPER_STRESS_RUN_COMPARISON_BASE = (
-    "https://grafana.clickhouse-prd.com/d/keeper-stress-run-comparison/keeper-stress-tests-e28094-run-comparison"
-)
+# Grafana base and dashboard UIDs (must match tests/stress/keeper/tools/build_grafana_dashboards.py).
+GRAFANA_BASE = "https://grafana.clickhouse-prd.com"
+GRAFANA_DASH_UID = {
+    "run_details": "keeper-stress-run-details",
+    "comparison": "keeper-stress-run-comparison",
+    "historical": "keeper-stress-historical",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -237,64 +237,74 @@ def validate_metrics_jsonl(metrics_path):
     print(f"metrics file {p} is valid")
     return True
 
-def _grafana_params(commit_sha, from_iso, to_iso, scenario_filter=None):
-    """Build common Grafana dashboard query params for the current run."""
-    params = {
+def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None):
+    """
+    Add clickable Grafana dashboard links to the result (bot comment / GH summary).
+    All links use explicit time range params to avoid 1970. Three dashboards:
+    - Run details: this run's time window (from/to in Unix ms) + commit, scenario, backend.
+    - 1vs1 Comparison: last 7d, scenario + baseline_version + compare_version.
+    - Historical: last 7d, scenario + last_n_commits.
+    """
+    start_ts = stop_watch.start_time
+    end_ts = start_ts + stop_watch.duration
+    from_ms = int(start_ts * 1000)
+    to_ms = int(end_ts * 1000)
+
+    if scenario_filter is None:
+        include_ids = os.environ.get("KEEPER_INCLUDE_IDS", "").strip()
+        scenario_filter = [s.strip() for s in include_ids.split(",") if s.strip()] if include_ids else []
+    scenario_val = scenario_filter[0] if scenario_filter else ""
+    compare_short = (commit_sha or "")[:8]
+    baseline_sha = (os.environ.get("KEEPER_STRESS_BASELINE_SHA") or "").strip()[:8] or ""
+
+    def _url(uid, params):
+        return f"{GRAFANA_BASE}/d/{uid}?{urlencode(params, doseq=True)}"
+
+    # 1. Run details — exact time window for this run (Unix ms avoids 1970)
+    p_details = {
         "orgId": "1",
-        "from": from_iso,
-        "to": to_iso,
+        "from": from_ms,
+        "to": to_ms,
         "timezone": "utc",
         "var-commit_sha": commit_sha or "$__all",
         "refresh": "1m",
     }
     if scenario_filter:
-        # Dashboard allows multiple var-scenario; pass as list for multi-value
-        params["var-scenario"] = scenario_filter if isinstance(scenario_filter, list) else [scenario_filter]
-    return params
-
-
-def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None):
-    """
-    Add clickable Grafana dashboard links to the result (job report and GH summary).
-    - Run details: drill-down for this run only (exact time window and commit).
-    - Run Comparison: baseline vs compare version over recent window; scenario, time range, and
-      last_n_commits are dashboard variables so users can adjust without changing the link.
-    """
-    base = GRAFANA_KEEPER_STRESS_RUN_DETAILS_BASE
-    start_ts = stop_watch.start_time
-    end_ts = start_ts + stop_watch.duration
-    start_iso = datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
-    end_iso = datetime.fromtimestamp(end_ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
-
-    # Optional: var-scenario from KEEPER_INCLUDE_IDS (e.g. CHA-01-REPLAY[default|t3])
-    if scenario_filter is None:
-        include_ids = os.environ.get("KEEPER_INCLUDE_IDS", "").strip()
-        if include_ids:
-            scenario_filter = [s.strip() for s in include_ids.split(",") if s.strip()]
-
-    # 1. Run details: this run only (exact time window and commit)
-    p1 = _grafana_params(commit_sha, start_iso, end_iso, scenario_filter)
+        p_details["var-scenario"] = scenario_filter
     result.set_clickable_label(
-        "Grafana: This run (details)",
-        f"{base}?{urlencode(p1, doseq=True)}",
+        "Grafana: Run details (this run)",
+        _url(GRAFANA_DASH_UID["run_details"], p_details),
     )
-    # 2. Run Comparison: one link; default 7d + last_n_commits for recent PR/baseline view
-    compare_short = (commit_sha or "")[:8]
-    baseline_sha = os.environ.get("KEEPER_STRESS_BASELINE_SHA", "").strip()[:8] or ""
-    run_comp_params = {
+
+    # 2. 1vs1 Comparison — last 7d, scenario + baseline vs compare
+    p_comp = {
         "orgId": "1",
         "from": "now-7d",
         "to": "now",
         "timezone": "utc",
-        "var-scenario": (scenario_filter[0] if scenario_filter else ""),
-        "var-compare_version": compare_short,
+        "var-scenario": scenario_val,
         "var-baseline_version": baseline_sha,
+        "var-compare_version": compare_short,
+        "refresh": "1m",
+    }
+    result.set_clickable_label(
+        "Grafana: 1vs1 Comparison",
+        _url(GRAFANA_DASH_UID["comparison"], p_comp),
+    )
+
+    # 3. Historical — last 7d, scenario + last N commits
+    p_hist = {
+        "orgId": "1",
+        "from": "now-7d",
+        "to": "now",
+        "timezone": "utc",
+        "var-scenario": scenario_val,
         "var-last_n_commits": "20",
         "refresh": "1m",
     }
     result.set_clickable_label(
-        "Grafana: Run Comparison",
-        f"{GRAFANA_KEEPER_STRESS_RUN_COMPARISON_BASE}?{urlencode(run_comp_params)}",
+        "Grafana: Historical progression",
+        _url(GRAFANA_DASH_UID["historical"], p_hist),
     )
 
 
