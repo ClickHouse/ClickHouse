@@ -1,4 +1,4 @@
--- Tags: no-async-insert
+-- Tags: no-async-insert, no-random-detach
 
 DROP TABLE IF EXISTS t_leading_zeroes;
 DROP TABLE IF EXISTS t_leading_zeroes_f;
