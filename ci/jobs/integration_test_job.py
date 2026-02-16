@@ -271,7 +271,7 @@ def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> 
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
         f"{temp_path}/{report_name}.log"
     ):
-        test_result.info = "[ERROR] session-timeout occurred during test execution"
+        test_result.info = "ERROR: session-timeout occurred during test execution"
         assert test_result.status == Result.Status.ERROR
         test_result.results.append(
             Result(

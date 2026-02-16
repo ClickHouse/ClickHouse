@@ -1,3 +1,4 @@
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -1084,9 +1085,6 @@ static void processStatisticsChanges(
     auto storage_settings = source_part.storage.getSettings();
     String statistics_file_name(ColumnsStatistics::FILENAME);
 
-    bool modified_statistics = false;
-    bool is_full_part_storage = isFullPartStorage(source_part.getDataPartStorage());
-
     auto process_rename = [&](const String & from_name, const String & to_name)
     {
         auto it = all_statistics.find(from_name);
@@ -1097,10 +1095,6 @@ static void processStatisticsChanges(
             all_statistics.emplace(to_name, it->second);
 
         all_statistics.erase(it);
-        modified_statistics = true;
-
-        if (is_full_part_storage)
-            files_to_skip.emplace(statistics_file_name);
     };
 
     for (const auto & command : commands_for_renames)
@@ -1132,18 +1126,16 @@ static void processStatisticsChanges(
 
     if (!stats_to_recalc.empty())
     {
-        modified_statistics = true;
         /// Create empty statistics for columns that are being recalculated.
         for (const auto & [stat_name, stat] : stats_to_recalc)
             all_statistics[stat_name] = stat->cloneEmpty();
-
-        if (is_full_part_storage)
-            files_to_skip.emplace(ColumnsStatistics::FILENAME);
     }
 
     /// Remove old statistics files.
     if (isFullPartStorage(source_part.getDataPartStorage()))
     {
+        /// File with statistics is always written during mutation.bgf
+        files_to_skip.emplace(statistics_file_name);
         const auto & source_checksums = source_part.checksums;
 
         if (all_statistics.empty() && source_checksums.files.contains(statistics_file_name))
@@ -1151,15 +1143,12 @@ static void processStatisticsChanges(
             files_to_rename.emplace_back(statistics_file_name, "");
         }
 
-        if (modified_statistics)
+        /// Always write statistics in a new format.
+        /// Remove old statistics files.
+        for (const auto & [filename, _] : source_checksums.files)
         {
-            /// If statistics are changed, always write them in a new format.
-            /// Remove old statistics files.
-            for (const auto & [filename, _] : source_checksums.files)
-            {
-                if (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX))
-                    files_to_rename.emplace_back(filename, "");
-            }
+            if (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX))
+                files_to_rename.emplace_back(filename, "");
         }
     }
 }
@@ -2503,7 +2492,7 @@ void MutateTask::updateProfileEvents() const
     ProfileEvents::increment(ProfileEvents::MutationExecuteMilliseconds, execute_elapsed_ms);
 }
 
-static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const MutationCommand & command)
+static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command)
 {
     if (command.type != MutationCommand::READ_COLUMN)
         return false;
@@ -2525,6 +2514,11 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     if (serialization->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
         return false;
 
+    /// We need to rewrite statistics because they have different serialization with nullable type.
+    const auto * column_desc = metadata_snapshot->getColumns().tryGet(command.column_name);
+    if (!column_desc->statistics.empty())
+        return false;
+
     return true;
 }
 
@@ -2542,7 +2536,7 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
     return isVariantExtension(part_column->type, command.data_type);
 }
 
-static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const MutationCommand & command, const ContextPtr & context)
+static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
     if (command.partition)
     {
@@ -2558,7 +2552,7 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.type == MutationCommand::APPLY_DELETED_MASK && !part->hasLightweightDelete())
         return true;
 
-    if (canSkipConversionToNullable(part, command))
+    if (canSkipConversionToNullable(part, metadata_snapshot, command))
         return true;
 
     if (canSkipConversionToVariant(part, command))
@@ -2673,7 +2667,7 @@ bool MutateTask::prepare()
 
     for (const auto & command : *ctx->commands)
     {
-        if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
+        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
 

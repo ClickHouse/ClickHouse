@@ -572,12 +572,10 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number
             assertValid(moved_row_number);
             assert(offset <= 0);
 
-            // abs(offset) is less than INT64_MAX, as checked in the parser, so
-            // this negation should always work.
             assert(offset >= -INT64_MAX);
-            if (moved_row_number.row >= static_cast<UInt64>(-offset))
+            if (moved_row_number.row >= -static_cast<UInt64>(offset))
             {
-                moved_row_number.row -= -offset;
+                moved_row_number.row -= -static_cast<UInt64>(offset);
                 offset = 0;
                 break;
             }

@@ -316,7 +316,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int ZERO_COPY_REPLICATION_ERROR;
     extern const int NOT_INITIALIZED;
     extern const int SERIALIZATION_ERROR;
     extern const int TOO_MANY_MUTATIONS;
@@ -3972,21 +3971,29 @@ void MergeTreeData::dropAllData()
 
         try
         {
-            if (!isSharedStorage() && !disk->isDirectoryEmpty(relative_data_path) &&
-                supportsReplication() && disk->supportZeroCopyReplication()
+            if (!isSharedStorage() && !disk->isDirectoryEmpty(relative_data_path)
+                && supportsReplication() && disk->supportZeroCopyReplication()
                 && (*settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
             {
+                /// There are leftover files in the table directory after removing all tracked parts.
+                /// This can happen when a part directory exists on disk but wasn't tracked in data_parts
+                /// (e.g., a broken part that couldn't be loaded, or a part being fetched concurrently).
+                /// Use removeSharedRecursive with keep_all_shared_data=true to safely remove local metadata
+                /// while preserving shared objects (e.g., S3 data) that other replicas may still reference.
                 std::vector<std::string> files_left;
                 disk->listFiles(relative_data_path, files_left);
 
-                throw Exception(
-                                ErrorCodes::ZERO_COPY_REPLICATION_ERROR,
-                                "Directory {} with table {} not empty (files [{}]) after drop. Will not drop.",
-                                relative_data_path, getStorageID().getNameForLogs(), fmt::join(files_left, ", "));
-            }
+                LOG_WARNING(log, "dropAllData: Directory {} with table {} not empty (files [{}]) after removing parts. "
+                    "Will remove remaining data while keeping shared objects.",
+                    relative_data_path, getStorageID().getNameForLogs(), fmt::join(files_left, ", "));
 
-            LOG_INFO(log, "dropAllData: removing table directory recursive to cleanup garbage");
-            disk->removeRecursive(relative_data_path);
+                disk->removeSharedRecursive(relative_data_path, /*keep_all_shared_data*/ true, {});
+            }
+            else
+            {
+                LOG_INFO(log, "dropAllData: removing table directory recursive to cleanup garbage");
+                disk->removeRecursive(relative_data_path);
+            }
         }
         catch (const fs::filesystem_error & e)
         {

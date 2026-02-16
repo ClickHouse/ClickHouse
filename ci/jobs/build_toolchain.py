@@ -481,14 +481,15 @@ def main():
 
     # Stage 5: Package
     if res and JobStages.PACKAGE in stages:
-        # Strip executables and shared libraries to reduce archive size
-        # (relocations from --emit-relocs and LTO symbols are no longer needed)
+        # Strip ELF executables and shared libraries to reduce archive size
+        # (relocations from --emit-relocs and LTO symbols are no longer needed).
+        # Use "file" to skip scripts (Python, Perl, shell) that strip cannot handle.
         results.append(
             Result.from_commands_run(
                 name="Strip binaries",
                 command=(
                     f"find {STAGE2_INSTALL_DIR}/bin -type f -executable"
-                    f" -exec strip --strip-unneeded {{}} +"
+                    f" -exec sh -c 'file \"$1\" | grep -q ELF && strip --strip-unneeded \"$1\"' _ {{}} \\;"
                     f" && find {STAGE2_INSTALL_DIR}/lib -name '*.so*' -type f"
                     f" -exec strip --strip-unneeded {{}} +"
                 ),
