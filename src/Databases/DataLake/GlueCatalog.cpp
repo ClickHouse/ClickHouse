@@ -372,8 +372,7 @@ bool GlueCatalog::tryGetTableMetadata(
                 {
                     if (!result.requiresDataLakeSpecificProperties())
                         setup_specific_properties();
-                    if (classifyTimestampTZ(column.GetName(), result))
-                        column_type = "timestamptz";
+                    column_type = getActualTimestampType(column.GetName(), result);
                 }
 
                 schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
@@ -437,7 +436,7 @@ bool GlueCatalog::empty() const
     return true;
 }
 
-bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
+String GlueCatalog::getActualTimestampType(const String & column_name, const TableMetadata & table_metadata) const
 {
     auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
     if (!table_specific_properties.has_value())
@@ -474,12 +473,12 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
             {
                 auto field = fields->getObject(static_cast<UInt32>(j));
                 if (field->getValue<String>(DB::Iceberg::f_name) == column_name)
-                    return field->getValue<String>(DB::Iceberg::f_type) == DB::Iceberg::f_timestamptz;
+                    return field->getValue<String>(DB::Iceberg::f_type);
             }
         }
     }
 
-    return false;
+    return "timestamp";
 }
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
