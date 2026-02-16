@@ -12,20 +12,22 @@ if __name__ == "__main__":
     info = Info()
     prev_10_commits = info.get_kv_data("master_commits_after_merge_base")
     if prev_10_commits is None:
-        # Get merge base commit between master and current HEAD
-        base_commit_sha = Shell.get_output(
-            "git merge-base master HEAD", verbose=True
-        ).strip()
+        # Get merge base commit using GitHub API compare endpoint
+        print(Shell.get_output("gh --version", verbose=True))
+        compare_cmd = f"gh api /repos/ClickHouse/ClickHouse/compare/master...{info.sha}"
+        compare_out = Shell.get_output(compare_cmd, verbose=True)
+        compare_data = json.loads(compare_out)
+        base_commit_sha = compare_data["base_commit"]["sha"]
         info.store_kv_data("merge_base_sha", base_commit_sha)
 
         # Get 10 previous commits from master after the base commit
-        # List master commits, find base commit, take next 10
-        master_commits = Shell.get_output(
-            "git rev-list master --max-count=100", verbose=True
-        ).splitlines()
+        commits_cmd = "gh api /repos/ClickHouse/ClickHouse/commits --paginate -q '.[].sha' -F sha=master -F per_page=30"
+        commits_out = Shell.get_output(commits_cmd, verbose=True)
+        master_commits = commits_out.splitlines()
+        # Find the index of the base commit in the master commit list
         if base_commit_sha in master_commits:
             idx = master_commits.index(base_commit_sha)
-            prev_10_commits = master_commits[idx : idx + 10]
+            prev_10_commits = master_commits[idx:idx+10]
         else:
             prev_10_commits = master_commits[:10]
         info.store_kv_data("master_commits_after_merge_base", prev_10_commits)
