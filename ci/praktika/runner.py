@@ -825,6 +825,7 @@ class Runner:
         setup_env_code = -10
         prerun_code = -10
         run_code = -10
+        print("REMOVEME 2", Info().env.WORKFLOW_CONFIG)
 
         if res and not local_run:
             print(
@@ -847,6 +848,7 @@ class Runner:
             self.generate_local_run_environment(
                 workflow, job, pr=pr, sha=sha, branch=branch
             )
+        print("REMOVEME 3", Info().env.WORKFLOW_CONFIG)
 
         if res and (not local_run or ((pr or branch) and sha)):
             res = False
