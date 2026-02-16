@@ -24,13 +24,16 @@ If no rows are aggregated, an empty `MultiPolygon` is returned.
 Input geometries of type `Ring` or `Polygon` are internally upcast to `MultiPolygon` before the union is computed.
 
 The function uses [Boost.Geometry](https://www.boost.org/doc/libs/release/libs/geometry/) to compute the geometric union.
+
+See also:
+- [Geo Types](/sql-reference/data-types/geo)
     )";
     FunctionDocumentation::Syntax syntax = "groupPolygonUnion(geometry [, correct_geometry])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "A column of type Ring, Polygon, or MultiPolygon.", {"Ring", "Polygon", "MultiPolygon"}},
-        {"correct_geometry", "Optional. A UInt8 value that controls whether `boost::geometry::correct` is applied to input geometries (e.g. ensuring correct ring orientation and closure). `1` (default) enables correction, `0` disables it.", {"UInt8"}}
+        {"geometry", "Column to compute the union of.", {"Ring", "Polygon", "MultiPolygon"}},
+        {"correct_geometry", "Optional. A [UInt8](/sql-reference/data-types/int-uint) value that controls whether `boost::geometry::correct` is applied to input geometries (e.g. ensuring correct ring orientation and closure). `1` (default) enables correction, `0` disables it.", {"UInt8"}}
     };
-    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::Parameters doc_parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"A MultiPolygon representing the union of all input geometries.", {"MultiPolygon"}};
     FunctionDocumentation::Examples examples = {
     {
@@ -52,7 +55,7 @@ SELECT wkt(groupPolygonUnion(geom)) AS result FROM test_polygons;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, doc_parameters, returned_value, examples, introduced_in, category};
 
     factory.registerFunction("groupPolygonUnion",
         {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)

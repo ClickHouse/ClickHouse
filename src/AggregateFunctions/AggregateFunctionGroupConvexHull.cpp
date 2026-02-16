@@ -28,13 +28,16 @@ All input geometry types are internally converted to polygons before the hull is
 If no rows are aggregated, an empty `Ring` is returned.
 
 The function uses [Boost.Geometry](https://www.boost.org/doc/libs/release/libs/geometry/) to compute the convex hull.
+
+See also:
+- [Geo Types](/sql-reference/data-types/geo)
     )";
     FunctionDocumentation::Syntax syntax = "groupConvexHull(geometry [, correct_geometry])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "A column of type Point, Ring, Polygon, MultiPolygon, LineString, or MultiLineString.", {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString"}},
-        {"correct_geometry", "Optional. A UInt8 value that controls whether `boost::geometry::correct` is applied to input geometries (e.g. ensuring correct ring orientation and closure). `1` (default) enables correction, `0` disables it.", {"UInt8"}}
+        {"geometry", "Column to compute the convex hull of.", {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString"}},
+        {"correct_geometry", "Optional. A [UInt8](/sql-reference/data-types/int-uint) value that controls whether `boost::geometry::correct` is applied to input geometries (e.g. ensuring correct ring orientation and closure). `1` (default) enables correction, `0` disables it.", {"UInt8"}}
     };
-    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::Parameters doc_parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"A Ring representing the outer boundary of the convex hull of all input geometries.", {"Ring"}};
     FunctionDocumentation::Examples examples = {
     {
@@ -89,7 +92,7 @@ SELECT wkt(groupConvexHull(polygon)) AS hull FROM geo_polygons;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, doc_parameters, returned_value, examples, introduced_in, category};
 
     factory.registerFunction("groupConvexHull",
         {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
