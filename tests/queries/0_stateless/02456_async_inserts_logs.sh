@@ -28,7 +28,14 @@ wait
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_async_inserts_logs"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+# Wait for all async insert log entries.
+# There is a race between HTTP response being sent and the log entry being written.
+for _ in $(seq 1 60); do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.asynchronous_insert_log WHERE (database = '$CLICKHOUSE_DATABASE' AND table = 't_async_inserts_logs' OR query ILIKE 'INSERT INTO FUNCTION%$CLICKHOUSE_DATABASE%t_async_inserts_logs%') AND data_kind = 'Parsed'")
+    [ "$count" -ge 6 ] && break
+    sleep 0.5
+done
 ${CLICKHOUSE_CLIENT} -q "
     SELECT table, format, bytes, rows, empty(exception), status,
     status = 'ParsingError' ? flush_time_microseconds = 0 : flush_time_microseconds > event_time_microseconds AS time_ok

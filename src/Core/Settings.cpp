@@ -2582,6 +2582,15 @@ Possible values:
 - Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
 - 1 — The trace for all executed queries is enabled.
 )", 0) \
+    DECLARE(FloatAuto, opentelemetry_start_keeper_trace_probability, Field("auto"), R"(
+Probability to start a trace for ZooKeeper request - whether there is a parent trace or not.
+
+Possible values:
+- 'auto' - Equals the opentelemetry_start_trace_probability setting
+- 0 — Tracing is disabled
+- 0 to 1 — Probability (e.g., 1.0 = always enable)
+
+)", 0) \
     DECLARE(Bool, opentelemetry_trace_processors, false, R"(
 Collect OpenTelemetry spans for processors.
 )", 0) \

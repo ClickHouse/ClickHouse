@@ -51,6 +51,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
+            {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
+            {"opentelemetry_start_keeper_trace_probability", 0.0, 0.0, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

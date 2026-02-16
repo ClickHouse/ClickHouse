@@ -602,6 +602,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 if (data_type)
                 {
                     column.type = data_type;
+                    /// Update statistics data type to match the new column type
+                    if (!column.statistics.empty())
+                        column.statistics.data_type = data_type;
                     /// The type changed, so assume that implicit indices may change too
                     metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
