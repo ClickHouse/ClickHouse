@@ -37,7 +37,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Optional PGO+BOLT optimized toolchain override
-ARG TOOLCHAIN_COMMIT=none
+ARG TOOLCHAIN_COMMIT=2c1f5a79bf21c03dd152a0333a6b1af42f1ab8c1
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \
