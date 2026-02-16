@@ -260,6 +260,36 @@ function App() {
     return parts[parts.length - 1] || url
   }
 
+  const getStatusBadge = (status: string) => {
+    const statusLower = status.toLowerCase()
+    const statusUpper = status.toUpperCase()
+
+    let color = '#64748b'
+
+    // Map status to colors
+    if (statusLower === 'success' || statusUpper === 'OK') {
+      color = '#22c55e'
+    } else if (statusLower === 'failure' || statusUpper === 'FAIL') {
+      color = '#ef4444'
+    } else if (statusLower === 'dropped') {
+      color = '#a855f7'
+    } else if (statusLower === 'error' || statusUpper === 'ERROR') {
+      color = '#991b1b'
+    } else if (statusLower === 'pending') {
+      color = '#eab308'
+    } else if (statusLower === 'running') {
+      color = '#3b82f6'
+    } else if (statusLower === 'skipped') {
+      color = '#94a3b8'
+    }
+
+    return (
+      <span style={{ color: color, fontWeight: 'bold' }}>
+        {status}
+      </span>
+    )
+  }
+
   const getColorForStatus = (status: string): string => {
     // Fixed colors based on status
     const colorMap: Record<string, string> = {
@@ -422,7 +452,7 @@ function App() {
               rows={result.results.map((subresult, subindex) => ({
                 id: `sub-${subindex}`,
                 items: [
-                  { label: wrapWithPopover(subresult.status, subresult) },
+                  { label: wrapWithPopover(getStatusBadge(subresult.status), subresult) },
                   { label: wrapWithPopover(subresult.name, subresult) },
                 ],
               }))}
@@ -485,7 +515,7 @@ function App() {
     return {
       id: index,
       items: [
-        { label: wrapWithPopover(result.status, result, navigateUrl), align: 'center' as const },
+        { label: wrapWithPopover(getStatusBadge(result.status), result, navigateUrl), align: 'center' as const },
         { label: wrapWithPopover(result.name, result, navigateUrl), align: 'left' as const },
         { label: wrapWithPopover(formatDuration(result.duration), result, navigateUrl), align: 'center' as const },
         { label: wrapWithPopover(formatTime(result.start_time), result, navigateUrl), align: 'center' as const },
@@ -660,12 +690,13 @@ function App() {
 
           {data && !loading && (
             <Container orientation='vertical' gap='none'>
-              <div style={{ padding: '12px 0', fontSize: '14px' }}>
-                <Text>
-                  status: <strong>{data.status}</strong> |
-                  Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong> |
-                  Duration: <strong>{formatDuration(data.duration)}</strong>
-                </Text>
+              <div style={{ padding: '12px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Text>status:</Text>
+                {getStatusBadge(data.status)}
+                <Text>|</Text>
+                <Text>Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong></Text>
+                <Text>|</Text>
+                <Text>Duration: <strong>{formatDuration(data.duration)}</strong></Text>
               </div>
 
               <Table
