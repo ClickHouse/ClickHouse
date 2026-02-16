@@ -8,6 +8,8 @@
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/Serializations/SerializationStringFsst.h>
 #include <base/types.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/COW.h>
 #include <Common/PODArray.h>
 #include <Common/WeakHash.h>
@@ -47,17 +49,6 @@ private:
     }
 
     ColumnFSST(const ColumnFSST &) { throwNotImplemented(); }
-
-    // x --- Field
-    // return x unchanged if is_compressed = false
-    // fsst_compress is called otherwise
-    // argumnets retrived by x.dump().data(), x.dump().size()
-    Field compressField(const unsigned char * buffer, size_t size) const;
-
-    // return x unchanged if is_compressed = false
-    // fsst_decompress is called otherwise
-    // size = expected size of the Field after operation
-    void decompressField(Field & x, size_t size) const;
 
     std::optional<size_t> batchByRow(size_t row) const;
 
@@ -105,8 +96,16 @@ public:
     WeakHash32 getWeakHash32() const override { return string_column->getWeakHash32(); }
     void updateHashFast(SipHash & hash) const override { string_column->updateHashFast(hash); }
 
-    [[nodiscard]] ColumnPtr filter(const Filter & /* filt */, ssize_t /* result_size_hint */) const override { throwNotImplemented(); }
-    void filter(const Filter & /* filt */) override { throwNotImplemented(); }
+    [[nodiscard]] ColumnPtr filter(const Filter & /* filt */, ssize_t /* result_size_hint */) const override
+    {
+        LOG_DEBUG(getLogger("fsst_loger"), "filer");
+        throwNotImplemented();
+    }
+    void filter(const Filter & /* filt */) override
+    {
+        LOG_DEBUG(getLogger("fsst_loger"), "filer");
+        throwNotImplemented();
+    }
     void expand(const Filter & /*mask*/, bool /*inverted*/) override { throwNotImplemented(); }
     [[nodiscard]] ColumnPtr permute(const Permutation & /* perm */, size_t /* limit */) const override { throwNotImplemented(); }
     [[nodiscard]] ColumnPtr index(const IColumn & /* indexes */, size_t /* limit */) const override { throwNotImplemented(); }

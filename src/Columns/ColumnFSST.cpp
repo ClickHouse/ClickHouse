@@ -1,8 +1,8 @@
-#include "Columns/ColumnFSST.h"
 #include <algorithm>
 #include <cassert>
 #include <memory>
 #include <optional>
+#include "Columns/ColumnFSST.h"
 
 #include "Core/Field.h"
 #include "base/types.h"
@@ -77,12 +77,20 @@ bool ColumnFSST::tryInsert(const Field & x)
 
 void ColumnFSST::insertData(const char * /*pos*/, size_t /*length*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
+    throwNotSupported();
 }
 
-void ColumnFSST::popBack(size_t /*n*/)
+void ColumnFSST::popBack(size_t n)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
+    string_column->popBack(n);
+    while (n-- && !origin_lengths.empty())
+    {
+        origin_lengths.pop_back();
+    }
+    while (!decoders.empty() && decoders.back().batch_start_index >= origin_lengths.size())
+    {
+        decoders.pop_back();
+    }
 }
 
 void ColumnFSST::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
@@ -98,9 +106,9 @@ size_t ColumnFSST::byteSize() const
     return string_column->byteSize() + origin_lengths.size() * sizeof(UInt64) + decoders.size() * sizeof(BatchDsc);
 }
 
-size_t ColumnFSST::byteSizeAt(size_t /*n*/) const
+size_t ColumnFSST::byteSizeAt(size_t n) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
+    return string_column->byteSizeAt(n) + sizeof(origin_lengths[n]);
 }
 
 size_t ColumnFSST::allocatedBytes() const
