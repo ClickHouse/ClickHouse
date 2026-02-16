@@ -88,7 +88,7 @@ function App() {
     // Keep PR, REF, SHA parameters
     const prParam = params.get('PR')
     const refParam = params.get('REF')
-    const shaParam = params.get('SHA')
+    const shaParam = params.get('SHA') || params.get('sha')
 
     if (prParam) newParams.set('PR', prParam)
     if (refParam) newParams.set('REF', refParam)
@@ -112,7 +112,7 @@ function App() {
     // Keep PR, REF, SHA parameters
     const prParam = params.get('PR')
     const refParam = params.get('REF')
-    const shaParam = params.get('SHA')
+    const shaParam = params.get('SHA') || params.get('sha')
 
     if (prParam) newParams.set('PR', prParam)
     if (refParam) newParams.set('REF', refParam)
@@ -164,7 +164,7 @@ function App() {
         const urlParam = params.get('url')
         const prParam = params.get('PR')
         const refParam = params.get('REF')
-        const shaParam = params.get('SHA')
+        const shaParam = params.get('SHA') || params.get('sha')
 
         if (urlParam) {
           // Mode 1: Direct URL provided
@@ -204,8 +204,8 @@ function App() {
           const fileName = `result_${filenameSuffix}.json`
           url = `${baseUrl}/${pathType}/${refValue}/${shaParam}/${fileName}`
         } else {
-          // Default URL for testing
-          url = 'https://s3.amazonaws.com/clickhouse-test-reports/PRs/97117/cddf1c486779d27a4c1e39803c2b9e9a616f8df2/result_pr.json'
+          // No valid parameters provided
+          throw new Error('Missing required parameters. Please provide: PR or REF with SHA, or url parameter')
         }
 
         // In development, use proxy to avoid CORS issues
@@ -563,7 +563,7 @@ function App() {
             {content}
           </div>
         </Popover.Trigger>
-        <Popover.Content side="right" showArrow>
+        <Popover.Content side="right" showArrow style={{ zIndex: 1001 }}>
           {createPopoverContent(result, navigateUrl)}
         </Popover.Content>
       </Popover>
@@ -668,6 +668,7 @@ function App() {
               flexShrink: 0
             }}
           >
+            {/* TODO: Timeline feature - shows test execution timeline
             {nameParams.length <= 1 && (
               <Flyout>
                 <Flyout.Trigger>
@@ -753,6 +754,7 @@ function App() {
                 </Flyout.Content>
               </Flyout>
             )}
+            */}
             <Switch
               checked={theme === 'dark'}
               onCheckedChange={toggleTheme}
