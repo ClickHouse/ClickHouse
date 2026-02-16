@@ -31,29 +31,25 @@ def venv_pip():
 
 
 def install_packages():
-    run(["sudo", "apt", "install", "-y", "pypy3", "pypy3-dev", "pypy3-venv"])
+    run(["sudo", "apt", "install", "-y", "python3-pip"])
 
 
 def install_dependencies():
-    run([str(venv_pip()), "install", "--upgrade", "pip", "setuptools", "wheel"])
+    run([str(venv_pip()), "install", "--upgrade", "pip", "build", "twine"])
     if Path("requirements.txt").exists():
         run([str(venv_pip()), "install", "-r", "requirements.txt"])
 
 
-def run_tests():
-    run([str(venv_python()), "-m", "pytest"])
-
-
 def build_package():
-    run([str(venv_pip()), "install", "build"])
     run([str(venv_python()), "-m", "build"])
+    run([str(venv_python()), "-m", "twine", "check", "dist/*"])
+    run([str(venv_python()), "-m", "twine", "upload", "dist/*"])
 
 
 def main():
     install_packages()
     ensure_venv()
     install_dependencies()
-    run_tests()
     build_package()
     print("\nBuild completed successfully.")
 

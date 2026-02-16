@@ -46,6 +46,7 @@ class RunConfig(MetaClasses.Serializable):
 
     @classmethod
     def from_workflow_data(cls):
+        print("REMOVEME", Info().env.WORKFLOW_CONFIG)
         return cls.from_dict(Info().env.WORKFLOW_CONFIG)
 
     def set_job_as_filtered(self, job_name, reason):
