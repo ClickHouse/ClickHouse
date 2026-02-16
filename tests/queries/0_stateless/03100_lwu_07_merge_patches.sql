@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+
 DROP TABLE IF EXISTS t_lightweight SYNC;
 SET enable_lightweight_update = 1;
 
