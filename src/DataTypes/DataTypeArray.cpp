@@ -85,7 +85,7 @@ void DataTypeArray::forEachChild(const ChildCallback & callback) const
     nested->forEachChild(callback);
 }
 
-std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
+std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeArray &>(*data.type).nested;
     const auto & array_serialization = assert_cast<const SerializationArray &>(*removeNamedSerialization(data.serialization));
@@ -93,7 +93,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolum
     nested_data->type = nested_type;
     nested_data->column = data.column ? assert_cast<const ColumnArray &>(*data.column).getDataPtr() : nullptr;
 
-    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, *nested_data, throw_if_null);
+    auto nested_subcolumn_data = getSubcolumnData(subcolumn_name, *nested_data, initial_array_level + 1, throw_if_null);
     if (!nested_subcolumn_data)
         return nullptr;
 

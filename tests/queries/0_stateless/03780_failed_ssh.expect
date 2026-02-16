@@ -1,0 +1,57 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "echo '-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAlwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAIEAxOYq7137PbwKYw6IahB/pHvYNvFTrMg6bAT182PLg+Fidb+wbMNw
+qkeL4C8wIxwulaScbjpidEEVbB3egOXf92cVmO7FxnwJkbuOkQdTZ68+vh9oy7jRwLsTq0
+K5Ez0nnauHyoR2Qdd+7AnTSSyEi1Efdni5Ble/LhHhRPU//ckAAAIQRkn3H0ZJ9x8AAAAH
+c3NoLXJzYQAAAIEAxOYq7137PbwKYw6IahB/pHvYNvFTrMg6bAT182PLg+Fidb+wbMNwqk
+eL4C8wIxwulaScbjpidEEVbB3egOXf92cVmO7FxnwJkbuOkQdTZ68+vh9oy7jRwLsTq0K5
+Ez0nnauHyoR2Qdd+7AnTSSyEi1Efdni5Ble/LhHhRPU//ckAAAADAQABAAAAgDW3MSliM0
+NxREgn09FTtO7TlnXOumwdp8qGQ+7lX8UXvLuw0tmpK9hYcnFzjidV7eOHJ+HubaOXideY
+AnaZv9KNNWBDTOeuHpMtaIzjq3yb/BuOSC1Xthjb7UZoQGlgAUOdCTFap3jxV8PeLbFazg
+oMqjTVCwiWxlIumBoZgwTNAAAAQQCxyh6w3GOFtqts66TVNs8pSe8r/cSOUnTU1cws5s0t
+l+CHod8qOHF+eWWnw+TvPw3sTM/5rcJ+0N3anhpo9Ph3AAAAQQDl0EKJvfyRgnKHcjtLUM
+IPac9E4ZR36UA2lWK/gr0x8PvxzlonzWqBcYFmCAQv9lPvk1GJK8/EnCkkD5pTvKbHAAAA
+QQDbVchcKjXrhsYklDvJQ4xyGkUH6+xMRVINwzjP3JQ1akUF/MJAYg5vr8j4gibWysVwWV
+0lgWuG96Yy/MxT62bvAAAAE2lzYWtlbEBwYzY0MTAxLTI1MzYBAgMEBQYH
+-----END OPENSSH PRIVATE KEY-----' > id_rsa_03780_\$CLICKHOUSE_DATABASE"
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CURL -sS \$CLICKHOUSE_URL -d \"CREATE USER IF NOT EXISTS user_03780_\$CLICKHOUSE_DATABASE\""
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --ssh-key-file id_rsa_03780_\$CLICKHOUSE_DATABASE --user user_03780_\$CLICKHOUSE_DATABASE"
+
+expect "Enter your SSH private key passphrase (leave empty for no passphrase): "
+send "\r"
+expect "Connecting to * as user user_03780_*."
+expect "Code: 516. *"
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CURL -sS \$CLICKHOUSE_URL -d \"DROP USER IF EXISTS user_03780_\$CLICKHOUSE_DATABASE\""
+expect eof
+
+spawn bash -c "rm -f id_rsa_03780_\$CLICKHOUSE_DATABASE"
+expect eof

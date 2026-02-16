@@ -18,7 +18,7 @@ differently in the function documentation below):
   two operands (integer size promotion). For example, `UInt8 + UInt16 = UInt32` or `Float32 * Float32 = Float64`.
 - If one of the operands has 64 or more bits, the size of the result type will be the same size as the bigger of the two operands. For
   example, `UInt32 + UInt128 = UInt128` or `Float32 * Float64 = Float64`.
-- If one of the operands is signed, the result type will also be signed, otherwise it will be signed. For example, `UInt32 * Int32 = Int64`.
+- If one of the operands is signed, the result type will also be signed, otherwise it will be unsigned. For example, `UInt32 * Int32 = Int64` or `UInt32 * UInt32 = UInt64`.
 
 These rules make sure that the result type will be the smallest type which can represent all possible results. While this introduces a risk
 of overflows around the value range boundary, it ensures that calculations are performed quickly using the maximum native integer width of

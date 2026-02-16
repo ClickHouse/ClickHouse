@@ -104,6 +104,11 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["instance1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )

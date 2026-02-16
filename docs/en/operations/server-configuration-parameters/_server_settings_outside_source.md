@@ -745,6 +745,8 @@ The location and format of log messages.
 | `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
 | `console` | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if ClickHouse does not run in daemon mode, `0` otherwise.                            |
 | `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                 |
+| `console_shutdown_log_level` | Shutdown level is used to set the console log level at server Shutdown.   
+| `console_startup_log_level` | Startup level is used to set the console log level at server startup. After startup log level is reverted to the `console_log_level` setting                                   |   
 | `count` | Rotation policy: How many historical log files ClickHouse are kept at most.                                                                                        |
 | `errorlog` | The path to the error log file.                                                                                                                                    |
 | `formatting.type` | Log format for console output. Currently, only `json` is supported                                                                                                 |
@@ -1894,6 +1896,8 @@ The following settings can be configured by sub-tags:
 | `fallback_session_lifetime.max` (optional) | Maximum limit for the lifetime of a zookeeper session to the fallback node when primary is unavailable (load-balancing). Set in seconds. Default: 6 hours.                                                                                                                                                                                                                                                                                                                                                              |
 | `identity` (optional)                      | User and password required by ZooKeeper to access requested znodes.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `use_compression` (optional)               | Enables compression in Keeper protocol if set to true.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `use_xid_64` (optional)                    | Enables 64-bit transaction IDs. Set to `true` to enable extended transaction ID format. Default: `false`.                                                                                                                                                                                                                                                                                                                                                |
+| `pass_opentelemetry_tracing_context` (optional) | Enables propagation of OpenTelemetry tracing context to Keeper requests. When enabled, tracing spans will be created for Keeper operations, allowing distributed tracing across ClickHouse and Keeper. Requires `use_xid_64` to be enabled. See [Tracing ClickHouse Keeper Requests](/operations/opentelemetry#tracing-clickhouse-keeper-requests) for more details. Default: `false`.                                                                                                                                      |
 
 There is also the `zookeeper_load_balancing` setting (optional) which lets you select the algorithm for ZooKeeper node selection:
 
@@ -1926,6 +1930,10 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
     <identity>user:password</identity>
     <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
+    <!-- Optional. Enable 64-bit transaction IDs. -->
+    <use_xid_64>false</use_xid_64>
+    <!-- Optional. Enable OpenTelemetry tracing context propagation (requires use_xid_64). -->
+    <pass_opentelemetry_tracing_context>false</pass_opentelemetry_tracing_context>
 </zookeeper>
 ```
 

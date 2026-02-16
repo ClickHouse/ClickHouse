@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
