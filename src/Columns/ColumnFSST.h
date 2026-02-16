@@ -14,7 +14,7 @@
 #include <Common/PODArray.h>
 #include <Common/WeakHash.h>
 
-#include "fsst_fwd.h"
+#include "fsst.h"
 
 namespace DB
 {

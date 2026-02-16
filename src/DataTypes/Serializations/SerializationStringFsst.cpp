@@ -21,7 +21,6 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/assert_cast.h>
 #include "IO/WriteBuffer.h"
-#include "fsst_fwd.h"
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
