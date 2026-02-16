@@ -559,6 +559,14 @@ bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!s_rparen.ignore(pos, expected))
         return false;
 
+    /// Remove ASTStorageOrderByElement wrappers when no ASC|DESC suffix was specified,
+    /// same as the single-key path above.
+    for (auto & child : order_by->children)
+    {
+        if (const auto * elem = child->as<ASTStorageOrderByElement>(); elem && elem->direction > 0)
+            child = elem->children.front();
+    }
+
     auto tuple_function = make_intrusive<ASTFunction>();
     tuple_function->name = "tuple";
     tuple_function->arguments = std::move(order_by);
