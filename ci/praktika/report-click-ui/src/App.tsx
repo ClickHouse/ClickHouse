@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClickUIProvider, Container, Text, Switch, Table, Link, Popover, Button, Flyout, Badge } from '@clickhouse/click-ui'
+import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Flyout, Badge, Icon, Tooltip } from '@clickhouse/click-ui'
 import './App.css'
 
 interface TestResult {
@@ -756,11 +756,19 @@ function App() {
               </Flyout>
             )}
             */}
-            <Switch
-              checked={theme === 'dark'}
-              onCheckedChange={toggleTheme}
-              label="Dark mode"
-            />
+            <Tooltip>
+              <Tooltip.Trigger asChild>
+                <div
+                  onClick={toggleTheme}
+                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  <Icon name="light-bulb-on" size="md" />
+                </div>
+              </Tooltip.Trigger>
+              <Tooltip.Content showArrow={true}>
+                Toggle theme
+              </Tooltip.Content>
+            </Tooltip>
           </div>
         </div>
 
