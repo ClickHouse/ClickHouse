@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SharedLockGuard.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -162,7 +163,8 @@ public:
         DB::ContextPtr context,
         const String & path_to_manifest_file_);
 
-    const std::vector<ManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
+    std::pair<const std::vector<ManifestFileEntryPtr> *, SharedLockGuard<SharedMutex>>
+    getFilesWithoutDeleted(FileContentType content_type) const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
@@ -200,7 +202,7 @@ private:
     std::optional<DB::KeyDescription> partition_key_description;
 
     /// Mutex to protect concurrent access to file vectors during iteration
-    mutable std::mutex files_mutex;
+    mutable SharedMutex files_mutex;
 
     // Size - number of files
     std::vector<ManifestFileEntryPtr> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
@@ -223,6 +225,8 @@ private:
     DB::ContextPtr context;
     String manifest_file_name;
     Int32 manifest_schema_id = 0;
+
+
 };
 
 using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;
