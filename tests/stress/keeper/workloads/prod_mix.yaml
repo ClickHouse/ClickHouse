@@ -1,6 +1,6 @@
 name: prod_mix
 # Value sizes: 0-162 bytes
-concurrency: 32
+concurrency: 224
 report_delay: 0.0
 continue_on_error: true
 
