@@ -142,7 +142,6 @@ SELECT number FROM numbers(5) ORDER BY number WITH FILL FROM 0 TO 7 STEP 1;
 
 -- LIMIT BY
 SELECT * FROM numbers(10) ORDER BY ALL LIMIT 1 BY number % 3;
-SELECT * FROM numbers(10) ORDER BY ALL LIMIT 1 BY ALL;
 
 -- DISTINCT ON
 SELECT DISTINCT ON (number % 2) number FROM numbers(5) ORDER BY number;

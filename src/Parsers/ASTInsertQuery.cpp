@@ -124,6 +124,14 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     {
         ostr << delim;
         select->format(ostr, settings, state, frame);
+
+        /// For INSERT ... SELECT ... FROM input('...') FORMAT Values,
+        /// the FORMAT clause must be preserved in the formatted output.
+        if (!format.empty())
+        {
+            ostr << delim
+                << "FORMAT" << " " << format;
+        }
     }
     else
     {
