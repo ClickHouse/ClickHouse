@@ -40,8 +40,10 @@ fi
 
 cd ci/tmp
 
+mv llvm_coverage.info current_llvm_coverage.info
+
 CURRENT_COMMIT=$(git rev-parse HEAD)
-BASE_COMMIT=$(git merge-base HEAD master)
+BASE_COMMIT=$(git merge-base HEAD origin/master)
 
 # Try to find .info file from S3, checking up to 10 ancestor commits
 FOUND=0
@@ -52,34 +54,43 @@ IFS=',' read -ra COMMITS <<< "${PREV_10_COMMITS}"
 
 FOUND=0
 for TEST_COMMIT in "${COMMITS[@]}"; do
-    COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage_merge/llvm_coverage.info"
-    echo "Checking coverage file for commit ${TEST_COMMIT}..."
-    if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
-        echo "Found coverage file at ${COVERAGE_URL}"
-        wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
-        BASE_COMMIT="${TEST_COMMIT}"
-        FOUND=1
-        break
-    fi
+COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage_merge/llvm_coverage.info"
+echo "Checking coverage file for commit ${TEST_COMMIT}..."
+if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
+echo "Found coverage file at ${COVERAGE_URL}"
+wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
+BASE_COMMIT="${TEST_COMMIT}"
+FOUND=1
+break
+fi
 done
 
 
 if [ $FOUND -eq 0 ]; then
-    echo "Warning: Could not find coverage file after checking ${ATTEMPT} commits"
-    echo "Skipping differential coverage analysis"
-    exit 0
+echo "Warning: Could not find coverage file after checking ${ATTEMPT} commits"
+echo "Skipping differential coverage analysis"
+exit 0
 fi
 
 # get diff between current commit and base commit
 git diff ${BASE_COMMIT}..${CURRENT_COMMIT} --unified=3 > changes.diff
 
-genhtml current_llvm_coverage.info \
+echo Workspace path: $WORKSPACE_PATH
+
+genhtml \
   --baseline-file base_llvm_coverage.info \
   --diff-file changes.diff \
   --output-directory diff-html \
+  --no-function-coverage \
+  --prefix $WORKSPACE_PATH \
   --legend \
+  --substitute "s|/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse|$WORKSPACE_PATH|g" \
   --ignore-errors inconsistent \
-  --ignore-errors corrupt
+  --ignore-errors corrupt \
+  --ignore-errors path \
+  --ignore-errors source \
+  --ignore-errors range\
+  current_llvm_coverage.info 
 
 
 lcov --version

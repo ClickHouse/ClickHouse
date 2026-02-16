@@ -9,6 +9,9 @@ current_directory = Utils.cwd()
 temp_dir = f"{current_directory}/ci/tmp/"
 
 if __name__ == "__main__":
+    # Pass workspace path to the shell script via environment variable
+    os.environ["WORKSPACE_PATH"] = current_directory
+
     info = Info()
     prev_10_commits = info.get_kv_data("master_commits_after_merge_base")
     if prev_10_commits is None:
