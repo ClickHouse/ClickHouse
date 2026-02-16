@@ -2444,7 +2444,7 @@ try
                 rlimit rlim;
                 if (getrlimit(RLIMIT_CORE, &rlim) == 0)
                 {
-                    rlim.rlim_cur = config->getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+                    rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
                     if (setrlimit(RLIMIT_CORE, &rlim))
                         LOG_WARNING(log, "Cannot set max size of core file to {}", rlim.rlim_cur);
                 }
