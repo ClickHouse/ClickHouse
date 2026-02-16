@@ -81,8 +81,6 @@ private:
         = std::unordered_map<StorageIDMaybeEmpty, SharedHeader, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdThreadGroup = std::
         unordered_map<StorageIDMaybeEmpty, ThreadGroupPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
-    using MapIdProfileCountersScope = std::
-        unordered_map<StorageIDMaybeEmpty, ProfileEvents::CountersSeq, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdViewType = std::unordered_map<
         StorageIDMaybeEmpty,
         QueryViewsLogElement::ViewType,
@@ -177,7 +175,6 @@ private:
     MapIdBlock input_headers;
     MapIdBlock output_headers;
     MapIdThreadGroup thread_groups;
-    MapIdProfileCountersScope profile_counters_scopes;
 
     using SquashingProcessorsMap = std::unordered_map<
         StorageIDMaybeEmpty,

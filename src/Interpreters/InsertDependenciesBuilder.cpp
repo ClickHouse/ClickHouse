@@ -1074,7 +1074,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
             thread_groups[root_view] = thread_group;
         else
             thread_groups[root_view] = ThreadGroup::createForMaterializedView(init_context);
-        profile_counters_scopes[root_view] = CurrentThread::getCountersScopes();
         views_error_registry->init(root_view);
         dependent_views[root_view] = {};
     };
@@ -1101,7 +1100,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         inner_tables[current] = materialized_view->getTargetTableId();
         source_tables[current] = parent;
         thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
-        profile_counters_scopes[current] = CurrentThread::getCountersScopes();
         view_types[current] = QueryViewsLogElement::ViewType::MATERIALIZED;
         views_error_registry->init(current);
 
@@ -1131,7 +1129,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         select_queries[current] = window_view->getMergeableQuery();
         input_headers[current] = output_headers.at(path.parent(2));
         thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
-        profile_counters_scopes[current] = CurrentThread::getCountersScopes();
         view_types[current] = QueryViewsLogElement::ViewType::WINDOW;
         views_error_registry->init(current);
 
@@ -1280,7 +1277,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
     auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
-    counting->setRuntimeData(thread_groups.at(view_id), profile_counters_scopes.at(view_id));
+    counting->setRuntimeData(thread_groups.at(view_id), ProfileEvents::CountersSeq{});
     result.addSource(std::move(counting));
 
     auto source_table_id = source_tables.at(view_id);
@@ -1296,7 +1293,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context);
 
-        executing_inner_query->setRuntimeData(thread_groups.at(view_id), profile_counters_scopes.at(view_id));
+        executing_inner_query->setRuntimeData(thread_groups.at(view_id), ProfileEvents::CountersSeq{});
 
         result.addSource(std::move(executing_inner_query));
     }
@@ -1310,7 +1307,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context);
 
-        executing_inner_query->setRuntimeData(thread_groups.at(view_id), profile_counters_scopes.at(view_id));
+        executing_inner_query->setRuntimeData(thread_groups.at(view_id), ProfileEvents::CountersSeq{});
 
         result.addSource(std::move(executing_inner_query));
     }
@@ -1386,7 +1383,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
-        sink->setRuntimeData(thread_groups.at(view_id), profile_counters_scopes.at(view_id));
+        sink->setRuntimeData(thread_groups.at(view_id), ProfileEvents::CountersSeq{});
         result.addSink(std::move(sink));
     }
     else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
@@ -1397,7 +1394,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     else
     {
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
-        sink->setRuntimeData(thread_groups.at(view_id), profile_counters_scopes.at(view_id));
+        sink->setRuntimeData(thread_groups.at(view_id), ProfileEvents::CountersSeq{});
         result.addSink(std::move(sink));
     }
 
