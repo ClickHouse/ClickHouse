@@ -26,14 +26,14 @@ struct CompressedField
 class ColumnFSST;
 
 template <bool compressed>
-struct SerializeFsstState : public ISerialization::SerializeBinaryBulkState
+struct SerializeFSSTState : public ISerialization::SerializeBinaryBulkState
 {
 };
 
-class SerializationStringFsst final : public ISerialization
+class SerializationStringFSST final : public ISerialization
 {
 public:
-    explicit SerializationStringFsst(SerializationPtr _nested)
+    explicit SerializationStringFSST(SerializationPtr _nested)
         : nested(_nested)
     {
     }
@@ -123,7 +123,7 @@ public:
 
 private:
     template <bool compressed>
-    void serializeState(SerializeBinaryBulkSettings & settings, SerializeFsstState<compressed> & state) const;
+    void serializeState(SerializeBinaryBulkSettings & settings, SerializeFSSTState<compressed> & state) const;
     size_t deserializeState(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const;
 
     void serializeBinaryBulkWithMultipleStreams(

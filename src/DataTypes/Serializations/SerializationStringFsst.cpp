@@ -11,7 +11,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationStringFsst.h>
+#include <DataTypes/Serializations/SerializationStringFSST.h>
 #include <base/types.h>
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
@@ -31,29 +31,29 @@ namespace DB
 {
 
 template <>
-struct SerializeFsstState<false> : public ISerialization::SerializeBinaryBulkState
+struct SerializeFSSTState<false> : public ISerialization::SerializeBinaryBulkState
 {
-    SerializeFsstState() = default;
+    SerializeFSSTState() = default;
 
     PaddedPODArray<UInt8> chars;
     PaddedPODArray<UInt64> offsets;
 };
 
 template <>
-struct SerializeFsstState<true> : public ISerialization::SerializeBinaryBulkState
+struct SerializeFSSTState<true> : public ISerialization::SerializeBinaryBulkState
 {
-    SerializeFsstState() = default;
+    SerializeFSSTState() = default;
 
     std::vector<std::string_view> compressed_data;
     std::vector<size_t> origin_lengths;
     fsst_decoder_t decoder;
 };
 
-class DeserializeFsstState : public ISerialization::DeserializeBinaryBulkState
+class DeserializeFSSTState : public ISerialization::DeserializeBinaryBulkState
 {
 public:
-    DeserializeFsstState() = default;
-    DeserializeFsstState(
+    DeserializeFSSTState() = default;
+    DeserializeFSSTState(
         PODArray<char8_t> & _chars, PODArray<UInt64> & _offsets, PODArray<UInt64> & _origin_lengths, const ::fsst_decoder_t & _decoder)
         : chars(std::move(_chars))
         , offsets(std::move(_offsets))
@@ -65,7 +65,7 @@ public:
 
     std::optional<CompressedField> pop();
     const ::fsst_decoder_t & getDecoder() { return decoder; }
-    ~DeserializeFsstState() override = default;
+    ~DeserializeFSSTState() override = default;
 
 private:
     PODArray<UInt8> chars;
@@ -75,7 +75,7 @@ private:
     fsst_decoder_t decoder;
 };
 
-std::optional<CompressedField> DeserializeFsstState::pop()
+std::optional<CompressedField> DeserializeFSSTState::pop()
 {
     if (current_ind >= offsets.size())
     {
@@ -92,7 +92,7 @@ std::optional<CompressedField> DeserializeFsstState::pop()
 
 template <bool compressed>
 void saveSerializeState(
-    SerializeFsstState<compressed> & state, WriteBuffer * fsst_stream, WriteBuffer * offsets_stream, WriteBuffer * data_stream)
+    SerializeFSSTState<compressed> & state, WriteBuffer * fsst_stream, WriteBuffer * offsets_stream, WriteBuffer * data_stream)
 {
     if constexpr (compressed)
     {
@@ -176,7 +176,7 @@ void saveSerializeState(
 }
 
 template <bool compressed>
-void SerializationStringFsst::serializeState(SerializeBinaryBulkSettings & settings, SerializeFsstState<compressed> & state) const
+void SerializationStringFSST::serializeState(SerializeBinaryBulkSettings & settings, SerializeFSSTState<compressed> & state) const
 {
     LOG_DEBUG(getLogger("fsst logger"), "request for streams");
     settings.path.push_back(Substream::Fsst);
@@ -198,7 +198,7 @@ void SerializationStringFsst::serializeState(SerializeBinaryBulkSettings & setti
     saveSerializeState(state, fsst_stream, offsets_stream, data_stream);
 }
 
-size_t SerializationStringFsst::deserializeState(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const
+size_t SerializationStringFSST::deserializeState(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::Fsst);
     auto * fsst_stream = settings.getter(settings.path);
@@ -242,28 +242,28 @@ size_t SerializationStringFsst::deserializeState(DeserializeBinaryBulkSettings &
     PODArray<char8_t> compressed_bytes(total_compressed_bytes);
     compressed_bytes_read += compressed_data_stream->readBig(reinterpret_cast<char *>(compressed_bytes.data()), total_compressed_bytes);
 
-    state = std::make_shared<DeserializeFsstState>(compressed_bytes, offsets, origin_lengths, decoder);
+    state = std::make_shared<DeserializeFSSTState>(compressed_bytes, offsets, origin_lengths, decoder);
     return decoder_read_bytes + metadata_bytes_read + compressed_bytes_read;
 }
 
-ISerialization::KindStack SerializationStringFsst::getKindStack() const
+ISerialization::KindStack SerializationStringFSST::getKindStack() const
 {
     auto kind_stack = nested->getKindStack();
     kind_stack.push_back(Kind::FSST);
     return kind_stack;
 }
 
-SerializationPtr SerializationStringFsst::SubcolumnCreator::create(const SerializationPtr & string_nested, const DataTypePtr &) const
+SerializationPtr SerializationStringFSST::SubcolumnCreator::create(const SerializationPtr & string_nested, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationStringFsst>(string_nested);
+    return std::make_shared<SerializationStringFSST>(string_nested);
 }
 
-ColumnPtr SerializationStringFsst::SubcolumnCreator::create(const ColumnPtr & prev) const
+ColumnPtr SerializationStringFSST::SubcolumnCreator::create(const ColumnPtr & prev) const
 {
     return ColumnFSST::create(prev);
 }
 
-void SerializationStringFsst::enumerateStreams(
+void SerializationStringFSST::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & /*data*/) const
 {
     // fsst stream
@@ -283,7 +283,7 @@ void SerializationStringFsst::enumerateStreams(
     settings.path.pop_back();
 }
 
-void SerializationStringFsst::serializeBinaryBulkWithMultipleStreams(
+void SerializationStringFSST::serializeBinaryBulkWithMultipleStreams(
     const ColumnString * column,
     size_t offset,
     size_t limit,
@@ -292,9 +292,9 @@ void SerializationStringFsst::serializeBinaryBulkWithMultipleStreams(
 {
     if (!state)
     {
-        state = std::make_shared<SerializeFsstState<false>>();
+        state = std::make_shared<SerializeFSSTState<false>>();
     }
-    auto serialize_state = std::static_pointer_cast<SerializeFsstState<false>>(state);
+    auto serialize_state = std::static_pointer_cast<SerializeFSSTState<false>>(state);
 
     for (size_t ind = offset; ind < std::min(column->size(), offset + limit); ind++)
     {
@@ -313,16 +313,16 @@ void SerializationStringFsst::serializeBinaryBulkWithMultipleStreams(
     }
 }
 
-void SerializationStringFsst::serializeBinaryBulkWithMultipleStreams(
+void SerializationStringFSST::serializeBinaryBulkWithMultipleStreams(
     const ColumnFSST * column,
     size_t offset,
     size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    state = state ? state : std::make_shared<SerializeFsstState<true>>();
+    state = state ? state : std::make_shared<SerializeFSSTState<true>>();
 
-    auto serialize_state = std::static_pointer_cast<SerializeFsstState<true>>(state);
+    auto serialize_state = std::static_pointer_cast<SerializeFSSTState<true>>(state);
     size_t state_size = 0;
     auto string_column = column->getStringColumn();
     const auto & origin_lengths = column->getLengths();
@@ -353,7 +353,7 @@ void SerializationStringFsst::serializeBinaryBulkWithMultipleStreams(
         serializeState(settings, *serialize_state);
 }
 
-void SerializationStringFsst::serializeBinaryBulkWithMultipleStreams(
+void SerializationStringFSST::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
     limit = limit == 0 ? UINT64_MAX : limit;
@@ -368,7 +368,7 @@ void SerializationStringFsst::serializeBinaryBulkWithMultipleStreams(
     }
 }
 
-void SerializationStringFsst::deserializeBinaryBulkWithMultipleStreams(
+void SerializationStringFSST::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
     size_t rows_offset,
     size_t limit,
@@ -379,8 +379,8 @@ void SerializationStringFsst::deserializeBinaryBulkWithMultipleStreams(
     LOG_DEBUG(getLogger("fsst logger"), "deserialize binary bulk with fsst");
     auto & column_fsst = assert_cast<ColumnFSST &>(*column->assumeMutable());
 
-    state = state ? state : std::make_shared<DeserializeFsstState>();
-    auto deserialize_state = std::static_pointer_cast<DeserializeFsstState>(state);
+    state = state ? state : std::make_shared<DeserializeFSSTState>();
+    auto deserialize_state = std::static_pointer_cast<DeserializeFSSTState>(state);
     auto decoder_ptr = std::make_shared<fsst_decoder_t>();
 
     for (size_t ind = 0; ind < limit + rows_offset; ind++)
@@ -412,7 +412,7 @@ void SerializationStringFsst::deserializeBinaryBulkWithMultipleStreams(
             break;
 
         --ind;
-        deserialize_state = std::static_pointer_cast<DeserializeFsstState>(state);
+        deserialize_state = std::static_pointer_cast<DeserializeFSSTState>(state);
     }
 }
 

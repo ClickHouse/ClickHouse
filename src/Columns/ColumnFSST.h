@@ -6,7 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
-#include <DataTypes/Serializations/SerializationStringFsst.h>
+#include <DataTypes/Serializations/SerializationStringFSST.h>
 #include <base/types.h>
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"

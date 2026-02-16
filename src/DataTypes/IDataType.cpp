@@ -21,7 +21,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
-#include <DataTypes/Serializations/SerializationStringFsst.h>
+#include <DataTypes/Serializations/SerializationStringFSST.h>
 
 #include <DataTypes/Serializations/SerializationDetached.h>
 
@@ -131,9 +131,7 @@ size_t IDataType::getSizeOfValueInMemory() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
 }
 
-void IDataType::forEachSubcolumn(
-    const SubcolumnCallback & callback,
-    const SubstreamData & data)
+void IDataType::forEachSubcolumn(const SubcolumnCallback & callback, const SubstreamData & data)
 {
     ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
     {
@@ -199,7 +197,8 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                         {
                             dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
+                            dynamic_subcolumn_data->serialization
+                                = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                         }
 
                         tmp_subpath[i].data = *dynamic_subcolumn_data;
@@ -252,9 +251,7 @@ bool IDataType::hasDynamicSubcolumns() const
     bool has_dynamic_subcolumns = false;
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     auto callback = [&](const SubstreamPath &, const String &, const SubstreamData & subcolumn_data)
-    {
-        has_dynamic_subcolumns |= subcolumn_data.type && subcolumn_data.type->hasDynamicSubcolumnsData();
-    };
+    { has_dynamic_subcolumns |= subcolumn_data.type && subcolumn_data.type->hasDynamicSubcolumnsData(); };
     forEachSubcolumn(callback, data);
     return has_dynamic_subcolumns;
 }
@@ -294,10 +291,7 @@ SerializationPtr IDataType::getSubcolumnSerialization(std::string_view subcolumn
 Names IDataType::getSubcolumnNames() const
 {
     Names res;
-    forEachSubcolumn([&](const auto &, const auto & name, const auto &)
-    {
-        res.push_back(name);
-    }, SubstreamData(getDefaultSerialization()));
+    forEachSubcolumn([&](const auto &, const auto & name, const auto &) { res.push_back(name); }, SubstreamData(getDefaultSerialization()));
     return res;
 }
 
@@ -361,7 +355,7 @@ SerializationPtr IDataType::getSerialization(
         if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
             serialization = std::make_shared<SerializationSparse>(serialization);
         else if (kind == ISerialization::Kind::FSST)
-            serialization = std::make_shared<SerializationStringFsst>(serialization);
+            serialization = std::make_shared<SerializationStringFSST>(serialization);
         else if (kind == ISerialization::Kind::DETACHED)
             serialization = std::make_shared<SerializationDetached>(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)
@@ -427,91 +421,242 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column)
     M(WhichDataType)
 
 #define DISPATCH(TYPE) \
-bool isUInt8(TYPE data_type) { return WhichDataType(data_type).isUInt8(); } \
-bool isUInt16(TYPE data_type) { return WhichDataType(data_type).isUInt16(); } \
-bool isUInt32(TYPE data_type) { return WhichDataType(data_type).isUInt32(); } \
-bool isUInt64(TYPE data_type) { return WhichDataType(data_type).isUInt64(); } \
-bool isUInt128(TYPE data_type) { return WhichDataType(data_type).isUInt128(); } \
-bool isUInt256(TYPE data_type) { return WhichDataType(data_type).isUInt256(); } \
-bool isNativeUInt(TYPE data_type) { return WhichDataType(data_type).isNativeUInt(); } \
-bool isUInt(TYPE data_type) { return WhichDataType(data_type).isUInt(); } \
+    bool isUInt8(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isUInt8(); \
+    } \
+    bool isUInt16(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isUInt16(); \
+    } \
+    bool isUInt32(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isUInt32(); \
+    } \
+    bool isUInt64(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isUInt64(); \
+    } \
+    bool isUInt128(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isUInt128(); \
+    } \
+    bool isUInt256(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isUInt256(); \
+    } \
+    bool isNativeUInt(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isNativeUInt(); \
+    } \
+    bool isUInt(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isUInt(); \
+    } \
 \
-bool isInt8(TYPE data_type) { return WhichDataType(data_type).isInt8(); } \
-bool isInt16(TYPE data_type) { return WhichDataType(data_type).isInt16(); } \
-bool isInt32(TYPE data_type) { return WhichDataType(data_type).isInt32(); } \
-bool isInt64(TYPE data_type) { return WhichDataType(data_type).isInt64(); } \
-bool isInt128(TYPE data_type) { return WhichDataType(data_type).isInt128(); } \
-bool isInt256(TYPE data_type) { return WhichDataType(data_type).isInt256(); } \
-bool isNativeInt(TYPE data_type) { return WhichDataType(data_type).isNativeInt(); } \
-bool isInt(TYPE data_type) { return WhichDataType(data_type).isInt(); } \
+    bool isInt8(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInt8(); \
+    } \
+    bool isInt16(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInt16(); \
+    } \
+    bool isInt32(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInt32(); \
+    } \
+    bool isInt64(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInt64(); \
+    } \
+    bool isInt128(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInt128(); \
+    } \
+    bool isInt256(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInt256(); \
+    } \
+    bool isNativeInt(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isNativeInt(); \
+    } \
+    bool isInt(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInt(); \
+    } \
 \
-bool isInteger(TYPE data_type) { return WhichDataType(data_type).isInteger(); } \
-bool isNativeInteger(TYPE data_type) { return WhichDataType(data_type).isNativeInteger(); } \
+    bool isInteger(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInteger(); \
+    } \
+    bool isNativeInteger(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isNativeInteger(); \
+    } \
 \
 bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } \
 bool isDecimal64(TYPE data_type) { return WhichDataType(data_type).isDecimal64(); } \
 \
-bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
+    bool isFloat(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isFloat(); \
+    } \
 \
-bool isIntegerOrDecimal(TYPE data_type) { return WhichDataType(data_type).isIntegerOrDecimal(); } \
-bool isNativeNumber(TYPE data_type) { return WhichDataType(data_type).isNativeNumber(); } \
-bool isNumber(TYPE data_type) { return WhichDataType(data_type).isNumber(); } \
+    bool isIntegerOrDecimal(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isIntegerOrDecimal(); \
+    } \
+    bool isNativeNumber(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isNativeNumber(); \
+    } \
+    bool isNumber(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isNumber(); \
+    } \
 \
-bool isEnum8(TYPE data_type) { return WhichDataType(data_type).isEnum8(); } \
-bool isEnum16(TYPE data_type) { return WhichDataType(data_type).isEnum16(); } \
-bool isEnum(TYPE data_type) { return WhichDataType(data_type).isEnum(); } \
+    bool isEnum8(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isEnum8(); \
+    } \
+    bool isEnum16(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isEnum16(); \
+    } \
+    bool isEnum(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isEnum(); \
+    } \
 \
-bool isDate(TYPE data_type) { return WhichDataType(data_type).isDate(); } \
-bool isDate32(TYPE data_type) { return WhichDataType(data_type).isDate32(); } \
-bool isDateOrDate32(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32(); } \
-bool isDateTime(TYPE data_type) { return WhichDataType(data_type).isDateTime(); } \
-bool isTime(TYPE data_type) { return WhichDataType(data_type).isTime(); } \
-bool isDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTime64(); } \
-bool isTime64(TYPE data_type) { return WhichDataType(data_type).isTime64(); } \
-bool isDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); } \
-bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); } \
-bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(); } \
+    bool isDate(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDate(); \
+    } \
+    bool isDate32(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDate32(); \
+    } \
+    bool isDateOrDate32(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDateOrDate32(); \
+    } \
+    bool isDateTime(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDateTime(); \
+    } \
+    bool isTime(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isTime(); \
+    } \
+    bool isDateTime64(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDateTime64(); \
+    } \
+    bool isTime64(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isTime64(); \
+    } \
+    bool isDateTimeOrDateTime64(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDateTimeOrDateTime64(); \
+    } \
+    bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); \
+    } \
+    bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(); \
+    } \
 \
-bool isString(TYPE data_type) { return WhichDataType(data_type).isString(); } \
-bool isFixedString(TYPE data_type) { return WhichDataType(data_type).isFixedString(); } \
-bool isStringOrFixedString(TYPE data_type) { return WhichDataType(data_type).isStringOrFixedString(); } \
+    bool isString(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isString(); \
+    } \
+    bool isFixedString(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isFixedString(); \
+    } \
+    bool isStringOrFixedString(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isStringOrFixedString(); \
+    } \
 \
-bool isUUID(TYPE data_type) { return WhichDataType(data_type).isUUID(); } \
-bool isIPv4(TYPE data_type) { return WhichDataType(data_type).isIPv4(); } \
-bool isIPv6(TYPE data_type) { return WhichDataType(data_type).isIPv6(); } \
-bool isArray(TYPE data_type) { return WhichDataType(data_type).isArray(); } \
-bool isTuple(TYPE data_type) { return WhichDataType(data_type).isTuple(); } \
-bool isMap(TYPE data_type) {return WhichDataType(data_type).isMap(); } \
-bool isInterval(TYPE data_type) {return WhichDataType(data_type).isInterval(); } \
-bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } \
-bool isDynamic(TYPE data_type) { return WhichDataType(data_type).isDynamic(); } \
-bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
-bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } \
-bool isQBit(TYPE data_type) { return WhichDataType(data_type).isQBit(); } \
+    bool isUUID(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isUUID(); \
+    } \
+    bool isIPv4(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isIPv4(); \
+    } \
+    bool isIPv6(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isIPv6(); \
+    } \
+    bool isArray(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isArray(); \
+    } \
+    bool isTuple(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isTuple(); \
+    } \
+    bool isMap(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isMap(); \
+    } \
+    bool isInterval(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isInterval(); \
+    } \
+    bool isVariant(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isVariant(); \
+    } \
+    bool isDynamic(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isDynamic(); \
+    } \
+    bool isObject(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isObject(); \
+    } \
+    bool isNothing(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isNothing(); \
+    } \
+    bool isQBit(TYPE data_type) \
+    { \
+        return WhichDataType(data_type).isQBit(); \
+    } \
 \
-bool isColumnedAsNumber(TYPE data_type) \
-{ \
-    WhichDataType which(data_type); \
-    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6(); \
-} \
+    bool isColumnedAsNumber(TYPE data_type) \
+    { \
+        WhichDataType which(data_type); \
+        return which.isInteger() || which.isFloat() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isUUID() \
+            || which.isIPv4() || which.isIPv6(); \
+    } \
 \
-bool isColumnedAsDecimal(TYPE data_type) \
-{ \
-    WhichDataType which(data_type); \
-    return which.isDecimal() || which.isDateTime64() || which.isTime64(); \
-} \
+    bool isColumnedAsDecimal(TYPE data_type) \
+    { \
+        WhichDataType which(data_type); \
+        return which.isDecimal() || which.isDateTime64() || which.isTime64(); \
+    } \
 \
-bool isNotCreatable(TYPE data_type) \
-{ \
-    WhichDataType which(data_type); \
-    return which.isNothing() || which.isFunction() || which.isSet(); \
-} \
+    bool isNotCreatable(TYPE data_type) \
+    { \
+        WhichDataType which(data_type); \
+        return which.isNothing() || which.isFunction() || which.isSet(); \
+    } \
 \
-bool isNotDecimalButComparableToDecimal(TYPE data_type) \
-{ \
-    WhichDataType which(data_type); \
-    return which.isInt() || which.isUInt() || which.isFloat(); \
-} \
+    bool isNotDecimalButComparableToDecimal(TYPE data_type) \
+    { \
+        WhichDataType which(data_type); \
+        return which.isInt() || which.isUInt() || which.isFloat(); \
+    }
 
 FOR_TYPES_OF_TYPE(DISPATCH)
 

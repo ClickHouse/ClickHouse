@@ -11,7 +11,7 @@
 #include "Columns/ColumnFSST.h"
 #include "Columns/IColumn_fwd.h"
 #include "Core/Field.h"
-#include "DataTypes/SerializationStringFsst.h"
+#include "DataTypes/SerializationStringFSST.h"
 #include "DataTypes/Serializations/ISerialization.h"
 #include "DataTypes/Serializations/SerializationString.h"
 
