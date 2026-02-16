@@ -612,50 +612,52 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 has_error = True
                 error_info.append(test_result_sequential.info)
 
-    # Run additional build types for bugfix validation
+    # Run additional build types for bugfix validation.
+    # Exit early on first failure to avoid duplicate test names and workspace pollution.
     if is_bugfix_validation:
         for r in test_results:
             r.set_label(BUGFIX_BUILD_TYPES[0])
-        all_bugfix_test_results = list(test_results)
 
-        for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
-            print(f"\n=== Bugfix validation with {bugfix_bt} ===")
-            bt_clickhouse_path = f"{temp_path}/clickhouse_{bugfix_bt}"
-            test_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = bt_clickhouse_path
-            test_env["CLICKHOUSE_BINARY"] = bt_clickhouse_path
-            test_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = bt_clickhouse_path
-            Shell.check(
-                f"{bt_clickhouse_path} --version", verbose=True, strict=True
-            )
-
-            bt_test_results = []
-
-            if parallel_test_modules:
-                bt_result_parallel = run_pytest_and_collect_results(
-                    command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
-                    env=test_env,
-                    report_name=f"parallel_{bugfix_bt}",
+        if all(r.is_ok() for r in test_results):
+            for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
+                print(f"\n=== Bugfix validation with {bugfix_bt} ===")
+                bt_clickhouse_path = f"{temp_path}/clickhouse_{bugfix_bt}"
+                test_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = bt_clickhouse_path
+                test_env["CLICKHOUSE_BINARY"] = bt_clickhouse_path
+                test_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = bt_clickhouse_path
+                Shell.check(
+                    f"{bt_clickhouse_path} --version", verbose=True, strict=True
                 )
-                bt_test_results.extend(bt_result_parallel.results)
-                if bt_result_parallel.files:
-                    failed_tests_files.extend(bt_result_parallel.files)
 
-            bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
-            if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP:
-                bt_result_sequential = run_pytest_and_collect_results(
-                    command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
-                    env=test_env,
-                    report_name=f"sequential_{bugfix_bt}",
-                )
-                bt_test_results.extend(bt_result_sequential.results)
-                if bt_result_sequential.files:
-                    failed_tests_files.extend(bt_result_sequential.files)
+                bt_test_results = []
 
-            for r in bt_test_results:
-                r.set_label(bugfix_bt)
-            all_bugfix_test_results.extend(bt_test_results)
+                if parallel_test_modules:
+                    bt_result_parallel = run_pytest_and_collect_results(
+                        command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+                        env=test_env,
+                        report_name=f"parallel_{bugfix_bt}",
+                    )
+                    bt_test_results.extend(bt_result_parallel.results)
+                    if bt_result_parallel.files:
+                        failed_tests_files.extend(bt_result_parallel.files)
 
-        test_results = all_bugfix_test_results
+                bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
+                if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP:
+                    bt_result_sequential = run_pytest_and_collect_results(
+                        command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
+                        env=test_env,
+                        report_name=f"sequential_{bugfix_bt}",
+                    )
+                    bt_test_results.extend(bt_result_sequential.results)
+                    if bt_result_sequential.files:
+                        failed_tests_files.extend(bt_result_sequential.files)
+
+                for r in bt_test_results:
+                    r.set_label(bugfix_bt)
+                test_results = bt_test_results
+
+                if any(not r.is_ok() for r in bt_test_results):
+                    break
 
     # Collect logs before re-run
     attached_files = []
