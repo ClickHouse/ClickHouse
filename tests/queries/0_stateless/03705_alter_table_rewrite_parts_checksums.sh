@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-msan
+# no-msan: too slow
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-asan
+-- no-asan: too slow
 
 -- Tests that text indexes can be build on and used with Map columns.
 
@@ -279,7 +280,7 @@ CREATE VIEW explain_index_has_all_tokens AS (
     SELECT trimLeft(explain) AS explain FROM (
         EXPLAIN indexes=1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN hasAllTokens(mapKeys(map_fixed), {filter:String})
                 ELSE hasAllTokens(mapKeys(map), {filter:String})
             END
@@ -507,7 +508,7 @@ CREATE VIEW explain_index_has_all_tokens AS (
     SELECT trimLeft(explain) AS explain FROM (
         EXPLAIN indexes=1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN hasAllTokens(mapValues(map_fixed), {filter:String})
                 ELSE hasAllTokens(mapValues(map), {filter:String})
             END
@@ -583,7 +584,7 @@ SELECT count() from tab WHERE mapContainsValueLike(map_fixed, '% e %');
 SELECT count() from tab WHERE mapContainsValueLike(map_fixed, '% k %');
 SELECT count() from tab WHERE mapContainsValueLike(map_fixed, '% q %');
 
--- 
+--
 
 DROP VIEW IF EXISTS explain_index_key_like;
 CREATE VIEW explain_index_key_like AS (
