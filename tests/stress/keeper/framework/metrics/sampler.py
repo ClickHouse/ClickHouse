@@ -247,6 +247,7 @@ class MetricsSampler:
         _sample_kv("mntr", lambda: mntr(n))
         _sample_dirs()
         _sample_kv("srvr", lambda: srvr_kv(n))
+        _sample_kv("lgif", lambda: lgif(n))
         _sample_kv("container", lambda: container_stats(n))
         _sample_prom()
         # Note: ch_metrics and ch_async_metrics are NOT collected during continuous sampling
