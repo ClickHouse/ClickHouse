@@ -10,10 +10,11 @@ namespace DB
 class ShuffleExchangeStep final : public LogicalExchangeStep
 {
 public:
-    ShuffleExchangeStep(SharedHeader input_header_, Names key_names_, size_t result_bucket_count_)
+    ShuffleExchangeStep(SharedHeader input_header_, Names key_names_, size_t source_bucket_count_, size_t result_bucket_count_)
         : LogicalExchangeStep(input_header_)
         , key_names(std::move(key_names_))
-        , result_bucket_count(result_bucket_count_)   /// TODO: implement
+        , source_bucket_count(source_bucket_count_)
+        , result_bucket_count(result_bucket_count_)
     {
     }
 
@@ -27,6 +28,11 @@ public:
     const Names & getKeys() const
     {
         return key_names;
+    }
+
+    size_t getSourceBucketCount() const override
+    {
+        return source_bucket_count;
     }
 
     size_t getResultBucketCount() const override
@@ -43,6 +49,7 @@ private:
     }
 
     const Names key_names;
+    const size_t source_bucket_count;
     const size_t result_bucket_count;
 };
 

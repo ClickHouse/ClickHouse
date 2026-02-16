@@ -28,6 +28,11 @@ public:
         return key_names;
     }
 
+    size_t getSourceBucketCount() const override
+    {
+        return 1;
+    }
+
     size_t getResultBucketCount() const override
     {
         return result_bucket_count;

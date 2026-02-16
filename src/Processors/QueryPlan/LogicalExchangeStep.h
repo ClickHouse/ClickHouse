@@ -25,6 +25,8 @@ protected:
 
 public:
 
+    /// Number of buckets before the exchange. E.g. 1 for ScatterExchange
+    virtual size_t getSourceBucketCount() const = 0;
     /// Number of buckets after the exchange. E.g. 1 for GatherExchange, num_buckets for ShuffleExchange.
     virtual size_t getResultBucketCount() const = 0;
 

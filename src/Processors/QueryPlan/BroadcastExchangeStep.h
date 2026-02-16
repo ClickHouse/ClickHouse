@@ -22,6 +22,11 @@ BroadcastExchangeStep(SharedHeader input_header_, size_t result_bucket_count_)
         /// Doesn't change the pipeline if executed directly
     }
 
+    size_t getSourceBucketCount() const override
+    {
+        return 1;
+    }
+
     size_t getResultBucketCount() const override
     {
         return result_bucket_count;

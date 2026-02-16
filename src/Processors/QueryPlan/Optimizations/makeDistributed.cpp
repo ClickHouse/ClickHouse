@@ -30,7 +30,7 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false);
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 /// Replaces LogicalJoin step with a subtree like this:
 ///
@@ -82,13 +82,13 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     QueryPlan::Node * exchange_scatter_a_node = nullptr;
     QueryPlan::Node * exchange_scatter_b_node = nullptr;
 
+    size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
+
     if (strategy == Broadcast)
     {
         LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
             "Estimated number of rows in right source: {}. Using broadcast join",
             row_count_b.transform(toString<UInt64>).value_or("unknown"));
-
-        size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
 
         exchange_scatter_a_node = &nodes.emplace_back();
         exchange_scatter_b_node = &nodes.emplace_back();
@@ -103,8 +103,6 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     }
     else
     {
-        size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
-
         LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
             "Estimated number of rows in right source: {}. Using {} buckets for shuffle join",
             row_count_b.transform(toString<UInt64>).value_or("unknown"),
@@ -144,7 +142,7 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     /// Add gather exchange step above join
     QueryPlan::Node gather_node;
-    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_join_node.step->getOutputHeader());
+    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_join_node.step->getOutputHeader(), bucket_count);
     gather_node.step = std::move(exchange_gather_step);
     gather_node.children = {&new_join_node};
 
@@ -229,7 +227,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
         /// Add gather
         auto & gather_node = nodes.emplace_back();
-        gather_node.step = std::make_unique<GatherExchangeStep>(partial_aggregation_node.step->getOutputHeader());
+        gather_node.step = std::make_unique<GatherExchangeStep>(partial_aggregation_node.step->getOutputHeader(), bucket_count);
         gather_node.children = {&partial_aggregation_node};
 
         /// Replace original aggregation step with MergingAggregated step
@@ -268,7 +266,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
         /// Add gather exchange step above aggregation
         QueryPlan::Node gather_node;
-        QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_aggregation_node.step->getOutputHeader());
+        QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_aggregation_node.step->getOutputHeader(), bucket_count);
         gather_node.step = std::move(exchange_gather_step);
         gather_node.children = {&new_aggregation_node};
 
@@ -277,6 +275,13 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     }
 }
 
+/// Replaces SortingStep step with a subtree like this:
+///
+///   GatherExchange (merge sorted streams)
+///     SortingStep
+///       ScatterExchange (any partitioning)
+///
+/// NOTE: GatherExchange step is aware of sort descripiton and merges multiple sorted streams into one sorted stream.
 void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a sorting step?
@@ -306,7 +311,7 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
 
     /// Add merge sorted gather exchange step above sorting
     QueryPlan::Node gather_node;
-    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_sorting_node.step->getOutputHeader(), sort_description);
+    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_sorting_node.step->getOutputHeader(), bucket_count, sort_description);
     exchange_gather_step->setStepDescription(fmt::format("sorted by ({})", dumpSortDescription(sort_description)), optimization_settings.max_step_description_length);
     gather_node.step = std::move(exchange_gather_step);
     gather_node.children = {&new_sorting_node};
@@ -323,27 +328,40 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 {
     /// Is this a read from MergeTree step?
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(node.step.get());
-    if (!read_from_merge_tree_step)
+    auto * read_from_object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(node.step.get());
+
+    if (!read_from_merge_tree_step && !read_from_object_storage_step)
         return;
 
     /// Should not have children
     if (!node.children.empty())
         return;
 
-    /// Check if table is big enough for distributed read
-    /// TODO: implement better logic for choosing number of parallel readers
-    auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
-    if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
-        return;
+    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+    const size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
 
-    /// Move read step to a new node and set it to distributed read
-    read_from_merge_tree_step->setDistributedRead();
+    if (read_from_merge_tree_step)
+    {
+        /// Check if table is big enough for distributed read
+        /// TODO: implement better logic for choosing number of parallel readers
+        auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
+        if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+            return;
+
+        /// Move read step to a new node and set it to distributed read
+        read_from_merge_tree_step->setDistributedRead(bucket_count);
+    }
+    else if (read_from_object_storage_step)
+    {
+        read_from_object_storage_step->setDistributedRead(bucket_count);
+    }
+
     auto & new_read_node = nodes.emplace_back();
     new_read_node.step = std::move(node.step);
 
     /// Add gather exchange step above read
     QueryPlan::Node gather_node;
-    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_read_node.step->getOutputHeader());
+    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_read_node.step->getOutputHeader(), bucket_count);
     gather_node.step = std::move(exchange_gather_step);
     gather_node.children = {&new_read_node};
 
@@ -367,7 +385,8 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
     if (!gather_step)
         return;
 
-    auto shuffle_step = std::make_unique<ShuffleExchangeStep>(node->children[0]->step->getOutputHeader(), scatter_step->getKeys(), scatter_step->getResultBucketCount());
+    auto shuffle_step = std::make_unique<ShuffleExchangeStep>(node->children[0]->step->getOutputHeader(), scatter_step->getKeys(),
+        gather_step->getSourceBucketCount(), scatter_step->getResultBucketCount());
     shuffle_step->setStepDescription(*scatter_step);
     node->step = std::move(shuffle_step);
     node->children = std::move(node->children[0]->children);
@@ -432,6 +451,16 @@ void optimizeExchanges(QueryPlan::Node & root)
             }
 
             tryReplaceScatterGatherWithShuffle(frame.node);
+
+            if (const auto * shuffle = dynamic_cast<const ShuffleExchangeStep *>(frame.node->step.get()))
+            {
+                /// Remove shuffle with empty keys as redundant
+                if (shuffle->getKeys().empty() && shuffle->getResultBucketCount() == shuffle->getSourceBucketCount())
+                {
+                    frame.node->step = std::move(frame.node->children[0]->step);
+                    frame.node->children = std::move(frame.node->children[0]->children);
+                }
+            }
         }
 
         stack.pop_back();
@@ -440,11 +469,15 @@ void optimizeExchanges(QueryPlan::Node & root)
 
 
 /// Tries to build list of possible shards for the read steps that can be processed in parallel.
-Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step, const QueryPlanOptimizationSettings & optimization_settings)
+Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step)
 {
     const auto * read_from_mt = dynamic_cast<const ReadFromMergeTree *>(read_step);
     if (read_from_mt)
-        return read_from_mt->getShardsForDistributedRead(optimization_settings);
+        return read_from_mt->getShardsForDistributedRead();
+
+    const auto * read_from_object_storage = dynamic_cast<const ReadFromObjectStorageStep *>(read_step);
+    if (read_from_object_storage)
+        return read_from_object_storage->getShardsForDistributedRead();
 
     return {"0"};   /// One shard by default if read step is not distributed
 }
@@ -645,7 +678,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             else
             {
                 /// No children, this means that this is a leaf step
-                auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get(), optimization_settings);
+                auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
 
                 current_plan = std::make_unique<QueryPlan>();
                 current_plan->addStep(std::move(frame.node->step));
