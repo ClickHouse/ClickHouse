@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # get merge base for master and current branch and store 10 previous commits in master
     # Use gh api to get the merge base (base commit) between master and info.sha
     try:
-        print(Shell.get_output("git fetch origin master:refs/remotes/origin/master", verbose=True))
+        print(Shell.get_output("git fetch --depth=500 origin master:refs/remotes/origin/master", verbose=True))
         # Get the merge base commit using git
         base_commit_sha = Shell.get_output(
             "git merge-base master HEAD", verbose=True
