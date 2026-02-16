@@ -18,7 +18,10 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 
+#include <filesystem>
+
 using namespace DB;
+namespace fs = std::filesystem;
 
 
 ContextMutablePtr context;
@@ -31,6 +34,9 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     static SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
+
+    /// Initialize temporary storage for processing queries
+    context->setTemporaryStoragePath((fs::temp_directory_path() / "clickhouse_fuzzer_tmp" / "").string(), 0);
 
     MainThreadStatus::getInstance();
 

@@ -9,6 +9,7 @@
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -137,6 +138,7 @@ namespace Setting
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
+    extern const SettingsBool ignore_format_null_for_explain;
 }
 
 namespace ErrorCodes
@@ -180,7 +182,7 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        if (query_with_output->isOutfileTruncate() && query_with_output->out_file)
         {
             if (fs::exists(tmp_file))
                 fs::remove(tmp_file);
@@ -192,7 +194,7 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        if (query_with_output->isOutfileTruncate() && query_with_output->out_file)
         {
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
@@ -719,9 +721,9 @@ try
                 auto flags = O_WRONLY | O_EXCL;
 
                 auto file_exists = fs::exists(out_file);
-                if (file_exists && query_with_output->is_outfile_append)
+                if (file_exists && query_with_output->isOutfileAppend())
                     flags |= O_APPEND;
-                else if (file_exists && query_with_output->is_outfile_truncate)
+                else if (file_exists && query_with_output->isOutfileTruncate())
                     flags |= O_TRUNC;
                 else
                     flags |= O_CREAT;
@@ -734,7 +736,7 @@ try
                     static_cast<int>(compression_level)
                 );
 
-                if (query_with_output->is_into_outfile_with_stdout)
+                if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
@@ -751,6 +753,10 @@ try
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
                 const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
                 current_format = id.name();
+
+                const bool ignore_null_for_explain = client_context->getSettingsRef()[Setting::ignore_format_null_for_explain];
+                if (boost::iequals(current_format, "Null") && parsed_query->as<ASTExplainQuery>() && ignore_null_for_explain)
+                    current_format = default_output_format;
             }
             else if (query_with_output->out_file)
             {
@@ -1209,7 +1215,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
 
-            if (query_with_output->is_outfile_truncate)
+            if (query_with_output->isOutfileTruncate())
             {
                 out_file_if_truncated = out_file;
                 out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
@@ -1248,14 +1254,14 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
             UInt64 compression_level = 3;
 
-            if (query_with_output->is_outfile_append && query_with_output->is_outfile_truncate)
+            if (query_with_output->isOutfileAppend() && query_with_output->isOutfileTruncate())
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot use INTO OUTFILE with APPEND and TRUNCATE simultaneously.");
             }
 
-            if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
+            if (query_with_output->isOutfileAppend() && compression_method != CompressionMethod::None)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -1278,7 +1284,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             if (fs::exists(out_file))
             {
-                if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
+                if (!query_with_output->isOutfileAppend() && !query_with_output->isOutfileTruncate())
                 {
                     throw Exception(
                         ErrorCodes::FILE_ALREADY_EXISTS,

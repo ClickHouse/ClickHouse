@@ -317,8 +317,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         allocation_traced = true;
     }
 
-    std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability > 0.0 && fault(thread_local_rng)))
+    double current_fault_probability = fault_probability.load(std::memory_order_relaxed);
+    std::bernoulli_distribution fault(current_fault_probability);
+    if (unlikely(current_fault_probability > 0.0 && fault(thread_local_rng)))
     {
         if (memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
         {

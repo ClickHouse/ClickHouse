@@ -91,7 +91,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     if (ast_create_query.as_table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
-        auto table_function_ast = ast_create_query.getChild(*ast_create_query.as_table_function);
+        auto table_function_ast = ast_create_query.as_table_function->ptr();
         auto table_function = factory.get(table_function_ast, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
@@ -161,7 +161,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    assert(!create->temporary);
+    assert(!create->isTemporary());
     create->database.reset();
 
     if (create->uuid != UUIDHelpers::Nil)
@@ -853,7 +853,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     /// setup create table query storage info.
     auto ast_engine = make_intrusive<ASTFunction>();
     ast_engine->name = storage->getName();
-    ast_engine->no_empty_args = true;
+    ast_engine->setNoEmptyArgs(true);
     auto ast_storage = make_intrusive<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 

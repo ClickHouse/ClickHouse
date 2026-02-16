@@ -95,6 +95,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"check_sample_column_is_correct", trueOrFalseSetting},
     {"cleanup_thread_preferred_points_per_iteration", rowsRangeSetting},
     {"cleanup_threads", threadSetting},
+    {"clone_replica_zookeeper_create_get_part_batch_size", highRangeSetting},
     {"columns_and_secondary_indices_sizes_lazy_calculation", trueOrFalseSetting},
     {"compact_parts_max_bytes_to_buffer", bytesRangeSetting},
     {"compact_parts_max_granules_to_buffer", highRangeSetting},
@@ -128,6 +129,16 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"disable_detach_partition_for_zero_copy_replication", trueOrFalseSetting},
     {"disable_fetch_partition_for_zero_copy_replication", trueOrFalseSetting},
     {"disable_freeze_partition_for_zero_copy_replication", trueOrFalseSetting},
+    {"distributed_index_analysis_min_parts_to_activate",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
+         {"0", "1"},
+         false)},
+    {"distributed_index_analysis_min_indexes_size_to_activate",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
+         {"0", "1"},
+         false)},
     {"dynamic_serialization_version",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -146,6 +157,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_the_endpoint_id_with_zookeeper_name_prefix", trueOrFalseSetting},
     {"enable_vertical_merge_algorithm", trueOrFalseSetting},
     {"enforce_index_structure_match_on_partition_manipulation", trueOrFalseSetting},
+    {"escape_index_filenames", trueOrFalseSetting},
     {"exclude_deleted_rows_for_part_size_in_merge", trueOrFalseSetting},
     {"exclude_materialize_skip_indexes_on_merge",
      CHSetting(
@@ -232,6 +244,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"merge_max_block_size", highRangeSetting},
     {"merge_max_block_size_bytes", bytesRangeSetting},
     {"merge_max_bytes_to_prewarm_cache", bytesRangeSetting},
+    {"merge_max_dynamic_subcolumns_in_compact_part",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
+         {"0", "1", "2", "8", "10", "100"},
+         false)},
     {"merge_max_dynamic_subcolumns_in_wide_part",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
@@ -530,6 +547,7 @@ std::unordered_map<String, CHSetting> backupSettings
        {"allow_s3_native_copy", trueOrFalseSettingNoOracle},
        {"async", trueOrFalseSettingNoOracle},
        {"azure_attempt_to_create_container", trueOrFalseSettingNoOracle},
+       {"backup_data_from_refreshable_materialized_view_targets", trueOrFalseSettingNoOracle},
        {"check_parts", trueOrFalseSettingNoOracle},
        {"check_projection_parts", trueOrFalseSettingNoOracle},
        {"decrypt_files_from_encrypted_disks", trueOrFalseSettingNoOracle},
@@ -718,8 +736,23 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 },
                 {"'keep'", "'delete'", "'move'", "'tag'"},
                 false)},
+           {"buckets",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
+                {"0", "1", "2", "8", "10", "100", "1000"},
+                false)},
+           {"bucketing_mode",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &)
+                {
+                    static const DB::Strings & choices = {"'path'", "'partition'"};
+                    return rg.pickRandomly(choices);
+                },
+                {"'path'", "'partition'"},
+                false)},
            {"commit_on_select", trueOrFalseSettingNoOracle},
            {"enable_hash_ring_filtering", trueOrFalseSetting},
+           {"enable_logging_to_queue_log", trueOrFalseSetting},
            {"list_objects_batch_size",
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
@@ -728,7 +761,22 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
            {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
            {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
            {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
+           {"metadata_cache_size_bytes", CHSetting(bytesRange, {}, false)},
+           {"metadata_cache_size_elements", CHSetting(rowsRange, {}, false)},
+           {"min_insert_block_size_rows_for_materialized_views", CHSetting(bytesRange, {}, false)},
+           {"min_insert_block_size_bytes_for_materialized_views", CHSetting(rowsRange, {}, false)},
            {"parallel_inserts", trueOrFalseSetting},
+           {"partitioning_mode",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &)
+                {
+                    static const DB::Strings & choices = {"'none'", "'hive'", "'regex'"};
+                    return rg.pickRandomly(choices);
+                },
+                {"'none'", "'hive'", "'regex'"},
+                false)},
+           {"processing_threads_num", threadSetting},
+           {"tracked_files_limit", CHSetting(rowsRange, {}, false)},
            {"use_hive_partitioning", trueOrFalseSetting},
            {"use_persistent_processing_nodes", trueOrFalseSettingNoOracle}};
     s3QueueTableSettings.insert(s3Settings.begin(), s3Settings.end());

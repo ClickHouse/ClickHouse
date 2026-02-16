@@ -551,6 +551,12 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
     NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
     {
+        /// Skip subcolumns of EPHEMERAL columns: they have no physical data
+        /// and no expression to compute them during SELECT.
+        auto it = columns.get<1>().find(col.name);
+        if (it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Ephemeral)
+            continue;
+
         auto range = subcolumns.get<1>().equal_range(col.name);
         if (range.first != range.second)
             subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
@@ -631,13 +637,14 @@ bool ColumnsDescription::hasNested(const String & column_name) const
     return range.first != range.second && range.first->name.length() > column_name.length();
 }
 
-bool ColumnsDescription::hasSubcolumn(const String & column_name) const
+bool ColumnsDescription::hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
-    if (subcolumns.get<0>().count(column_name))
-        return true;
+    auto jt = subcolumns.get<0>().find(column_name);
+    if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
+        return *true;
 
     /// Check for dynamic subcolumns
-    if (tryGetDynamicSubcolumn(column_name, GetColumnsOptions::All))
+    if (tryGetDynamicSubcolumn(column_name, kind))
         return true;
 
     return false;
@@ -808,7 +815,7 @@ bool ColumnsDescription::hasAlias(const String & column_name) const
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(column_name))
+    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(kind, column_name))
         return true;
 
     return false;

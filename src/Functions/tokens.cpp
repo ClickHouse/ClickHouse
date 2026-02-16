@@ -8,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/TokenizerFactory.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -26,8 +27,12 @@ constexpr size_t arg_tokenizer = 1;
 
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer = arguments.size() < 2 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenExtractor::getExternalName()
-                                                                                    : arguments[arg_tokenizer].column->getDataAt(0);
+    const auto tokenizer_str = arguments.size() < 2 || !arguments[arg_tokenizer].column
+        ? SplitByNonAlphaTokenExtractor::getExternalName()
+        : arguments[arg_tokenizer].column->getDataAt(0);
+
+    if (arguments.size() <= 2)
+        return TokenizerFactory::instance().get(tokenizer_str);
 
     FieldVector params;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -61,14 +66,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
         }
     }
 
-    static std::vector<String> allowed_tokenizers
-        = {NgramsTokenExtractor::getExternalName(),
-           SplitByNonAlphaTokenExtractor::getExternalName(),
-           SplitByStringTokenExtractor::getExternalName(),
-           ArrayTokenExtractor::getExternalName(),
-           SparseGramsTokenExtractor::getExternalName()};
-
-    return TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, function_name);
+    return TokenizerFactory::instance().get(tokenizer_str, params);
 }
 
 class ExecutableFunctionTokens : public IExecutableFunction
@@ -205,7 +203,7 @@ public:
 
         if (arguments.size() > 1)
         {
-            optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String");
+            optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
             validateFunctionArguments(name, {arguments[arg_value], arguments[arg_tokenizer]}, mandatory_args, optional_args);
 
             if (arguments.size() == 3)

@@ -73,24 +73,24 @@ REGISTER_FUNCTION(FunctionColorOKLABToSRGB)
         {
             "Convert OKLAB to sRGB (Float)",
             R"(
-                        SELECT colorOKLABToSRGB((0.4466, 0.0991, 0.44)) AS rgb
+SELECT colorOKLABToSRGB((0.4466, 0.0991, 0.44)) AS rgb;
                         )",
             R"(
-                           ┌─rgb──────────────────────┐
-                           │ (198.07056923258935,0,0) │
-                           └──────────────────────────┘
+┌─rgb──────────────────────┐
+│ (198.07056923258935,0,0) │
+└──────────────────────────┘
                         )"
             },
          {
             "Convert OKLAB to sRGB (UInt8)",
             R"(
-                        WITH colorOKLABToSRGB((0.7, 0.1, 0.54)) AS t
-                        SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
+WITH colorOKLABToSRGB((0.7, 0.1, 0.54)) AS t
+SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
                         )",
             R"(
-                        ┌─RGB──────────┐
-                        │ (205,0,0)    │
-                        └──────────────┘
+┌─RGB──────────┐
+│ (255,0,0)    │
+└──────────────┘
                         )"
             }
     };

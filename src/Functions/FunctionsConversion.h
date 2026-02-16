@@ -72,7 +72,6 @@
 #include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
 #include <Common/Concepts.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
@@ -2138,8 +2137,8 @@ struct ConvertImpl
                 && !(std::is_same_v<DataTypeTime64, FromDataType> || std::is_same_v<DataTypeTime64, ToDataType>)
                 && (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}/{} of first argument of function {}",
-                    named_from.column->getName(), typeid(FromDataType).name(), Name::name);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    named_from.column->getName(), Name::name);
             }
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
@@ -2840,6 +2839,12 @@ public:
 
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
+            if (isDecimal(arguments[0].type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}",
+                    arguments[0].type->getName(), getName());
+
             return std::make_shared<DataTypeInterval>(Name::kind);
         }
         else if constexpr (to_decimal)
@@ -4721,7 +4726,7 @@ private:
         const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
 
         return [nested_function, from_nested_type, to_nested_type](
-                ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
+                ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * /*nullable_source*/, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto & argument_column = arguments.front();
 
@@ -4738,7 +4743,10 @@ private:
                 ColumnsWithTypeAndName nested_columns{{ col_array->getDataPtr(), from_nested_type, "" }};
 
                 /// convert nested column
-                auto result_column = nested_function(nested_columns, to_nested_type, nullable_source, nested_columns.front().column->size());
+                /// Don't propagate nullable_source into array elements — the inner data column
+                /// has a different size (total elements vs. number of rows), which would cause
+                /// "ColumnNullable is not compatible with original" in createStringToEnumWrapper.
+                auto result_column = nested_function(nested_columns, to_nested_type, nullptr, nested_columns.front().column->size());
 
                 /// set converted nested column to result
                 return ColumnArray::create(result_column, col_array->getOffsetsPtr());
@@ -5046,7 +5054,7 @@ private:
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * /*nullable_source*/, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*col);
@@ -5057,7 +5065,7 @@ private:
             {
                 const auto & column_array = assert_cast<const ColumnArray &>(column_tuple.getColumn(i));
                 ColumnsWithTypeAndName element = {{column_array.getDataPtr(), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullptr, (element[0].column)->size());
                 offsets[i] = column_array.getOffsetsPtr();
             }
 
@@ -5074,7 +5082,7 @@ private:
     WrapperType createMapToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * /*nullable_source*/, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
             const auto & column_map = typeid_cast<const ColumnMap &>(*col);
@@ -5084,7 +5092,9 @@ private:
             for (size_t i = 0; i < 2; ++i)
             {
                 ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
+                /// Don't propagate nullable_source into map key/value elements — the inner data
+                /// columns have a different size (total key-value pairs vs. number of rows).
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullptr, (element[0].column)->size());
             }
 
             return ColumnMap::create(converted_columns[0], converted_columns[1], column_map.getNestedColumn().getOffsetsPtr());
@@ -5095,7 +5105,7 @@ private:
     WrapperType createArrayToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * /*nullable_source*/, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
             const auto & column_array = typeid_cast<const ColumnArray &>(*col);
@@ -5105,7 +5115,7 @@ private:
             for (size_t i = 0; i < 2; ++i)
             {
                 ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullptr, (element[0].column)->size());
             }
 
             return ColumnMap::create(converted_columns[0], converted_columns[1], column_array.getOffsetsPtr());
@@ -5218,7 +5228,11 @@ private:
             };
         }
 
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String/Map/Object/Tuple/JSON. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Cast to {} can be performed only from String/Map/Object/Tuple/JSON. Got: {}",
+            to_object->getSchemaFormatString(),
+            from_type->getName());
     }
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const

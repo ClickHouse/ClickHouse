@@ -11,6 +11,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/ColumnsDescription.h>
@@ -227,6 +228,8 @@ TTLDescription TTLDescription::getTTLFromAST(
         result.expression_ast = ttl_element->children.front()->clone();
     else /// It's columns TTL without any additions, just copy it
         result.expression_ast = definition_ast->clone();
+
+    checkExpressionDoesntContainSubqueries(*result.expression_ast);
 
     auto ttl_ast = result.expression_ast->clone();
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;

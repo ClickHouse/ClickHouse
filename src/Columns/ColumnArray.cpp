@@ -1351,7 +1351,7 @@ ColumnPtr ColumnArray::compress(bool force_compression) const
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
-    if (replicate_offsets.empty())
+    if (replicate_offsets.empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
 
     if (typeid_cast<const ColumnUInt8 *>(data.get()))

@@ -3,6 +3,7 @@ import argparse
 import io
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -21,9 +22,21 @@ class DiffToSymbols:
         ).is_file(), f"clickhouse binary not found at {self.clickhouse_path}"
 
     @staticmethod
-    def fetch(url: str) -> bytes:
-        with urllib.request.urlopen(url) as resp:
-            return resp.read()
+    def fetch(url: str, retries: int = 3, delay: float = 5.0) -> bytes:
+        for attempt in range(retries):
+            try:
+                with urllib.request.urlopen(url) as resp:
+                    return resp.read()
+            except urllib.error.HTTPError as e:
+                if e.code >= 500 and attempt < retries - 1:
+                    print(
+                        f"HTTP {e.code} fetching {url}, retrying in {delay}s (attempt {attempt + 1}/{retries})",
+                        file=sys.stderr,
+                    )
+                    time.sleep(delay)
+                    delay *= 2
+                else:
+                    raise
 
     @staticmethod
     def parse_diff_to_line_numbers(diff_bytes: bytes) -> list:

@@ -358,7 +358,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
         ostr << action;
         ostr << " ";
-        ostr << (temporary ? "TEMPORARY " : "")
+        ostr << (isTemporary() ? "TEMPORARY " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
            ;
@@ -375,9 +375,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));
 
-        assert(attach || !attach_from_path);
-        if (attach_from_path)
-            ostr << " FROM " << quoteString(*attach_from_path);
+        assert(attach || !has_attach_from_path);
+        if (has_attach_from_path)
+            ostr << " FROM " << quoteString(attach_from_path);
 
         if (attach_as_replicated.has_value())
         {
@@ -572,19 +572,17 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         sql_security->format(ostr, settings, state, frame);
     }
 
-    if (select)
-    {
-        ostr << settings.nl_or_ws;
-        ostr << "AS "
-                      << (comment ? "(" : "");
-        select->format(ostr, settings, state, frame);
-        ostr << (comment ? ")" : "");
-    }
-
     if (comment)
     {
         ostr << settings.nl_or_ws << "COMMENT ";
         comment->format(ostr, settings, state, frame);
+    }
+
+    if (select)
+    {
+        ostr << settings.nl_or_ws;
+        ostr << "AS ";
+        select->format(ostr, settings, state, frame);
     }
 }
 

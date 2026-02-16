@@ -147,6 +147,7 @@ struct Settings
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
     std::vector<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
     std::vector<std::string_view> getChangedAndObsoleteNames() const;
     std::vector<std::string_view> getUnchangedNames() const;
 

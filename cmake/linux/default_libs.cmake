@@ -19,9 +19,33 @@ if (NOT EXISTS "${BUILTINS_LIBRARY}")
     include (cmake/build_clang_builtin.cmake)
     build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
 elseif (SANITIZE STREQUAL undefined)
-    # Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
+    # UBSan support library for C++ is in ubsan_standalone_cxx.a, so we have to include both.
     string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
 endif ()
+
+option (ENABLE_LLVM_LIBC_MATH "Use math from llvm-libc instead of glibc" ON)
+if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
+    set(ENABLE_LLVM_LIBC_MATH OFF)
+endif()
+
+if (ENABLE_LLVM_LIBC_MATH)
+    link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
+
+    if (ARCH_AMD64)
+        if (NO_SSE3_OR_HIGHER)
+            # Compat mode: single library, no dispatch
+            target_link_libraries(global-libs INTERFACE libllvmlibc)
+            set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+        else()
+            # Dispatch mode: v2/v3 variants with runtime CPU detection
+            target_link_libraries(global-libs INTERFACE llvmlibc_dispatch libllvmlibc_x86_64_v2 libllvmlibc_x86_64_v3)
+            set (DEFAULT_LIBS "${DEFAULT_LIBS} -lllvmlibc_dispatch -llibllvmlibc_x86_64_v2 -llibllvmlibc_x86_64_v3")
+        endif()
+    elseif (ARCH_AARCH64)
+        target_link_libraries(global-libs INTERFACE libllvmlibc)
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+    endif()
+endif()
 
 if (OS_ANDROID)
     # pthread and rt are included in libc

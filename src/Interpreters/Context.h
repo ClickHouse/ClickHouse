@@ -10,7 +10,6 @@
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
-#include <Core/ParallelReplicasMode.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -19,15 +18,12 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/ColumnsDescription.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"
 
@@ -42,6 +38,12 @@ namespace Poco::Net
 class IPAddress;
 class SocketAddress;
 }
+
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -63,6 +65,7 @@ class ASTSelectQuery;
 
 class SystemLogs;
 
+class ColumnsDescription;
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
@@ -293,6 +296,10 @@ struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
+class QueryMetadataCache;
+using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
+using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -367,7 +374,7 @@ protected:
     {
         StorageID table = StorageID::createEmpty();
         std::optional<Names> column_names;
-        std::optional<ColumnsDescription> columns_description;
+        std::shared_ptr<ColumnsDescription> columns_description;
     };
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
@@ -663,6 +670,10 @@ private:
 
     Context();
     Context(const Context &);
+
+#if USE_NURAFT
+    void setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const;
+#endif
 
 public:
     /// Create initial Context with ContextShared and etc.
@@ -979,7 +990,7 @@ public:
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
-    /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
+    /// Overload for the analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
     StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
@@ -994,6 +1005,9 @@ public:
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
+    /// Set current_database without validating that database exists.
+    /// Use during bootstrap/restore scenarios where database may not be loaded yet.
+    void setCurrentDatabaseUnchecked(const String & name);
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
@@ -1004,11 +1018,11 @@ public:
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
-    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description.has_value(); }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::optional<ColumnsDescription> column_description = std::nullopt);
+    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description != nullptr; }
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::shared_ptr<ColumnsDescription> column_description = nullptr);
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
-    const std::optional<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
+    const std::shared_ptr<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -1259,7 +1273,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
-    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);

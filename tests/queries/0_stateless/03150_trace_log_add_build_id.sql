@@ -7,4 +7,5 @@ SELECT sleep(1);
 SYSTEM FLUSH LOGS trace_log;
 
 SELECT COUNT(*) > 1 FROM system.trace_log WHERE build_id IS NOT NULL;
+SELECT countIf(arrayExists(x -> x LIKE '%:%:%', lines)) > 1 FROM system.trace_log;
 

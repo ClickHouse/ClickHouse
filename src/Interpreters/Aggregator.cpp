@@ -433,15 +433,16 @@ ColumnRawPtrs Aggregator::Params::makeRawKeyColumns(const Block & block) const
 
     for (size_t i = 0; i < keys_size; ++i)
     {
+        const auto & column = block.safeGetByPosition(i);
 #ifdef DEBUG_OR_SANITIZER_BUILD
-        if (block.getPositionByName(keys[i]) != i)
+        if (column.name != keys[i])
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Wrong key in block [{}] at position {}, expected keys: [{}]",
                 block.dumpStructure(), i, fmt::join(keys, ", "));
         }
 #endif
-        key_columns[i] = block.safeGetByPosition(i).column.get();
+        key_columns[i] = column.column.get();
     }
 
     return key_columns;
@@ -2748,7 +2749,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
     std::atomic<UInt32> next_bucket_to_merge = 0;
     std::vector<BlocksList> res(max_threads);
 
-    auto converter = [&](size_t thread_id)
+    auto converter = [this, &next_bucket_to_merge, &method, &data_variants, &res, final](size_t thread_id)
     {
         while (true)
         {
@@ -2772,6 +2773,9 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
             if (use_thread_pool)
+                /// Passing converter as a reference is fine, it will outlive runner. Also it's arguments will outlive it too
+                /// Even if it didn't we capture all exceptions and wait for all tasks, so all of them will be deleted before arguments
+                /// will be destroyed
                 runner.enqueueAndKeepTrack([&converter, thread_id]() { return converter(thread_id); }, Priority{});
             else
                 converter(thread_id);
@@ -3750,6 +3754,8 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 {
                     result.aggregates_pools.push_back(std::make_shared<Arena>());
                     Arena * aggregates_pool = result.aggregates_pools.back().get();
+                    /// merge_bucket is passed by reference and it also has references as arguments
+                    /// This is fine as runner has a narrower scope than those references and its destructor will be called first
                     runner.enqueueAndKeepTrack([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
                 }
             }

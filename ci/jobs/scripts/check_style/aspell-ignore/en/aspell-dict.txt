@@ -1,5 +1,4 @@
-personal_ws-1.1 en 3453
-aarch
+personal_ws-1.1 en 3534 
 AArch
 ACLs
 ADLS
@@ -261,6 +260,7 @@ DataLakeCatalog
 DataLens
 DataPacket
 DataPup
+DataStoria
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -2819,6 +2819,7 @@ pushdown
 pwrite
 py
 qbit
+qrencode
 qryn
 quantile
 quantileBFloat
@@ -3384,6 +3385,7 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+totp
 tpcds
 tpch
 transactio
@@ -3587,3 +3589,6 @@ readWKT
 readWKB
 WKT
 WKB
+lifecycle
+unsampled
+queueing

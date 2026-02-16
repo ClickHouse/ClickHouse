@@ -47,9 +47,24 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
     {
-        return removeNullable(arguments[0]);
+        /// assumeNotNull() is identity for non-Nullable values, so it preserves ordering and thus monotonic.
+        /// For Nullable, treat it as monotonic only when the analyzed range is guaranteed to not contain
+        /// NULLs. NULLs always represented as POSITIVE_INFINITY and they will always be at the end of ordering.
+        /// So, we do not need to check left.isNull().
+        bool can_contain_null = canContainNull(type);
+        if (can_contain_null && right.isNull())
+            return {};
+
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return removeNullable(arguments[0].type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override

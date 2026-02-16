@@ -139,11 +139,14 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     if (to_table_engine && to_table_engine->primary_key)
-        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->getChild(*to_table_engine->primary_key),
+        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
+    /// Use the database where the materialized view is created to resolve nested views
+    ContextMutablePtr mv_db_context = Context::createCopy(local_context);
+    mv_db_context->setCurrentDatabase(table_id_.database_name);
 
-    auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, local_context);
+    auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, mv_db_context);
     if (select.select_table_id)
     {
         auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
@@ -290,18 +293,18 @@ StorageMaterializedView::StorageMaterializedView(
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
-                new_columns_list->set(new_columns_list->indices, query.columns_list->getChild(*query.columns_list->indices));
+                new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
             if (query.columns_list->constraints)
-                new_columns_list->set(new_columns_list->constraints, query.columns_list->getChild(*query.columns_list->constraints));
+                new_columns_list->set(new_columns_list->constraints, query.columns_list->constraints->ptr());
             if (query.columns_list->primary_key)
-                new_columns_list->set(new_columns_list->primary_key, query.columns_list->getChild(*query.columns_list->primary_key));
+                new_columns_list->set(new_columns_list->primary_key, query.columns_list->primary_key->ptr());
             if (query.columns_list->primary_key_from_columns)
-                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->getChild(*query.columns_list->primary_key_from_columns));
+                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->primary_key_from_columns->ptr());
         }
         if (storage_features.supports_projections)
         {
             if (query.columns_list->projections)
-                new_columns_list->set(new_columns_list->projections, query.columns_list->getChild(*query.columns_list->projections));
+                new_columns_list->set(new_columns_list->projections, query.columns_list->projections->ptr());
         }
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
@@ -536,6 +539,8 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
+    /// Use the database where the materialized view is created to run the select query in the refresh task
+    refresh_context->setCurrentDatabase(getStorageID().database_name);
     return refresh_context;
 }
 
@@ -661,7 +666,12 @@ void StorageMaterializedView::alter(
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, local_context);
+
+    /// Use the database where the materialized view is created to resolve nested views
+    ContextMutablePtr mv_db_context = Context::createCopy(local_context);
+    mv_db_context->setCurrentDatabase(table_id.database_name);
+
+    params.apply(new_metadata, mv_db_context);
 
     const auto & new_select = new_metadata.select;
     new_metadata.setSelectQuery(new_select);

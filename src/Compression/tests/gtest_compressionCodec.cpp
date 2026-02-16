@@ -386,7 +386,8 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
 
     for (auto i = Begin; i < End; i += direction)
     {
-        const T v = static_cast<T>(gen(i));
+        /// Pass index as T so generators using decltype(i) produce values of the target type.
+        const T v = static_cast<T>(gen(static_cast<T>(i)));
 
         unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
@@ -748,7 +749,7 @@ MonotonicGenerator() -> MonotonicGenerator<Int32>;
 auto RandomishGenerator = [](auto i)
 {
     using T = decltype(i);
-    double sin_value = sin(static_cast<double>(i * i)) * i;
+    double sin_value = sin(static_cast<double>(i * i)) * static_cast<double>(i);
     if (sin_value < std::numeric_limits<T>::lowest() || sin_value > static_cast<double>(std::numeric_limits<T>::max()))
         return T{};
     return T(sin_value);

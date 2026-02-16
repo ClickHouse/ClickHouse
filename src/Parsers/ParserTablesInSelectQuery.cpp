@@ -30,6 +30,19 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 .parse(pos, res->database_and_table_name, expected))
         return false;
 
+    /// parse column aliases `AS alias(col1, col2, ...)`, check for (col1, col2, ...)
+    if (pos->type == TokenType::OpeningRoundBracket)
+    {
+        ++pos;
+        ParserAliasesExpressionList column_aliases_parser;
+        if (!column_aliases_parser.parse(pos, res->column_aliases, expected))
+            return false;
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+    }
+
     /// FINAL
     if (ParserKeyword(Keyword::FINAL).ignore(pos, expected))
         res->final = true;
@@ -60,6 +73,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)
         res->children.emplace_back(res->sample_offset);
+    if (res->column_aliases)
+        res->children.emplace_back(res->column_aliases);
 
     assert(res->database_and_table_name || res->table_function || res->subquery);
 
