@@ -2,13 +2,17 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
+#include "Common/typeid_cast.h"
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/iota.h>
+#include "Columns/ColumnFSST.h"
+#include "Columns/ColumnString.h"
+#include "Columns/IColumn_fwd.h"
 
 #include <algorithm>
 #include <bit>
@@ -19,12 +23,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+extern const int LOGICAL_ERROR;
+extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnSparse::ColumnSparse(MutableColumnPtr && values_)
-    : values(std::move(values_)), _size(0)
+    : values(std::move(values_))
+    , _size(0)
 {
     if (!values->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not empty values passed to ColumnSparse, but no offsets passed");
@@ -34,7 +39,9 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_)
 }
 
 ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offsets_, size_t size_)
-    : values(std::move(values_)), offsets(std::move(offsets_)), _size(size_)
+    : values(std::move(values_))
+    , offsets(std::move(offsets_))
+    , _size(size_)
 {
     const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(offsets.get());
 
@@ -43,17 +50,22 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
 
     /// 'values' should contain one extra element: default value at 0 position.
     if (offsets->size() + 1 != values->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Values size ({}) is inconsistent with offsets size ({})", values->size(), offsets->size());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Values size ({}) is inconsistent with offsets size ({})", values->size(), offsets->size());
 
     if (_size < offsets->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, offsets->size());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Size of sparse column ({}) cannot be lower than number of non-default values ({})",
+            _size,
+            offsets->size());
 
     if (!offsets_concrete->empty() && _size <= offsets_concrete->getData().back())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
             "Size of sparse column ({}) should be greater than last position of non-default value ({})",
-                _size, offsets_concrete->getData().back());
+            _size,
+            offsets_concrete->getData().back());
 
 #ifndef NDEBUG
     const auto & offsets_data = getOffsetsData();
@@ -138,7 +150,7 @@ std::string_view ColumnSparse::getDataAt(size_t n) const
 
 ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
 {
-    return values->createWithOffsets(getOffsetsData(), *createColumnConst(values, 0), _size, /*shift=*/ 1);
+    return values->createWithOffsets(getOffsetsData(), *createColumnConst(values, 0), _size, /*shift=*/1);
 }
 
 void ColumnSparse::insertSingleValue(const Inserter & inserter)
@@ -159,7 +171,8 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+std::string_view
+ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
@@ -258,7 +271,7 @@ bool ColumnSparse::tryInsert(const Field & x)
     if (!values->tryInsert(x))
         return false;
 
-    insertSingleValue([&](IColumn &) {}); /// Value already inserted, use no-op inserter.
+    insertSingleValue([&](IColumn &) { }); /// Value already inserted, use no-op inserter.
     return true;
 }
 
@@ -344,7 +357,8 @@ void ColumnSparse::rollback(const ColumnCheckpoint & checkpoint)
 ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 {
     if (_size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
 
     if (offsets->empty())
     {
@@ -395,7 +409,8 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 void ColumnSparse::filter(const Filter & filt)
 {
     if (_size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
 
     if (offsets->empty())
     {
@@ -501,8 +516,7 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     /// it's better to save indexes of values in O(size)
     /// and avoid binary search for obtaining every index.
     /// 3 is just a guess for overhead on copying indexes.
-    bool execute_linear =
-        limit == _size || limit * std::bit_width(offsets->size()) > _size * 3;
+    bool execute_linear = limit == _size || limit * std::bit_width(offsets->size()) > _size * 3;
 
     if (execute_linear)
     {
@@ -549,9 +563,13 @@ int ColumnSparse::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null
     return values->compareAt(getValueIndex(n), m, rhs_, null_direction_hint);
 }
 
-void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                    int direction, int nan_direction_hint) const
+void ColumnSparse::compareColumn(
+    const IColumn & rhs,
+    size_t rhs_row_num,
+    PaddedPODArray<UInt64> * row_indexes,
+    PaddedPODArray<Int8> & compare_results,
+    int direction,
+    int nan_direction_hint) const
 {
     if (row_indexes || !typeid_cast<const ColumnSparse *>(&rhs))
     {
@@ -565,9 +583,7 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
         const auto & rhs_sparse = assert_cast<const ColumnSparse &>(rhs);
         PaddedPODArray<Int8> nested_result;
         values->compareColumn(
-            rhs_sparse.getValuesColumn(),
-            rhs_sparse.getValueIndex(rhs_row_num),
-            nullptr, nested_result, direction, nan_direction_hint);
+            rhs_sparse.getValuesColumn(), rhs_sparse.getValueIndex(rhs_row_num), nullptr, nested_result, direction, nan_direction_hint);
 
         const auto & offsets_data = getOffsetsData();
         compare_results.resize(size());
@@ -580,7 +596,8 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const
 {
     if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs))
-        return values->compareAtWithCollation(getValueIndex(n), rhs_sparse->getValueIndex(m), rhs_sparse->getValuesColumn(), null_direction_hint, collator);
+        return values->compareAtWithCollation(
+            getValueIndex(n), rhs_sparse->getValueIndex(m), rhs_sparse->getValuesColumn(), null_direction_hint, collator);
 
     return values->compareAtWithCollation(getValueIndex(n), m, rhs, null_direction_hint, collator);
 }
@@ -604,8 +621,13 @@ bool ColumnSparse::hasEqualValues() const
     return true;
 }
 
-void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
+void ColumnSparse::getPermutationImpl(
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int null_direction_hint,
+    Permutation & res,
+    const Collator * collator) const
 {
     if (_size == 0)
         return;
@@ -664,8 +686,12 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
     assert(row == limit);
 }
 
-void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                size_t limit, int null_direction_hint, Permutation & res) const
+void ColumnSparse::getPermutation(
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int null_direction_hint,
+    Permutation & res) const
 {
     if (unlikely(stability == IColumn::PermutationSortStability::Stable))
     {
@@ -677,22 +703,37 @@ void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, I
     getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
 }
 
-void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
+void ColumnSparse::updatePermutation(
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int null_direction_hint,
+    Permutation & res,
+    EqualRanges & equal_ranges) const
 {
     auto this_full = convertToFullColumnIfSparse();
     this_full->updatePermutation(direction, stability, limit, null_direction_hint, res, equal_ranges);
 }
 
-void ColumnSparse::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                size_t limit, int null_direction_hint, Permutation & res) const
+void ColumnSparse::getPermutationWithCollation(
+    const Collator & collator,
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int null_direction_hint,
+    Permutation & res) const
 {
     getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
 }
 
 void ColumnSparse::updatePermutationWithCollation(
-    const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const
+    const Collator & collator,
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int null_direction_hint,
+    Permutation & res,
+    EqualRanges & equal_ranges) const
 {
     auto this_full = convertToFullColumnIfSparse();
     this_full->updatePermutationWithCollation(collator, direction, stability, limit, null_direction_hint, res, equal_ranges);
@@ -865,11 +906,11 @@ ColumnPtr ColumnSparse::compress(bool force_compression) const
 
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 
-    return ColumnCompressed::create(size(), byte_size,
+    return ColumnCompressed::create(
+        size(),
+        byte_size,
         [my_values_compressed = std::move(values_compressed), my_offsets_compressed = std::move(offsets_compressed), size = size()]
-        {
-            return ColumnSparse::create(my_values_compressed->decompress(), my_offsets_compressed->decompress(), size);
-        });
+        { return ColumnSparse::create(my_values_compressed->decompress(), my_offsets_compressed->decompress(), size); });
 }
 
 bool ColumnSparse::structureEquals(const IColumn & rhs) const
@@ -974,13 +1015,44 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     return column->convertToFullColumnIfSparse();
 }
 
+ColumnPtr recursiveRemoveFSST(const ColumnPtr & column)
+{
+    if (!column)
+        return column;
+
+    if (const auto * column_fsst = typeid_cast<const ColumnFSST*>(column.get())) {
+        auto column_string = ColumnString::create();
+        for(size_t ind = 0; ind < column_fsst->size(); ind++) {
+            column_string->insert((*column_fsst)[ind]);
+        }
+        return column_string;
+    }
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        auto columns = column_tuple->getColumns();
+        if (columns.empty())
+            return column;
+
+        for (auto & element : columns)
+            element = recursiveRemoveFSST(element);
+
+        return ColumnTuple::create(columns);
+    }
+
+    return column;
+}
+
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
 {
     if (!column)
         return column;
 
     /// We can have only Replicated(Sparse) but not Sparse(Replicated).
-    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
+    auto sparse_removed = recursiveRemoveSparse(column->convertToFullColumnIfReplicated()); 
+    auto fsst_removed = recursiveRemoveFSST(sparse_removed);
+
+    return fsst_removed;
 }
 
 }

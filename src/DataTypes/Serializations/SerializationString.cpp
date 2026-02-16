@@ -353,29 +353,15 @@ void SerializationString::deserializeBinaryBulkWithoutSizeStream(
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
 }
 
-static inline std::string_view getStringData(const IColumn & column, size_t row_num, String & fallback_buffer)
-{
-    if (const auto * col_string = typeid_cast<const ColumnString *>(&column))
-        return col_string->getDataAt(row_num);
-
-    /// Fallback: decompress first
-    Field field;
-    column.get(row_num, field);
-    fallback_buffer = std::move(field.safeGet<String>());
-    return fallback_buffer;
-}
-
 void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    String buf;
-    writeString(getStringData(column, row_num, buf), ostr);
+    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
 void SerializationString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    String buf;
-    writeEscapedString(getStringData(column, row_num, buf), ostr);
+    writeEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -461,11 +447,10 @@ bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer
 void SerializationString::serializeTextQuoted(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    String buf;
     if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(getStringData(column, row_num, buf), ostr);
+        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
     else
-        writeQuotedString(getStringData(column, row_num, buf), ostr);
+        writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -483,8 +468,7 @@ bool SerializationString::tryDeserializeTextQuoted(IColumn & column, ReadBuffer 
 void SerializationString::serializeTextJSON(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    String buf;
-    writeJSONString(getStringData(column, row_num, buf), ostr, settings);
+    writeJSONString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
 }
 
 
@@ -581,15 +565,13 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 
 void SerializationString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    String buf;
-    writeXMLStringForTextElement(getStringData(column, row_num, buf), ostr);
+    writeXMLStringForTextElement(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
 void SerializationString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    String buf;
-    writeCSVString<>(getStringData(column, row_num, buf), ostr);
+    writeCSVString<>(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -612,9 +594,10 @@ bool SerializationString::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
 void SerializationString::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    String buf;
     if (settings.markdown.escape_special_characters)
-        writeMarkdownEscapedString(getStringData(column, row_num, buf), ostr);
+    {
+        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    }
     else
         serializeTextEscaped(column, row_num, ostr, settings);
 }

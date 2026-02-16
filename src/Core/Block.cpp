@@ -12,6 +12,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/sort.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
