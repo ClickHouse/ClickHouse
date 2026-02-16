@@ -215,17 +215,37 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 
 void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    std::erase_if(
-        changes,
-        [&](SettingChange & change) -> bool
+    /// When `compatibility` is present, keep all settings (even if they match current values). This ensures they're applied
+    /// and marked as `changed`, preventing `compatibility` from overriding explicit user values with its own defaults.
+    bool has_compatibility = false;
+    for (const auto & change : changes)
+    {
+        if (change.name == "compatibility")
         {
-            return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
-        });
+            has_compatibility = true;
+            break;
+        }
+    }
+
+    if (has_compatibility)
+    {
+        for (auto & change : changes)
+            checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
+    }
+    else
+    {
+        std::erase_if(
+            changes,
+            [&](SettingChange & change) -> bool
+            {
+                return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
+            });
+    }
 }
 
-void SettingsConstraints::check(const MergeTreeSettings & /* current_settings */, const SettingChange & change) const
+void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
 {
-    checkImpl(const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
+    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const
@@ -245,8 +265,15 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 }
 
 template <typename SettingsT>
-bool getNewValueToCheck(SettingChange & change, Field & new_value, bool throw_on_failure)
+bool getNewValueToCheck(const SettingsT & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
 {
+    Field current_value;
+    bool has_current_value = current_settings.tryGet(change.name, current_value);
+
+    /// Setting isn't checked if value has not changed.
+    if (has_current_value && change.value == current_value)
+        return false;
+
     if (throw_on_failure)
         new_value = SettingsT::castValueUtil(change.name, change.value);
     else
@@ -260,6 +287,10 @@ bool getNewValueToCheck(SettingChange & change, Field & new_value, bool throw_on
             return false;
         }
     }
+
+    /// Setting isn't checked if value has not changed.
+    if (has_current_value && new_value == current_value)
+        return false;
 
     return true;
 }
@@ -296,16 +327,16 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         return false;
 
     Field new_value;
-    if (!getNewValueToCheck<Settings>(change, new_value, reaction == THROW_ON_VIOLATION))
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
 }
 
-bool SettingsConstraints::checkImpl(SettingChange & change, ReactionOnViolation reaction) const
+bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
     Field new_value;
-    if (!getNewValueToCheck<MergeTreeSettings>(change, new_value, reaction == THROW_ON_VIOLATION))
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
     return getMergeTreeChecker(change.name).check(change, new_value, reaction, SettingSource::QUERY);
 }

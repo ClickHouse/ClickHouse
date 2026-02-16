@@ -161,7 +161,7 @@ private:
                   ReactionOnViolation reaction,
                   SettingSource source) const;
 
-    bool checkImpl(SettingChange & change, ReactionOnViolation reaction) const;
+    bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
     Checker getMergeTreeChecker(std::string_view short_name) const;
