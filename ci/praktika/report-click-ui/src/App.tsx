@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClickUIProvider, Container, Text, Switch, Table, Link, Popover, Button, Flyout } from '@clickhouse/click-ui'
+import { ClickUIProvider, Container, Text, Switch, Table, Link, Popover, Button, Flyout, Badge } from '@clickhouse/click-ui'
 import './App.css'
 
 interface TestResult {
@@ -10,6 +10,11 @@ interface TestResult {
   info?: string
   links?: string[]
   results?: TestResult[]
+  ext?: {
+    labels?: string[]
+    hlabels?: (string | [string, string] | { text?: string; label?: string; href?: string; url?: string })[]
+    [key: string]: any
+  }
 }
 
 interface PRResult {
@@ -200,7 +205,7 @@ function App() {
           url = `${baseUrl}/${pathType}/${refValue}/${shaParam}/${fileName}`
         } else {
           // Default URL for testing
-          url = 'https://s3.amazonaws.com/clickhouse-test-reports/PRs/96792/dd4e76d16912546d3cdbcfb8c14b076b6ad28ee6/result_pr.json'
+          url = 'https://s3.amazonaws.com/clickhouse-test-reports/PRs/97117/cddf1c486779d27a4c1e39803c2b9e9a616f8df2/result_pr.json'
         }
 
         // In development, use proxy to avoid CORS issues
@@ -287,6 +292,67 @@ function App() {
       <span style={{ color: color, fontWeight: 'bold' }}>
         {status}
       </span>
+    )
+  }
+
+  const stringToColor = (str: string, dark = false): string => {
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    const hue = Math.abs(hash % 360)
+    const saturation = dark ? 90 : 60
+    const lightness = dark ? 45 : 60
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`
+  }
+
+  const renderLabels = (labels?: string[], hlabels?: (string | [string, string] | { text?: string; label?: string; href?: string; url?: string })[]) => {
+    if (!labels && !hlabels) return null
+
+    return (
+      <>
+        {Array.isArray(labels) && labels.map((labelStr, index) => (
+          <span key={`label-${index}`} style={{ marginLeft: '6px' }}>
+            <Badge text={labelStr} state="neutral" size="sm" />
+          </span>
+        ))}
+        {Array.isArray(hlabels) && hlabels.map((item, index) => {
+          let text: string, href: string
+          if (Array.isArray(item)) {
+            [text, href] = item
+          } else if (item && typeof item === 'object') {
+            text = item.text || item.label || ''
+            href = item.href || item.url || ''
+          } else if (typeof item === 'string') {
+            text = item
+            href = ''
+          } else {
+            return null
+          }
+
+          if (!text) return null
+
+          if (href) {
+            return (
+              <a
+                key={`hlabel-${index}`}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ marginLeft: '6px', textDecoration: 'none' }}
+              >
+                <Badge text={text} state="info" size="sm" />
+              </a>
+            )
+          } else {
+            return (
+              <span key={`hlabel-${index}`} style={{ marginLeft: '6px' }}>
+                <Badge text={text} state="neutral" size="sm" />
+              </span>
+            )
+          }
+        })}
+      </>
     )
   }
 
@@ -449,13 +515,21 @@ function App() {
                 { label: 'Status' },
                 { label: 'Name' },
               ]}
-              rows={result.results.map((subresult, subindex) => ({
-                id: `sub-${subindex}`,
-                items: [
-                  { label: wrapWithPopover(getStatusBadge(subresult.status), subresult) },
-                  { label: wrapWithPopover(subresult.name, subresult) },
-                ],
-              }))}
+              rows={result.results.map((subresult, subindex) => {
+                const subNameWithLabels = (
+                  <>
+                    {subresult.name}
+                    {renderLabels(subresult.ext?.labels, subresult.ext?.hlabels)}
+                  </>
+                )
+                return {
+                  id: `sub-${subindex}`,
+                  items: [
+                    { label: wrapWithPopover(getStatusBadge(subresult.status), subresult) },
+                    { label: wrapWithPopover(subNameWithLabels, subresult) },
+                  ],
+                }
+              })}
               size="sm"
             />
           </Container>
@@ -512,11 +586,19 @@ function App() {
 
     const navigateUrl = shouldBeClickable ? buildUrlWithNewName(result.name) : undefined
 
+    // Create name with labels
+    const nameWithLabels = (
+      <>
+        {result.name}
+        {renderLabels(result.ext?.labels, result.ext?.hlabels)}
+      </>
+    )
+
     return {
       id: index,
       items: [
         { label: wrapWithPopover(getStatusBadge(result.status), result, navigateUrl), align: 'center' as const },
-        { label: wrapWithPopover(result.name, result, navigateUrl), align: 'left' as const },
+        { label: wrapWithPopover(nameWithLabels, result, navigateUrl), align: 'left' as const },
         { label: wrapWithPopover(formatDuration(result.duration), result, navigateUrl), align: 'center' as const },
         { label: wrapWithPopover(formatTime(result.start_time), result, navigateUrl), align: 'center' as const },
       ],
