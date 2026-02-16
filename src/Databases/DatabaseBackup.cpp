@@ -121,6 +121,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     engine->arguments = std::move(args);
+    engine->clearEmptyArgs();
 
     /// Set new engine for the old query
     create_query->storage->set(create_query->storage->engine, engine->clone());
