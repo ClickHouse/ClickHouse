@@ -14,8 +14,8 @@ from ci.jobs.scripts.integration_tests_configs import (
     get_optimal_test_batch,
 )
 from ci.praktika.info import Info
-from ci.praktika.result import Result, ResultTranslator
-from ci.praktika.utils import ContextManager, Shell, Utils
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"

@@ -4428,6 +4428,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                             if (!is_single_source)
                                 return nullptr;
 
+                            /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
+                            /// and left_table_expression is a JOIN node, we must not assign the JOIN as the column source.
+                            /// That would create a ColumnNode with a JOIN source and non-ListNode expression,
+                            /// which CollectSourceColumnsVisitor doesn't expect (it assumes ListNode for JOIN USING).
+                            if (!expression_source && left_table_expression->getNodeType() == QueryTreeNodeType::JOIN)
+                                return nullptr;
+
                             /// Create ColumnNode with expression from parent projection
                             return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(),
                                 expression_source ? expression_source : left_table_expression);
