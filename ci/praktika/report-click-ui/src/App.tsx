@@ -492,41 +492,65 @@ function App() {
     <ClickUIProvider theme={theme}>
       <Container orientation='vertical' gap='none'>
         {/* Header Bar */}
-        <Container
-          orientation='horizontal'
-          gap='md'
-          padding='md'
+        <div
           style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: theme === 'dark' ? '#1a1a1a' : '#ffffff',
             borderBottom: '1px solid',
             borderColor: theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-            minHeight: '64px',
+            height: '56px',
+            display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            padding: '0 16px',
+            zIndex: 1000,
+            gap: '16px'
           }}
         >
-          {/* Breadcrumb Navigation */}
-          <Container orientation='horizontal' gap='xs' style={{ alignItems: 'center' }}>
+          {/* Navigation Container - Left Side */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flex: 1,
+              minWidth: 0,
+              gap: '4px',
+              overflow: 'auto'
+            }}
+          >
             {nameParams.length > 0 ? (
               nameParams.map((name, index) => (
-                <Container key={index} orientation='horizontal' gap='xs' style={{ alignItems: 'center' }}>
-                  <Text style={{ opacity: 0.6 }}>/</Text>
+                <div key={index} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                  <Text style={{ opacity: 0.6, margin: '0 4px' }}>/</Text>
                   <Link
                     href={buildUrlWithNameRange(index)}
                     style={{
                       textDecoration: 'none',
                       fontWeight: index === nameParams.length - 1 ? 600 : 400,
+                      whiteSpace: 'nowrap'
                     }}
                   >
                     {name}
                   </Link>
-                </Container>
+                </div>
               ))
             ) : (
               <Text style={{ opacity: 0.6 }}>No navigation path</Text>
             )}
-          </Container>
+          </div>
 
-          <Container orientation='horizontal' gap='sm' style={{ alignItems: 'center' }}>
+          {/* Settings Container - Right Side */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              flexShrink: 0
+            }}
+          >
             {nameParams.length <= 1 && (
               <Flyout>
                 <Flyout.Trigger>
@@ -617,11 +641,11 @@ function App() {
               onCheckedChange={toggleTheme}
               label="Dark mode"
             />
-          </Container>
-        </Container>
+          </div>
+        </div>
 
         {/* Main Content */}
-        <Container orientation='vertical' gap='md' padding='lg'>
+        <Container orientation='vertical' gap='md' padding='lg' style={{ marginTop: '56px' }}>
 
           {loading && <Text>Loading test results...</Text>}
 
