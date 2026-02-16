@@ -653,35 +653,53 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && name == "array"sv && isOperator())
         {
-            ostr << '[';
-            for (size_t i = 0; i < arguments->children.size(); ++i)
+            /// If all children are literals, the parser's fast path (ParserCollectionOfLiterals)
+            /// would create ASTLiteral(Array) instead of ASTFunction("array") on reparse.
+            /// Use function syntax in that case to preserve AST identity during formatting roundtrip.
+            bool all_literals = std::all_of(arguments->children.begin(), arguments->children.end(),
+                [](const ASTPtr & child) { return child->as<ASTLiteral>() != nullptr; });
+
+            if (!all_literals)
             {
-                if (i != 0)
-                    ostr << ", ";
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
+                ostr << '[';
+                for (size_t i = 0; i < arguments->children.size(); ++i)
+                {
+                    if (i != 0)
+                        ostr << ", ";
+                    if (arguments->children[i]->as<ASTSetQuery>())
+                        ostr << "SETTINGS ";
+                    nested_dont_need_parens.list_element_index = i;
+                    arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
+                }
+                ostr << ']';
+                written = true;
             }
-            ostr << ']';
-            written = true;
         }
 
         if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator() && !(frame.need_parens && !alias.empty()))
         {
-            ostr << '(';
+            /// Same as for array: if all children are literals, the parser's fast path
+            /// (ParserCollectionOfLiterals<Tuple>) would create ASTLiteral(Tuple) on reparse.
+            /// Use function syntax to preserve AST identity.
+            bool all_literals = std::all_of(arguments->children.begin(), arguments->children.end(),
+                [](const ASTPtr & child) { return child->as<ASTLiteral>() != nullptr; });
 
-            for (size_t i = 0; i < arguments->children.size(); ++i)
+            if (!all_literals)
             {
-                if (i != 0)
-                    ostr << ", ";
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
+                ostr << '(';
+
+                for (size_t i = 0; i < arguments->children.size(); ++i)
+                {
+                    if (i != 0)
+                        ostr << ", ";
+                    if (arguments->children[i]->as<ASTSetQuery>())
+                        ostr << "SETTINGS ";
+                    nested_dont_need_parens.list_element_index = i;
+                    arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
+                }
+                ostr << ')';
+                written = true;
             }
-            ostr << ')';
-            written = true;
         }
 
         if (!written && name == "map"sv)
