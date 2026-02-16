@@ -237,54 +237,65 @@ def validate_metrics_jsonl(metrics_path):
     print(f"metrics file {p} is valid")
     return True
 
-def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None):
+def _scenario_ids_for_grafana():
+    """
+    Build full scenario IDs for Grafana (e.g. CHA-01[default|t3], CHA-01[rocks|t3]).
+    Uses KEEPER_INCLUDE_IDS and KEEPER_MATRIX_BACKENDS; topology fixed to 3.
+    """
+    include_ids = os.environ.get("KEEPER_INCLUDE_IDS", "").strip()
+    ids = [s.strip() for s in include_ids.split(",") if s.strip()] if include_ids else []
+    backends_raw = os.environ.get("KEEPER_MATRIX_BACKENDS", "default,rocks").strip()
+    backends = [b.strip() for b in backends_raw.split(",") if b.strip()] or ["default"]
+    topo = 3
+    return [f"{sid}[{b}|t{topo}]" for sid in ids for b in backends]
+
+
+def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None, branch=None):
     """
     Add clickable Grafana dashboard links to the result (bot comment / GH summary).
     All links use explicit time range params to avoid 1970. Three dashboards:
-    - Run details: this run's time window (from/to in Unix ms) + commit, scenario, backend.
+    - Run details: now-7d/now, scenario(s), backend=All, branch=current, commit_sha=current.
     - 1vs1 Comparison: last 7d, scenario + baseline_version + compare_version.
-    - Historical: last 7d, scenario + last_n_commits.
+    - Historical: last 7d, scenario (no last_n_commits in URL; branch/backend).
     """
-    start_ts = stop_watch.start_time
-    end_ts = start_ts + stop_watch.duration
-    from_ms = int(start_ts * 1000)
-    to_ms = int(end_ts * 1000)
-
     if scenario_filter is None:
         include_ids = os.environ.get("KEEPER_INCLUDE_IDS", "").strip()
         scenario_filter = [s.strip() for s in include_ids.split(",") if s.strip()] if include_ids else []
     scenario_val = scenario_filter[0] if scenario_filter else ""
+    # Full scenario IDs for Run details (e.g. CHA-01[default|t3], CHA-01[rocks|t3])
+    scenario_ids = _scenario_ids_for_grafana() if scenario_filter else []
     compare_short = (commit_sha or "")[:8]
-    baseline_sha = (os.environ.get("KEEPER_STRESS_BASELINE_SHA") or "").strip()[:8] or ""
 
     def _url(uid, params):
         return f"{GRAFANA_BASE}/d/{uid}?{urlencode(params, doseq=True)}"
 
-    # 1. Run details — exact time window for this run (Unix ms avoids 1970)
+    # 1. Run details — now-7d/now, current branch, current commit, full scenario list, backend=All
     p_details = {
         "orgId": "1",
-        "from": from_ms,
-        "to": to_ms,
+        "from": "now-7d",
+        "to": "now",
         "timezone": "utc",
+        "var-backend": "$__all",
+        "var-branch": branch or "master",
         "var-commit_sha": commit_sha or "$__all",
-        "refresh": "1m",
+        "refresh": "5m",
     }
-    if scenario_filter:
-        p_details["var-scenario"] = scenario_filter
+    if scenario_ids:
+        p_details["var-scenario"] = scenario_ids
     result.set_clickable_label(
         "Grafana: Run details (this run)",
         _url(GRAFANA_DASH_UID["run_details"], p_details),
     )
 
-    # 2. 1vs1 Comparison — last 7d, scenario + baseline vs compare
+    # 2. 1vs1 Comparison — Baseline = this run (branch + commit); Compare = user selects in UI
     p_comp = {
         "orgId": "1",
         "from": "now-7d",
         "to": "now",
         "timezone": "utc",
         "var-scenario": scenario_val,
-        "var-baseline_version": baseline_sha,
-        "var-compare_version": compare_short,
+        "var-baseline_branch": branch or "master",
+        "var-baseline_version": compare_short,
         "refresh": "1m",
     }
     result.set_clickable_label(
@@ -292,14 +303,13 @@ def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None):
         _url(GRAFANA_DASH_UID["comparison"], p_comp),
     )
 
-    # 3. Historical — last 7d, scenario + last N commits
+    # 3. Historical — last 7d, scenario only (branch/backend added as dashboard variables in UI)
     p_hist = {
         "orgId": "1",
         "from": "now-7d",
         "to": "now",
         "timezone": "utc",
         "var-scenario": scenario_val,
-        "var-last_n_commits": "20",
         "refresh": "1m",
     }
     result.set_clickable_label(
@@ -435,6 +445,7 @@ def main():
         result,
         commit_sha=env.get("COMMIT_SHA"),
         stop_watch=stop_watch,
+        branch=env.get("BRANCH"),
     )
     result.complete_job()
 
