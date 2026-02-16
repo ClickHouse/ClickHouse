@@ -201,6 +201,12 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
+/// Disable LowCardinality DISTINCT optimization in final DISTINCT steps when their input subtrees
+/// already contain preliminary in-order DISTINCT.
+/// After preliminary in-order DISTINCT, most remaining rows are already unique, so
+/// LowCardinality optimization in DISTINCT can add overhead with little duplicate-filtering benefit.
+void disableLowCardinalityOptimizationForDistinctAfterPreliminaryInOrderDistinct(QueryPlan::Node & root);
+
 /// Returns the name of used projection or nullopt if no projection is used.
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
