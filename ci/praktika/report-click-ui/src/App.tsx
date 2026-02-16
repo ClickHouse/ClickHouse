@@ -37,9 +37,36 @@ function App() {
   const [nameParams, setNameParams] = useState<string[]>([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hoveredTask, setHoveredTask] = useState<{ name: string; x: number; y: number } | null>(null)
+  const [sortByStatus, setSortByStatus] = useState<boolean>(true)
+
+  // Initialize sortByStatus from localStorage
+  useEffect(() => {
+    const savedSort = localStorage.getItem('sortByStatus')
+    if (savedSort === null) {
+      localStorage.setItem('sortByStatus', 'true')
+      setSortByStatus(true)
+    } else {
+      setSortByStatus(savedSort === 'true')
+    }
+  }, [])
 
   const toggleTheme = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark')
+  }
+
+  const toggleSortByStatus = () => {
+    const newValue = !sortByStatus
+    setSortByStatus(newValue)
+    localStorage.setItem('sortByStatus', newValue ? 'true' : 'false')
+  }
+
+  const getStatusPriority = (status: string): number => {
+    const statusLower = (status || '').toLowerCase()
+    // Priority order: errors/failures first, then warnings, then success, then others
+    if (statusLower.includes('error') || statusLower.includes('fail') || statusLower.includes('dropped')) return 0
+    if (statusLower.includes('pending') || statusLower.includes('running')) return 1
+    if (statusLower.includes('success') || statusLower === 'ok') return 2
+    return 3 // other statuses
   }
 
   const normalizeName = (name: string): string => {
@@ -506,7 +533,10 @@ function App() {
                 { label: 'Status' },
                 { label: 'Name' },
               ]}
-              rows={result.results.map((subresult, subindex) => {
+              rows={(sortByStatus
+                ? [...result.results].sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status))
+                : result.results
+              ).map((subresult, subindex) => {
                 const subNameWithLabels = (
                   <>
                     {subresult.name}
@@ -578,7 +608,12 @@ function App() {
     { label: 'Start Time', width: '110px', align: 'center' as const },
   ]
 
-  const rows = data?.results?.map((result, index) => {
+  // Sort results by status if enabled
+  const sortedResults = data?.results ? (sortByStatus
+    ? [...data.results].sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status))
+    : data.results) : undefined
+
+  const rows = sortedResults?.map((result, index) => {
     // Determine if navigation should be available
     // Only available if max_N > 0 OR status is success/failure/error
     const maxNameIndex = nameParams.length - 1
@@ -756,6 +791,24 @@ function App() {
               </Flyout>
             )}
             */}
+            <Tooltip>
+              <Tooltip.Trigger asChild>
+                <div
+                  onClick={toggleSortByStatus}
+                  style={{
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    opacity: sortByStatus ? 1 : 0.5
+                  }}
+                >
+                  <Icon name="sort-alt" size="md" />
+                </div>
+              </Tooltip.Trigger>
+              <Tooltip.Content showArrow={true}>
+                {sortByStatus ? 'Status sorting enabled' : 'Status sorting disabled'}
+              </Tooltip.Content>
+            </Tooltip>
             <Tooltip>
               <Tooltip.Trigger asChild>
                 <div
