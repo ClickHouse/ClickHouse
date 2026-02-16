@@ -1308,8 +1308,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
             /// Reset pipeline because it may hold write lock for some storages.
-            state.io.pipeline.cancel();
-            state.io.pipeline.reset();
+            state.io.resetPipeline(/*cancel=*/true);
             if (settings[Setting::wait_for_async_insert])
             {
                 size_t timeout_ms = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
