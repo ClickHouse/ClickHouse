@@ -637,11 +637,28 @@ bool ColumnsDescription::hasNested(const String & column_name) const
     return range.first != range.second && range.first->name.length() > column_name.length();
 }
 
+static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+            return GetColumnsOptions::Ordinary;
+        case ColumnDefaultKind::Materialized:
+            return GetColumnsOptions::Materialized;
+        case ColumnDefaultKind::Alias:
+            return GetColumnsOptions::Aliases;
+        case ColumnDefaultKind::Ephemeral:
+            return GetColumnsOptions::Ephemeral;
+    }
+
+    return GetColumnsOptions::None;
+}
+
 bool ColumnsDescription::hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto jt = subcolumns.get<0>().find(column_name);
-    if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
-        return *true;
+    if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & kind))
+        return true;
 
     /// Check for dynamic subcolumns
     if (tryGetDynamicSubcolumn(column_name, kind))
@@ -663,23 +680,6 @@ const ColumnDescription * ColumnsDescription::tryGet(const String & column_name)
 {
     auto it = columns.get<1>().find(column_name);
     return it == columns.get<1>().end() ? nullptr : &(*it);
-}
-
-static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
-{
-    switch (kind)
-    {
-        case ColumnDefaultKind::Default:
-            return GetColumnsOptions::Ordinary;
-        case ColumnDefaultKind::Materialized:
-            return GetColumnsOptions::Materialized;
-        case ColumnDefaultKind::Alias:
-            return GetColumnsOptions::Aliases;
-        case ColumnDefaultKind::Ephemeral:
-            return GetColumnsOptions::Ephemeral;
-    }
-
-    return GetColumnsOptions::None;
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
