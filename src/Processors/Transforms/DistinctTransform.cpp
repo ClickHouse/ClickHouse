@@ -16,10 +16,12 @@ DistinctTransform::DistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
-    const Names & columns_)
+    const Names & columns_,
+    bool disable_low_cardinality_optimization_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
+    , disable_low_cardinality_optimization(disable_low_cardinality_optimization_)
 {
     const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
     key_columns_pos.reserve(num_columns);
@@ -186,7 +188,7 @@ void DistinctTransform::transform(Chunk & chunk)
 
     std::optional<IColumn::Filter> lc_mask;
 
-    if (key_columns_pos.size() == 1)
+    if (!disable_low_cardinality_optimization && key_columns_pos.size() == 1)
     {
         if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column_ptrs[0]))
         {
