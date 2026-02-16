@@ -1,4 +1,4 @@
--- Tags: no-shared-merge-tree
+-- Tags: no-shared-merge-tree, no-random-detach
 -- Tag no-shared-merge-tree - in SMT this works differently
 
 -- Test for MergeTreeData::checkDropCommandDoesntAffectInProgressMutations() basically
