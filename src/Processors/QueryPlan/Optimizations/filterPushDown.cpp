@@ -226,10 +226,94 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, bool step_ch
     return 0;
 }
 
-static void buildEquialentSetsForJoinStepLogical(
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> & equivalent_expressions,
-    const JoinOperator & join_operator)
+/// Disjoint Set Union (Union-Find) data structure for JoinActionRef.
+/// Used to find equivalent expressions in JOIN conditions.
+/// For example, if (a = b) and (b = c), then a, b, c belong to the same equivalence class.
+class EquivalentJoinKeySet
 {
+public:
+    JoinActionRef find(JoinActionRef ref)
+    {
+        auto it = parent.find(ref);
+        if (it == parent.end())
+        {
+            parent.emplace(ref, ref);
+            return ref;
+        }
+
+        if (it->second == ref)
+            return ref;
+
+        JoinActionRef root = find(it->second);
+        parent.insert_or_assign(ref, root);
+        return root;
+    }
+
+    JoinActionRef unite(JoinActionRef a, JoinActionRef b)
+    {
+        JoinActionRef root_a = find(a);
+        JoinActionRef root_b = find(b);
+
+        if (root_a == root_b)
+            return root_a;
+
+        size_t rank_a = rank[root_a];
+        size_t rank_b = rank[root_b];
+
+        if (rank_a < rank_b)
+            std::swap(root_a, root_b);
+
+        parent.insert_or_assign(root_b, root_a);
+
+        if (rank_a == rank_b)
+            ++rank[root_a];
+
+        return root_a;
+    }
+
+    bool connected(JoinActionRef a, JoinActionRef b)
+    {
+        return find(a) == find(b);
+    }
+
+    std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> getClasses()
+    {
+        std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> classes;
+        for (auto & [ref, _] : parent)
+            classes[find(ref)].push_back(ref);
+        return classes;
+    }
+
+    std::vector<JoinActionRef> getClass(JoinActionRef ref)
+    {
+        std::vector<JoinActionRef> res;
+        JoinActionRef root = find(ref);
+        for (auto & [other_ref, _] : parent)
+        {
+            if (find(other_ref) == root)
+                res.push_back(other_ref);
+        }
+        return res;
+    }
+
+private:
+    std::unordered_map<JoinActionRef, JoinActionRef> parent;
+    std::unordered_map<JoinActionRef, size_t> rank;
+};
+
+using JoinActionRefPair = std::pair<JoinActionRef, JoinActionRef>;
+
+struct JoinActionRefPairHash
+{
+    size_t operator()(const JoinActionRefPair & p) const noexcept
+    {
+        return std::hash<JoinActionRef>{}(p.first) ^ std::hash<JoinActionRef>{}(p.second);
+    }
+};
+
+std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+{
+    std::vector<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
@@ -245,8 +329,49 @@ static void buildEquialentSetsForJoinStepLogical(
         auto right_column = rhs.getColumn();
         if (!left_column.type->equals(*right_column.type))
             continue;
-        equivalent_expressions.emplace_back(lhs, rhs);
+        joining_keys.emplace_back(lhs, rhs);
     }
+    return joining_keys;
+}
+
+std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
+    EquivalentJoinKeySet & equivalent_sets,
+    const JoinStepLogical * join_step,
+    const std::vector<QueryPlan::Node *> & child_nodes,
+    int lookup_depth = 0)
+{
+    auto join_inputs = join_step->getInputActions();
+    auto join_input_it = join_inputs.begin();
+
+    for (const auto * child_node : child_nodes)
+    {
+        /// Sanity check to avoid expensive computations on too deep plans
+        if (lookup_depth >= 32)
+            break;
+
+        const auto * child_join = typeid_cast<const JoinStepLogical *>(child_node->step.get());
+        if (!child_join)
+            continue;
+        auto join_strictness = child_join->getJoinOperator().strictness;
+        auto join_kind = child_join->getJoinOperator().kind;
+        if (join_kind != JoinKind::Inner || (join_strictness != JoinStrictness::All && join_strictness != JoinStrictness::Any))
+            continue;
+
+        for (const auto & output : child_join->getOutputActions())
+        {
+            while (join_input_it != join_inputs.end() && output.getColumnName() != join_input_it->getColumnName())
+                ++join_input_it;
+            if (join_input_it == join_inputs.end())
+                break;
+            equivalent_sets.unite(*join_input_it, output);
+        }
+        buildEquialentSetsForJoinStepLogical(equivalent_sets, child_join, child_node->children, lookup_depth + 1);
+    }
+
+    auto joining_keys = getJoiningKeysForJoinStep(join_step->getJoinOperator());
+    for (const auto & [lhs, rhs] : joining_keys)
+        equivalent_sets.unite(lhs, rhs);
+    return joining_keys;
 }
 
 static void projectDagInputs(ActionsDAG & actions_dag)
@@ -325,7 +450,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> equivalent_expressions;
+    std::vector<JoinActionRefPair> equivalent_expressions;
 
     bool has_single_clause = table_join_ptr && table_join_ptr->getClauses().size() == 1;
     if (has_single_clause && !filled_join)
@@ -349,7 +474,32 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
     else if (logical_join)
     {
-        buildEquialentSetsForJoinStepLogical(equivalent_expressions, logical_join->getJoinOperator());
+        EquivalentJoinKeySet equivalent_sets;
+        equivalent_expressions = buildEquialentSetsForJoinStepLogical(equivalent_sets, logical_join, child_node->children);
+        std::unordered_set<JoinActionRefPair, JoinActionRefPairHash> equivalent_expressions_set(equivalent_expressions.begin(), equivalent_expressions.end());
+        std::vector<JoinActionRefPair> extra_equivalent_expressions;
+        for (const auto & [lhs, rhs] : equivalent_expressions)
+        {
+            for (const auto & eq_expr : equivalent_sets.getClass(lhs))
+            {
+                if (!eq_expr.isFromSameActions(lhs) || !eq_expr.fromRight())
+                    continue;
+                if (equivalent_expressions_set.contains({lhs, eq_expr}))
+                    continue;
+                equivalent_expressions_set.emplace(lhs, eq_expr);
+                extra_equivalent_expressions.emplace_back(lhs, eq_expr);
+            }
+            for (const auto & eq_expr : equivalent_sets.getClass(rhs))
+            {
+                if (!eq_expr.isFromSameActions(rhs) || !eq_expr.fromLeft())
+                    continue;
+                if (equivalent_expressions_set.contains({eq_expr, rhs}))
+                    continue;
+                equivalent_expressions_set.emplace(eq_expr, rhs);
+                extra_equivalent_expressions.emplace_back(eq_expr, rhs);
+            }
+        }
+        equivalent_expressions.append_range(std::move(extra_equivalent_expressions));
     }
 
     auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)

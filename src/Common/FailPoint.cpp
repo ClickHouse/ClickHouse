@@ -176,6 +176,12 @@ struct FailPointChannel
     /// Threads record the epoch when they start waiting, and only wake up
     /// if the current epoch is greater than their recorded epoch.
     size_t resume_epoch = 0;
+
+    /// Pause epoch: incremented each time a thread pauses at this failpoint.
+    /// Used by waitForPause to distinguish new pauses from stale ones:
+    /// after a notify, waitForPause waits for pause_epoch > resume_epoch,
+    /// ensuring the pause happened after the most recent resume.
+    size_t pause_epoch = 0;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -252,6 +258,7 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
     /// Signal that a thread has reached and paused at this failpoint
     ++channel->pause_count;
+    ++channel->pause_epoch;
     channel->pause_cv.notify_all();
 
     /// Wait for resume_epoch to be incremented by notify or disable
@@ -272,9 +279,12 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
 
     auto channel = iter->second;
 
-    /// Wait until at least one thread has paused at this failpoint
+    /// Wait until a thread has paused at this failpoint after the most recent resume.
+    /// Using pause_epoch > resume_epoch instead of pause_count > 0 avoids a race:
+    /// after NOTIFY, the task thread may not have decremented pause_count yet,
+    /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
-        return channel->pause_count > 0;
+        return channel->pause_epoch > channel->resume_epoch;
     });
 }
 

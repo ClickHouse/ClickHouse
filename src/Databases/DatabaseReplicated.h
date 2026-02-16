@@ -92,6 +92,19 @@ public:
 
     bool canExecuteReplicatedMetadataAlter() const override;
 
+    /// RAII guard to suppress digest checks during SYSTEM RESTART REPLICA.
+    /// The table is temporarily removed from the in-memory tables map during restart,
+    /// making it inconsistent with tables_metadata_digest (which remains correct).
+    struct RestartReplicaGuard
+    {
+        explicit RestartReplicaGuard(DatabaseReplicated & db_) : db(db_) { db.tables_being_restarted.fetch_add(1); }
+        ~RestartReplicaGuard() { db.tables_being_restarted.fetch_sub(1); }
+        RestartReplicaGuard(const RestartReplicaGuard &) = delete;
+        RestartReplicaGuard & operator=(const RestartReplicaGuard &) = delete;
+    private:
+        DatabaseReplicated & db;
+    };
+
     bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
@@ -242,6 +255,12 @@ private:
     /// We calculate this sum from local metadata files and compare it will value in ZooKeeper.
     /// It allows to detect if metadata is broken and recover replica.
     UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
+
+    /// Counter for tables currently being restarted by SYSTEM RESTART REPLICA.
+    /// During restart, the table is temporarily removed from the in-memory tables map,
+    /// making it inconsistent with tables_metadata_digest. We skip digest checks
+    /// while any restart is in progress to avoid false LOGICAL_ERROR exceptions in debug builds.
+    std::atomic<int> tables_being_restarted{0};
 
     mutable ClusterPtr cluster;
     mutable ClusterPtr cluster_all_groups;

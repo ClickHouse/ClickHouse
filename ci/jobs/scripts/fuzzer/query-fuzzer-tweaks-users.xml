@@ -27,7 +27,7 @@
                     <max>200</max>
                 </table_function_remote_max_addresses>
 
-                <!-- Don't waste cycles testing the old interpreter. Spend time in the new analyzer instead -->
+                <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
                     <readonly/>
                 </enable_analyzer>

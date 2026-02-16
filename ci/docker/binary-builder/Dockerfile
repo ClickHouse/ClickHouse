@@ -36,6 +36,19 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# Optional PGO+BOLT optimized toolchain override
+ARG TOOLCHAIN_COMMIT=none
+RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
+    arch=${TARGETARCH:-amd64} && \
+    case $arch in \
+        amd64) tarch=amd64 ;; \
+        arm64) tarch=aarch64 ;; \
+    esac && \
+    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TOOLCHAIN_COMMIT}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
+      | zstd -d | tar -xf - -C /usr/local/ && \
+    echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
+    ; fi
+
 # Download and install mold for s390x build
 ARG MOLD_VERSION=2.40.4
 RUN arch=${TARGETARCH:-amd64} \

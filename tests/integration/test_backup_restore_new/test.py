@@ -119,7 +119,7 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
             WITH arrayJoin(ProfileEvents) as pe
             SELECT pe.1, pe.2
             FROM system.query_log
-            WHERE query_id = '{query_id}'
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
             """
         )
     )

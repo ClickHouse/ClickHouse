@@ -2336,7 +2336,11 @@ bool FileCache::doDynamicResizeImpl(
     }
 
     /// Remove only queue entries of eviction candidates.
-    eviction_candidates.removeQueueEntries(cache_guard.writeLock());
+    /// Hold the write lock until after modifying size limits,
+    /// to prevent concurrent `tryIncreasePriority` from promoting entries
+    /// into the protected queue between removal and limit modification.
+    auto write_lock = cache_guard.writeLock();
+    eviction_candidates.removeQueueEntries(write_lock);
 
     /// Note that (in-memory) metadata about corresponding file segments
     /// (e.g. file segment info in CacheMetadata) will be removed
@@ -2355,6 +2359,7 @@ bool FileCache::doDynamicResizeImpl(
         state_lock);
 
     state_lock.unlock();
+    write_lock.unlock();
 
     /// Do actual eviction from filesystem.
     eviction_candidates.evict();
