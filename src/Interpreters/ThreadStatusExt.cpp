@@ -495,16 +495,14 @@ ProfileEvents::CountersSeq ThreadStatus::exchangeProfileCountersScopes(ProfileEv
 
     if (!prev_scopes.empty())
     {
-        /// scopes should be already unlinked here.
+        /// Prev scopes should be already unlinked here.
         chassert(performance_counters.getParent() != prev_scopes.back().get());
-
-        /// unlink them from target thread group.
-        prev_scopes.front()->setParent(nullptr);
     }
 
     if (!performance_counters_scopes.empty())
     {
-        performance_counters_scopes.front()->setParent(performance_counters.getParent());
+        /// New scopes should point to the same thread group.
+        chassert(performance_counters_scopes.front()->getParent() == performance_counters.getParent());
         performance_counters.setParent(performance_counters_scopes.back().get());
     }
 
@@ -516,7 +514,10 @@ void ThreadStatus::attachProfileCountersScope(ProfileEvents::CountersPtr scope)
     if (!performance_counters_scopes.empty())
         chassert(performance_counters.getParent() == performance_counters_scopes.back().get());
 
-    scope->setParent(performance_counters.getParent());
+    if (scope->getParent() == nullptr)
+        scope->setParent(performance_counters.getParent());
+
+    chassert(scope->getParent() == performance_counters.getParent());
     performance_counters.setParent(scope.get());
     performance_counters_scopes.push_back(scope);
 }
@@ -533,8 +534,6 @@ ProfileEvents::CountersPtr ThreadStatus::detachProfileCountersScope()
         chassert(outer_scope->getParent() == performance_counters_scopes.back().get());
 
     performance_counters.setParent(outer_scope->getParent());
-    outer_scope->setParent(nullptr);
-
     return outer_scope;
 }
 

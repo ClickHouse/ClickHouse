@@ -5,21 +5,40 @@
 namespace DB
 {
 
-ProfileEventScopeExtension::ProfileEventScopeExtension(ProfileEvents::CountersPtr to)
-    : attached_scope(std::move(to))
+ProfileEventScopeExtension::ProfileEventScopeExtension(ProfileEventsScopePtr to)
+    : scope(to)
 {
-    CurrentThread::get().attachProfileCountersScope(attached_scope);
+    attach();
 }
 
 ProfileEventScopeExtension::~ProfileEventScopeExtension()
 {
+    detach();
+}
+
+void ProfileEventScopeExtension::attach()
+{
+    if (attached)
+        return;
+
+    CurrentThread::get().attachProfileCountersScope(scope->getCounters());
+    attached = true;
+}
+
+void ProfileEventScopeExtension::detach()
+{
+    if (!attached)
+        return;
+
     auto detached_scope = CurrentThread::get().detachProfileCountersScope();
-    chassert(detached_scope == attached_scope);
+    chassert(detached_scope == scope->getCounters());
+    attached = false;
 }
 
 ProfileEventsScope::ProfileEventsScope()
     : performance_counters_holder(VariableContext::Scope)
 {
+    performance_counters_holder.setParent(nullptr);
 }
 
 std::shared_ptr<ProfileEventsScope> ProfileEventsScope::construct()
@@ -30,7 +49,7 @@ std::shared_ptr<ProfileEventsScope> ProfileEventsScope::construct()
 
 ProfileEventScopeExtension ProfileEventsScope::startCollecting()
 {
-    return ProfileEventScopeExtension(getCounters());
+    return ProfileEventScopeExtension(shared_from_this());
 }
 
 ProfileEvents::CountersPtr ProfileEventsScope::getCounters()
@@ -38,7 +57,7 @@ ProfileEvents::CountersPtr ProfileEventsScope::getCounters()
     return ProfileEvents::CountersPtr(shared_from_this(), &performance_counters_holder);
 }
 
-std::shared_ptr<ProfileEvents::Counters::Snapshot> ProfileEventsScope::getSnapshot()
+std::shared_ptr<ProfileEvents::Counters::Snapshot> ProfileEventsScope::getSnapshot() const
 {
     return std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters_holder.getPartiallyAtomicSnapshot());
 }

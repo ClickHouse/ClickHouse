@@ -358,6 +358,8 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         for (const auto & stream : temp_part->streams)
             current_streams += stream.stream->getNumberOfOpenStreams();
 
+        counters_scope_extension.detach();
+
         if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayed(zookeeper);

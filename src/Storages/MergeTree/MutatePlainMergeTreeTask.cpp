@@ -91,8 +91,14 @@ bool MutatePlainMergeTreeTask::executeStep()
 {
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
+    std::optional<ProfileEventScopeExtension> extension;
+    std::optional<scope_guard> finalize_counters;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, ProfileEvents::CountersSeq{profile_counters->getCounters()}, /*allow_existing_group*/ true);
+    {
+        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, ProfileEvents::CountersSeq{}, /*allow_existing_group*/ true);
+        extension.emplace(profile_counters);
+        finalize_counters.emplace([]() { CurrentThread::finalizePerformanceCounters(); });
+    }
 
     switch (state)
     {
