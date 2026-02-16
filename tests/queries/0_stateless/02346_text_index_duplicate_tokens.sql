@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 -- Tests queries with duplicate tokens against a text index
 
 DROP TABLE IF EXISTS tab;

@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, long
+-- Tags: long
 
 SET enable_analyzer = 1;
 SET use_query_condition_cache = 0;

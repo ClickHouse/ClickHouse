@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-asan
+-- Tags: no-asan
 -- no-asan: too slow
 
 -- Tests that text indexes can be build on and used with Map columns.

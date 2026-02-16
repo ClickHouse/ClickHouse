@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
