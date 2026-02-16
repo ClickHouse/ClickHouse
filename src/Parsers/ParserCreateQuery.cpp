@@ -559,12 +559,25 @@ bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!s_rparen.ignore(pos, expected))
         return false;
 
-    /// Remove ASTStorageOrderByElement wrappers when no ASC|DESC suffix was specified,
-    /// same as the single-key path above.
-    for (auto & child : order_by->children)
+    /// Remove ASTStorageOrderByElement wrappers when ALL elements have default (ASC) direction.
+    /// We must unwrap all-or-nothing because KeyDescription expects either all children to be
+    /// wrapped in ASTStorageOrderByElement, or none of them.
+    bool all_default_direction = true;
+    for (const auto & child : order_by->children)
     {
-        if (const auto * elem = child->as<ASTStorageOrderByElement>(); elem && elem->direction > 0)
-            child = elem->children.front();
+        if (const auto * elem = child->as<ASTStorageOrderByElement>(); !elem || elem->direction < 0)
+        {
+            all_default_direction = false;
+            break;
+        }
+    }
+    if (all_default_direction)
+    {
+        for (auto & child : order_by->children)
+        {
+            if (const auto * elem = child->as<ASTStorageOrderByElement>())
+                child = elem->children.front();
+        }
     }
 
     auto tuple_function = make_intrusive<ASTFunction>();
