@@ -8,6 +8,8 @@ on:
 env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ""
+# Allow updating GH commit statuses and PR comments to post an actual job reports link
+permissions: write-all
 
 jobs:
 
