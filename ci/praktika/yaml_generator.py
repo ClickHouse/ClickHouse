@@ -99,6 +99,7 @@ on:
 env:
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
+{GH_TOKEN_PERMISSIONS}
 
 jobs:
 {JOBS}\
@@ -425,7 +426,12 @@ class PullRequestPushYamlGen:
             )
         elif self.workflow_config.event in (Workflow.Event.DISPATCH,):
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
-            format_kwargs = {"DISPATCH_INPUTS": dispatch_inputs}
+            format_kwargs = {
+                "DISPATCH_INPUTS": dispatch_inputs,
+                "GH_TOKEN_PERMISSIONS": (
+                    YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
+                ),
+            }
             ENV_CHECKOUT_REFERENCE = (
                 YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
             )

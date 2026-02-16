@@ -3589,3 +3589,6 @@ readWKT
 readWKB
 WKT
 WKB
+lifecycle
+unsampled
+queueing

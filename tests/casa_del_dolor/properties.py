@@ -93,7 +93,6 @@ possible_properties = {
         "select_from_system_db_requires_grant": true_false_lambda,
         "settings_constraints_replace_previous": true_false_lambda,
         "table_engines_require_grant": true_false_lambda,
-        "throw_on_unmatched_row_policies": true_false_lambda,
         "users_without_row_policies_can_read_rows": true_false_lambda,
     },
     "aggregate_function_group_array_action_when_limit_is_reached": lambda: random.choice(

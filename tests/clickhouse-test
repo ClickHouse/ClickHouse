@@ -2045,14 +2045,12 @@ class TestCase:
         if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
             return FailureReason.ENCRYPTED_STORAGE
 
-        # Ingore no-{build} tags in stress-tests job
+        # Ignore no-{build} tags in stress-tests job
         if tags and not args.stress_tests:
             for build_flag in args.build_flags:
-                # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
-                # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
-                if "no-" + build_flag in tags and not (args.flaky_check and args.test_runs > 1):
+                if "no-" + build_flag in tags:
                     return FailureReason.BUILD
-            if "no-sanitizers" in tags and not (args.flaky_check and args.test_runs > 1):
+            if "no-sanitizers" in tags:
                 if any(
                     flag in args.build_flags
                     for flag in BuildFlags.SANITIZERS
@@ -3868,6 +3866,14 @@ def do_run_tests(
                 for p in processes:
                     if p.is_alive():
                         p.terminate()
+                # Wait for processes to exit, then force-kill stragglers
+                for p in processes:
+                    p.join(timeout=10)
+                    if p.is_alive():
+                        print(f"Force killing process {p.name} (pid {p.pid})")
+                        p.kill()
+                for p in processes:
+                    p.join(timeout=5)
                 break
 
             for p in processes[:]:

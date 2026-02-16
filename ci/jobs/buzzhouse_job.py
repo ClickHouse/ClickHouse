@@ -5,6 +5,7 @@ import secrets
 from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import run_fuzz_job
+from ci.jobs.ci_utils import is_extended_run
 from ci.praktika.utils import Utils
 
 
@@ -217,8 +218,8 @@ def generate_buzz_config(buzz_config_file: Path):
         "allow_transactions": allow_transactions,
         # Run query oracles sometimes
         "allow_query_oracles": random.randint(1, 4) == 1,
-        # Run for 30 minutes max
-        "time_to_run": 30,
+        # Run for 30 minutes by default, or 60 minutes for feature/improvement/performance PRs
+        "time_to_run": 60 if is_extended_run() else 30,
         "remote_servers": ["localhost:9000"],
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],

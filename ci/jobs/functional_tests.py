@@ -449,6 +449,9 @@ def main():
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
+                if not CH.start_kafka():
+                    print("WARNING: Failed to start Kafka")
+
                 if not Info().is_local_run:
                     if not CH.start_log_exports(stop_watch.start_time):
                         info.add_workflow_report_message(
@@ -537,10 +540,7 @@ def main():
                             collected_test_results.append(test_case_result)
                             seen_test_names.add(test_case_result.name)
 
-                # Control elapsed time for targeted checks: exit if >30 minutes
                 stop_by_elapsed_time = False
-                if is_targeted_check and cnt > 0:
-                    stop_by_elapsed_time = stop_watch_.duration / 60 > 30
 
                 # On final run, replace results with collected ones
                 if is_final_run or stop_by_elapsed_time:

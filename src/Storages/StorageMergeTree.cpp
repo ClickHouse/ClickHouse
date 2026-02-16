@@ -16,6 +16,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
@@ -47,6 +48,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
+#include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -297,7 +299,7 @@ void StorageMergeTree::read(
     size_t num_streams)
 {
     const auto & settings = local_context->getSettingsRef();
-    /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
+    /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
     if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer])
     {
@@ -727,8 +729,24 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
             return !mutation_status || mutation_status->is_done || !mutation_status->latest_fail_reason.empty();
         };
 
+        /// Get the process list element to check for query cancellation while waiting.
+        QueryStatusPtr process_list_element;
+        if (CurrentThread::isInitialized())
+        {
+            auto query_context = CurrentThread::get().getQueryContext();
+            if (query_context)
+                process_list_element = query_context->getProcessListElement();
+        }
+
         std::unique_lock lock(mutation_wait_mutex);
-        mutation_wait_event.wait(lock, check);
+        while (!check())
+        {
+            mutation_wait_event.wait_for(lock, std::chrono::seconds(1));
+
+            /// Check if the query was cancelled while we were waiting.
+            if (process_list_element)
+                process_list_element->checkTimeLimit();
+        }
     }
 
     /// At least we have our current mutation
@@ -1466,6 +1484,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (currently_merging_mutating_parts.contains(part))
+            continue;
+
+        /// Skip parts in partitions where merges/mutations are blocked (e.g. by REPLACE PARTITION).
+        /// This check must be inside selectPartsToMutate (under currently_processing_in_background_mutex)
+        /// to prevent a race where a mutation is selected after the partition blocker is set
+        /// but before stopMergesAndWaitForPartition finishes waiting.
+        if (merger_mutator.merges_blocker.isCancelledForPartition(part->info.getPartitionId()))
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
@@ -2538,16 +2563,22 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     String partition_id;
 
+    /// The merges_blocker must live until the end of the function to prevent background mutations
+    /// from starting on parts in the target partition between when we stop waiting and when we
+    /// actually remove old parts via removePartsInRangeFromWorkingSet. Without this, a mutation
+    /// could "resurrect" old data by completing on an already-removed part and adding a new version
+    /// of it back to the working set.
+    ActionLock merges_blocker;
     if (is_all)
     {
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
-        auto merges_blocker = stopMergesAndWait();
+        merges_blocker = stopMergesAndWait();
     }
     else
     {
         partition_id = getPartitionIDFromQuery(partition, local_context);
-        auto merges_blocker = stopMergesAndWaitForPartition(partition_id);
+        merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();

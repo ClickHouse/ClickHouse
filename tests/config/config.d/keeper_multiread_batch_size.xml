@@ -1,0 +1,3 @@
+<clickhouse>
+    <keeper_multiread_batch_size>300</keeper_multiread_batch_size>
+</clickhouse>

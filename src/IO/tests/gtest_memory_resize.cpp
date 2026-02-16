@@ -233,8 +233,7 @@ TEST(MemoryResizeTest, BigInitAndSmallResizeOverflowWhenPadding)
 TEST(MemoryResizeTest, AlignmentWithRealAllocator)
 {
     {
-        auto memory
-            = Memory<>(0, 3); // not the power of 2 but less than MALLOC_MIN_ALIGNMENT so user-defined alignment is ignored at Allocator
+        auto memory = Memory<>(0, 3); // not the power of 2 but less than MALLOC_MIN_ALIGNMENT 8 so user-defined alignment is ignored at Allocator
         ASSERT_EQ(memory.m_data, nullptr);
         ASSERT_EQ(memory.m_capacity, 0);
         ASSERT_EQ(memory.m_size, 0);

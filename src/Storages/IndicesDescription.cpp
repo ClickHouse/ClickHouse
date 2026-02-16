@@ -108,6 +108,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.is_implicitly_created = is_implicitly_created;
     result.escape_filenames = escape_filenames;
 
+    checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
     result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)

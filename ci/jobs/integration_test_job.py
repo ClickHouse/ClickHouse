@@ -8,7 +8,11 @@ from typing import List, Tuple
 from more_itertools import tail
 
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
+from ci.jobs.scripts.integration_tests_configs import (
+    IMAGES_ENV,
+    LLVM_COVERAGE_SKIP_PREFIXES,
+    get_optimal_test_batch,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result, ResultTranslator
 from ci.praktika.utils import ContextManager, Shell, Utils
@@ -193,6 +197,17 @@ def get_parallel_sequential_tests_to_run(
         for p in Path("./tests/integration/").glob("test_*/test*.py")
     ]
 
+    if "amd_llvm_coverage" in (job_options or ""):
+        before = len(test_files)
+        test_files = [
+            f
+            for f in test_files
+            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+        ]
+        print(
+            f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
+        )
+
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
@@ -256,7 +271,7 @@ def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> 
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
         f"{temp_path}/{report_name}.log"
     ):
-        test_result.info = "[ERROR] session-timeout occurred during test execution"
+        test_result.info = "ERROR: session-timeout occurred during test execution"
         assert test_result.status == Result.Status.ERROR
         test_result.results.append(
             Result(
@@ -522,15 +537,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
-    if not is_targeted_check:
-        session_timeout_parallel = 3600 * 2
-        session_timeout_sequential = 3600
-    else:
-        # For targeted jobs, use a shorter session timeout to keep feedback fast.
-        # If this timeout is exceeded but all completed tests have passed, the
-        # targeted check will not fail solely because the session timed out.
-        session_timeout_parallel = 1200
-        session_timeout_sequential = 1200
+    session_timeout_parallel = 3600 * 2
+    session_timeout_sequential = 3600
 
     if is_llvm_coverage:
         session_timeout_parallel = 7200
