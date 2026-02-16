@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-random-detach
 
 # Test for use-after-free in ReadBufferFromEncryptedFile when a query is
 # cancelled mid-read. Destroying the reader chain from one thread while
