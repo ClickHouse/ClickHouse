@@ -223,9 +223,9 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
         });
 }
 
-void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
+void SettingsConstraints::check(const MergeTreeSettings & /* current_settings */, const SettingChange & change) const
 {
-    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
+    checkImpl(const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const
@@ -245,15 +245,8 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 }
 
 template <typename SettingsT>
-bool getNewValueToCheck(const SettingsT & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
+bool getNewValueToCheck(SettingChange & change, Field & new_value, bool throw_on_failure)
 {
-    Field current_value;
-    bool has_current_value = current_settings.tryGet(change.name, current_value);
-
-    /// Setting isn't checked if value has not changed.
-    if (has_current_value && change.value == current_value)
-        return false;
-
     if (throw_on_failure)
         new_value = SettingsT::castValueUtil(change.name, change.value);
     else
@@ -267,10 +260,6 @@ bool getNewValueToCheck(const SettingsT & current_settings, SettingChange & chan
             return false;
         }
     }
-
-    /// Setting isn't checked if value has not changed.
-    if (has_current_value && new_value == current_value)
-        return false;
 
     return true;
 }
@@ -307,16 +296,16 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         return false;
 
     Field new_value;
-    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
+    if (!getNewValueToCheck<Settings>(change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
 }
 
-bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
+bool SettingsConstraints::checkImpl(SettingChange & change, ReactionOnViolation reaction) const
 {
     Field new_value;
-    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
+    if (!getNewValueToCheck<MergeTreeSettings>(change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
     return getMergeTreeChecker(change.name).check(change, new_value, reaction, SettingSource::QUERY);
 }
