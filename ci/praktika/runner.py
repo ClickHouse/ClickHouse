@@ -256,6 +256,8 @@ class Runner:
         workers=None,
     ):
         # re-set envs for local run
+        print("REMOVEME 1", Info().env.WORKFLOW_CONFIG)
+
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
