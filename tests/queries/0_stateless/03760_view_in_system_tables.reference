@@ -14,5 +14,5 @@ default.03760_mview1
 default.03760_view1
 default.03760_view2
 03760_local_view_of_x
-['03760_view1','03760_view2','remote_view_of_local']
-['03760_view2']
+[]
+[]

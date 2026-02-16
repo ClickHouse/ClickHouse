@@ -1699,23 +1699,23 @@ std::vector<StorageID> DatabaseCatalog::getLoadingDependents(const StorageID & t
 }
 
 std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
-    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_mv)
+    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_view)
 {
     std::lock_guard lock{databases_mutex};
     checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
     std::vector<StorageID> old_view_dependencies;
 
-    if (is_mv)
+    /// Remove view from dependency graphs
+    if (is_view)
     {
-        auto tables_from = view_dependencies.getDependents(table_id);
-        if (!tables_from.empty())
-        {
-            assert(tables_from.size() == 1);
-            const auto & the_table_from = *tables_from.begin();
+        auto view_sources = view_dependencies.getDependents(table_id);
+        for (const auto & source_table_id : view_sources)
+            view_dependencies.removeDependency(source_table_id, table_id, /* remove_isolated_tables= */ true);
+        old_view_dependencies.insert(old_view_dependencies.end(), view_sources.begin(), view_sources.end());
 
-            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
-            old_view_dependencies.push_back(the_table_from);
-        }
+        auto plain_view_sources = plain_view_dependencies.getDependents(table_id);
+        for (const auto & source_table_id : plain_view_sources)
+            plain_view_dependencies.removeDependency(source_table_id, table_id, /* remove_isolated_tables= */ true);
     }
 
     return {
