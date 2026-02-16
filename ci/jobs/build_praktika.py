@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+
+import subprocess
+import sys
+import os
+from pathlib import Path
+
+VENV_DIR = Path(".venv-pypy")
+PYPY_EXECUTABLE = "pypy3"   # change if needed
+
+
+def run(cmd, check=True):
+    print(f"\n>>> Running: {' '.join(cmd)}")
+    subprocess.run(cmd, check=check)
+
+
+def ensure_venv():
+    if not VENV_DIR.exists():
+        print("Creating PyPy virtual environment...")
+        run([PYPY_EXECUTABLE, "-m", "venv", str(VENV_DIR)])
+    else:
+        print("Virtual environment already exists.")
+
+
+def venv_python():
+    return VENV_DIR / "bin" / "python"
+
+
+def venv_pip():
+    return VENV_DIR / "bin" / "pip"
+
+
+def install_dependencies():
+    run([str(venv_pip()), "install", "--upgrade", "pip", "setuptools", "wheel"])
+    if Path("requirements.txt").exists():
+        run([str(venv_pip()), "install", "-r", "requirements.txt"])
+
+
+def run_tests():
+    run([str(venv_python()), "-m", "pytest"])
+
+
+def build_package():
+    run([str(venv_pip()), "install", "build"])
+    run([str(venv_python()), "-m", "build"])
+
+
+def main():
+    ensure_venv()
+    install_dependencies()
+    run_tests()
+    build_package()
+    print("\n✅ Build completed successfully.")
+
+
+if __name__ == "__main__":
+    main()
