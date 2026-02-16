@@ -235,8 +235,7 @@ void PipelineExecutor::finalizeExecution()
     checkTimeLimit();
 
     auto status = execution_status.load();
-    if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
-        return;
+    bool is_cancelled = (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser);
 
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
@@ -245,7 +244,12 @@ void PipelineExecutor::finalizeExecution()
         {
             /// Single thread, do not hold mutex
             all_processors_finished = false;
-            break;
+
+            /// When cancelled, keep iterating to collect remaining progress from finished processors.
+            /// When not cancelled, we will throw below, so no need to continue.
+            if (!is_cancelled)
+                break;
+            continue;
         }
         if (node->processor && read_progress_callback)
         {
@@ -270,7 +274,7 @@ void PipelineExecutor::finalizeExecution()
         }
     }
 
-    if (!all_processors_finished)
+    if (!is_cancelled && !all_processors_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 
     if (finalize_callback)
