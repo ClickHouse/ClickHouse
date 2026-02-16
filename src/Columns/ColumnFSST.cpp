@@ -4,6 +4,7 @@
 #include <optional>
 #include "Columns/ColumnFSST.h"
 
+#include "Columns/ColumnTuple.h"
 #include "Core/Field.h"
 #include "base/types.h"
 #include "fsst.h"
@@ -119,6 +120,34 @@ size_t ColumnFSST::allocatedBytes() const
 bool ColumnFSST::isDefaultAt(size_t n) const
 {
     return string_column->isDefaultAt(n);
+}
+
+ColumnPtr recursiveRemoveFSST(const ColumnPtr & column)
+{
+    if (!column)
+        return column;
+
+    if (const auto * column_fsst = typeid_cast<const ColumnFSST*>(column.get())) {
+        auto column_string = ColumnString::create();
+        for(size_t ind = 0; ind < column_fsst->size(); ind++) {
+            column_string->insert((*column_fsst)[ind]);
+        }
+        return column_string;
+    }
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        auto columns = column_tuple->getColumns();
+        if (columns.empty())
+            return column;
+
+        for (auto & element : columns)
+            element = recursiveRemoveFSST(element);
+
+        return ColumnTuple::create(columns);
+    }
+
+    return column;
 }
 
 };

@@ -180,4 +180,7 @@ public:
 
     [[noreturn]] static void throwNotSupported() { throw Exception(ErrorCodes::LOGICAL_ERROR, "functionality is not supported for FSST"); }
 };
+
+ColumnPtr recursiveRemoveFSST(const ColumnPtr & column);
+
 };
