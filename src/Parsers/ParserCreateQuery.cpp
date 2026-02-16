@@ -562,6 +562,7 @@ bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     auto tuple_function = make_intrusive<ASTFunction>();
     tuple_function->name = "tuple";
     tuple_function->arguments = std::move(order_by);
+    tuple_function->children.push_back(tuple_function->arguments);
 
     node = std::move(tuple_function);
     return true;
