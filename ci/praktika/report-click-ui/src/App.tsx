@@ -467,10 +467,10 @@ function App() {
   }
 
   const headers = [
-    { label: 'Status' },
-    { label: 'Name' },
-    { label: 'Duration' },
-    { label: 'Start Time' },
+    { label: 'Status', width: '100px', align: 'center' as const },
+    { label: 'Name', align: 'left' as const },
+    { label: 'Duration', width: '120px', align: 'center' as const },
+    { label: 'Start Time', width: '110px', align: 'center' as const },
   ]
 
   const rows = data?.results?.map((result, index) => {
@@ -485,17 +485,17 @@ function App() {
     return {
       id: index,
       items: [
-        { label: wrapWithPopover(result.status, result, navigateUrl) },
-        { label: wrapWithPopover(result.name, result, navigateUrl) },
-        { label: wrapWithPopover(formatDuration(result.duration), result, navigateUrl) },
-        { label: wrapWithPopover(formatTime(result.start_time), result, navigateUrl) },
+        { label: wrapWithPopover(result.status, result, navigateUrl), align: 'center' as const },
+        { label: wrapWithPopover(result.name, result, navigateUrl), align: 'left' as const },
+        { label: wrapWithPopover(formatDuration(result.duration), result, navigateUrl), align: 'center' as const },
+        { label: wrapWithPopover(formatTime(result.start_time), result, navigateUrl), align: 'center' as const },
       ],
     }
   }) || []
 
   return (
     <ClickUIProvider theme={theme}>
-      <Container orientation='vertical' gap='none'>
+      <Container orientation='vertical' gap='none' style={{ minHeight: '100vh', alignItems: 'stretch' }}>
         {/* Header Bar */}
         <div
           style={{
@@ -650,7 +650,7 @@ function App() {
         </div>
 
         {/* Main Content */}
-        <Container orientation='vertical' gap='md' padding='lg' style={{ marginTop: '56px' }}>
+        <Container orientation='vertical' gap='none' padding='md' style={{ marginTop: '56px' }}>
 
           {loading && <Text>Loading test results...</Text>}
 
@@ -659,12 +659,14 @@ function App() {
           )}
 
           {data && !loading && (
-            <Container orientation='vertical' gap='sm'>
-              <Text>
-                status: <strong>{data.status}</strong> |
-                Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong> |
-                Duration: <strong>{formatDuration(data.duration)}</strong>
-              </Text>
+            <Container orientation='vertical' gap='none'>
+              <div style={{ padding: '12px 0', fontSize: '14px' }}>
+                <Text>
+                  status: <strong>{data.status}</strong> |
+                  Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong> |
+                  Duration: <strong>{formatDuration(data.duration)}</strong>
+                </Text>
+              </div>
 
               <Table
                 headers={headers}
