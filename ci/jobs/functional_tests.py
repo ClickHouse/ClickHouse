@@ -120,7 +120,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
     "DatabaseReplicated": " --no-stateful --replicated-database",
-    "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
+    "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings --no-random-detach",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check --no-random-detach",
@@ -226,7 +226,7 @@ def main():
 
     if is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
-        runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long --llvm-coverage"
+        runner_options += " --no-random-settings --no-random-merge-tree-settings --no-random-detach --no-long --llvm-coverage"
         os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
 
     rerun_count = 1
@@ -257,7 +257,7 @@ def main():
         runner_options += f" --encrypted-storage"
 
     if is_bugfix_validation:
-        os.environ["GLOBAL_TAGS"] = "no-random-settings"
+        os.environ["GLOBAL_TAGS"] = "no-random-settings,no-random-detach"
         ch_path = temp_dir
         if not info.is_local_run or not (Path(temp_dir) / "clickhouse").is_file():
             link_arch = "aarch64" if Utils.is_arm() else "amd64"
