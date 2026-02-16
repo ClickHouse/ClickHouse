@@ -5773,19 +5773,19 @@ String trim(const String & text)
 
 }
 
-void Context::setDashboardsConfig(const ConfigurationPtr & config)
+void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("dashboards", keys);
+    config.keys("dashboards", keys);
 
     Dashboards dashboards;
     for (const auto & key : keys)
     {
         const auto & prefix = "dashboards." + key + ".";
         dashboards.push_back({
-            { "dashboard", config->getString(prefix + "dashboard") },
-            { "title",     config->getString(prefix + "title") },
-            { "query",     trim(config->getString(prefix + "query")) },
+            { "dashboard", config.getString(prefix + "dashboard") },
+            { "title",     config.getString(prefix + "title") },
+            { "query",     trim(config.getString(prefix + "query")) },
         });
     }
 

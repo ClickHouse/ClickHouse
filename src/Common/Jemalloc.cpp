@@ -80,7 +80,7 @@ void setProfileActive(bool value)
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
-std::string_view flushProfile(const std::string & file_prefix)
+std::string_view flushProfile(const char * file_prefix)
 {
     checkProfilingEnabled();
     char * prefix_buffer;

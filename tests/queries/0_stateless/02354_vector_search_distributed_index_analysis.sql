@@ -3,9 +3,9 @@
 set allow_experimental_parallel_reading_from_replicas=0;
 set enable_analyzer = 1;
 
-DROP TABLE IF EXISTS dist_vec;
+DROP TABLE IF EXISTS tab;
 
-CREATE TABLE dist_vec
+CREATE TABLE tab
 (
    id UInt32,
    vec Array(Float32),
@@ -15,29 +15,29 @@ Engine=MergeTree
 ORDER BY id
 SETTINGS index_granularity = 8, distributed_index_analysis_min_parts_to_activate = 0, distributed_index_analysis_min_indexes_bytes_to_activate = 10;
 
-SYSTEM STOP MERGES dist_vec;
+SYSTEM STOP MERGES tab;
 
-INSERT INTO dist_vec SELECT number, [number/100, number/100] FROM numbers(100);
-INSERT INTO dist_vec SELECT number, [number/100, number/100] FROM numbers(100);
-INSERT INTO dist_vec SELECT number, [number/100, number/100] FROM numbers(100);
-INSERT INTO dist_vec SELECT number, [number/100, number/100] FROM numbers(100);
+INSERT INTO tab SELECT number, [number/100, number/100] FROM numbers(100);
+INSERT INTO tab SELECT number, [number/100, number/100] FROM numbers(100);
+INSERT INTO tab SELECT number, [number/100, number/100] FROM numbers(100);
+INSERT INTO tab SELECT number, [number/100, number/100] FROM numbers(100);
 
 SELECT 'KNN results';
 SELECT *
-FROM dist_vec
+FROM tab
 ORDER BY L2Distance(vec, [0.3, 0.3]) ASC
 LIMIT 4
 SETTINGS use_skip_indexes=0;
 
 SELECT 'ANN results';
 SELECT *
-FROM dist_vec
+FROM tab
 ORDER BY L2Distance(vec, [0.3, 0.3]) ASC
 LIMIT 4;
 
 SELECT 'ANN results - distributed';
 SELECT *
-FROM dist_vec
+FROM tab
 ORDER BY L2Distance(vec, [0.3, 0.3]) ASC
 LIMIT 4
 SETTINGS distributed_index_analysis_for_non_shared_merge_tree = 1, distributed_index_analysis = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas';
@@ -76,3 +76,5 @@ where initial_query_id = (select query_id
         and is_initial_query
         and has(Settings, 'distributed_index_analysis')
         and endsWith(log_comment, '-' || currentDatabase()));
+
+drop table tab;

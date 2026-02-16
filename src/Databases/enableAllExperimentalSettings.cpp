@@ -12,8 +12,6 @@ namespace DB
 
 void enableAllExperimentalSettings(ContextMutablePtr context)
 {
-    context->setSetting("allow_experimental_inverted_index", 1);
-    context->setSetting("enable_full_text_index", 1);
     context->setSetting("allow_experimental_codecs", 1);
     context->setSetting("allow_experimental_window_view", 1);
     context->setSetting("allow_experimental_funnel_functions", 1);

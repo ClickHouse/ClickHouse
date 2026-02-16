@@ -107,6 +107,14 @@ RUN arch=${TARGETARCH:-amd64} \
     && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \
     && chmod +x /usr/local/bin/azurite-rs
 
+ARG KAFKA_VERSION=3.9.0
+ARG SCALA_VERSION=2.13
+RUN curl -fsSL "https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz" \
+    | tar -xz -C /opt/ \
+    && ln -s /opt/kafka_${SCALA_VERSION}-${KAFKA_VERSION} /opt/kafka
+ENV KAFKA_HOME=/opt/kafka
+ENV PATH="${KAFKA_HOME}/bin:${PATH}"
+
 ENV PYTHONPATH=".:./ci"
 
 #USER clickhouse

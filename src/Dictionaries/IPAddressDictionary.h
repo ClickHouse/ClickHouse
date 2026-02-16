@@ -5,7 +5,6 @@
 #include <variant>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
@@ -101,7 +100,6 @@ private:
 
     struct Attribute final
     {
-        AttributeUnderlyingType type;
         std::variant<
             UInt8,
             UInt16,
@@ -155,6 +153,7 @@ private:
             ContainerType<Array>>
             maps;
         std::unique_ptr<Arena> string_arena;
+        AttributeUnderlyingType type;
     };
 
     void createAttributes();

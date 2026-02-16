@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache and global udf factory
 
-SET enable_full_text_index = 1;
-
 -- Tests the preprocessor argument for tokenizers in the text index definitions
 
 DROP TABLE IF EXISTS tab;

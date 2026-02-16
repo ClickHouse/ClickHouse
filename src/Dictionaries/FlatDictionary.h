@@ -110,11 +110,10 @@ private:
     template <typename Value>
     using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
 
-    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
+    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>, HashTableGrower<>>;
 
     struct Attribute final
     {
-        AttributeUnderlyingType type;
         std::optional<NullableSet> is_nullable_set;
 
         std::variant<
@@ -143,6 +142,8 @@ private:
             ContainerType<std::string_view>,
             ContainerType<Array>>
             container;
+
+        AttributeUnderlyingType type;
     };
 
     void createAttributes();

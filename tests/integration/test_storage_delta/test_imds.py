@@ -72,6 +72,11 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["node_with_session_token"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         prepare_s3_bucket(cluster)
         start_metadata_server(cluster)
 

@@ -4,7 +4,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -68,16 +68,16 @@ public:
         arguments[1].column->get(0, ngram_argument_value);
         auto ngram_value = ngram_argument_value.safeGet<UInt64>();
 
-        NgramsTokenExtractor extractor(ngram_value);
+        NgramsTokenizer tokenizer(ngram_value);
 
         auto result_column_string = ColumnString::create();
 
         auto input_column = arguments[0].column;
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-            executeImpl(extractor, *column_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-            executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
 
         return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
     }
@@ -86,7 +86,7 @@ private:
 
     template <typename ExtractorType, typename StringColumnType, typename ResultStringColumnType>
     void executeImpl(
-        const ExtractorType & extractor,
+        const ExtractorType & tokenizer,
         StringColumnType & input_data_column,
         ResultStringColumnType & result_data_column,
         ColumnArray::ColumnOffsets & offsets_column,
@@ -105,7 +105,7 @@ private:
             size_t token_start = 0;
             size_t token_length = 0;
 
-            while (cur < data.size() && extractor.nextInString(data.data(), data.size(), cur, token_start, token_length))
+            while (cur < data.size() && tokenizer.nextInString(data.data(), data.size(), cur, token_start, token_length))
             {
                 result_data_column.insertData(data.data() + token_start, token_length);
                 ++current_tokens_size;

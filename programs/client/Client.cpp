@@ -444,7 +444,7 @@ try
 
         if (exception)
         {
-            return exception->code() != 0 ? exception->code() : -1;
+            return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
         }
 
         if (have_error)

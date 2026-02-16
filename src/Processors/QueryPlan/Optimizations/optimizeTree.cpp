@@ -374,10 +374,6 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
-    // Some tests fail because on uninitialized `MergeTreeData::SnapshotData`
-    if (optimization_settings.enable_full_text_index)
-        return;
-
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).

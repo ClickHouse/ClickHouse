@@ -454,7 +454,7 @@ template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3D
 template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
 #endif
 
-#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
 template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 

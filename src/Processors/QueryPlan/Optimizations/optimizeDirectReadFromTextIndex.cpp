@@ -1,8 +1,13 @@
+#include <Common/FieldVisitorToString.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -12,10 +17,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Common/quoteString.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/logger_useful.h>
-#include <Functions/FunctionFactory.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
@@ -454,7 +455,7 @@ private:
         const auto & condition = selected_conditions.front();
         const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition);
         auto preprocessor = condition_text.getPreprocessor();
-        const auto * tokenizer = condition_text.getTokenExtractor();
+        const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
         if (needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions())

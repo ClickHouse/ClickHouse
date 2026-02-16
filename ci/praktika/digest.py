@@ -75,6 +75,7 @@ class Digest:
             "requires",
             "enable_commit_status",
             "allow_merge_on_failure",
+            "digest_config",
         ]
         filtered_job_dict = {
             k: v for k, v in job_config_dict.items() if k not in drop_fields
