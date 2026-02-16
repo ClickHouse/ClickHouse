@@ -20,13 +20,7 @@ BUGFIX_BUILD_TYPES = ["amd_asan", "amd_tsan", "amd_msan", "amd_ubsan", "amd_debu
 
 def find_master_builds():
     """Find S3 URLs for all 5 build types from a recent master commit."""
-    Shell.check(
-        f"git config --global --add safe.directory {Utils.cwd()}", verbose=True
-    )
-    raw = Shell.get_output(
-        "git log origin/master --format=%H -n 50", verbose=True
-    )
-    commits = raw.strip().splitlines()
+    commits = Info().get_kv_data("master_commits") or []
     for sha in commits:
         probe_url = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{BUGFIX_BUILD_TYPES[0]}/clickhouse"
         if Shell.check(f"curl -sfI {probe_url} > /dev/null"):
