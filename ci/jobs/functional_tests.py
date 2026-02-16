@@ -123,8 +123,8 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
-    "flaky check": "--flaky-check",
-    "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
+    "flaky check": "--flaky-check --no-random-detach",
+    "targeted": "--flaky-check --no-random-detach",  # to disable tests not compatible with the thread fuzzer
 }
 
 
