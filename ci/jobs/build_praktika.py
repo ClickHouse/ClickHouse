@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 VENV_DIR = Path(".venv-pypy")
-PYPY_EXECUTABLE = "pypy3"   # change if needed
 
 
 def run(cmd, check=True):
@@ -17,7 +16,7 @@ def run(cmd, check=True):
 def ensure_venv():
     if not VENV_DIR.exists():
         print("Creating PyPy virtual environment...")
-        run([PYPY_EXECUTABLE, "-m", "venv", str(VENV_DIR)])
+        run([sys.executable, "-m", "venv", str(VENV_DIR)])
     else:
         print("Virtual environment already exists.")
 
