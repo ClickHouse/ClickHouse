@@ -653,25 +653,15 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && name == "array"sv && isOperator())
         {
-            /// If all children are scalar literals, the parser's fast path (ParserCollectionOfLiterals)
-            /// would create ASTLiteral(Array) instead of ASTFunction("array") on reparse.
-            /// Use function syntax in that case to preserve AST identity during formatting roundtrip.
-            /// We only check for scalar literals (not compound Array/Tuple/Map values) because
-            /// compound literals format with [...]/(...)/{...} syntax which creates ASTFunction
-            /// on reparse, not ASTLiteral, so the roundtrip is already structurally different.
-            /// Keeping operator syntax for compound children also maintains backward compatibility
-            /// with parsers that only accept [...] syntax (e.g. BACKUP's cluster_host_ids setting).
-            auto is_scalar_literal = [](const ASTPtr & child)
-            {
-                const auto * lit = child->as<ASTLiteral>();
-                if (!lit) return false;
-                auto t = lit->value.getType();
-                return t != Field::Types::Array && t != Field::Types::Tuple && t != Field::Types::Map;
-            };
-            bool all_scalar_literals = std::all_of(
-                arguments->children.begin(), arguments->children.end(), is_scalar_literal);
+            /// If all children are literals (scalar or compound), the parser's fast path
+            /// (ParserCollectionOfLiterals) would create a single ASTLiteral(Array)
+            /// instead of ASTFunction("array") on reparse. Use function syntax in that
+            /// case to preserve AST identity during formatting roundtrip.
+            auto is_literal = [](const ASTPtr & child) { return child->as<ASTLiteral>() != nullptr; };
+            bool all_literals = std::all_of(
+                arguments->children.begin(), arguments->children.end(), is_literal);
 
-            if (!all_scalar_literals)
+            if (!all_literals)
             {
                 ostr << '[';
                 for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -690,21 +680,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator() && !(frame.need_parens && !alias.empty()))
         {
-            /// Same as for array: if all children are scalar literals, the parser's fast path
-            /// (ParserCollectionOfLiterals<Tuple>) would create ASTLiteral(Tuple) on reparse.
-            /// Use function syntax to preserve AST identity. See the array comment above
-            /// for why compound literals are excluded from this check.
-            auto is_scalar_literal = [](const ASTPtr & child)
-            {
-                const auto * lit = child->as<ASTLiteral>();
-                if (!lit) return false;
-                auto t = lit->value.getType();
-                return t != Field::Types::Array && t != Field::Types::Tuple && t != Field::Types::Map;
-            };
-            bool all_scalar_literals = std::all_of(
-                arguments->children.begin(), arguments->children.end(), is_scalar_literal);
+            /// Same as for array: if all children are literals, use function syntax
+            /// to prevent ParserCollectionOfLiterals from creating ASTLiteral(Tuple) on reparse.
+            auto is_literal = [](const ASTPtr & child) { return child->as<ASTLiteral>() != nullptr; };
+            bool all_literals = std::all_of(
+                arguments->children.begin(), arguments->children.end(), is_literal);
 
-            if (!all_scalar_literals)
+            if (!all_literals)
             {
                 ostr << '(';
 
