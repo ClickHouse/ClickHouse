@@ -11,6 +11,7 @@
 #include <Core/Field.h>
 
 #include <cstdint>
+#include <mutex>
 
 namespace DB::Iceberg
 {
@@ -150,7 +151,7 @@ class ManifestFileContent : public boost::noncopyable
 {
 public:
     explicit ManifestFileContent(
-        const AvroForIcebergDeserializer & manifest_file_deserializer,
+        std::unique_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
         const String & manifest_file_name,
         Int32 format_version_,
         const String & common_path,
@@ -180,23 +181,48 @@ public:
 
     bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
+    /// Returns true if all manifest file entries have been processed
+    bool isInitialized() const;
+    /// Process the next manifest file entry and return it. Returns nullptr if all entries have been processed.
+    ManifestFileEntryPtr next();
+
     ManifestFileContent(ManifestFileContent &&) = delete;
     ManifestFileContent & operator=(ManifestFileContent &&) = delete;
 
 private:
+    void preinitialize(const String & manifest_file_name, const String & common_path, DB::ContextPtr context);
+
+    ManifestFileEntryPtr processRow(size_t row_index);
 
     PartitionSpecification common_partition_specification;
     void sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files);
 
     std::optional<DB::KeyDescription> partition_key_description;
-    // Size - number of files
-    std::vector<ManifestFileEntryPtr> data_files_without_deleted;
-    // Partition level deletes files
-    std::vector<ManifestFileEntryPtr> position_deletes_files_without_deleted;
-    std::vector<ManifestFileEntryPtr> equality_deletes_files;
 
-    std::set<Int32> column_ids_which_have_bounds;
+    /// Mutex to protect concurrent access to file vectors during iteration
+    mutable std::mutex files_mutex;
+
+    // Size - number of files
+    std::vector<ManifestFileEntryPtr> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
+    // Partition level deletes files
+    std::vector<ManifestFileEntryPtr> position_deletes_files_without_deleted TSA_GUARDED_BY(files_mutex);
+    std::vector<ManifestFileEntryPtr> equality_deletes_files TSA_GUARDED_BY(files_mutex);
+
+    // State for iterative initialization
+    std::unique_ptr<AvroForIcebergDeserializer> manifest_file_deserializer;
     String path_to_manifest_file;
+    size_t total_rows = 0;
+    std::atomic<size_t> current_row_index = 0;
+    std::atomic<bool> fully_initialized = false;
+    Int32 format_version = 0;
+    String common_path;
+    IcebergSchemaProcessor * schema_processor_ptr = nullptr;
+    Int64 inherited_sequence_number = 0;
+    Int64 inherited_snapshot_id = 0;
+    String table_location;
+    DB::ContextPtr context;
+    String manifest_file_name;
+    Int32 manifest_schema_id = 0;
 };
 
 using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;

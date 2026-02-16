@@ -89,10 +89,11 @@ Iceberg::ManifestFilePtr getManifestFile(
             read_settings.enable_filesystem_cache = false;
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
-        Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
+        auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
+            std::move(buffer), filename, getFormatSettings(local_context));
 
         return std::make_shared<Iceberg::ManifestFileContent>(
-            manifest_file_deserializer,
+            std::move(manifest_file_deserializer),
             filename,
             persistent_table_components.format_version,
             persistent_table_components.table_path,
