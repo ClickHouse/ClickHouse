@@ -5,7 +5,7 @@ import './App.css'
 interface TestResult {
   name: string
   status: string
-  start_time: string
+  start_time: string | number
   duration: number
   info?: string
   links?: string[]
@@ -15,7 +15,7 @@ interface TestResult {
 interface PRResult {
   name: string
   status: string
-  start_time: string
+  start_time: string | number
   duration: number
   results: TestResult[]
 }
@@ -245,8 +245,13 @@ function App() {
     return `${minutes}m ${remainingSeconds}s`
   }
 
-  const formatTime = (timestamp: string): string => {
-    return new Date(timestamp).toLocaleString()
+  const formatTime = (timestamp: string | number): string => {
+    if (!timestamp) return ''
+    // If timestamp is a number, it's Unix timestamp in seconds
+    const date = typeof timestamp === 'number'
+      ? new Date(timestamp * 1000)
+      : new Date(timestamp)
+    return date.toLocaleTimeString()
   }
 
   const getLastPartOfUrl = (url: string): string => {
@@ -656,21 +661,10 @@ function App() {
           {data && !loading && (
             <Container orientation='vertical' gap='sm'>
               <Text>
-                Overall Status: <strong>{data.status}</strong> |
+                status: <strong>{data.status}</strong> |
+                Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong> |
                 Duration: <strong>{formatDuration(data.duration)}</strong>
               </Text>
-
-              {nameParams.length > 0 && (
-                <Container orientation='horizontal' gap='sm'>
-                  <Text>Parameters:</Text>
-                  {nameParams.map((name, index) => (
-                    <Text key={index}>
-                      <strong>name_{index}</strong>: {name}
-                      {index < nameParams.length - 1 ? ' |' : ''}
-                    </Text>
-                  ))}
-                </Container>
-              )}
 
               <Table
                 headers={headers}
