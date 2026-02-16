@@ -1,4 +1,5 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -52,7 +53,10 @@ void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const For
     if (expression)
     {
         ostr << ' ' << "EXPRESSION" << ' ';
-        expression->format(ostr, settings, state, frame);
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expression.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        expression->format(ostr, settings, state, nested_frame);
     }
 
     if (hierarchical)

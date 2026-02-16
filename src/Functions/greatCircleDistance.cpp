@@ -82,7 +82,7 @@ struct Impl
 
         for (size_t i = 0; i <= METRIC_LUT_SIZE; ++i)
         {
-            double latitude = i * (PI / METRIC_LUT_SIZE) - PI * 0.5; // [-pi / 2, pi / 2] -> [0, METRIC_LUT_SIZE]
+            double latitude = static_cast<double>(i) * (PI / static_cast<double>(METRIC_LUT_SIZE)) - PI * 0.5; // [-pi / 2, pi / 2] -> [0, METRIC_LUT_SIZE]
 
             /// Squared metric coefficients (for the distance in meters) on a tangent plane, for latitude and longitude (in degrees),
             /// depending on the latitude (in radians).
@@ -114,7 +114,7 @@ struct Impl
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
-        y -= i;
+        y -= static_cast<T>(i);
         i &= (COS_LUT_SIZE - 1);
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
@@ -123,7 +123,7 @@ struct Impl
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
-        y -= i;
+        y -= static_cast<T>(i);
         i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
@@ -143,7 +143,7 @@ struct Impl
             // distance under 17083 km, 512-entry LUT error under 0.00072%
             x *= ASIN_SQRT_LUT_SIZE;
             size_t i = toIndex(x);
-            return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
+            return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - static_cast<T>(i));
         }
         return std::asin(std::sqrt(x)); /// distance is over 17083 km, just compute exact
     }
@@ -185,22 +185,22 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
             k_lat = 1;
 
             k_lon = impl<T>.sphere_metric_lut[latitude_midpoint_index]
-                + (impl<T>.sphere_metric_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
+                + (impl<T>.sphere_metric_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
             k_lat = sqr(T(EARTH_DIAMETER) * T(PI) / T(360.0));
 
             k_lon = impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]
-                + (impl<T>.sphere_metric_meters_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
+                + (impl<T>.sphere_metric_meters_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
         else if constexpr (method == Method::WGS84_METERS)
         {
             k_lat = impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]
-                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - latitude_midpoint_index);
+                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
 
             k_lon = impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
-                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - latitude_midpoint_index);
+                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
 
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.

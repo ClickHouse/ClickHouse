@@ -136,7 +136,9 @@ protected:
         if (internal)
             return type;
 
-        if (keep_nullable && arguments.front().type->isNullable() && type->canBeInsideNullable())
+        if (keep_nullable
+            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable())
+            && type->canBeInsideNullable())
             return makeNullable(type);
 
         return type;

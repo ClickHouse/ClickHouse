@@ -118,7 +118,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "The reason for the event with type MERGE_PARTS. Can have one of the following values: "
             "NotAMerge — The current event has the type other than MERGE_PARTS, "
             "RegularMerge — Some regular merge, "
-            "TTLDeleteMerge — Cleaning up expired data. "
+            "TTLDeleteMerge, TTLDropMerge — Cleaning up expired data. "
             "TTLRecompressMerge — Recompressing data part with the. "},
         {"merge_algorithm", std::move(merge_algorithm_datatype), "Merge algorithm for the event with type MERGE_PARTS. Can have one of the following values: Undecided, Horizontal, Vertical"},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date."},
@@ -151,6 +151,9 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         /// Is there an error during the execution or commit
         {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
+
+        /// Mutation IDs
+        {"mutation_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of mutation IDs applied to the source part (merged_from) for the event with type MUTATE_PART_START and MUTATE_PART."},
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
@@ -213,6 +216,12 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
+
+    Array mutation_ids_array;
+    mutation_ids_array.reserve(mutation_ids.size());
+    for (const auto & id : mutation_ids)
+        mutation_ids_array.push_back(id);
+    columns[i++]->insert(mutation_ids_array);
 
     if (profile_counters)
     {

@@ -78,7 +78,8 @@ public:
         const StorageID & table_id,
         const Settings & settings,
         const ObjectStorageQueueSettings & queue_settings,
-        UUID database_uuid = UUIDHelpers::Nil);
+        UUID database_uuid = UUIDHelpers::Nil,
+        String * result_zookeeper_name = nullptr);
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
@@ -97,7 +98,8 @@ private:
 
     ObjectStorageType type;
     const std::string engine_name;
-    const fs::path zk_path;
+    std::string zookeeper_name;
+    fs::path zk_path;
     const bool enable_logging_to_queue_log;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);

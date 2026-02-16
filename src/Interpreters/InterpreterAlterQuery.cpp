@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -21,6 +22,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Storages/AlterCommands.h>
@@ -134,9 +136,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
-        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
     }
 
 #if CLICKHOUSE_CLOUD
@@ -173,7 +175,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-    ASTPtr command_list_ptr = alter.getChild(*alter.command_list);
+    ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
     AlterCommands alter_commands;
@@ -227,6 +229,53 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (1 < command_types_count || mixed_settings_amd_metadata_alter)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
                                                          "to execute ALTERs of different types (replicated and non replicated) in single query");
+    }
+
+    /// Check for conflicts between RENAME COLUMN and UPDATE/DELETE operations.
+    /// If a column is both renamed and used in UPDATE/DELETE in the same ALTER, we must fail early
+    /// to ensure atomicity - otherwise RENAME would succeed but UPDATE/DELETE would fail,
+    /// leaving the table in an unexpected state. See issue #70678.
+    if (!alter_commands.empty() && mutation_commands.hasNonEmptyMutationCommands())
+    {
+        NameSet columns_to_rename;
+        for (const auto & command : alter_commands)
+            if (command.type == AlterCommand::RENAME_COLUMN)
+                columns_to_rename.insert(command.column_name);
+
+        if (!columns_to_rename.empty())
+        {
+            /// Check UPDATE columns
+            NameSet updated_columns = mutation_commands.getAllUpdatedColumns();
+            for (const auto & column_name : columns_to_rename)
+            {
+                if (updated_columns.contains(column_name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot UPDATE column {} and RENAME it in the same ALTER query. "
+                        "Please split into separate ALTER statements.",
+                        backQuote(column_name));
+            }
+
+            /// Check DELETE/UPDATE predicates for references to renamed columns
+            for (const auto & command : mutation_commands)
+            {
+                if (command.predicate)
+                {
+                    auto identifiers = IdentifiersCollector::collect(command.predicate);
+                    for (const auto * identifier : identifiers)
+                    {
+                        auto column_name = IdentifierSemantic::getColumnName(*identifier);
+                        if (column_name && columns_to_rename.contains(*column_name))
+                        {
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot use column {} in {} predicate and RENAME it in the same ALTER query. "
+                                "Please split into separate ALTER statements.",
+                                backQuote(*column_name),
+                                command.type == MutationCommand::DELETE ? "DELETE" : "UPDATE");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())

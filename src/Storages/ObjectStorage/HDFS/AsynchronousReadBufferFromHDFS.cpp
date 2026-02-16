@@ -252,11 +252,11 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
         next_times,
         seek_times,
         sum_interval,
-        double(sum_interval)/next_times,
+        static_cast<double>(sum_interval) / static_cast<double>(next_times),
         sum_duration,
-        double(sum_duration)/next_times,
+        static_cast<double>(sum_duration) / static_cast<double>(next_times),
         sum_wait,
-        double(sum_wait)/next_times);
+        static_cast<double>(sum_wait) / static_cast<double>(next_times));
 
     finalize();
 }

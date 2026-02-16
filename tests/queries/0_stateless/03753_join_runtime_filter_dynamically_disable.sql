@@ -1,3 +1,5 @@
+-- Tags: no-azure-blob-storage
+
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32, c_nationkey_copy Int32) ENGINE MergeTree ORDER BY c_custkey SETTINGS index_granularity=10;
 
@@ -17,6 +19,7 @@ SET join_algorithm = 'hash,parallel_hash';
 SET query_plan_optimize_join_order_algorithm='greedy';
 SET query_plan_optimize_join_order_limit=1;
 SET query_plan_join_swap_table=0;
+SET enable_multiple_prewhere_read_steps=1;
 
 -- 1 row in filter
 SELECT count()

@@ -207,7 +207,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
             /// Check min_ratio constraint
             if (constraints->min_ratio > 0.0)
             {
-                UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (*total_space));
+                UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (static_cast<Float32>(*total_space)));
                 if (free_bytes_after < min_bytes_from_ratio)
                 {
                     LOG_TRACE(logger, "Could not reserve {} ({} bytes) on disk {}. Free space after reservation {} bytes ({}) would be less than min_ratio requirement {} bytes ({}) (ratio: {}, total: {} bytes)",
@@ -368,7 +368,7 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
 
 std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, /*file_size*/ std::nullopt, /*flags*/ -1, /*existing_memory*/ nullptr, settings.use_page_cache_for_local_disks);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

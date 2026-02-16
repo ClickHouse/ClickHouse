@@ -504,7 +504,7 @@ SELECT
     NULL IS DISTINCT FROM c_tuple AS tuple_vs_null_distinct
 FROM 03611_nscmp_tbl;
 
-SELECT c_variant = 1 FROM 03611_nscmp_tbl;
+SELECT c_variant = 1 FROM 03611_nscmp_tbl; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT c_variant <=> c_ipv4 FROM 03611_nscmp_tbl; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
