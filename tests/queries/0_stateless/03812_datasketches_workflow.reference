@@ -1,0 +1,35 @@
+Test 1: Complete HLL workflow - daily to weekly aggregation
+1
+Test 2: Complete Quantiles workflow - hourly to daily percentiles
+api	1	1	1
+cache	1	1	1
+db	1	1	1
+Test 3: Incremental sketch updates
+1
+Test 4: Multi-dimensional aggregation
+ASIA	1
+EU	1
+US	1
+A	1
+B	1
+C	1
+1
+Test 5: Time series rollup (minute -> hour -> day)
+1	1
+Test 6: Sketch persistence and retrieval
+1	1
+Test 7: Union of sketches from different time periods
+1
+Test 8: Sketch size efficiency
+552	552	556	1
+Test 9: Quantiles with different distributions
+1	1
+Test 10: Empty result handling
+1	1
+Test 11: High-precision business metrics with custom parameters
+APAC	1	1
+EU	1	1
+US	1	1
+1	1
+Test 12: Accuracy comparison - default vs high-precision
+1
