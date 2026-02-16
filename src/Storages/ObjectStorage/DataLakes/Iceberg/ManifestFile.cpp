@@ -131,8 +131,8 @@ namespace
 
 }
 
-std::pair<const std::vector<ManifestFileEntryPtr> *, SharedLockGuard<SharedMutex>>
-ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
+ManifestFileContent::ManifestFileEntriesHandle
+ManifestFileContent::getFilesWithoutDeletedHandle(FileContentType content_type) const
 {
     SharedLockGuard<SharedMutex> shared_lock{files_mutex};
     if (!fully_initialized)
@@ -145,8 +145,7 @@ ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
         ptr = &position_deletes_files_without_deleted;
     else
         ptr = &equality_deletes_files;
-
-    return {ptr, std::move(shared_lock)};
+    return ManifestFileEntriesHandle{ptr, std::move(shared_lock)};
 }
 
 using namespace DB;
@@ -628,19 +627,10 @@ const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() con
     return *(partition_key_description);
 }
 
-bool ManifestFileContent::hasBoundsInfoInManifests() const
-{
-    return !column_ids_which_have_bounds.empty();
-}
-
-const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
-{
-    return column_ids_which_have_bounds;
-}
-
 bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
 {
-    for (const auto & file : data_files_without_deleted)
+    auto data_files_handle = getFilesWithoutDeletedHandle(FileContentType::DATA);
+    for (const auto & file : *data_files_handle)
     {
         // Treat missing sort_order_id as "not sorted by the expected order".
         // This can happen if:
@@ -659,9 +649,26 @@ size_t ManifestFileContent::getSizeInMemory() const
     size_t total_size = sizeof(ManifestFileContent);
     if (partition_key_description)
         total_size += sizeof(DB::KeyDescription);
-    total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
-    total_size += data_files_without_deleted.capacity() * sizeof(ManifestFileEntry);
-    total_size += position_deletes_files_without_deleted.capacity() * sizeof(ManifestFileEntry);
+
+    auto data_files_handle = getFilesWithoutDeletedHandle(FileContentType::DATA);
+    auto position_deletes_handle = getFilesWithoutDeletedHandle(FileContentType::POSITION_DELETE);
+    auto equality_deletes_handle = getFilesWithoutDeletedHandle(FileContentType::EQUALITY_DELETE);
+
+    total_size += data_files_handle->capacity() * sizeof(ManifestFileEntry);
+    total_size += position_deletes_handle->capacity() * sizeof(ManifestFileEntry);
+
+    for (const auto & file : *data_files_handle)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
+    for (const auto & file : *position_deletes_handle)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
+    for (const auto & file : *equality_deletes_handle)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
     return total_size;
 }
 
@@ -669,8 +676,8 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
 {
     Int64 result = 0;
 
-    auto [files, lock] = getFilesWithoutDeleted(content);
-    for (const auto & file : *files)
+    auto files_handle = getFilesWithoutDeletedHandle(content);
+    for (const auto & file : *files_handle)
     {
         /// Have at least one column with rows count
         bool found = false;
@@ -693,7 +700,8 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
 std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFilesExcludingDeleted() const
 {
     Int64 result = 0;
-    for (const auto & file : data_files_without_deleted)
+    auto data_files_handle = getFilesWithoutDeletedHandle(FileContentType::DATA);
+    for (const auto & file : *data_files_handle)
     {
         /// Have at least one column with bytes count
         bool found = false;

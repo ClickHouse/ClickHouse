@@ -176,12 +176,12 @@ Plan getPlan(
                 manifest_files[manifest_file.manifest_file_path]->path = manifest_file.manifest_file_path;
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
-            auto data_files = manifest_file_content->getFilesWithoutDeleted(FileContentType::DATA);
-            auto positional_delete_files = manifest_file_content->getFilesWithoutDeleted(FileContentType::POSITION_DELETE);
-            for (const auto & pos_delete_file : positional_delete_files)
+            auto data_files_handle = manifest_file_content->getFilesWithoutDeletedHandle(FileContentType::DATA);
+            auto positional_delete_files_handle = manifest_file_content->getFilesWithoutDeletedHandle(FileContentType::POSITION_DELETE);
+            for (const auto & pos_delete_file : *positional_delete_files_handle)
                 all_positional_delete_files.push_back(pos_delete_file);
 
-            for (const auto & data_file : data_files)
+            for (const auto & data_file : *data_files_handle)
             {
                 auto partition_index = plan.partition_encoder.encodePartition(data_file->partition_key_value);
                 if (plan.partitions.size() <= partition_index)

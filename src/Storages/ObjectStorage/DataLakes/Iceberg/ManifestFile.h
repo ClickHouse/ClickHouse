@@ -151,6 +151,24 @@ using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
 class ManifestFileContent : public boost::noncopyable
 {
 public:
+    struct ManifestFileEntriesHandle
+    {
+        const std::vector<ManifestFileEntryPtr> & getFilesWithoutDeleted() const { return *files; }
+
+        ManifestFileEntriesHandle(const std::vector<ManifestFileEntryPtr> * files_, SharedLockGuard<SharedMutex> shared_lock_)
+            : files(files_)
+            , lock(std::move(shared_lock_))
+        {
+        }
+
+        const std::vector<ManifestFileEntryPtr> & operator*() const { return getFilesWithoutDeleted(); }
+        const std::vector<ManifestFileEntryPtr> * operator->() const { return files; }
+
+    private:
+        const std::vector<ManifestFileEntryPtr> * files;
+        SharedLockGuard<SharedMutex> lock;
+    };
+
     explicit ManifestFileContent(
         std::unique_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
         const String & manifest_file_name,
@@ -163,8 +181,7 @@ public:
         DB::ContextPtr context,
         const String & path_to_manifest_file_);
 
-    std::pair<const std::vector<ManifestFileEntryPtr> *, SharedLockGuard<SharedMutex>>
-    getFilesWithoutDeleted(FileContentType content_type) const;
+    ManifestFileEntriesHandle getFilesWithoutDeletedHandle(FileContentType content_type) const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
@@ -177,8 +194,6 @@ public:
     std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
     std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
-    bool hasBoundsInfoInManifests() const;
-    const std::set<Int32> & getColumnsIDsWithBounds() const;
     const String & getPathToManifestFile() const { return path_to_manifest_file; }
 
     bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
@@ -225,8 +240,6 @@ private:
     DB::ContextPtr context;
     String manifest_file_name;
     Int32 manifest_schema_id = 0;
-
-
 };
 
 using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;

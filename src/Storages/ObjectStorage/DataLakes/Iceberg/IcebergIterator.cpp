@@ -288,7 +288,7 @@ IcebergIterator::IcebergIterator(
           object_storage,
           local_context_,
           [](const Iceberg::ManifestFilePtr & manifest_file)
-          { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
+          { return *manifest_file->getFilesWithoutDeletedHandle(Iceberg::FileContentType::DATA); },
           Iceberg::ManifestFileContentType::DATA,
           filter_dag.get(),
           table_snapshot_,
@@ -299,10 +299,15 @@ IcebergIterator::IcebergIterator(
           local_context_,
           [](const Iceberg::ManifestFilePtr & manifest_file)
           {
-              auto position_deletes = manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::POSITION_DELETE);
-              auto equality_deletes = manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::EQUALITY_DELETE);
-              position_deletes.insert(position_deletes.end(), equality_deletes.begin(), equality_deletes.end());
-              return position_deletes;
+              auto position_deletes
+                  = manifest_file->getFilesWithoutDeletedHandle(Iceberg::FileContentType::POSITION_DELETE).getFilesWithoutDeleted();
+              auto equality_deletes
+                  = manifest_file->getFilesWithoutDeletedHandle(Iceberg::FileContentType::EQUALITY_DELETE).getFilesWithoutDeleted();
+              std::vector<ManifestFileEntryPtr> result;
+              result.reserve(position_deletes.size() + equality_deletes.size());
+              result = position_deletes;
+              result.insert(result.end(), equality_deletes.begin(), equality_deletes.end());
+              return result;
           },
           Iceberg::ManifestFileContentType::DELETE,
           filter_dag.get(),
