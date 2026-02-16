@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 -- Tests that SYSTEM DROP QUERY CACHE TAG is correctly formatted (serialized to string).
 -- This is important for ON CLUSTER queries where the query is reformatted before being sent to other nodes.
 

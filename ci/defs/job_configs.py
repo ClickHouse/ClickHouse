@@ -1198,6 +1198,12 @@ class JobConfigs:
             provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM],
         ),
     )
+    update_toolchain_dockerfile_job = Job.Config(
+        name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
+        enable_gh_auth=True,
+    )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",
         runs_on=RunnerLabels.ARM_MEDIUM,
