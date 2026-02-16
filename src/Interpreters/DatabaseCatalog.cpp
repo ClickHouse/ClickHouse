@@ -1708,14 +1708,15 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
     /// Remove view from dependency graphs
     if (is_view)
     {
-        auto view_sources = view_dependencies.getDependents(table_id);
+        StorageID view_by_name{table_id.database_name, table_id.table_name};
+        auto view_sources = view_dependencies.getDependents(view_by_name);
         for (const auto & source_table_id : view_sources)
-            view_dependencies.removeDependency(source_table_id, table_id, /* remove_isolated_tables= */ true);
+            view_dependencies.removeDependency(source_table_id, view_by_name, /* remove_isolated_tables= */ true);
         old_view_dependencies.insert(old_view_dependencies.end(), view_sources.begin(), view_sources.end());
 
-        auto plain_view_sources = plain_view_dependencies.getDependents(table_id);
+        auto plain_view_sources = plain_view_dependencies.getDependents(view_by_name);
         for (const auto & source_table_id : plain_view_sources)
-            plain_view_dependencies.removeDependency(source_table_id, table_id, /* remove_isolated_tables= */ true);
+            plain_view_dependencies.removeDependency(source_table_id, view_by_name, /* remove_isolated_tables= */ true);
     }
 
     return {
