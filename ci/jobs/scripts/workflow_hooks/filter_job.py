@@ -102,6 +102,13 @@ def should_skip_job(job_name):
         return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
 
     if (
+        JobNames.BUILD_TOOLCHAIN in job_name
+        and _info_cache.pr_number
+        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
+
+    if (
         Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels
         and job_name not in INTEGRATION_TEST_FLAKY_CHECK_JOBS
     ):

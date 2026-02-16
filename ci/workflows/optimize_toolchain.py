@@ -4,11 +4,14 @@ from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 
 workflow = Workflow.Config(
-    name="NightlyToolchain",
+    name="OptimizeToolchain",
     event=Workflow.Event.DISPATCH,
     branches=[BASE_BRANCH],
     jobs=[
         *JobConfigs.toolchain_build_jobs,
+        JobConfigs.update_toolchain_dockerfile_job.set_dependency(
+            [j.name for j in JobConfigs.toolchain_build_jobs]
+        ),
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

@@ -15,24 +15,6 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
-BUGFIX_BUILD_TYPES = ["amd_asan", "amd_tsan", "amd_msan", "amd_ubsan", "amd_debug"]
-
-
-def find_master_builds():
-    """Find S3 URLs for all 5 build types from a recent master commit."""
-    raw = Shell.get_output(
-        "git log origin/master --format=%H -n 50", verbose=True
-    )
-    commits = raw.strip().splitlines()
-    for sha in commits:
-        probe_url = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{BUGFIX_BUILD_TYPES[0]}/clickhouse"
-        if Shell.check(f"curl -sfI {probe_url} > /dev/null"):
-            return {
-                bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{bt}/clickhouse"
-                for bt in BUGFIX_BUILD_TYPES
-            }
-    return None
-
 
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
@@ -277,19 +259,14 @@ def main():
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
         ch_path = temp_dir
-        build_urls = find_master_builds()
-        assert build_urls, "Could not find master builds in S3"
-        for bt, url in build_urls.items():
-            bt_path = f"{temp_dir}/clickhouse_{bt}"
-            if not info.is_local_run or not Path(bt_path).is_file():
-                Shell.run(
-                    f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
-                )
-                Shell.run(f"chmod +x {bt_path}", verbose=True)
-        Shell.run(
-            f"cp {temp_dir}/clickhouse_{BUGFIX_BUILD_TYPES[0]} {temp_dir}/clickhouse",
-            verbose=True,
-        )
+        if not info.is_local_run or not (Path(temp_dir) / "clickhouse").is_file():
+            link_arch = "aarch64" if Utils.is_arm() else "amd64"
+            link_to_master_head_binary = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{link_arch}/clickhouse"
+            Shell.run(
+                f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
+                verbose=True,
+                strict=True,
+            )
     elif args.path:
         assert Path(args.path).is_dir(), f"Path [{args.path}] is not a directory"
         ch_path = str(Path(args.path).absolute())
@@ -570,40 +547,6 @@ def main():
                     if has_failures and test_result.is_ok():
                         test_result.set_failed()
                     break
-
-        # Run additional build types for bugfix validation
-        if is_bugfix_validation:
-            for r in test_result.results:
-                r.set_label(BUGFIX_BUILD_TYPES[0])
-            all_bugfix_sub_results = list(test_result.results)
-
-            for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
-                print(f"\n=== Bugfix validation with {bugfix_bt} ===")
-                Shell.run(
-                    f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
-                    verbose=True,
-                )
-                Shell.run(f"chmod +x {ch_path}/clickhouse", verbose=True)
-                CH.terminate()
-                CH.start()
-                CH.wait_ready()
-
-                ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
-                run_tests(
-                    batch_num=0,
-                    batch_total=0,
-                    tests=tests,
-                    extra_args=runner_options,
-                    random_order=True,
-                    rerun_count=1,
-                )
-                bt_result = ft_res_processor_bt.run()
-                for r in bt_result.results:
-                    r.set_label(bugfix_bt)
-                all_bugfix_sub_results.extend(bt_result.results)
-                debug_files += ft_res_processor_bt.debug_files
-
-            test_result.results = all_bugfix_sub_results
 
         if not info.is_local_run:
             CH.stop_log_exports()

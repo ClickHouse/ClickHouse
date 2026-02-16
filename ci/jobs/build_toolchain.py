@@ -209,13 +209,15 @@ def main():
                 name="Profile collection build (ClickHouse)",
                 command=f"ninja -C {CH_PROFILE_BUILD_DIR} clickhouse",
             )
-            results.append(build_result)
             if not build_result.is_ok():
                 print(
                     "ClickHouse build finished with errors"
                     " (link failures with instrumented compiler are expected)."
                     " Profraw files from compilation steps should still be available."
                 )
+                build_result.status = Result.Status.SUCCESS
+                build_result.info = "Build failed at link step (expected); profraw files collected"
+            results.append(build_result)
 
         # Merge profraw files using system llvm-profdata (stage 1 build lacks zlib
         # support, but the profraw files may contain zlib-compressed sections)
@@ -302,6 +304,7 @@ def main():
     # toolchain which provides ~23% compilation speedup.
     if res and JobStages.BOLT_OPTIMIZATION in stages:
         bolt_ok = True
+        bolt_results = []
         clang_binary = f"{STAGE2_INSTALL_DIR}/bin/clang-21"
 
         # Find the actual clang binary (it may be clang-21, clang-20, etc.)
@@ -337,7 +340,7 @@ def main():
                 f" --instrumentation-file={BOLT_PROFILES_DIR}/prof"
             ),
         )
-        results.append(result)
+        bolt_results.append(result)
         if not result.is_ok():
             bolt_ok = False
             print(
@@ -379,7 +382,7 @@ def main():
                 name="BOLT profile collection CMake",
                 command=cmake_cmd,
             )
-            results.append(result)
+            bolt_results.append(result)
             if not result.is_ok():
                 bolt_ok = False
                 print("BOLT profile collection cmake failed. Continuing with PGO-only.")
@@ -399,7 +402,7 @@ def main():
                     f" ; exit 0'"
                 ),
             )
-            results.append(result)
+            bolt_results.append(result)
 
             # Check if we collected any profiles
             fdata_files = glob.glob(f"{BOLT_PROFILES_DIR}/prof.*")
@@ -418,7 +421,7 @@ def main():
                     f" {BOLT_PROFILES_DIR}/prof.*"
                 ),
             )
-            results.append(result)
+            bolt_results.append(result)
             if not result.is_ok():
                 bolt_ok = False
                 print("BOLT profile merge failed. Continuing with PGO-only.")
@@ -441,7 +444,7 @@ def main():
                     f" -use-gnu-stack"
                 ),
             )
-            results.append(result)
+            bolt_results.append(result)
             if not result.is_ok():
                 bolt_ok = False
                 print("BOLT optimization failed. Continuing with PGO-only.")
@@ -452,14 +455,19 @@ def main():
                 name="Install BOLTed clang",
                 command=f"mv {clang_bolted} {clang_binary}",
             )
-            results.append(result)
+            bolt_results.append(result)
             if not result.is_ok():
                 bolt_ok = False
 
         if bolt_ok:
             print("BOLT optimization applied successfully")
+            results.extend(bolt_results)
         else:
             print("Packaging PGO-only toolchain (BOLT was skipped or failed)")
+            # Mark all BOLT results as skipped so they don't fail the overall job
+            for r in bolt_results:
+                r.status = Result.Status.SKIPPED
+            results.extend(bolt_results)
 
         # Clean up BOLT intermediates
         print("Cleaning BOLT intermediate files")
@@ -473,17 +481,34 @@ def main():
 
     # Stage 5: Package
     if res and JobStages.PACKAGE in stages:
-        output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"
+        # Strip ELF executables and shared libraries to reduce archive size
+        # (relocations from --emit-relocs and LTO symbols are no longer needed).
+        # Use "file" to skip scripts (Python, Perl, shell) that strip cannot handle.
         results.append(
             Result.from_commands_run(
-                name="Package toolchain",
+                name="Strip binaries",
                 command=(
-                    f"tar -C {STAGE2_INSTALL_DIR} -cf - ."
-                    f" | zstd -T0 -19 -o {output_path}"
+                    f"find {STAGE2_INSTALL_DIR}/bin -type f -executable"
+                    f" -exec sh -c 'file \"$1\" | grep -q ELF && strip --strip-unneeded \"$1\"' _ {{}} \\;"
+                    f" && find {STAGE2_INSTALL_DIR}/lib -name '*.so*' -type f"
+                    f" -exec strip --strip-unneeded {{}} +"
                 ),
             )
         )
         res = results[-1].is_ok()
+
+        if res:
+            output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"
+            results.append(
+                Result.from_commands_run(
+                    name="Package toolchain",
+                    command=(
+                        f"tar -C {STAGE2_INSTALL_DIR} -cf - ."
+                        f" | zstd -T0 -19 -o {output_path}"
+                    ),
+                )
+            )
+            res = results[-1].is_ok()
 
         if res:
             file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
