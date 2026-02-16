@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+
 DROP TABLE IF EXISTS t_index_empty_part;
 
 CREATE TABLE t_index_empty_part (c0 Int, c1 Int)

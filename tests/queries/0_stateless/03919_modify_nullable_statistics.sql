@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+
 drop table if exists t_stat_nullable_1 sync;
 drop table if exists t_stat_nullable_2 sync;
 
