@@ -83,3 +83,37 @@ def test_writes_with_partitioned_table(started_cluster_iceberg_with_spark, forma
 
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 10
+
+
+@pytest.mark.parametrize("format_version", ["2"])
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_writes_with_partitioned_table_count_partitions(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = "test_writes_with_partitioned_table_count_partitions_" + storage_type + "_" + get_uuid_str()
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(y String)", partition_by="(icebergBucket(16, y))", format_version=format_version)
+    values = ""
+    num_rows = 1000
+    target = []
+    for i in range(num_rows):
+        values += f"({i})"
+        target.append(str(i))
+        if i != num_rows - 1:
+            values += ","
+    target = '\n'.join(sorted(target))
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES {values};", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == target + "\n"
+
+    files = default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    num_pq_files = 0
+    for file in files:
+        if file[-7:] == 'parquet':
+            num_pq_files += 1
+
+    assert num_pq_files == 16

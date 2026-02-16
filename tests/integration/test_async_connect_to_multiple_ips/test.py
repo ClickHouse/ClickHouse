@@ -22,18 +22,14 @@ def cluster_without_dns_cache_update():
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/listen_host.xml"],
     user_configs=["configs/enable_hedged.xml"],
     with_zookeeper=True,
-    ipv4_address="10.5.95.11",
 )
 
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/listen_host.xml"],
     user_configs=["configs/enable_hedged.xml"],
     with_zookeeper=True,
-    ipv4_address="10.5.95.12",
 )
 
 
@@ -56,7 +52,7 @@ def test(cluster_without_dns_cache_update):
             [
                 "bash",
                 "-c",
-                "echo '{} {}' >> /etc/hosts".format(node1.ipv4_address, node1.name),
+                "echo '{} {}' >> /etc/hosts".format(node1.ip_address, node1.name),
             ]
         )
     )

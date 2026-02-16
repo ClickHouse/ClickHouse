@@ -602,6 +602,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 if (data_type)
                 {
                     column.type = data_type;
+                    /// Update statistics data type to match the new column type
+                    if (!column.statistics.empty())
+                        column.statistics.data_type = data_type;
                     /// The type changed, so assume that implicit indices may change too
                     metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
@@ -872,10 +875,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
         else
         {
+            /// For refreshable materialized views, allow parameterized views in the query.
+            /// This prevents the old analyzer from trying to execute table functions during analysis.
             as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
                 context,
                 false /* is_subquery */,
-                false);
+                metadata.refresh != nullptr /* is_create_parameterized_view */);
         }
 
         metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());

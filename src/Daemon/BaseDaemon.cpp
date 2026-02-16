@@ -233,11 +233,6 @@ void BaseDaemon::closeFDs()
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
-
-    /// Remember the original working directory before any chdir calls below.
-    /// This is needed to correctly resolve relative config paths later.
-    original_working_directory = fs::current_path();
-
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
@@ -272,20 +267,6 @@ void BaseDaemon::initialize(Application & self)
 #endif
     );
 
-    /// Write core dump on crash.
-    {
-        struct rlimit rlim;
-        if (getrlimit(RLIMIT_CORE, &rlim))
-            throw Poco::Exception("Cannot getrlimit");
-        /// 1 GiB by default. If more - it writes to disk too long.
-        rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
-
-        if (rlim.rlim_cur && setrlimit(RLIMIT_CORE, &rlim))
-        {
-            /// It doesn't work under address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
-            std::cerr << "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur) << std::endl;
-        }
-    }
 
 #if defined(OS_LINUX)
     /// Configure RLIMIT_SIGPENDING

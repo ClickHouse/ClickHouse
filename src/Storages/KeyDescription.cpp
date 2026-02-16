@@ -128,6 +128,7 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     KeyDescription result;
     result.definition_ast = definition_ast;
     auto key_expression_list = extractKeyExpressionList(definition_ast);
+    checkExpressionDoesntContainSubqueries(*key_expression_list);
 
     result.expression_list_ast = make_intrusive<ASTExpressionList>();
     for (const auto & child : key_expression_list->children)

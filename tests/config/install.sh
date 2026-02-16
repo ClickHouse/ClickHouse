@@ -163,6 +163,8 @@ ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/wait_remaining_connections.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/kafka.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/keeper_multiread_batch_size.xml $DEST_SERVER_PATH/config.d/
 
 if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/

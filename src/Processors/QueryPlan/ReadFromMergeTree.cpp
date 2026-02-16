@@ -146,6 +146,7 @@ namespace Setting
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool do_not_merge_across_partitions_select_final;
+    extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsBool force_primary_key;
@@ -209,7 +210,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_parts_to_activate;
-    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_size_to_activate;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_bytes_to_activate;
 }
 
 namespace ErrorCodes
@@ -1526,8 +1527,11 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     const auto & settings = context->getSettingsRef();
 
     /// If setting do_not_merge_across_partitions_select_final is set always prefer it
-    if (settings[Setting::do_not_merge_across_partitions_select_final].changed)
-        return settings[Setting::do_not_merge_across_partitions_select_final];
+    if (settings[Setting::do_not_merge_across_partitions_select_final])
+        return true;
+    /// If automatic decision is disabled, should return false straight away
+    else if (!settings[Setting::enable_automatic_decision_for_merging_across_partitions_for_final])
+        return false;
 
     if (!storage_snapshot->metadata->hasPrimaryKey() || !storage_snapshot->metadata->hasPartitionKey())
         return false;
@@ -1568,7 +1572,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     assert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
 
-    /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
+    /// If do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
     /// So we will store iterators pointed to the beginning of each partition range (and parts.end()),
     /// then we will create a pipe for each partition that will run selecting processor and merging processor
@@ -2255,12 +2259,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
         bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
         UInt64 distributed_index_analysis_min_parts_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_parts_to_activate];
-        UInt64 distributed_index_analysis_min_indexes_size_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_size_to_activate];
+        UInt64 distributed_index_analysis_min_indexes_bytes_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_bytes_to_activate];
         bool distributed_index_analysis_enabled = !final_second_pass
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
-            && (!distributed_index_analysis_min_indexes_size_to_activate || get_indexes_size(data) >= distributed_index_analysis_min_indexes_size_to_activate);
+            && (!distributed_index_analysis_min_indexes_bytes_to_activate || get_indexes_size(data) >= distributed_index_analysis_min_indexes_bytes_to_activate);
 
         if (!distributed_index_analysis_enabled)
         {
@@ -3803,7 +3807,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
     auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
 
-    for (const auto & [index_name, columns] : added_columns)
+    for (const auto & [index_name, added_virtual_columns] : added_columns)
     {
         auto [task_it, inserted] = index_read_tasks.try_emplace(index_name);
         auto & index_task = task_it->second;
@@ -3823,15 +3827,15 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
             index_task.is_final = is_final;
         }
 
-        for (const auto & [column_name, column_type] : columns)
+        for (const auto & added_virtual_column : added_virtual_columns)
         {
-            auto it = std::ranges::find(all_column_names, column_name);
+            auto it = std::ranges::find(all_column_names, added_virtual_column.name);
             if (it != all_column_names.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} already added for reading", column_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} already added for reading", added_virtual_column.name);
 
-            all_column_names.push_back(column_name);
-            new_virtual_columns->addEphemeral(column_name, column_type, "");
-            index_task.columns.emplace_back(column_name, column_type);
+            all_column_names.push_back(added_virtual_column.name);
+            new_virtual_columns->add(added_virtual_column);
+            index_task.columns.emplace_back(added_virtual_column.name, added_virtual_column.type);
         }
     }
 
@@ -3907,14 +3911,14 @@ bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_ke
     return !any_one;
 }
 
-ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
 {
     /// Just attempting to read statistics files on disk can increase query latencies
     /// First check the in-memory metadata if statistics are present at all
     if (!getStorageMetadata()->hasStatistics())
         return nullptr;
 
-    return data.getConditionSelectivityEstimator(getParts(), getContext());
+    return data.getConditionSelectivityEstimator(getParts(), required_columns, getContext());
 }
 
 }

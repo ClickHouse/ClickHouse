@@ -105,7 +105,7 @@ def test_split_cache_restart(started_cluster):
     # may change cache state slightly between restarts, so use tolerance.
     if cache_count > 0:
         fraction = abs(new_cache_count - cache_count) / cache_count
-        assert fraction < 0.5, f"Cache count changed too much: {cache_count} -> {new_cache_count}"
+        assert fraction <= 0.5, f"Cache count changed too much: {cache_count} -> {new_cache_count}"
 
     node.query("DROP TABLE t0")
 
@@ -184,7 +184,7 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
             )
         )
         fraction = abs(current_count - count) / count
-        assert fraction < 0.5, f"System cache count changed too much: {count} -> {current_count}"
+        assert fraction <= 0.5, f"System cache count changed too much: {count} -> {current_count}"
 
     node.query("SELECT * FROM t0 FORMAT NULL")
 

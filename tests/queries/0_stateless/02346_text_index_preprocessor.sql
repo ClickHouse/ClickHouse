@@ -1,9 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache and global udf factory
 
-SET enable_full_text_index = 1;
-SET use_skip_indexes_on_data_read = 1;
-
 -- Tests the preprocessor argument for tokenizers in the text index definitions
 
 DROP TABLE IF EXISTS tab;
@@ -252,7 +249,7 @@ CREATE TABLE tab
     other_str String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(other_str))
 )
-ENGINE = MergeTree ORDER BY tuple();  -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();  -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '- The preprocessor argument must not reference non-indexed columns';
 CREATE TABLE tab
@@ -262,7 +259,7 @@ CREATE TABLE tab
     other_str String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(val, other_str))
 )
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '- Index definition may not be and expression when there is preprocessor';
 CREATE TABLE tab
@@ -271,7 +268,7 @@ CREATE TABLE tab
     val String,
     INDEX idx(upper(val)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val))
 )
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '-- Not even the same expression';
 CREATE TABLE tab
@@ -280,15 +277,7 @@ CREATE TABLE tab
     val String,
     INDEX idx(lower(val)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val))
 )
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE tab
-(
-    key UInt64,
-    val String,
-    INDEX idx(upper(val)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(upper(val)))
-)
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
 SELECT '- The preprocessor must be an expression';
 CREATE TABLE tab
@@ -297,7 +286,7 @@ CREATE TABLE tab
     val String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = BAD)
 )
-ENGINE = MergeTree ORDER BY key;   -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY key;   -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '- The preprocessor must be an expression, with existing functions';
 CREATE TABLE tab
@@ -332,6 +321,24 @@ CREATE TABLE tab
     key UInt64,
     val String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(val, toString(rand())))
+)
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+
+SELECT '- The preprocessor expression must be a function, not an identifier';
+CREATE TABLE tab
+(
+    key UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = val)
+)
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+
+SELECT '- The preprocessor expression must not contain arrayJoin';
+CREATE TABLE tab
+(
+    key UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayJoin(array(val)))
 )
 ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 

@@ -945,17 +945,33 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
+        /// For refreshable materialized views, use the MV's database as context for the view's SELECT analysis.
+        /// This ensures unqualified table/view references resolve in the MV's database, not the session's database.
+        ContextPtr select_context = getContext();
+        bool is_refreshable_mv = create.is_materialized_view && create.refresh_strategy;
+        if (is_refreshable_mv)
+        {
+            auto mv_context = Context::createCopy(getContext());
+            mv_context->setCurrentDatabase(create.getDatabase());
+            select_context = mv_context;
+        }
+
         SharedHeader as_select_sample;
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                getContext(),
+                select_context,
                 SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
         }
         else
         {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
+            /// For refreshable materialized views, allow parameterized views in the query.
+            /// This prevents the old analyzer from trying to execute table functions during analysis.
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
+                select_context,
+                false /* is_subquery */,
+                is_refreshable_mv /* is_create_parameterized_view */);
         }
 
         properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
@@ -1092,15 +1108,37 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
+
+                /// For refreshable materialized views, use the MV's database as context.
+                /// This ensures unqualified references resolve in the MV's database, not session's database.
+                if (create.refresh_strategy)
+                    context->setCurrentDatabaseUnchecked(create.getDatabase());
+
                 input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
                     context,
                     SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
             }
             else
             {
+                /// For refreshable materialized views with old analyzer, use MV's database context.
+                ContextPtr select_context = getContext();
+                bool is_refreshable_mv = create.refresh_strategy != nullptr;
+                if (is_refreshable_mv)
+                {
+                    auto mv_context = Context::createCopy(getContext());
+                    mv_context->setCurrentDatabaseUnchecked(create.getDatabase());
+                    select_context = mv_context;
+                }
+
+                /// For refreshable materialized views, allow parameterized views in the query.
+                /// This prevents the old analyzer from trying to execute table functions during analysis.
+                auto options = SelectQueryOptions().analyze();
+                if (is_refreshable_mv)
+                    options = options.createParameterizedView();
+
                 input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
+                    select_context,
+                    options).getSampleBlock();
             }
         }
         catch (Exception & e)
@@ -2340,7 +2378,13 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
         alter->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
         alter->set(alter->command_list, command_list);
-        return InterpreterAlterQuery(query, getContext()).execute();
+
+        /// The result of this internal ALTER is not visible to the user,
+        /// so disable verbose output to avoid creating a pulling pipeline
+        /// that executeTrivialBlockIO cannot handle.
+        auto alter_context = Context::createCopy(getContext());
+        alter_context->setSetting("alter_partition_verbose_result", Field(false));
+        return InterpreterAlterQuery(query, alter_context).execute();
     }
 
     return {};
@@ -2618,6 +2662,19 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
+
+    /// Ensure the old detached table instance is destroyed before we remove
+    /// transaction metadata files. Otherwise the old table's parts still hold
+    /// in-memory version metadata referencing those files, and the debug
+    /// assertion in removeIfNeeded() → assertHasValidVersionMetadata() will
+    /// fail when the old storage is destroyed later.
+    if (create.uuid != UUIDHelpers::Nil)
+    {
+        if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
+            database->waitDetachedTableNotInUse(create.uuid);
+        else
+            database->checkDetachedTableNotInUse(create.uuid);
+    }
 
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))

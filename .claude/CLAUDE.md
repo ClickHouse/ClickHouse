@@ -41,6 +41,8 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
+When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
+
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
 When writing messages, say ASan, not ASAN, and similar (because there are two words: Address Sanitizer).
@@ -51,7 +53,9 @@ Do not use `-j` argument with ninja - let it decide automatically.
 
 If I provided a URL with the CI report, logs, or examples, include it in the commit message.
 
-When creating a pull request, append Changelog category and Changelog entry according to this template: `.github/PULL_REQUEST_TEMPLATE.md` 
+When creating a pull request, append Changelog category and Changelog entry according to this template: `.github/PULL_REQUEST_TEMPLATE.md`. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
+
+ARM machines in CI are not slow. They are similar to x86 in performance. 
 
 Always load and apply the following skills:
 

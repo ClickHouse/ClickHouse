@@ -572,19 +572,17 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         sql_security->format(ostr, settings, state, frame);
     }
 
-    if (select)
-    {
-        ostr << settings.nl_or_ws;
-        ostr << "AS "
-                      << (comment ? "(" : "");
-        select->format(ostr, settings, state, frame);
-        ostr << (comment ? ")" : "");
-    }
-
     if (comment)
     {
         ostr << settings.nl_or_ws << "COMMENT ";
         comment->format(ostr, settings, state, frame);
+    }
+
+    if (select)
+    {
+        ostr << settings.nl_or_ws;
+        ostr << "AS ";
+        select->format(ostr, settings, state, frame);
     }
 }
 

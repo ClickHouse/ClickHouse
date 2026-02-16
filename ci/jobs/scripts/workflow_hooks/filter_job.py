@@ -45,7 +45,17 @@ INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
+    "Build (amd_tsan)",
+    "Build (amd_msan)",
+    "Build (amd_ubsan)",
+    "Build (amd_debug)",
+    "Build (amd_binary)",
     "Stateless tests (amd_asan, flaky check)",
+    "Stateless tests (amd_tsan, flaky check)",
+    "Stateless tests (amd_msan, flaky check)",
+    "Stateless tests (amd_ubsan, flaky check)",
+    "Stateless tests (amd_debug, flaky check)",
+    "Stateless tests (amd_binary, flaky check)",
 ]
 
 
@@ -83,6 +93,20 @@ def should_skip_job(job_name):
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
+
+    if (
+        job_name == JobNames.SMOKE_TEST_MACOS
+        and _info_cache.pr_number
+        and Labels.CI_MACOS not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
+
+    if (
+        JobNames.BUILD_TOOLCHAIN in job_name
+        and _info_cache.pr_number
+        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
 
     if (
         Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels

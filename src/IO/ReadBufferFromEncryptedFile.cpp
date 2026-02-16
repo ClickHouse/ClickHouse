@@ -27,6 +27,11 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     , encryptor(header_.algorithm, key_, header_.init_vector)
     , log(getLogger("ReadBufferFromEncryptedFile"))
 {
+    chassert(buffer_size_ != 0);
+    chassert(internal_buffer.begin() != nullptr);
+    chassert(internal_buffer.size() == buffer_size_);
+    chassert(encrypted_buffer.size() == buffer_size_);
+
     offset = offset_;
     need_seek = true;
     LOG_TEST(log, "Decrypting {}: version={}, algorithm={}", file_name, header_.version, toString(header_.algorithm));
@@ -107,9 +112,11 @@ void ReadBufferFromEncryptedFile::setReadUntilPosition(size_t position)
 
     if (static_cast<off_t>(position) < offset)
     {
+        chassert(offset - static_cast<off_t>(position) <= static_cast<off_t>(working_buffer.size()));
         size_t new_buffer_size = working_buffer.size() - (offset - position);
         chassert(new_buffer_size < working_buffer.size());
         working_buffer.resize(new_buffer_size);
+        chassert(working_buffer.end() <= internal_buffer.end());
         offset = position;
 
         /// The internal buffer must seek backward before reading a next portion of data because the next portion of data should be read
@@ -130,8 +137,15 @@ void ReadBufferFromEncryptedFile::setReadUntilEnd()
 
 bool ReadBufferFromEncryptedFile::nextImpl()
 {
+    chassert(internal_buffer.begin() != nullptr);
+    chassert(!internal_buffer.empty());
+    chassert(encrypted_buffer.size() != 0);
+
     if (need_seek || need_set_read_until_position)
         performSeekAndSetReadUntilPosition();
+
+    chassert(internal_buffer.begin() != nullptr);
+    chassert(!internal_buffer.empty());
 
     if (in->eof())
         return false;
@@ -148,6 +162,8 @@ bool ReadBufferFromEncryptedFile::nextImpl()
             in_position, offset + FileEncryption::Header::kSize, demangle(typeid(in_ref).name()), getFileName());
     }
 
+    chassert(encrypted_buffer.size() != 0);
+    chassert(!internal_buffer.empty());
     size_t bytes_to_read = std::min(encrypted_buffer.size(), internal_buffer.size());
     if (read_until_position)
     {
@@ -160,7 +176,11 @@ bool ReadBufferFromEncryptedFile::nextImpl()
         bytes_to_read = std::min(bytes_to_read, static_cast<size_t>(*read_until_position - offset));
     }
 
+    if (bytes_to_read == 0)
+        return false;
+
     /// Read up to the size of `encrypted_buffer`.
+    chassert(encrypted_buffer.data() != nullptr);
     size_t count = in->read(encrypted_buffer.data(), bytes_to_read);
 
     if (!count)
@@ -171,15 +191,30 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     /// The used cipher algorithms generate the same number of bytes in output as it were in input,
     /// so after deciphering the numbers of bytes will be still `count`.
     chassert(count <= internal_buffer.size());
-    working_buffer.resize(count);
+    chassert(internal_buffer.begin() != nullptr);
+
+    /// Reset working_buffer to start at internal_buffer.begin() before resizing.
+    /// This is needed because ReadBuffer::next can set working_buffer = Buffer(pos, pos) on EOF,
+    /// moving working_buffer.begin() past internal_buffer.begin(). If the buffer is then revived
+    /// (e.g. after setReadUntilPosition extends the range), working_buffer.begin() would be wrong.
+    working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + count);
+
+    chassert(working_buffer.begin() != nullptr);
+    chassert(working_buffer.size() == count);
+    chassert(working_buffer.begin() >= internal_buffer.begin());
+    chassert(working_buffer.end() <= internal_buffer.end());
 
     /// The decryptor needs to know what the current offset is (because it's used in the decryption algorithm).
     encryptor.setOffset(offset);
 
+    chassert(encrypted_buffer.data() != nullptr);
+    chassert(working_buffer.begin() != nullptr);
     encryptor.decrypt(encrypted_buffer.data(), count, working_buffer.begin());
 
     offset += count;
     pos = working_buffer.begin();
+    chassert(pos >= working_buffer.begin());
+    chassert(pos <= working_buffer.end());
     return true;
 }
 
@@ -191,11 +226,14 @@ void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
     {
         in_position = in->getPosition();
         new_in_position = offset + FileEncryption::Header::kSize;
+        chassert(*new_in_position >= static_cast<off_t>(FileEncryption::Header::kSize));
     }
 
     auto do_seek = [&]
     {
+        chassert(new_in_position.has_value());
         offset = in->seek(*new_in_position, SEEK_SET) - FileEncryption::Header::kSize;
+        chassert(offset >= 0);
         need_seek = false;
     };
 
@@ -211,7 +249,10 @@ void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
     if (need_set_read_until_position)
     {
         if (read_until_position)
+        {
+            chassert(*read_until_position >= 0);
             in->setReadUntilPosition(*read_until_position + FileEncryption::Header::kSize);
+        }
         else
             in->setReadUntilEnd();
         need_set_read_until_position = false;

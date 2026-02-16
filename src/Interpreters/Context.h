@@ -105,7 +105,6 @@ class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
-class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
 class TextIndexDictionaryBlockCache;
 class TextIndexHeaderCache;
@@ -672,6 +671,10 @@ private:
     Context();
     Context(const Context &);
 
+#if USE_NURAFT
+    void setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const;
+#endif
+
 public:
     /// Create initial Context with ContextShared and etc.
     static ContextMutablePtr createGlobal(ContextSharedPart * shared_part);
@@ -987,7 +990,7 @@ public:
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
-    /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
+    /// Overload for the analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
     StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
@@ -1002,6 +1005,9 @@ public:
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
+    /// Set current_database without validating that database exists.
+    /// Use during bootstrap/restore scenarios where database may not be loaded yet.
+    void setCurrentDatabaseUnchecked(const String & name);
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
@@ -1267,7 +1273,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
-    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -1352,13 +1358,6 @@ public:
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
-#endif
-
-#if USE_PARQUET
-    void setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
-    void clearParquetMetadataCache() const;
 #endif
 
     void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }

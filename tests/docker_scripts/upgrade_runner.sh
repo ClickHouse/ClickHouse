@@ -265,6 +265,8 @@ echo "<clickhouse>
     <profiles>
         <default>
             <compatibility>$old_major_version</compatibility>
+            <!-- Allow loading projections with positional arguments (e.g., GROUP BY 1, 2) created by the old server. -->
+            <enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections>
         </default>
     </profiles>
 </clickhouse>" > /etc/clickhouse-server/users.d/compatibility.xml
@@ -305,11 +307,16 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 
 # Error messages (we should ignore some errors)
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
-# FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 ("Cannot parse string 'Hello' as UInt64")
 # FIXME Not sure if it's expected, but some tests from stress test may not be finished yet when we restarting server.
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
-# FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
+# FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility:
+#       stress tests may leave behind intentionally-broken mutations that retry after upgrade.
+#       `CANNOT_PARSE_TEXT` errors come from:
+#       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
+#       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
+#       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
+#       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 echo "Check for Error messages in server log:"
@@ -341,6 +348,10 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string 'Hello' as UInt32" \
            -e "Cannot parse string \'Hello\' as UInt32" \
            -e "Cannot parse string \\'Hello\\' as UInt32" \
+           -e "Cannot parse string \'a\' as UInt32" \
+           -e "Cannot parse string \'b\' as UInt32" \
+           -e "Cannot parse string 'a' as UInt32" \
+           -e "Cannot parse string 'b' as UInt32" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -364,6 +375,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot attach table \`test_7\`" \
            -e "Cannot open file /var/lib/clickhouse/access/" \
            -e "NO_SUCH_INTERSERVER_IO_ENDPOINT" \
+           -e "Mapping for table with UUID=1f474183-1403-4282-9309-21f6e3518dab already exists" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
