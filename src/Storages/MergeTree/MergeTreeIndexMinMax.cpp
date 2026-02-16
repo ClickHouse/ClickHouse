@@ -4,13 +4,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <IO/ReadHelpers.h>
-#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace DB
 {
@@ -182,88 +178,10 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
-    extractRuntimeFilterConditions(filter_dag.predicate, index);
-}
-
-void MergeTreeIndexConditionMinMax::extractRuntimeFilterConditions(
-    const ActionsDAG::Node * predicate,
-    const IndexDescription & index)
-{
-    if (!predicate)
-        return;
-
-    /// Walk the predicate DAG recursively, extracting `__applyFilter` calls
-    /// that are in conjunctive (AND) positions.
-    std::function<void(const ActionsDAG::Node *)> walk;
-    walk = [&](const ActionsDAG::Node * node)
-    {
-        if (!node || node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
-            return;
-
-        const auto & func_name = node->function_base->getName();
-
-        if (func_name == "and")
-        {
-            for (const auto * child : node->children)
-                walk(child);
-            return;
-        }
-
-        if (func_name == "__applyFilter" && node->children.size() == 2)
-        {
-            const auto * filter_name_node = node->children[0];
-            const auto * key_arg_node = node->children[1];
-
-            /// Extract constant filter name from children[0]
-            String filter_name;
-            if (filter_name_node->column)
-            {
-                if (const auto * col_const = typeid_cast<const ColumnConst *>(filter_name_node->column.get()))
-                    filter_name = col_const->getValue<String>();
-            }
-
-            if (filter_name.empty())
-                return;
-
-            LOG_DEBUG(getLogger("extractRuntimeFilter"), "Found runtime filter condition with filter name '{}' in index condition for index '{}'", filter_name, index.name);
-
-            /// Unwrap CAST functions to find the underlying column
-            const auto * resolved = key_arg_node;
-            while (resolved->type == ActionsDAG::ActionType::FUNCTION
-                   && resolved->function_base
-                   && (resolved->function_base->getName() == "_CAST" || resolved->function_base->getName() == "CAST")
-                   && !resolved->children.empty())
-            {
-                resolved = resolved->children[0];
-            }
-
-            LOG_DEBUG(getLogger("extractRuntimeFilter"), "Runtime filter condition with filter name '{}' in index condition for index '{}', key type: {}", filter_name, index.name, resolved->type);
-
-            if (resolved->type != ActionsDAG::ActionType::INPUT)
-                return;
-
-            const auto & key_column_name = resolved->result_name;
-            for (size_t i = 0; i < index.column_names.size(); ++i)
-            {
-                if (index.column_names[i] == key_column_name)
-                {
-                    runtime_filter_conditions.push_back({filter_name, i});
-                    break;
-                }
-            }
-        }
-    };
-
-    walk(predicate);
-
-    LOG_DEBUG(getLogger(__func__), "Extracted {} runtime filter conditions for index '{}'", runtime_filter_conditions.size(), index.name);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
-    if (!runtime_filter_conditions.empty())
-        return false;
-
     return rpnEvaluatesAlwaysUnknownOrTrue(
         condition.getRPN(),
         {KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE,
@@ -280,46 +198,6 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
-
-    /// Check runtime filter conditions (AND semantics: if any says "no overlap", skip granule)
-    if (!runtime_filter_conditions.empty())
-    {
-        if (auto query_context = CurrentThread::get().getQueryContext())
-        {
-            if (auto filter_lookup = query_context->getRuntimeFilterLookup())
-            {
-                LOG_DEBUG(getLogger(__func__), "Found RintimeFilterLookup in context, applying runtime filter conditions for index");
-
-                for (const auto & rf_cond : runtime_filter_conditions)
-                {
-                    if (rf_cond.column_index >= granule.hyperrectangle.size())
-                        continue;
-
-                    auto filter = filter_lookup->find(rf_cond.filter_name);
-                    LOG_DEBUG(getLogger(__func__), "Found RintimeFilter '{}': {}", rf_cond.filter_name, filter ? "yes" : "no");
-
-                    if (!filter)
-                        continue;
-
-                    auto min_max_range = filter->getMinMaxRange();
-                    if (!min_max_range)
-                        continue;
-
-                    const auto & [filter_min, filter_max] = *min_max_range;
-                    const auto & granule_range = granule.hyperrectangle[rf_cond.column_index];
-
-                    Range filter_range(filter_min, true, filter_max, true);
-                    if (!granule_range.intersectsRange(filter_range))
-                    {
-                        LOG_DEBUG(getLogger(__func__), "Skipping granule by runtime filter condition on column {}",
-                            rf_cond.column_index);
-                        return false;
-                    }
-                }
-            }
-        }
-    }
-
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
 

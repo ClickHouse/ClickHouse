@@ -521,6 +521,30 @@ void optimizeTreeSecondPass(
     };
 
     Stack stack;
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        optimizePrimaryKeyConditionAndLimit(stack);
+
+        updateQueryConditionCache(stack, optimization_settings);
+
+        /// Must be executed after index analysis and before PREWHERE optimization.
+        if (optimization_settings.direct_read_from_text_index)
+            optimizeDirectReadFromTextIndex(stack, nodes);
+
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        stack.pop_back();
+    }
 
     if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
@@ -571,31 +595,6 @@ void optimizeTreeSecondPass(
                         break;
                 }
             });
-    }
-
-    stack.push_back({.node = &root});
-    while (!stack.empty())
-    {
-        optimizePrimaryKeyConditionAndLimit(stack);
-
-        updateQueryConditionCache(stack, optimization_settings);
-
-        /// Must be executed after index analysis and before PREWHERE optimization.
-        if (optimization_settings.direct_read_from_text_index)
-            optimizeDirectReadFromTextIndex(stack, nodes);
-
-        auto & frame = stack.back();
-
-        /// Traverse all children first.
-        if (frame.next_child < frame.node->children.size())
-        {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-            ++frame.next_child;
-            stack.push_back(next_frame);
-            continue;
-        }
-
-        stack.pop_back();
     }
 
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down

@@ -68,18 +68,6 @@ public:
 private:
     DataTypes index_data_types;
     KeyCondition condition;
-
-    /// Runtime filter conditions extracted from `__applyFilter` calls in conjunctive positions.
-    struct RuntimeFilterCondition
-    {
-        String filter_name;
-        size_t column_index; /// Index into the minmax index's column list
-    };
-    std::vector<RuntimeFilterCondition> runtime_filter_conditions;
-
-    void extractRuntimeFilterConditions(
-        const ActionsDAG::Node * predicate,
-        const IndexDescription & index);
 };
 
 
