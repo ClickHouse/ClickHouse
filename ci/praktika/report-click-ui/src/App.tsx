@@ -472,15 +472,6 @@ function App() {
   const createPopoverContent = (result: TestResult, navigateUrl?: string) => {
     return (
       <Container orientation='vertical' gap='sm' padding='md' style={{ maxWidth: '800px', maxHeight: '600px', overflow: 'auto' }}>
-        {navigateUrl && (
-          <Link href={navigateUrl} style={{ textDecoration: 'none' }}>
-            <Button
-              type="primary"
-              label="Go to job results"
-              style={{ width: '100%' }}
-            />
-          </Link>
-        )}
         {result.info && (
           <Container orientation='vertical' gap='xs'>
             <Text style={{ fontWeight: 600 }}>Info:</Text>
@@ -533,6 +524,16 @@ function App() {
               size="sm"
             />
           </Container>
+        )}
+        {navigateUrl && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+            <Link href={navigateUrl} style={{ textDecoration: 'none' }}>
+              <Button
+                type="primary"
+                label="Open Result page"
+              />
+            </Link>
+          </div>
         )}
       </Container>
     )
