@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-random-detach
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/95742
 #
