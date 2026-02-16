@@ -1,8 +1,4 @@
 <test>
-  <settings>
-      <enable_full_text_index>1</enable_full_text_index>
-  </settings>
-
   <create_query>
     CREATE TABLE text_index_build (text String, INDEX idx_text (text) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple();
   </create_query>

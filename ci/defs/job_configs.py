@@ -823,7 +823,16 @@ class JobConfigs:
             )
             for total_batches in (6,)
             for batch in range(1, total_batches + 1)
-        ]
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_msan, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_MSAN],
+            )
+            for total_batches in (6,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     integration_test_asan_flaky_pr_jobs = (
         common_integration_test_job_config.parametrize(

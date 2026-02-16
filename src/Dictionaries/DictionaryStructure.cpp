@@ -366,18 +366,19 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         has_hierarchy = has_hierarchy || hierarchical;
 
-        res_attributes.emplace_back(DictionaryAttribute{
-            name,
-            *underlying_type_opt,
-            initial_type,
-            initial_type_serialization,
-            expression,
-            null_value,
-            hierarchical,
-            bidirectional,
-            injective,
-            is_object_id,
-            is_nullable});
+        res_attributes.emplace_back(
+            DictionaryAttribute{
+                .name = name,
+                .type = initial_type,
+                .type_serialization = initial_type_serialization,
+                .expression = expression,
+                .null_value = null_value,
+                .underlying_type = *underlying_type_opt,
+                .hierarchical = hierarchical,
+                .bidirectional = bidirectional,
+                .injective = injective,
+                .is_object_id = is_object_id,
+                .is_nullable = is_nullable});
     }
 
     return res_attributes;

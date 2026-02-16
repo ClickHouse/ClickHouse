@@ -50,6 +50,11 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["node1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         start_unity_catalog(cluster.instances["node1"])
 
         yield cluster
