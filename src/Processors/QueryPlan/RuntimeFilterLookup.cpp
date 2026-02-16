@@ -105,123 +105,69 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 
-void MinMaxRuntimeFilter::insert(ColumnPtr values)
+void ApproximateNumericRuntimeFilter::finishInsertImpl()
 {
-    if (inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
-
-    if (use_minmax)
-    {
-        /// Already in minmax mode, just update min/max
-        for (size_t i = 0; i < values->size(); ++i)
-        {
-            Field value;
-            values->get(i, value);
-
-            if (value < min_value)
-                min_value = value;
-            if (value > max_value)
-                max_value = value;
-        }
-    }
-    else
-    {
-        /// Try to insert into exact values set
-        Base::insert(values);
-
-        if (isFull())
-            switchToMinMax();
-    }
-}
-
-void MinMaxRuntimeFilter::switchToMinMax()
-{
-    if (use_minmax)
-        return;
-
-    /// Extract min/max from the exact values we've collected so far
-    auto values_column = getValuesColumn();
-    if (!values_column || values_column->size() == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to switch to minmax mode for runtime filter with no values");
-
-    Field value;
-    values_column->get(0, value);
-    min_value = value;
-    max_value = value;
-
-    for (size_t i = 1; i < values_column->size(); ++i)
-    {
-        values_column->get(i, value);
-        if (value < min_value)
-            min_value = value;
-        if (value > max_value)
-            max_value = value;
-    }
-
-    use_minmax = true;
-    releaseExactValues();
-}
-
-void MinMaxRuntimeFilter::finishInsertImpl()
-{
-    if (use_minmax)
-    {
-        /// TODO: Build ExpressionActions with "value < min OR value > max" condition to be used in findImpl instead of building a column with results of this condition for each row
-        return;
-    }
+    /// TODO: Build ExpressionActions with "value < min OR value > max" condition to be used in findImpl instead of building a column with results of this condition for each row
 
     Base::finishInsertImpl();
 }
 
-ColumnPtr MinMaxRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+ColumnPtr ApproximateNumericRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
 {
     chassert(inserts_are_finished);
 
-    if (use_minmax)
+    if (isApproximate())
     {
-        /// Check if values are within [min, max] range
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(values.column->size());
 
-        size_t passed_count = 0;
+        size_t found_count = 0;
         for (size_t row = 0; row < values.column->size(); ++row)
         {
             Field value;
             values.column->get(row, value);
-            const bool in_range = value >= min_value && value <= max_value;
-            dst_data[row] = in_range;
-            passed_count += in_range ? 1 : 0;
+            const bool found = min_value <= value && value <= max_value && lookupInBloomFilter(values.column, row);
+            found_count += found ? 1 : 0;
+            dst_data[row] = found;
         }
+        updateStats(values.column->size(), found_count);
 
-        updateStats(values.column->size(), passed_count);
         return dst;
     }
     else
     {
-        return Base::findImpl(values);
+        return lookupInExactSet(values);
     }
 }
 
-void MinMaxRuntimeFilter::merge(const IRuntimeFilter * source)
+void ApproximateNumericRuntimeFilter::merge(const IRuntimeFilter * source)
 {
     if (inserts_are_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
 
-    const auto * source_typed = typeid_cast<const MinMaxRuntimeFilter *>(source);
+    const auto * source_typed = typeid_cast<const ApproximateNumericRuntimeFilter *>(source);
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    if (use_minmax)
+    auto merge_approximate_filters = [this](const ApproximateNumericRuntimeFilter * source)
+    {
+        /// Merge ranges
+        if (source->min_value < min_value)
+            min_value = source->min_value;
+        if (source->max_value > max_value)
+            max_value = source->max_value;
+
+        /// Merge bloom filters
+        Base::merge(source);
+    };
+
+    if (isApproximate())
     {
         /// This filter is in minmax mode
-        if (source_typed->use_minmax)
+        if (source_typed->isApproximate())
         {
-            /// Source is also in minmax mode, merge ranges
-            if (source_typed->min_value < min_value)
-                min_value = source_typed->min_value;
-            if (source_typed->max_value > max_value)
-                max_value = source_typed->max_value;
+            merge_approximate_filters(source_typed);
         }
         else
         {
@@ -232,17 +178,11 @@ void MinMaxRuntimeFilter::merge(const IRuntimeFilter * source)
     else
     {
         /// This filter is in exact mode, insert source values
-        if (source_typed->use_minmax)
+        if (source_typed->isApproximate())
         {
             /// Source is in minmax mode, switch to minmax and merge
-            min_value = source_typed->min_value;
-            max_value = source_typed->max_value;
-            use_minmax = true;
-
-            /// Insert values in set to update min/max in case they are outside of source min/max range
-            insert(getValuesColumn());
-            /// Finish conversion to minmax mode and release exact values as they are not needed anymore
-            releaseExactValues();
+            switchToApproximateSet();
+            merge_approximate_filters(source_typed);
         }
         else
         {
@@ -254,9 +194,21 @@ void MinMaxRuntimeFilter::merge(const IRuntimeFilter * source)
     --filters_to_merge;
 }
 
-bool MinMaxRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
+bool ApproximateNumericRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
     return isNativeNumber(data_type);
+}
+
+void ApproximateNumericRuntimeFilter::insertIntoApproximateSet(ColumnPtr values, size_t row)
+{
+    Field value;
+    values->get(row, value);
+    if (value < min_value)
+        min_value = value;
+    if (value > max_value)
+        max_value = value;
+
+    Base::insertIntoApproximateSet(values, row);
 }
 
 void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
@@ -297,14 +249,14 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
     --filters_to_merge;
 }
 
-bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
+bool ApproximateGenericRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
     /// Current BloomFilter implementation relies on IColumn::getDataAt method that returns a string_view of contiguous
     /// memory chunk containing the value
     return data_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
-ApproximateRuntimeFilter::ApproximateRuntimeFilter(
+ApproximateGenericRuntimeFilter::ApproximateGenericRuntimeFilter(
     size_t filters_to_merge_,
     const DataTypePtr & filter_column_target_type_,
     Float64 pass_ratio_threshold_for_disabling_,
@@ -319,7 +271,7 @@ ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     , bloom_filter(nullptr)
 {}
 
-void ApproximateRuntimeFilter::insert(ColumnPtr values)
+void ApproximateGenericRuntimeFilter::insert(ColumnPtr values)
 {
     if (inserts_are_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
@@ -336,11 +288,11 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
         Base::insert(std::move(values));
 
         if (isFull())
-            switchToBloomFilter();
+            switchToApproximateSet();
     }
 }
 
-void ApproximateRuntimeFilter::finishInsertImpl()
+void ApproximateGenericRuntimeFilter::finishInsertImpl()
 {
     if (bloom_filter)
     {
@@ -352,18 +304,18 @@ void ApproximateRuntimeFilter::finishInsertImpl()
 }
 
 /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
-void ApproximateRuntimeFilter::merge(const IRuntimeFilter * source)
+void ApproximateGenericRuntimeFilter::merge(const IRuntimeFilter * source)
 {
     if (inserts_are_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
 
-    const auto * source_typed = typeid_cast<const ApproximateRuntimeFilter *>(source);
+    const auto * source_typed = typeid_cast<const ApproximateGenericRuntimeFilter *>(source);
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
     if (source_typed->bloom_filter)
     {
-        switchToBloomFilter();
+        switchToApproximateSet();
         mergeBloomFilters(*bloom_filter, *source_typed->bloom_filter);
     }
     else
@@ -423,7 +375,7 @@ ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & valu
     UNREACHABLE();
 }
 
-ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+ColumnPtr ApproximateGenericRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
 {
     chassert(inserts_are_finished);
 
@@ -436,9 +388,7 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
         size_t found_count = 0;
         for (size_t row = 0; row < values.column->size(); ++row)
         {
-            /// TODO: optimize: consider replacing hash calculation with vectorized version
-            const auto & value = values.column->getDataAt(row);
-            const bool found = bloom_filter->find(value.data(), value.size());
+            const bool found = lookupInBloomFilter(values.column, row);
             found_count += found ? 1 : 0;
             dst_data[row] = found;
         }
@@ -452,18 +402,21 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
     }
 }
 
-void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
+void ApproximateGenericRuntimeFilter::insertIntoApproximateSet(ColumnPtr values, size_t row)
 {
-    const size_t num_rows = values->size();
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        /// TODO: make this efficient: compute hashes in vectorized manner
-        auto value = values->getDataAt(row);
-        bloom_filter->add(value.data(), value.size());
-    }
+    /// TODO: make this efficient: compute hashes in vectorized manner
+    auto value = values->getDataAt(row);
+    bloom_filter->add(value.data(), value.size());
 }
 
-void ApproximateRuntimeFilter::switchToBloomFilter()
+bool ApproximateGenericRuntimeFilter::lookupInBloomFilter(ColumnPtr values, size_t row) const
+{
+    /// TODO: optimize: consider replacing hash calculation with vectorized version
+    auto value = values->getDataAt(row);
+    return bloom_filter->find(value.data(), value.size());
+}
+
+void ApproximateGenericRuntimeFilter::switchToApproximateSet()
 {
     if (bloom_filter)
         return;
@@ -474,7 +427,16 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     releaseExactValues();
 }
 
-void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
+void ApproximateGenericRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
+{
+    const size_t num_rows = values->size();
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        insertIntoApproximateSet(values, row);
+    }
+}
+
+void ApproximateGenericRuntimeFilter::checkBloomFilterWorthiness()
 {
     const auto & raw_filter_words = bloom_filter->getFilter();
     const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
