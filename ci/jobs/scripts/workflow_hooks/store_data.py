@@ -6,6 +6,7 @@ from ci.praktika.digest import Digest
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
+import subprocess, json
 
 if __name__ == "__main__":
     info = Info()
@@ -37,6 +38,28 @@ if __name__ == "__main__":
             commits.pop(0)
 
         info.store_kv_data("previous_commits_sha", commits)
+
+    # get merge base for master and current branch and store 10 previous commits in master
+    # Use gh api to get the merge base (base commit) between master and info.sha
+    try:
+        # Get the merge base commit using git
+        base_commit_sha = Shell.get_output(
+            "git merge-base master HEAD", verbose=True
+        ).strip()
+        info.store_kv_data("merge_base_sha", base_commit_sha)
+
+        # Get 10 previous commits from master after the base commit
+        master_commits = Shell.get_output(
+            "git rev-list master --max-count=100", verbose=True
+        ).splitlines()
+        if base_commit_sha in master_commits:
+            idx = master_commits.index(base_commit_sha)
+            prev_10_commits = master_commits[idx : idx + 10]
+        else:
+            prev_10_commits = master_commits[:10]
+        info.store_kv_data("master_commits_after_merge_base", prev_10_commits)
+    except Exception as e:
+        print(f"Failed to get merge base or previous master commits via git: {e}")
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
