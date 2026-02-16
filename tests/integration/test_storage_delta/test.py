@@ -4104,3 +4104,59 @@ def test_network_activity_with_system_tables(started_cluster):
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%Initialized scan state%'"
         )
     )
+
+
+def test_variant_type(started_cluster):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_variant_type")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+
+    from pyspark.sql.types import StructType, StructField, IntegerType, VariantType
+    from pyspark.sql.functions import parse_json
+
+    schema = StructType([
+        StructField("id", IntegerType(), True),
+        StructField("data", VariantType(), True)
+    ])
+
+    df = spark.createDataFrame([], schema)
+    df.write.format("delta").mode("overwrite").save(path)
+
+    spark.sql(f"""
+        ALTER TABLE delta.`{path}`
+        SET TBLPROPERTIES('delta.feature.variantType-preview' = 'supported')
+    """)
+
+    spark.sql(f"""
+        INSERT INTO delta.`{path}` VALUES
+            (1, parse_json('"simple string"')),
+            (2, parse_json('42')),
+            (3, parse_json('-9223372036854775808')),
+            (4, parse_json('3.14159265359')),
+            (5, parse_json('-123.456')),
+            (6, parse_json('true')),
+            (7, parse_json('false')),
+            (8, parse_json('null')),
+            (9, parse_json('""')),
+            (10, parse_json('{{"name": "test", "value": 100}}')),
+            (11, parse_json('[1, 2, 3, 4, 5]')),
+            (12, parse_json('{{"nested": {{"deep": "value"}}}}')),
+            (13, parse_json('[{{"id": 1}}, {{"id": 2}}]')),
+            (14, parse_json('9999999999999999999')),
+            (15, parse_json('"unicode: \\u00e9\\u00f1\\u4e2d"'))
+    """)
+
+    upload_directory(minio_client, bucket, path, "")
+
+    delta_function = f"""
+        deltaLake(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{table_name}',
+            '{minio_access_key}',
+            '{minio_secret_key}'
+        )
+    """
+
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(f"DESCRIBE {delta_function}")
