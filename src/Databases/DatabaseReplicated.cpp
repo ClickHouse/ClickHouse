@@ -94,6 +94,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
     extern const DatabaseReplicatedSettingsString default_replica_name;
+    extern const DatabaseReplicatedSettingsBool internal_replication;
 }
 
 namespace ErrorCodes
@@ -488,7 +489,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         cluster_name,
         cluster_auth_info.cluster_secret};
 
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params, db_settings[DatabaseReplicatedSetting::internal_replication]);
 }
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const

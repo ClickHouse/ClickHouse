@@ -166,6 +166,7 @@ The following settings are supported:
 | `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                        |
 | `default_replica_shard_name`                                                 | `{shard}`                      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                |
 | `default_replica_name`                                                       | `{replica}`                    | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                      |
+| `internal_replication`                                                       | false                          | Whether to write data to just one of the replicas per shard.                                                                                                          |
 
 Default values may be overwritten in the configuration file
 ```xml
