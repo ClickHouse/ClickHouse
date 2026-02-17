@@ -110,6 +110,16 @@ DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedD
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
+    /// When the GROUP BY limit pushdown optimization is active (top_n_keys > 0), the hash table will contain
+    /// at most top_n_keys entries. Cached size hints from previous runs (which may have processed all keys
+    /// without the optimization) would cause massive over-allocation and unnecessary two-level conversion.
+    if (params.top_n_keys > 0)
+    {
+        result.init(method_chosen);
+        ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+        return;
+    }
+
     const auto & stats_collecting_params = params.stats_collecting_params;
     const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
@@ -1274,6 +1284,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         else if (!no_more_keys)
         {
+            const auto * key_col = state.getKeyColumn();
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
@@ -1290,7 +1301,6 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if (params.top_n_keys > 0 && heap_queue->size() >= params.top_n_keys)
                 {
-                    const auto * key_col = state.getKeyColumn();
                     if (heap_queue->shouldSkip(*key_col, i))
                         continue;
                 }
@@ -1298,7 +1308,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                 auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
                 if (params.top_n_keys > 0 && emplace_result.isInserted())
                 {
-                    const auto * key_col = state.getKeyColumn();
                     heap_queue->push(*key_col, i);
                     if (heap_queue->size() > params.top_n_keys)
                         heap_queue->pop();
@@ -1360,6 +1369,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// For all rows.
     if (!no_more_keys)
     {
+        const auto * key_col = state.getKeyColumn();
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;
@@ -1378,10 +1388,8 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if (params.top_n_keys > 0 && heap_queue->size() >= params.top_n_keys)
             {
-                const auto * key_col = state.getKeyColumn();
                 if (heap_queue->shouldSkip(*key_col, i))
                 {
-                    LOG_TEST(log, "key is not necessary, skipping");
                     places[i] = temp;
                     continue;
                 }
@@ -1391,7 +1399,6 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if (params.top_n_keys > 0 && emplace_result.isInserted())
             {
-                const auto * key_col = state.getKeyColumn();
                 heap_queue->push(*key_col, i);
                 if (heap_queue->size() > params.top_n_keys)
                     heap_queue->pop();

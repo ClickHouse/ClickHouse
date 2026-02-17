@@ -165,6 +165,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 #define M(NAME) \
         case Type::NAME: \
             NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
+            NAME ## _two_level->pqueue = std::move(NAME->pqueue); \
             (NAME).reset(); \
             type = Type::NAME ## _two_level; \
             break;
