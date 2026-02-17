@@ -12,9 +12,9 @@
             <name>size</name>
             <values>
                 <!-- <value>30000</value> -->
-                <value>300000</value>
-                <value>3000000</value>
-                <value>30000000</value>
+                <value>420000</value>
+                <value>4200000</value>
+                <value>42000000</value>
                 <!-- <value>100000000</value> -->
             </values>
         </substitution>
@@ -25,9 +25,9 @@
                 <!-- <value>2</value> -->
                 <!-- <value>4</value> -->
                 <!-- <value>8</value> -->
-                <value>16</value>
-                <value>32</value>
-                <value>64</value>
+                <value>22</value>
+                <value>44</value>
+                <value>88</value>
                 <!-- <value>128</value> -->
                 <!-- <value>256</value> -->
             </values>

@@ -73,7 +73,7 @@
     <query>
         WITH rand64() % 1500000 as key
         SELECT dictHas('default.simple_key_{layout_suffix}_dictionary_l0_{load_factor}', key)
-        FROM numbers(1500000)
+        FROM numbers(6200000)
         FORMAT Null
     </query>
 

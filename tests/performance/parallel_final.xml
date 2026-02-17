@@ -53,7 +53,7 @@
 
     <query>SELECT count() FROM {replacing} final</query>
     <query>SELECT sum(s) FROM {replacing} final group by key1 limit 10</query>
-    <query>SELECT sum(s) FROM {replacing} final group by key1 % 8192 limit 10</query>
+    <query>SELECT sum(s) FROM {replacing} final group by key1 % 8192 limit 39</query>
 
     <drop_query>DROP TABLE IF EXISTS {replacing}</drop_query>
 

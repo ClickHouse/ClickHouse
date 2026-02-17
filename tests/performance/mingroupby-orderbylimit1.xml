@@ -64,7 +64,7 @@
     <query tag='UsingOrderbyLimit1KV'>
          SELECT key, value
          FROM mingroupby_orderbylimit1_{aggregationscale_small}_key_value
-         order by key, value limit 200 by key format Null;
+         order by key, value limit 530 by key format Null;
      </query>
     
      <drop_query> DROP TABLE IF EXISTS mingroupby_orderbylimit1_{aggregationscale_all}_tuple </drop_query>

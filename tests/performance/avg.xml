@@ -8,7 +8,7 @@
         FROM
         (
             SELECT materialize(1) AS key
-            FROM numbers(260000000)
+            FROM numbers(410000000)
         )
     </query>
 
@@ -26,7 +26,7 @@
         FROM
         (
             SELECT materialize(toNullable(1)) AS key
-            FROM numbers(260000000)
+            FROM numbers(440000000)
         )
     </query>
 </test>
