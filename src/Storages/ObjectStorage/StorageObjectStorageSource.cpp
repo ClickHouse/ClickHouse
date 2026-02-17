@@ -186,7 +186,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (glob_string.hasGlobs() && glob_string.hasExactlyOneEnum())
     {
-        auto paths = expandSelectionGlob(reading_path.path);
+        auto paths = glob_string.expand();
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,

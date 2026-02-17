@@ -1,5 +1,6 @@
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
+#include <Common/Exception.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -247,4 +248,45 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("file{1..5}"), "file(1|2|3|4|5)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("file{1,2,3}"), "file(1|2|3)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*"), "(1|2|3)blabla(a\\.x|b\\.x|c\\.x)smth\\[\\]_else(aa|bb)[^/][^/]*");
+}
+
+TEST(Common, BetterGlobExpand)
+{
+    using V = std::vector<std::string>;
+
+    // No globs — single result.
+    EXPECT_EQ(BetterGlob::GlobString("file.csv").expand(), V({"file.csv"}));
+
+    // Single enum.
+    EXPECT_EQ(BetterGlob::GlobString("file{a,b,c}.csv").expand(), V({"filea.csv", "fileb.csv", "filec.csv"}));
+
+    // Multiple enums — cartesian product.
+    EXPECT_EQ(BetterGlob::GlobString("{a,b}{1,2}").expand(), V({"a1", "a2", "b1", "b2"}));
+
+    // Enum with prefix, middle, suffix.
+    EXPECT_EQ(
+        BetterGlob::GlobString("prefix{a,b}middle{1,2}suffix").expand(),
+        V({"prefixamiddle1suffix", "prefixamiddle2suffix", "prefixbmiddle1suffix", "prefixbmiddle2suffix"}));
+
+    // Single-element enum — acts like a constant.
+    EXPECT_EQ(BetterGlob::GlobString("{test}").expand(), V({"{test}"}));
+
+    // Wildcards are passed through as literal text.
+    EXPECT_EQ(BetterGlob::GlobString("*.csv").expand(), V({"*.csv"}));
+    EXPECT_EQ(BetterGlob::GlobString("file?.csv").expand(), V({"file?.csv"}));
+    EXPECT_EQ(BetterGlob::GlobString("{a,b}/*.csv").expand(), V({"a/*.csv", "b/*.csv"}));
+
+    // Ranges are passed through as literal text.
+    EXPECT_EQ(BetterGlob::GlobString("f{1..9}.csv").expand(), V({"f{1..9}.csv"}));
+    EXPECT_EQ(BetterGlob::GlobString("{a,b}{1..3}.csv").expand(), V({"a{1..3}.csv", "b{1..3}.csv"}));
+
+    // Parity with old expandSelectionGlob.
+    EXPECT_EQ(BetterGlob::GlobString("file{1,2,3}").expand(), expandSelectionGlob("file{1,2,3}"));
+    EXPECT_EQ(
+        BetterGlob::GlobString("{a,b}{1,2}").expand(),
+        expandSelectionGlob("{a,b}{1,2}"));
+
+    // Cardinality guard.
+    EXPECT_THROW(BetterGlob::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(100), DB::Exception);
+    EXPECT_NO_THROW(BetterGlob::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(1000));
 }

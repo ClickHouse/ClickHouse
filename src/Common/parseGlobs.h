@@ -102,6 +102,13 @@ public:
     std::string asRegex() const;
     size_t cardinality() const;
 
+    /// Expand enum globs into concrete path strings via cartesian product.
+    /// Non-enum expressions (constants, wildcards, ranges) are rendered as literal text.
+    /// E.g. "file{a,b}{1,2}.csv" → ["filea1.csv", "filea2.csv", "fileb1.csv", "fileb2.csv"]
+    /// Throws if the total expansion would exceed max_expansion.
+    static constexpr size_t DEFAULT_MAX_EXPANSION = 1000;
+    std::vector<std::string> expand(size_t max_expansion = DEFAULT_MAX_EXPANSION) const;
+
     bool hasGlobs() const { return has_globs; }
     bool hasRanges() const { return has_ranges; }
     bool hasEnums() const { return has_enums; }

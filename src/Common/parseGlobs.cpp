@@ -408,6 +408,46 @@ std::string GlobString::asRegex() const
     return result;
 }
 
+std::vector<std::string> GlobString::expand(size_t max_expansion) const
+{
+    std::vector<std::string> result;
+    result.emplace_back();
+
+    for (const auto & expression : expressions)
+    {
+        if (expression.type() == ExpressionType::ENUM && expression.cardinality() > 1)
+        {
+            const auto & enum_values = std::get<std::vector<std::string_view>>(expression.getData());
+
+            if (result.size() * enum_values.size() > max_expansion)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Glob expansion would produce too many paths ({} * {} > {}). "
+                    "Consider simplifying the glob pattern.",
+                    result.size(), enum_values.size(), max_expansion);
+
+            std::vector<std::string> expanded;
+            expanded.reserve(result.size() * enum_values.size());
+
+            for (const auto & prefix : result)
+                for (const auto & value : enum_values)
+                    expanded.push_back(prefix + std::string(value));
+
+            result = std::move(expanded);
+        }
+        else
+        {
+            /// For non-enum expressions (and single-element enums, which are effectively
+            /// literals like bash's {test}), append their textual representation.
+            std::string text = expression.dump();
+            for (auto & path : result)
+                path += text;
+        }
+    }
+
+    return result;
+}
+
 void GlobString::parse()
 {
     if (input_data.empty())
