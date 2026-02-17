@@ -13,6 +13,8 @@
 namespace DB
 {
 
+struct StorageID;
+
 struct YTsaurusStorageConfiguration
 {
     YTsaurusSettings settings;
@@ -29,7 +31,7 @@ struct YTsaurusStorageConfiguration
 class StorageYTsaurus final : public IStorage
 {
 public:
-    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context);
+    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id = nullptr);
 
     static YTsaurusStorageConfiguration processNamedCollectionResult(const NamedCollection & named_collection, const YTsaurusSettings & setting, bool is_for_dictionary);
 

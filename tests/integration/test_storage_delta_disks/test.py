@@ -16,6 +16,7 @@ from pyspark.sql.types import (
 from pyspark.sql.window import Window
 
 from helpers.cluster import ClickHouseCluster
+from helpers.spark_tools import ResilientSparkSession
 from helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
@@ -159,7 +160,7 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(get_spark)
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )

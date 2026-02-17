@@ -13,14 +13,22 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/registerDictionaries.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool cloud_mode;
+}
 
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int EXTERNAL_LIBRARY_ERROR;
     extern const int PATH_ACCESS_DENIED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -192,6 +200,9 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
+        if (global_context->getSettingsRef()[Setting::cloud_mode])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `library` is disabled");
+
         return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, global_context, created_from_ddl);
     };
 

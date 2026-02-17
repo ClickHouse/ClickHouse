@@ -424,7 +424,15 @@ DeduplicationHash DeduplicationInfo::getBlockHash(size_t offset, const std::stri
             continue; // source id is already included in by_data
 
         extension.append(":");
-        extension.append(extra.toString());
+        if (is_async_insert && extra.type == TokenDefinition::Extra::SOURCE_NUMBER)
+        {
+            // do not include source number for async inserts,
+            // they are not relevant as data hash is used or user token
+            // a token describes only the data in one block
+            extension.append(TokenDefinition::Extra::asSourceNumber(0).toString());
+        }
+        else
+            extension.append(extra.toString());
     }
 
     LOG_TEST(logger, "getBlockHash {} debug: {}", extension, debug());
@@ -786,11 +794,6 @@ void DeduplicationInfo::truncateTokensForRetry()
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Invalid deduplication token structure during retry, expected source/view number after source/view id, debug: {}",
-                debug());
-        if (std::get<TokenDefinition::Extra::Range>(next->value_variant).first > 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid deduplication token structure during retry, expected source/view number to be zero, debug: {}",
                 debug());
         ++next;
         token.extra_tokens.erase(next, token.extra_tokens.end());

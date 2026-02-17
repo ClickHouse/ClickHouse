@@ -581,10 +581,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeDryRunImpl(
 }
 
 FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
-    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_)
-    : function_overload_resolver(function_overload_resolver_)
-    , arguments(arguments_)
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+    ColumnsWithTypeAndName arguments_with_type_)
+    : function_overload_resolver(std::move(function_overload_resolver_))
 {
+    arguments.reserve(arguments_with_type_.size());
+    for (const auto & arg : arguments_with_type_)
+        arguments.push_back(arg.type);
+
     std::optional<size_t> first_variant_index;
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -614,14 +618,11 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     for (const auto & alternative : variant_alternatives)
     {
         /// Create arguments with this alternative instead of the Variant.
-        DataTypes alt_arguments = arguments;
-        alt_arguments[variant_argument_index] = alternative;
-
-        /// Build the function for this alternative.
-        ColumnsWithTypeAndName alt_columns_with_type;
-        alt_columns_with_type.reserve(alt_arguments.size());
-        for (const auto & arg : alt_arguments)
-            alt_columns_with_type.push_back({nullptr, arg, ""});
+        /// Preserve original columns (especially ColumnConst) for non-Variant arguments.
+        ColumnsWithTypeAndName alt_columns_with_type = arguments_with_type_;
+        alt_columns_with_type[variant_argument_index].type = alternative;
+        /// Important: don't pass the original ColumnVariant with a non-Variant type
+        alt_columns_with_type[variant_argument_index].column = nullptr;
 
         /// Get the return type for this alternative.
         /// Wrap in try-catch to handle incompatible type combinations gracefully.

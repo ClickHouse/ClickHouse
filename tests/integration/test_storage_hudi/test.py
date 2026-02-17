@@ -32,6 +32,7 @@ from helpers.s3_tools import (
     upload_directory,
 )
 from helpers.test_tools import TSV
+from helpers.spark_tools import ResilientSparkSession
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -66,7 +67,7 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(get_spark)
 
         yield cluster
 

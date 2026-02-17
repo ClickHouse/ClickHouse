@@ -348,7 +348,7 @@ Starting from version 25.7, ClickHouse supports modifications of user’s Iceber
 Currently, this is an experimental feature, so you first need to enable it:
 
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 ```
 
 ### Creating table {#create-iceberg-table}

@@ -48,7 +48,7 @@ allow_experimental_funnel_functions	0
 allow_experimental_geo_types	1
 allow_experimental_hash_functions	0
 allow_experimental_iceberg_compaction	0
-allow_experimental_insert_into_iceberg	0
+allow_insert_into_iceberg	0
 allow_experimental_inverted_index	0
 allow_experimental_join_condition	0
 allow_experimental_join_right_table_sorting	0

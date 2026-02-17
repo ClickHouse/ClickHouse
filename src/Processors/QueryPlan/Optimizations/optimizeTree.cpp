@@ -599,7 +599,7 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                optimizePrewhere(frame_node);
+                optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
             });
     }
 

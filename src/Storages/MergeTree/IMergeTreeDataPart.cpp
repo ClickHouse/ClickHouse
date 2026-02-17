@@ -214,6 +214,9 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
 void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)
 {
+    if (block.rows() == 0)
+        return;
+
     if (!initialized)
         hyperrectangle.reserve(column_names.size());
 

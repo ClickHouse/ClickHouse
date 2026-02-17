@@ -499,7 +499,6 @@ void AzureObjectStorage::applyNewSettings(
     client.set(std::move(new_client));
 }
 
-
 }
 
 #endif

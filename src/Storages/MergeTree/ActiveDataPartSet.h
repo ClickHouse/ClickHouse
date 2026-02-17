@@ -71,8 +71,7 @@ public:
     bool removePartAndCoveredParts(const MergeTreePartInfo & part_info)
     {
         Strings parts_covered_by = getPartsCoveredBy(part_info);
-        bool result = true;
-        result &= remove(part_info);
+        bool result = remove(part_info);
         for (const auto & part : parts_covered_by)
             result &= remove(part);
 
@@ -105,6 +104,8 @@ public:
     std::vector<MergeTreePartInfo> getPatchPartInfos() const;
     bool hasPartitionId(const String & partition_id) const;
 
+    bool isEmpty() const;
+    bool hasSome() const;
     size_t size() const;
 
     void clear()

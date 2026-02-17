@@ -7,18 +7,18 @@
 
 SET use_query_condition_cache = 1;
 
-DROP TABLE IF EXISTS test_qcc_cte;
+DROP TABLE IF EXISTS tab;
 
-CREATE TABLE test_qcc_cte (activity_year Int16) ENGINE = MergeTree ORDER BY activity_year;
+CREATE TABLE tab (activity_year Int16) ENGINE = MergeTree ORDER BY activity_year;
 -- Need enough rows to have multiple granules so the cache can incorrectly exclude some.
-INSERT INTO test_qcc_cte SELECT number % 10 + 2018 FROM numbers(100000);
+INSERT INTO tab SELECT number % 10 + 2018 FROM numbers(100000);
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
 -- First query: addMonths('2022-12-01', 0) -> year = 2022, filter: year IN (2021, 2022)
 WITH block_0 AS (
     SELECT *, addMonths('2022-12-01'::date, 0) AS report_month
-    FROM test_qcc_cte
+    FROM tab
 )
 SELECT count(), min(activity_year), max(activity_year) FROM block_0
 WHERE (activity_year = toYear(report_month)) OR (activity_year = toYear(report_month) - 1);
@@ -27,7 +27,7 @@ WHERE (activity_year = toYear(report_month)) OR (activity_year = toYear(report_m
 -- Without the fix, this would return wrong results due to cache hash collision.
 WITH block_0 AS (
     SELECT *, addMonths('2022-12-01'::date, -12) AS report_month
-    FROM test_qcc_cte
+    FROM tab
 )
 SELECT count(), min(activity_year), max(activity_year) FROM block_0
 WHERE (activity_year = toYear(report_month)) OR (activity_year = toYear(report_month) - 1);
@@ -35,9 +35,9 @@ WHERE (activity_year = toYear(report_month)) OR (activity_year = toYear(report_m
 -- Third query: addMonths('2022-12-01', -36) -> year = 2019, filter: year IN (2018, 2019)
 WITH block_0 AS (
     SELECT *, addMonths('2022-12-01'::date, -36) AS report_month
-    FROM test_qcc_cte
+    FROM tab
 )
 SELECT count(), min(activity_year), max(activity_year) FROM block_0
 WHERE (activity_year = toYear(report_month)) OR (activity_year = toYear(report_month) - 1);
 
-DROP TABLE test_qcc_cte;
+DROP TABLE tab;

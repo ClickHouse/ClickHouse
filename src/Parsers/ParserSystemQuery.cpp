@@ -348,6 +348,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->delta_kernel_tracing_level = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
+            break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:

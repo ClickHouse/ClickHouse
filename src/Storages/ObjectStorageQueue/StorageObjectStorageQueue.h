@@ -113,6 +113,7 @@ private:
     /// Therefore it is not in AfterProcessingSettings.
     AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
     bool commit_on_select TSA_GUARDED_BY(mutex);
+    bool deduplication_v2 TSA_GUARDED_BY(mutex);
 
     size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);

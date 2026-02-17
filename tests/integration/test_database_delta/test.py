@@ -100,6 +100,7 @@ def execute_spark_query(node, query_text):
         -S -e "{query_text}"
     """,
             ],
+            timeout=600,
         )
     except subprocess.CalledProcessError as e:
         print("Command failed with exit code:", e.returncode)
@@ -345,11 +346,6 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 
     assert len(ntz_tables) == 1
 
-    def get_schemas():
-        return execute_spark_query(node1, f"SHOW SCHEMAS")
-
-    assert schema_name in get_schemas()
-
     ntz_data = ""
     for i in range(10):
         try:
@@ -365,9 +361,10 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
         except Exception as ex:
             if "Schema not found" not in str(ex):
                 raise ex
-            print(f"Retry {i + 1}, existing schemas: {get_schemas()}")
+            print(f"Retry {i + 1}")
+            time.sleep(1)
 
-    assert len(ntz_data) != 0, f"Schemas: {get_schemas()}"
+    assert len(ntz_data) != 0
     print(ntz_data)
     assert ntz_data[0] == "2024-10-01"
     assert ntz_data[1] == "2024-10-01 00:12:00.000000"

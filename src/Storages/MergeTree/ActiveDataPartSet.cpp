@@ -312,6 +312,16 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPatchPartInfos() const
     return res;
 }
 
+bool ActiveDataPartSet::isEmpty() const
+{
+    return part_info_to_name.empty();
+}
+
+bool ActiveDataPartSet::hasSome() const
+{
+    return !isEmpty();
+}
+
 size_t ActiveDataPartSet::size() const
 {
     return part_info_to_name.size();

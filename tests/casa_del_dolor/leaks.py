@@ -204,7 +204,7 @@ class ElOracloDeLeaks:
                     active_merges = int(result1)
                     active_mutations = int(result2)
                 for c in ["MARK CACHE", "UNCOMPRESSED CACHE"]:
-                    client.query(f"SYSTEM DROP {c};")
+                    client.query(f"SYSTEM CLEAR {c};")
 
                 # Backup then drop all databases
                 client.query(

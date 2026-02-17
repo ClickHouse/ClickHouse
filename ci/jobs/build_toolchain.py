@@ -31,6 +31,22 @@ BOLT_PROFILE_PARALLELISM = 4
 # All LLVM projects for the final toolchain (note: "all" doesn't work with cmake)
 STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
 
+# Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
+# (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
+# self-contained for all ClickHouse cross-compilation targets.
+# Must match triples in cmake/build_clang_builtin.cmake.
+CROSS_BUILTIN_TARGETS = [
+    ("x86_64-unknown-linux-gnu", "Linux"),
+    ("aarch64-unknown-linux-gnu", "Linux"),
+    ("s390x-unknown-linux-gnu", "Linux"),
+    ("powerpc64le-unknown-linux-gnu", "Linux"),
+    ("riscv64-unknown-linux-gnu", "Linux"),
+    ("loongarch64-unknown-linux-gnu", "Linux"),
+    ("x86_64-pc-freebsd13", "FreeBSD"),
+    ("aarch64-unknown-freebsd13", "FreeBSD"),
+    ("powerpc64le-unknown-freebsd13", "FreeBSD"),
+]
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     CLONE_LLVM = "clone_llvm"
@@ -162,6 +178,31 @@ def main():
             )
             res = results[-1].is_ok()
 
+        # Install compiler-rt headers (xray, sanitizer, etc.) into the clang resource
+        # directory so that ClickHouse can find <xray/xray_interface.h> when compiled
+        # with this toolchain.
+        if res:
+            resource_dirs = glob.glob(
+                f"{STAGE1_INSTALL_DIR}/lib/clang/*/include"
+            )
+            if resource_dirs:
+                resource_include = resource_dirs[0]
+                results.append(
+                    Result.from_commands_run(
+                        name="Install compiler-rt headers",
+                        command=(
+                            f"cp -r {LLVM_SOURCE_DIR}/compiler-rt/include/xray"
+                            f" {resource_include}/xray"
+                        ),
+                    )
+                )
+                res = results[-1].is_ok()
+            else:
+                print(
+                    f"WARNING: No clang resource directory found in"
+                    f" {STAGE1_INSTALL_DIR}/lib/clang/*/include"
+                )
+
     # Stage 2: Profile collection - build ClickHouse with instrumented clang
     if res and JobStages.PROFILE_COLLECTION in stages:
         clean_dirs(CH_PROFILE_BUILD_DIR)
@@ -247,33 +288,53 @@ def main():
         clean_dirs(STAGE2_BUILD_DIR, STAGE2_INSTALL_DIR)
         os.makedirs(STAGE2_BUILD_DIR, exist_ok=True)
 
-        cmake_cmd = (
-            f"cmake -G Ninja"
-            f' -DLLVM_ENABLE_PROJECTS="{STAGE2_LLVM_PROJECTS}"'
-            f' -DLLVM_ENABLE_RUNTIMES="compiler-rt"'
-            f" -DLLVM_TARGETS_TO_BUILD=all"
-            f" -DCMAKE_BUILD_TYPE=Release"
-            f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
-            f" -DCMAKE_C_COMPILER=clang-21"
-            f" -DCMAKE_CXX_COMPILER=clang++-21"
-            f" -DLLVM_ENABLE_LLD=ON"
-            f" -DLLVM_ENABLE_LTO=Thin"
-            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
-            f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
-            f" -DLLVM_ENABLE_TERMINFO=OFF"
-            f" -DLLVM_ENABLE_ZLIB=OFF"
-            f" -DLLVM_ENABLE_ZSTD=OFF"
-            f" -DCMAKE_INSTALL_PREFIX={STAGE2_INSTALL_DIR}"
-            f" -S {LLVM_SOURCE_DIR}/llvm"
-            f" -B {STAGE2_BUILD_DIR}"
-        )
+        # Install binutils-dev for the plugin-api.h header needed to build
+        # LLVMgold.so (required by mold when clang passes --plugin for LTO)
         results.append(
             Result.from_commands_run(
-                name="Stage 2 CMake (PGO-optimized clang)",
-                command=cmake_cmd,
+                name="Install binutils-dev",
+                command="apt-get update && apt-get install -y --no-install-recommends binutils-dev",
             )
         )
         res = results[-1].is_ok()
+
+        if res:
+            builtin_targets = ";".join(t for t, _ in CROSS_BUILTIN_TARGETS)
+            builtin_cmake_args = " ".join(
+                f"-DBUILTINS_{triple}_CMAKE_SYSTEM_NAME={system}"
+                for triple, system in CROSS_BUILTIN_TARGETS
+            )
+
+            cmake_cmd = (
+                f"cmake -G Ninja"
+                f' -DLLVM_ENABLE_PROJECTS="{STAGE2_LLVM_PROJECTS}"'
+                f' -DLLVM_ENABLE_RUNTIMES="compiler-rt"'
+                f" -DLLVM_TARGETS_TO_BUILD=all"
+                f" -DCMAKE_BUILD_TYPE=Release"
+                f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
+                f" -DCMAKE_C_COMPILER=clang-21"
+                f" -DCMAKE_CXX_COMPILER=clang++-21"
+                f" -DLLVM_ENABLE_LLD=ON"
+                f" -DLLVM_ENABLE_LTO=Thin"
+                f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
+                f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
+                f" -DLLVM_ENABLE_TERMINFO=OFF"
+                f" -DLLVM_ENABLE_ZLIB=OFF"
+                f" -DLLVM_ENABLE_ZSTD=OFF"
+                f" -DLLVM_BINUTILS_INCDIR=/usr/include"
+                f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
+                f" {builtin_cmake_args}"
+                f" -DCMAKE_INSTALL_PREFIX={STAGE2_INSTALL_DIR}"
+                f" -S {LLVM_SOURCE_DIR}/llvm"
+                f" -B {STAGE2_BUILD_DIR}"
+            )
+            results.append(
+                Result.from_commands_run(
+                    name="Stage 2 CMake (PGO-optimized clang)",
+                    command=cmake_cmd,
+                )
+            )
+            res = results[-1].is_ok()
 
         if res:
             results.append(
