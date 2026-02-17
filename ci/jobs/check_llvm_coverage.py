@@ -24,7 +24,7 @@ if __name__ == "__main__":
     if prev_10_commits is None:
         # Get 10 previous commits from master after the base commit
         master_commits = Shell.get_output(
-            "git rev-list master --max-count=100", verbose=True
+            "git rev-list origin/master --max-count=100", verbose=True
         ).splitlines()
         if merge_base_commit_sha in master_commits:
             idx = master_commits.index(merge_base_commit_sha)

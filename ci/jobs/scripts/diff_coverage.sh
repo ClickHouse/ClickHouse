@@ -73,24 +73,52 @@ exit 0
 fi
 
 # get diff between current commit and base commit
+git fetch origin ${BASE_COMMIT} ${CURRENT_COMMIT}
 git diff ${BASE_COMMIT}..${CURRENT_COMMIT} --unified=3 > changes.diff
+changed_files=$(git diff ${BASE_COMMIT}..${CURRENT_COMMIT} --name-only)
+echo "Changed files:"
+echo "$changed_files"
+
+# Build --include args
+include_args=""
+for f in $changed_files; do
+    include_args="$include_args --include */$f"
+done
+
+patterns=()
+while IFS= read -r f; do
+  [ -n "$f" ] && patterns+=("*$f")
+done < changed_files.txt
+
+
+lcov --extract current_llvm_coverage.info  "${patterns[@]}" \
+  --ignore-errors inconsistent,corrupt \
+  -o current.changed.info
+
+lcov --extract base_llvm_coverage.info "${patterns[@]}" \
+  --ignore-errors inconsistent,corrupt \
+  -o baseline.changed.info
 
 echo Workspace path: $WORKSPACE_PATH
 
 genhtml \
-  --baseline-file base_llvm_coverage.info \
+  --baseline-file baseline.changed.info \
   --diff-file changes.diff \
   --output-directory diff-html \
   --no-function-coverage \
   --prefix $WORKSPACE_PATH \
-  --legend \
   --substitute "s|/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse|$WORKSPACE_PATH|g" \
   --ignore-errors inconsistent \
   --ignore-errors corrupt \
   --ignore-errors path \
   --ignore-errors source \
-  --ignore-errors range\
-  current_llvm_coverage.info 
+  --ignore-errors range \
+  --ignore-errors empty \
+  --ignore-errors unused \
+  --simplified-colors \
+  --flat \
+  $include_args \
+  current.changed.info 
 
 
 lcov --version

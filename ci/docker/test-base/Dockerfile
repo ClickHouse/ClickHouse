@@ -83,6 +83,7 @@ RUN apt-get update \
         bsdmainutils \
         build-essential \
         git \
+        openssh-client \
         gperf \
         moreutils \
         less \
