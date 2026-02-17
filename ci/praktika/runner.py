@@ -112,6 +112,7 @@ class Runner:
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):
+        print("REMOVEME _setup_env start")
         # source env file to write data into fs (workflow config json, workflow status json)
         Shell.check(f". {Settings.ENV_SETUP_SCRIPT}", verbose=True, strict=True)
 
