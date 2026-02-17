@@ -41,7 +41,7 @@ def install_dependencies():
 
 
 def build_package():
-    run([str(venv_python()), "-m", "build"])
+    run([str(venv_python()), "-m", "build", "ci/praktika"])
     run([str(venv_python()), "-m", "twine", "check", "dist/*"])
     run([str(venv_python()), "-m", "twine", "upload", "dist/*"])
 

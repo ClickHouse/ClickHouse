@@ -160,9 +160,6 @@ exclude_lines = [
     "@abstractmethod",
 ]
 
-[tool.black]
-required-version = 25
-
 [tool.pylint.BASIC]
 max-module-lines = 2000
 max-line-length = 120
