@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Flyout, Badge, Icon, Tooltip } from '@clickhouse/click-ui'
+import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Flyout, Badge, Icon, Tooltip, Panel } from '@clickhouse/click-ui'
 import './App.css'
 
 interface TestResult {
@@ -23,6 +23,21 @@ interface PRResult {
   start_time: string | number
   duration: number
   results: TestResult[]
+  info?: string
+  links?: string[]
+  ext?: {
+    pr_title?: string
+    git_branch?: string
+    report_url?: string
+    commit_sha?: string
+    commit_message?: string
+    repo_name?: string
+    pr_number?: number
+    run_url?: string
+    change_url?: string
+    workflow_name?: string
+    [key: string]: any
+  }
 }
 
 interface NestedTestResult extends TestResult {
@@ -836,6 +851,41 @@ function App() {
 
           {data && !loading && (
             <Container orientation='vertical' gap='none'>
+              {data.ext && nameParams.length <= 1 && (
+                <Panel hasBorder padding='md' orientation='vertical' gap='xs' fillWidth style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px' }}>
+                    <Icon name="git-merge" size="md" />
+                    {data.ext.pr_number && data.ext.pr_number > 0 ? (
+                      <>
+                        <Link href={data.ext.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
+                          #{data.ext.pr_number}
+                        </Link>
+                        <Text>:</Text>
+                        <Text>{data.ext.pr_title}</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Link href={data.ext.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                          {data.ext.commit_sha?.substring(0, 7)}
+                        </Link>
+                        <Text>:</Text>
+                        <Text>{data.ext.commit_message}</Text>
+                      </>
+                    )}
+                  </div>
+                  {data.ext.workflow_name && (
+                    <div style={{ fontSize: '14px', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Text>Workflow: <strong>{data.ext.workflow_name}</strong></Text>
+                      {data.ext.run_url && (
+                        <Link href={data.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }}>
+                          <Icon name="github" size="sm" />
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </Panel>
+              )}
+
               <div style={{ padding: '12px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Text>status:</Text>
                 {getStatusBadge(data.status)}
@@ -844,6 +894,30 @@ function App() {
                 <Text>|</Text>
                 <Text>Duration: <strong>{formatDuration(data.duration)}</strong></Text>
               </div>
+
+              {data.info && (
+                <Panel hasShadow padding='md' orientation='vertical' gap='xs' fillWidth style={{ marginBottom: '16px' }}>
+                  <Text style={{ fontWeight: 600 }}>Info:</Text>
+                  <Text style={{ whiteSpace: 'pre-wrap', fontSize: '13px' }}>{data.info}</Text>
+                </Panel>
+              )}
+
+              {data.links && data.links.length > 0 && (
+                <Panel hasShadow padding='md' orientation='vertical' gap='xs' fillWidth style={{ marginBottom: '16px' }}>
+                  <Text style={{ fontWeight: 600 }}>Links:</Text>
+                  {data.links.map((link, index) => (
+                    <Link
+                      key={index}
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: '13px' }}
+                    >
+                      {getLastPartOfUrl(link)}
+                    </Link>
+                  ))}
+                </Panel>
+              )}
 
               <Table
                 headers={headers}
