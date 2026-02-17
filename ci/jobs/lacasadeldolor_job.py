@@ -290,7 +290,7 @@ def main():
     # Set up and run La Casa del Dolor
     base_command = f"""
 python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse
---tmp-files-dir=/workspace
+--tmp-files-dir={workspace_path}
 --server-config={config_xml}
 --user-config={users_xml}
 --client-binary={clickhouse_path}
