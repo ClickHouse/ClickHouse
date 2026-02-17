@@ -286,6 +286,8 @@ private:
 /// Runtime filter that can switch to bloom filter and minmax range
 /// when the number of unique values exceeds the limit.
 /// It is used for numeric columns only.
+/// The minmax range allows to quickly filter out values that are outside of the observed min and max values,
+/// which can be beneficial for avoiding unnecessary bloom filter lookups.
 class ApproximateNumericRuntimeFilter : public ApproximateGenericRuntimeFilter
 {
     using Base = ApproximateGenericRuntimeFilter;

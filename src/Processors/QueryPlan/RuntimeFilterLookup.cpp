@@ -127,6 +127,9 @@ ColumnPtr ApproximateNumericRuntimeFilter::findImpl(const ColumnWithTypeAndName 
         {
             Field value;
             values.column->get(row, value);
+            /// The following condition is an optimization to avoid unnecessary bloom filter lookups for values outside of the observed min/max range.
+            /// It can be beneficial for low cardinality columns with small number of distinct values,
+            /// but it can cause false positives for high cardinality columns where min and max are far apart.
             const bool found = min_value <= value && value <= max_value && lookupInBloomFilter(values.column, row);
             found_count += found ? 1 : 0;
             dst_data[row] = found;
