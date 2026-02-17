@@ -1560,8 +1560,8 @@ INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF64,
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::max(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::min(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::denorm_min(), 0.1))),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 922337203685477478.0, 0.1))),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -922337203685477478.0, 0.1)))
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 9223372036854774272.0, 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -9223372036854774272.0, 0.1)))
         )
     )
 );
@@ -1579,8 +1579,8 @@ INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF32,
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::max(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::min(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::denorm_min(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 922337203685477478.0f, 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -922337203685477478.0f, 0.1)))
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 9223371761976868863.0f, 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -9223371761976868863.0f, 0.1)))
         )
     )
 );
@@ -1766,7 +1766,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidExponent)
         // FOR base (8 bytes)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
-    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid exponent value: 127, max allowed: 17");
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid exponent value: 127, max allowed: 18");
 }
 
 TEST_F(ALPTest, DecompressMalformedInputWithInvalidFraction)
@@ -1782,7 +1782,7 @@ TEST_F(ALPTest, DecompressMalformedInputWithInvalidFraction)
         // FOR base (8 bytes)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
-    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid fraction value: 127, max allowed: 17");
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid fraction value: 127, max allowed: 18");
 }
 
 TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockData)

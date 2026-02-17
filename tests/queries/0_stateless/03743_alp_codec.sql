@@ -88,18 +88,18 @@ TRUNCATE TABLE base64; INSERT INTO base64 SELECT number,
         -- Largest finite values
         WHEN 16 THEN 1.7976931348623157e308
         WHEN 17 THEN -1.7976931348623157e308
-        -- Near clamp bounds (UPPER = 922337203685477478.0)
-        WHEN 18 THEN 922337203685477478.0   -- exactly at upper bound
-        WHEN 19 THEN -922337203685477478.0  -- exactly at lower bound
-        WHEN 20 THEN 922337203685477479.0   -- just above upper bound
-        WHEN 21 THEN -922337203685477479.0  -- just below lower bound
-        WHEN 22 THEN 922337203685477400.0   -- near upper bound
-        WHEN 23 THEN -922337203685477400.0
+        -- Near clamp bounds (UPPER = 9223372036854774272.0)
+        WHEN 18 THEN 9223372036854774272.0  -- exactly at upper bound
+        WHEN 19 THEN -9223372036854774272.0 -- exactly at lower bound
+        WHEN 20 THEN 9223372036854774273.0   -- just above upper bound
+        WHEN 21 THEN -9223372036854774273.0  -- just below lower bound
+        WHEN 22 THEN 9223372036854774000.0   -- near upper bound
+        WHEN 23 THEN -9223372036854774000.0  -- near lower bound
         -- Large values beyond clamp
-        WHEN 24 THEN 1e18
-        WHEN 25 THEN -1e18
-        WHEN 26 THEN 1e19
-        WHEN 27 THEN -1e19
+        WHEN 24 THEN 1e19
+        WHEN 25 THEN -1e19
+        WHEN 26 THEN 1e20
+        WHEN 27 THEN -1e20
         -- Regular decimal values
         ELSE round(number * 0.1 + cos(number), 2)
     END
@@ -133,13 +133,16 @@ TRUNCATE TABLE base32; INSERT INTO base32 SELECT number,
         -- Largest finite values
         WHEN 16 THEN toFloat32(3.4028235e38)
         WHEN 17 THEN toFloat32(-3.4028235e38)
+        -- Clamp bounds (UPPER = 9223371761976868863.0f)
+        WHEN 18 THEN 9223371761976868863.0  -- exactly at upper bound
+        WHEN 19 THEN -9223371761976868863.0 -- exactly at lower bound
         -- Large values (testing precision)
-        WHEN 18 THEN toFloat32(1e10)
-        WHEN 19 THEN toFloat32(-1e10)
-        WHEN 20 THEN toFloat32(1e20)
-        WHEN 21 THEN toFloat32(-1e20)
-        WHEN 22 THEN toFloat32(1e-10)
-        WHEN 23 THEN toFloat32(-1e-10)
+        WHEN 20 THEN toFloat32(1e10)
+        WHEN 21 THEN toFloat32(-1e10)
+        WHEN 22 THEN toFloat32(1e20)
+        WHEN 23 THEN toFloat32(-1e20)
+        WHEN 24 THEN toFloat32(1e-10)
+        WHEN 25 THEN toFloat32(-1e-10)
         -- Regular decimal values
         ELSE toFloat32(round(number * 0.1 + cos(number), 2))
     END
