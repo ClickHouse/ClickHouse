@@ -162,7 +162,7 @@ void ApproximateNumericRuntimeFilter::merge(const IRuntimeFilter * source)
             max_value = other->max_value;
 
         /// Merge bloom filters
-        Base::merge(other);
+        Base::mergeImpl(other);
     };
 
     if (isApproximate())
@@ -316,15 +316,7 @@ void ApproximateGenericRuntimeFilter::merge(const IRuntimeFilter * source)
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    if (source_typed->bloom_filter)
-    {
-        switchToApproximateSet();
-        mergeBloomFilters(*bloom_filter, *source_typed->bloom_filter);
-    }
-    else
-    {
-        insert(source_typed->getValuesColumn());
-    }
+    mergeImpl(source_typed);
     --filters_to_merge;
 }
 
@@ -410,6 +402,19 @@ void ApproximateGenericRuntimeFilter::insertIntoApproximateSet(ColumnPtr values,
     /// TODO: make this efficient: compute hashes in vectorized manner
     auto value = values->getDataAt(row);
     bloom_filter->add(value.data(), value.size());
+}
+
+void ApproximateGenericRuntimeFilter::mergeImpl(const ApproximateGenericRuntimeFilter * source)
+{
+    if (source->bloom_filter)
+    {
+        switchToApproximateSet();
+        mergeBloomFilters(*bloom_filter, *source->bloom_filter);
+    }
+    else
+    {
+        insert(source->getValuesColumn());
+    }
 }
 
 bool ApproximateGenericRuntimeFilter::lookupInBloomFilter(ColumnPtr values, size_t row) const

@@ -265,6 +265,8 @@ public:
 protected:
     virtual void insertIntoApproximateSet(ColumnPtr values, size_t row);
 
+    void mergeImpl(const ApproximateGenericRuntimeFilter * source);
+
     bool isApproximate() const { return bloom_filter != nullptr; }
 
     bool lookupInBloomFilter(ColumnPtr values, size_t row) const;
