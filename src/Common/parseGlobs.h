@@ -108,7 +108,7 @@ public:
     /// E.g. "file{a,b}{1,2}.csv" → ["filea1.csv", "filea2.csv", "fileb1.csv", "fileb2.csv"]
     /// With expand_ranges=true: "file{1..3}.csv" → ["file1.csv", "file2.csv", "file3.csv"]
     /// Throws if the total expansion would exceed max_expansion.
-    static constexpr size_t DEFAULT_MAX_EXPANSION = 1'000'000'000;
+    static constexpr size_t DEFAULT_MAX_EXPANSION = 1000;
     std::vector<std::string> expand(size_t max_expansion = DEFAULT_MAX_EXPANSION, bool expand_ranges = false) const;
 
     /// Match a candidate string against this glob pattern directly (no regex).

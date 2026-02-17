@@ -93,6 +93,7 @@ namespace Setting
     extern const SettingsBool engine_file_empty_if_not_exists;
     extern const SettingsBool engine_file_skip_empty_files;
     extern const SettingsBool engine_file_truncate_on_insert;
+    extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
@@ -223,11 +224,12 @@ void listFilesWithRegexpMatchingImpl(
 
 std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & for_match,
-    size_t & total_bytes_to_read)
+    size_t & total_bytes_to_read,
+    size_t max_expansion)
 {
     std::vector<std::string> result;
 
-    Strings for_match_paths_expanded = BetterGlob::GlobString(for_match).expand();
+    Strings for_match_paths_expanded = BetterGlob::GlobString(for_match).expand(max_expansion);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
         listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
@@ -301,6 +303,8 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
 
     Strings paths;
 
+    const size_t max_expansion = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
     String pattern = fs::absolute(fs_pattern).lexically_normal(); /// Normalize path.
@@ -326,14 +330,14 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, max_expansion);
             can_be_directory = false;
         }
     }
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, max_expansion);
         can_be_directory = false;
     }
 

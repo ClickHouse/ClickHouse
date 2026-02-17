@@ -64,6 +64,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsUInt64 max_download_buffer_size;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
@@ -183,10 +184,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     const auto & reading_path = configuration->getPathForRead();
     BetterGlob::GlobString glob_string(reading_path.path);
 
+    const size_t max_expansion = local_context->getSettingsRef()[Setting::glob_expansion_max_elements];
+
     if (glob_string.hasGlobs() && glob_string.isFullyExpandable()
-        && glob_string.cardinality() <= BetterGlob::GlobString::DEFAULT_MAX_EXPANSION)
+        && glob_string.cardinality() <= max_expansion)
     {
-        auto paths = glob_string.expand(BetterGlob::GlobString::DEFAULT_MAX_EXPANSION, /*expand_ranges=*/true);
+        auto paths = glob_string.expand(max_expansion, /*expand_ranges=*/true);
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
