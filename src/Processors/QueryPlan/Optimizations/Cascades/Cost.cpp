@@ -299,7 +299,7 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
     if (read_step.getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
     {
         /// TODO: Move this to IOptimizerStatistics implementation
-        if (auto estimator = read_step.getConditionSelectivityEstimator())
+        if (auto estimator = read_step.getConditionSelectivityEstimator(read_step.getAllColumnNames()))
         {
             auto prewhere_info = read_step.getPrewhereInfo();
             const ActionsDAG::Node * prewhere_node = prewhere_info

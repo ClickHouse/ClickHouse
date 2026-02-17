@@ -8,7 +8,6 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 
@@ -44,9 +43,7 @@ class MergeTreeDataPartWriterOnDisk : public IMergeTreeDataPartWriter
 {
 public:
     using WrittenOffsetSubstreams = std::set<std::string>;
-
-    using StreamPtr = std::unique_ptr<MergeTreeWriterStream<false>>;
-    using StatisticStreamPtr = std::unique_ptr<MergeTreeWriterStream<true>>;
+    using StreamPtr = std::unique_ptr<MergeTreeWriterStream>;
 
     MergeTreeDataPartWriterOnDisk(
         const String & data_part_name_,
@@ -59,7 +56,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -82,17 +78,12 @@ protected:
     /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
-    void calculateAndSerializeStatistics(const Block & stats_block);
-
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
     void finishPrimaryIndexSerialization(bool sync);
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
     void fillSkipIndicesChecksums(MergeTreeDataPartChecksums & checksums);
     void finishSkipIndicesSerialization(bool sync);
-
-    void fillStatisticsChecksums(MergeTreeDataPartChecksums & checksums);
-    void finishStatisticsSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }
@@ -111,10 +102,6 @@ protected:
     void initOrAdjustDynamicStructureIfNeeded(Block & block);
 
     const MergeTreeIndices skip_indices;
-
-    const ColumnsStatistics stats;
-    std::vector<StatisticStreamPtr> stats_streams;
-
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
 
@@ -155,23 +142,20 @@ protected:
 private:
     void initSkipIndices();
     void initPrimaryIndex();
-    void initStatistics();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
     void calculateAndSerializePrimaryIndexRow(const Block & index_block, size_t row);
 
     struct ExecutionStatistics
     {
-        ExecutionStatistics(size_t skip_indices_cnt, size_t stats_cnt)
-            : skip_indices_build_us(skip_indices_cnt, 0), statistics_build_us(stats_cnt, 0)
+        explicit ExecutionStatistics(size_t skip_indices_cnt) : skip_indices_build_us(skip_indices_cnt, 0)
         {
         }
 
         std::vector<size_t> skip_indices_build_us; // [i] corresponds to the i-th index
-        std::vector<size_t> statistics_build_us; // [i] corresponds to the i-th stat
     };
-    ExecutionStatistics execution_stats;
 
+    ExecutionStatistics execution_stats;
     LoggerPtr log;
 };
 

@@ -1776,9 +1776,8 @@ void StatementGenerator::addTableColumn(
 void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, const bool projection, IndexDef * idef)
 {
     Expr * expr = idef->mutable_expr();
-    std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType_MAX));
-    const IndexType itpe
-        = (projection && rg.nextSmallNumber() < 8) ? IndexType::IDX_basic : static_cast<IndexType>(idx_range(rg.generator));
+    std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType::IDX_text));
+    const IndexType itpe = projection ? IndexType::IDX_basic : static_cast<IndexType>(idx_range(rg.generator));
 
     chassert(!t.cols.empty());
     idef->set_type(itpe);
@@ -1996,7 +1995,7 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
         generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, std::nullopt, psdef->mutable_select());
         this->levels.clear();
         /// Add projection settings
-        if (rg.nextBool())
+        if (rg.nextSmallNumber() < 4)
         {
             const auto & engineSettings = allTableSettings.at(t.teng);
 

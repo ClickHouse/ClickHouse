@@ -1,8 +1,12 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Common/quoteString.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -10,12 +14,14 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
 namespace DB
@@ -23,7 +29,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace TimeSeriesSetting
@@ -32,23 +40,120 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
 }
 
-StorageTimeSeriesSelector::StorageTimeSeriesSelector(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const StorageID & time_series_storage_id_,
-    const PrometheusQueryTree & instant_selector_,
-    const Field & min_time_,
-    const Field & max_time_)
-    : IStorage{table_id_}
-    , time_series_storage_id{time_series_storage_id_}
-    , instant_selector{instant_selector_}
-    , min_time{min_time_}
-    , max_time{max_time_}
+StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
 {
+    std::string_view function_name = "timeSeriesSelector";
+
+    size_t min_num_args = 4;
+    size_t max_num_args = 5;
+
+    if ((args.size() < min_num_args) || (args.size() > max_num_args))
+    {
+        std::string_view expected_args = "[database, ] time_series_table, selector, min_time, max_time";
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Table function '{}' requires {}..{} arguments: {}({})",
+                        function_name, min_num_args, max_num_args, function_name, expected_args);
+    }
+
+    size_t argument_index = 0;
+
+    StorageID time_series_storage_id = StorageID::createEmpty();
+
+    if (args.size() == min_num_args)
+    {
+        /// timeSeriesSelector( [my_db.]my_time_series_table, ... )
+        if (const auto * id = args[argument_index]->as<ASTIdentifier>())
+        {
+            if (auto table_id = id->createTable())
+            {
+                time_series_storage_id = table_id->getTableId();
+                ++argument_index;
+            }
+        }
+    }
+
+    if (time_series_storage_id.empty())
+    {
+        if (args.size() == min_num_args)
+        {
+            /// timeSeriesSelector( 'my_time_series_table', ... )
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
+        }
+        else
+        {
+            /// timeSeriesSelector( 'mydb', 'my_time_series_table', ... )
+            auto database_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (database_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a literal with type String, got {}", database_name_field.getType());
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.database_name = database_name_field.safeGet<String>();
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
+        }
+    }
+
+    time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr();
+    auto id_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
+    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
+    auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
+
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+
+    auto selector_field = evaluateConstantExpression(args[argument_index++], context).first;
+    if (selector_field.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'selector' must be a literal with type String, got {}", selector_field.getType());
+
+    PrometheusQueryTree selector{selector_field.safeGet<String>()};
+
+    auto [min_time_field, min_time_type] = evaluateConstantExpression(args[argument_index++], context);
+    auto [max_time_field, max_time_type] = evaluateConstantExpression(args[argument_index++], context);
+
+    auto min_time = parseTimeSeriesTimestamp(min_time_field, min_time_type, timestamp_scale);
+    auto max_time = parseTimeSeriesTimestamp(max_time_field, max_time_type, timestamp_scale);
+
+    chassert(argument_index == args.size());
+
+    Configuration config;
+    config.time_series_storage_id = std::move(time_series_storage_id);
+    config.id_data_type = std::move(id_data_type);
+    config.timestamp_data_type = std::move(timestamp_data_type);
+    config.scalar_data_type = std::move(scalar_data_type);
+    config.selector = std::move(selector);
+    config.min_time = min_time;
+    config.max_time = max_time;
+    return config;
+}
+
+StorageTimeSeriesSelector::StorageTimeSeriesSelector(
+    const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_)
+    : IStorage{table_id_}
+    , config(config_)
+{
+    const auto * node = config.selector.getRoot();
+    if (!node || (node->node_type != PrometheusQueryTree::NodeType::InstantSelector))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} is not an instant selector", quoteString(config.selector.getQuery()));
+
+    if (config.min_time > config.max_time)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Max time {} is less than min time {}",
+                        Field{config.min_time}, Field{config.max_time});
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 }
+
 
 namespace
 {
@@ -98,8 +203,9 @@ namespace
     ASTPtr makeWhereFilterForTagsTable(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
-        const Field & min_time,
-        const Field & max_time)
+        const std::optional<DateTime64> & min_time,
+        const std::optional<DateTime64> & max_time,
+        const DataTypePtr & timestamp_data_type)
     {
         ASTs asts;
         for (const auto & matcher : matchers)
@@ -108,22 +214,22 @@ namespace
         if (asts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
 
-        if (!min_time.isNull())
+        if (min_time)
         {
             /// tags_table.max_time >= min_time
             asts.push_back(makeASTFunction(
                 "greaterOrEquals",
                 make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
-                make_intrusive<ASTLiteral>(min_time)));
+                timeSeriesTimestampToAST(*min_time, timestamp_data_type)));
         }
 
-        if (!max_time.isNull())
+        if (max_time)
         {
             /// tags_table.min_time <= max_time
             asts.push_back(makeASTFunction(
                 "lessOrEquals",
                 make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
-                make_intrusive<ASTLiteral>(max_time)));
+                timeSeriesTimestampToAST(*max_time, timestamp_data_type)));
         }
 
         return makeASTForLogicalAnd(std::move(asts));
@@ -133,7 +239,9 @@ namespace
         const StorageID & tags_table_id,
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
-        const Field & min_time, const Field & max_time)
+        const std::optional<DateTime64> & min_time,
+        const std::optional<DateTime64> & max_time,
+        const DataTypePtr & timestamp_data_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -175,7 +283,7 @@ namespace
 
         /// WHERE <filter>
         {
-            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, min_time, max_time);
+            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, min_time, max_time, timestamp_data_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -194,38 +302,37 @@ namespace
 
     ASTPtr makeWhereFilterForDataTable(
         ASTPtr select_query_from_tags_table,
-        const Field & min_time,
-        const Field & max_time)
+        DateTime64 min_time,
+        DateTime64 max_time,
+        const DataTypePtr & timestamp_data_type)
     {
         ASTs conditions;
 
         /// id IN (SELECT id FROM (select_id_query))
         conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), select_query_from_tags_table));
 
-        if (!min_time.isNull())
-        {
-            /// timestamp >= min_time
-            conditions.push_back(makeASTFunction(
-                "greaterOrEquals",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                make_intrusive<ASTLiteral>(min_time)));
-        }
+        /// timestamp >= min_time
+        conditions.push_back(makeASTFunction(
+            "greaterOrEquals",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+            timeSeriesTimestampToAST(min_time, timestamp_data_type)));
 
-        if (!max_time.isNull())
-        {
-            /// timestamp <= max_time
-            conditions.push_back(makeASTFunction(
-                "lessOrEquals",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                make_intrusive<ASTLiteral>(max_time)));
-        }
+        /// timestamp <= max_time
+        conditions.push_back(makeASTFunction(
+            "lessOrEquals",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+            timeSeriesTimestampToAST(max_time, timestamp_data_type)));
 
         return makeASTForLogicalAnd(std::move(conditions));
     }
 
     ASTPtr makeSelectQueryFromDataTable(const StorageID & data_table_id,
                                         ASTPtr select_query_from_tags_table,
-                                        const Field & min_time, const Field & max_time)
+                                        DateTime64 min_time,
+                                        DateTime64 max_time,
+                                        const DataTypePtr & id_data_type,
+                                        const DataTypePtr & timestamp_data_type,
+                                        const DataTypePtr & scalar_data_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -234,9 +341,16 @@ namespace
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+            select_list.push_back(makeASTFunction(
+                "CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
+            select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+
+            select_list.push_back(
+                timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), timestamp_data_type));
+            select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+
+            select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
+            select_list.back()->setAlias(TimeSeriesColumnNames::Value);
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -258,7 +372,7 @@ namespace
 
         /// WHERE id IN (SELECT id FROM (select_query_from_tags_table))
         {
-            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time);
+            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -289,6 +403,7 @@ namespace
     }
 }
 
+
 void StorageTimeSeriesSelector::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -299,28 +414,35 @@ void StorageTimeSeriesSelector::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     const auto & time_series_settings = time_series_storage->getStorageSettings();
 
-    const auto * node = instant_selector.getRoot();
-    if (!node || (node->node_type != PrometheusQueryTree::NodeType::InstantSelector))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "An instant selector is required");
-    const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*node).matchers;
+    const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
     auto data_table_id = time_series_storage->getTargetTableId(ViewTarget::Data);
     auto tags_table_id = time_series_storage->getTargetTableId(ViewTarget::Tags);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(time_series_settings);
 
-    Field min_time_to_filter_ids;
-    Field max_time_to_filter_ids;
+    std::optional<DateTime64> min_time_to_filter_ids;
+    std::optional<DateTime64> max_time_to_filter_ids;
     if (time_series_settings[TimeSeriesSetting::filter_by_min_time_and_max_time])
     {
-        min_time_to_filter_ids = min_time;
-        max_time_to_filter_ids = max_time;
+        min_time_to_filter_ids = config.min_time;
+        max_time_to_filter_ids = config.max_time;
     }
-    ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids);
-    ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(data_table_id, select_query_from_tags_table, min_time, max_time);
+
+    ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
+        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
+
+    ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
+        data_table_id,
+        select_query_from_tags_table,
+        config.min_time,
+        config.max_time,
+        config.id_data_type,
+        config.timestamp_data_type,
+        config.scalar_data_type);
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
