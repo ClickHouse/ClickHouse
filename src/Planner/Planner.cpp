@@ -611,9 +611,21 @@ SortDescription getSortDescriptionFromNames(const Names & names)
     return order_descr;
 }
 
-bool testForAggregationLimitPushdownOptimization(const AggregationAnalysisResult & aggregation_analysis_result,
-        const QueryAnalysisResult & query_analysis_result)
+bool testForAggregationLimitPushdownOptimization(PlannerExpressionsAnalysisResult & expression_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const QueryNode & query_node)
 {
+    auto aggregation_analysis_result = expression_analysis_result.getAggregation();
+
+    if (query_analysis_result.limit_offset)
+        return false; // FIXME
+
+    if (expression_analysis_result.hasHaving())
+        return false;
+
+    if (query_node.isGroupByWithCube() || query_node.isGroupByWithRollup() || query_node.isGroupByWithTotals())
+        return false;
+
     if (aggregation_analysis_result.aggregation_keys.empty())
         return false;
 
@@ -636,11 +648,13 @@ bool testForAggregationLimitPushdownOptimization(const AggregationAnalysisResult
 }
 
 void addAggregationStep(QueryPlan & query_plan,
-    const AggregationAnalysisResult & aggregation_analysis_result,
+    PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info)
+    const SelectQueryInfo & select_query_info,
+    const QueryNode & query_node)
 {
+    auto aggregation_analysis_result = expression_analysis_result.getAggregation();
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
     auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info);
 
@@ -648,7 +662,7 @@ void addAggregationStep(QueryPlan & query_plan,
     SortDescription group_by_sort_description;
 
     {
-        auto applicable = testForAggregationLimitPushdownOptimization(aggregation_analysis_result, query_analysis_result);
+        auto applicable = testForAggregationLimitPushdownOptimization(expression_analysis_result, query_analysis_result, query_node);
         LOG_DEBUG(getLogger("Planner"), "GROUP BY ... ORDER BY ... LIMIT optimization can be applied: {}", applicable);
 
         if (applicable && settings[Setting::ordered_group_by_limit_pushdown])
@@ -1968,7 +1982,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
+            addAggregationStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
         }
 
         /** If we have aggregation, we can't execute any later-stage
