@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnDynamic.h>
@@ -215,7 +216,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     bool is_null_map_subcolumn = subcolumn_nested_name == "null";
     if (is_null_map_subcolumn)
     {
-        if (!subcolumn_type->canBeInsideNullable())
+        if (!canBeInsideNullableBySettings(subcolumn_type))
             return nullptr;
         res->type = std::make_shared<DataTypeUInt8>();
     }
@@ -228,7 +229,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
 
     res->serialization = std::make_shared<SerializationDynamicElement>(res->serialization, subcolumn_type->getName(), String(subcolumn_nested_name), is_null_map_subcolumn);
     /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
-    bool make_subcolumn_nullable = subcolumn_type->canBeInsideNullable() || subcolumn_type->lowCardinality();
+    bool make_subcolumn_nullable = canBeInsideNullableOrLowCardinalityNullableBySettings(subcolumn_type);
     if (!is_null_map_subcolumn && make_subcolumn_nullable)
         res->type = makeNullableOrLowCardinalityNullableSafe(res->type);
 
