@@ -449,14 +449,24 @@ void GlobString::parse()
         }
         else if (input[position] == '{')  /// NOLINT
         {
-            /// FIXME why do we even need to support double braces?
-            if (position + 1 > input.length() && input[position + 1] == '{')
+            /// Handle double braces "{{" as a literal '{' character.
+            if (position + 1 < input.length() && input[position + 1] == '{')
             {
                 expressions.emplace_back("{");
-                position += 1;
+                position += 2;
+                continue;
             }
 
             auto matcher_expression = consumeMatcher(input.substr(position));
+
+            /// If no closing '}' was found, or the braces are empty like "{}",
+            /// treat the '{' as a literal character.
+            if (matcher_expression.empty() || matcher_expression.length() <= 2)
+            {
+                expressions.emplace_back(input.substr(position, 1));
+                position += 1;
+                continue;
+            }
 
             auto range = tryParseRangeMatcher(matcher_expression);
             if (range.has_value())
