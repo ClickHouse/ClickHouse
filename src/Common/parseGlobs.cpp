@@ -448,6 +448,148 @@ std::vector<std::string> GlobString::expand(size_t max_expansion) const
     return result;
 }
 
+bool GlobString::matches(std::string_view candidate) const
+{
+    return matchesImpl(candidate, 0, 0);
+}
+
+bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr_idx) const
+{
+    /// Walk through expressions one by one, consuming characters from `candidate`.
+    while (expr_idx < expressions.size())
+    {
+        const auto & expr = expressions[expr_idx];
+
+        switch (expr.type())
+        {
+            case ExpressionType::CONSTANT:
+            {
+                const auto & text = std::get<std::string_view>(expr.getData());
+                if (candidate.size() - pos < text.size())
+                    return false;
+                if (candidate.substr(pos, text.size()) != text)
+                    return false;
+                pos += text.size();
+                ++expr_idx;
+                break;
+            }
+
+            case ExpressionType::WILDCARD:
+            {
+                const auto & wildcard = std::get<WildcardType>(expr.getData());
+
+                switch (wildcard)
+                {
+                    case WildcardType::QUESTION:
+                    {
+                        /// Match exactly one character that is not '/'.
+                        if (pos >= candidate.size() || candidate[pos] == '/')
+                            return false;
+                        ++pos;
+                        ++expr_idx;
+                        break;
+                    }
+
+                    case WildcardType::SINGLE_ASTERISK:
+                    {
+                        /// Match zero or more non-'/' characters. Try all possible lengths.
+                        ++expr_idx;
+                        for (size_t len = 0; pos + len <= candidate.size(); ++len)
+                        {
+                            if (len > 0 && candidate[pos + len - 1] == '/')
+                                break;
+                            if (matchesImpl(candidate, pos + len, expr_idx))
+                                return true;
+                        }
+                        return false;
+                    }
+
+                    case WildcardType::DOUBLE_ASTERISK:
+                    {
+                        /// Match zero or more characters that are not '{' or '}'.
+                        ++expr_idx;
+                        for (size_t len = 0; pos + len <= candidate.size(); ++len)
+                        {
+                            if (len > 0 && (candidate[pos + len - 1] == '{' || candidate[pos + len - 1] == '}'))
+                                break;
+                            if (matchesImpl(candidate, pos + len, expr_idx))
+                                return true;
+                        }
+                        return false;
+                    }
+                }
+                break;
+            }
+
+            case ExpressionType::RANGE:
+            {
+                const auto & range = std::get<Range>(expr.getData());
+
+                const size_t lo = std::min(range.start, range.end);
+                const size_t hi = std::max(range.start, range.end);
+                const size_t pad_width = ((range.start_zero_padded && range.start_digit_count > 1)
+                                          || (range.end_zero_padded && range.end_digit_count > 1))
+                    ? std::max(range.start_digit_count, range.end_digit_count)
+                    : 0;
+
+                /// Find the longest run of digits starting at `pos`.
+                size_t digit_start = pos;
+                while (pos < candidate.size() && candidate[pos] >= '0' && candidate[pos] <= '9')
+                    ++pos;
+                size_t digit_count = pos - digit_start;
+
+                if (digit_count == 0)
+                    return false;
+
+                /// Parse the numeric value.
+                size_t value = 0;
+                for (size_t i = digit_start; i < pos; ++i)
+                    value = value * 10 + static_cast<size_t>(candidate[i] - '0');
+
+                /// Check value is within range.
+                if (value < lo || value > hi)
+                    return false;
+
+                /// Check zero-padding width matches.
+                if (pad_width > 0)
+                {
+                    if (digit_count != pad_width)
+                        return false;
+                }
+                else
+                {
+                    /// No padding — the number must not have leading zeros
+                    /// (unless the value is 0 itself, in which case exactly one digit is expected).
+                    if (digit_count > 1 && candidate[digit_start] == '0')
+                        return false;
+                }
+
+                ++expr_idx;
+                break;
+            }
+
+            case ExpressionType::ENUM:
+            {
+                const auto & enum_values = std::get<std::vector<std::string_view>>(expr.getData());
+                ++expr_idx;
+
+                /// Try each alternative.
+                for (const auto & alt : enum_values)
+                {
+                    if (pos + alt.size() <= candidate.size()
+                        && candidate.substr(pos, alt.size()) == alt
+                        && matchesImpl(candidate, pos + alt.size(), expr_idx))
+                        return true;
+                }
+                return false;
+            }
+        }
+    }
+
+    /// All expressions consumed — match only if the entire candidate was consumed.
+    return pos == candidate.size();
+}
+
 void GlobString::parse()
 {
     if (input_data.empty())

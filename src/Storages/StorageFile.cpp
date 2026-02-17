@@ -55,7 +55,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Common/re2.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -131,7 +130,6 @@ namespace ErrorCodes
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -179,12 +177,6 @@ void listFilesWithRegexpMatchingImpl(
     const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
     BetterGlob::GlobString glob_string(current_glob);
-    auto regexp = glob_string.asRegex();
-
-    re2::RE2 matcher(regexp);
-    if (!matcher.ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
     bool skip_regex = current_glob == "/*";
     if (!recursive)
@@ -207,7 +199,7 @@ void listFilesWithRegexpMatchingImpl(
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!it->is_directory() && !looking_for_directory)
         {
-            if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            if (skip_regex || glob_string.matches(file_name))
             {
                 total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
@@ -221,7 +213,7 @@ void listFilesWithRegexpMatchingImpl(
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
                                                 total_bytes_to_read, result, recursive);
             }
-            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            else if (looking_for_directory && glob_string.matches(file_name))
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
                                                 total_bytes_to_read, result, false);
@@ -368,15 +360,9 @@ StorageFile::ArchiveInfo getArchiveInfo(
 
     if (glob_string.hasGlobs())
     {
-        auto matcher = std::make_shared<re2::RE2>(glob_string.asRegex());
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", file_in_archive, matcher->error());
-
-        archive_info.filter = [matcher, matcher_mutex = std::make_shared<std::mutex>()](const std::string & p) mutable
+        archive_info.filter = [glob = std::make_shared<BetterGlob::GlobString>(file_in_archive)](const std::string & p)
         {
-            std::lock_guard lock(*matcher_mutex);
-            return re2::RE2::FullMatch(p, *matcher);
+            return glob->matches(p);
         };
     }
 

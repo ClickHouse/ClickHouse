@@ -109,6 +109,13 @@ public:
     static constexpr size_t DEFAULT_MAX_EXPANSION = 1000;
     std::vector<std::string> expand(size_t max_expansion = DEFAULT_MAX_EXPANSION) const;
 
+    /// Match a candidate string against this glob pattern directly (no regex).
+    /// Handles CONSTANT, WILDCARD (?, *, **), RANGE, and ENUM expressions.
+    /// This is more efficient than converting to regex and using re2::RE2::FullMatch,
+    /// especially for RANGE patterns where regex produces O(N) alternations
+    /// but direct matching does O(1) numeric bounds checking.
+    bool matches(std::string_view candidate) const;
+
     bool hasGlobs() const { return has_globs; }
     bool hasRanges() const { return has_ranges; }
     bool hasEnums() const { return has_enums; }
@@ -123,6 +130,8 @@ private:
     std::vector<std::string_view> tryParseEnumMatcher(const std::string_view & input) const;
     std::optional<Range> tryParseRangeMatcher(const std::string_view & input) const;
 
+    /// Recursive helper for matches(): tries to match candidate[pos..] against expressions[expr_idx..].
+    bool matchesImpl(std::string_view candidate, size_t pos, size_t expr_idx) const;
 
     std::vector<Expression> expressions;
 
