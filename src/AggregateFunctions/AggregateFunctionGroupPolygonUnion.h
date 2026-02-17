@@ -72,7 +72,7 @@ public:
         : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupPolygonUnion<Point>>(
             argument_types_, {}, DataTypeFactory::instance().get("MultiPolygon"))
         , input_type(resolveInputType(argument_types_.at(0)))
-
+        , correct_geometry(correct_geometry_)
     {}
 
     String getName() const override { return "groupPolygonUnion"; }
