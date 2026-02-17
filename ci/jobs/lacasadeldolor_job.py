@@ -3,6 +3,7 @@ import os
 import random
 import re
 import secrets
+import shlex
 import subprocess
 import time
 import traceback
@@ -328,10 +329,11 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
         outfile.write(base_command)
         outfile.write("\n")
 
+    # Wrap with pipefail so the pipe returns dolor.py's exit code, not tee's
     test_results = [
         Result.from_commands_run(
             name="dolor",
-            command=base_command,
+            command=f"bash -o pipefail -c {shlex.quote(base_command)}",
         )
     ]
 
@@ -340,8 +342,31 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
     server_exit_code = 0
     fuzzer_exit_code = 0
 
+    # Safety net: detect Python-level crashes in the fuzzer log even if the
+    # exit code was somehow swallowed (e.g. future command changes drop pipefail)
     attached_files = []
-    if not test_results[-1].is_ok():
+    if test_results[-1].is_ok() and fuzzer_log.exists():
+        try:
+            log_text = fuzzer_log.read_text(encoding="utf-8", errors="replace")
+            if "Traceback (most recent call last):" in log_text:
+                # Extract the last traceback for the error message
+                tb_start = log_text.rfind("Traceback (most recent call last):")
+                tb_snippet = log_text[tb_start : tb_start + 1000].strip()
+                test_results = [
+                    Result(
+                        name="dolor",
+                        status=Result.StatusExtended.FAIL,
+                        info=f"Python exception in dolor.py:\n{tb_snippet}",
+                    )
+                ]
+                is_failed = True
+                attached_files.extend(
+                    [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
+                )
+        except Exception:
+            pass  # Don't let the safety-net check itself break the job
+
+    if not is_failed and not test_results[-1].is_ok():
         try:
             pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
             pattern2 = re.compile(r"The server node0 exited with code:\s*(\d+)")
