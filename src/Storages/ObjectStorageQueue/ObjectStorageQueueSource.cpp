@@ -64,7 +64,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNKNOWN_EXCEPTION;
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
@@ -126,15 +125,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
         list_objects_batch_size_,
         /*with_tags=*/ false);
 
-    BetterGlob::GlobString glob_string(globbed_key);
-    matcher = std::make_unique<re2::RE2>(glob_string.asRegex());
-    if (!matcher->ok())
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from glob ({}): {}",
-            globbed_key, matcher->error());
-    }
+    matcher.emplace(globbed_key);
 
     recursive = globbed_key == "/**";
     if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
@@ -212,7 +203,7 @@ ObjectStorageQueueSource::FileIterator::next()
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                if (!recursive && !matcher->matches((*it)->getPath()))
                     it = new_batch.erase(it);
                 else
                     ++it;

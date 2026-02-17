@@ -77,7 +77,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
@@ -184,9 +183,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     const auto & reading_path = configuration->getPathForRead();
     BetterGlob::GlobString glob_string(reading_path.path);
 
-    if (glob_string.hasGlobs() && glob_string.hasExactlyOneEnum())
+    if (glob_string.hasGlobs() && glob_string.isFullyExpandable()
+        && glob_string.cardinality() <= BetterGlob::GlobString::DEFAULT_MAX_EXPANSION)
     {
-        auto paths = glob_string.expand();
+        auto paths = glob_string.expand(BetterGlob::GlobString::DEFAULT_MAX_EXPANSION, /*expand_ranges=*/true);
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
@@ -219,16 +219,11 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         else
         {
             // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
-            re2::RE2 matcher(glob_string.asRegex());
-            if (!matcher.ok())
-                throw Exception(
-                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
-
             Strings validated_paths;
             for (const auto & path : paths.value())
             {
                 const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
-                if (RE2::FullMatch(relative_path, matcher))
+                if (glob_string.matches(relative_path))
                     validated_paths.push_back(relative_path);
             }
 
@@ -957,11 +952,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags);
 
         BetterGlob::GlobString glob_string(key_with_globs.path);
-        matcher = std::make_unique<re2::RE2>(glob_string.asRegex());
-        if (!matcher->ok())
-        {
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs.path, matcher->error());
-        }
+        matcher.emplace(std::move(glob_string));
 
         recursive = key_with_globs.path == "/**";
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
@@ -1032,7 +1023,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                if (!recursive && !matcher->matches((*it)->getPath()))
                     it = new_batch.erase(it);
                 else
                     ++it;
@@ -1263,15 +1254,8 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
 
 static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
 {
-    BetterGlob::GlobString glob_string(archive_pattern);
-    auto matcher = std::make_shared<re2::RE2>(glob_string.asRegex());
-    if (!matcher->ok())
-    {
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                        "Cannot compile regex from glob ({}): {}",
-                        archive_pattern, matcher->error());
-    }
-    return [matcher](const std::string & p) mutable { return re2::RE2::FullMatch(p, *matcher); };
+    auto glob_string = std::make_shared<BetterGlob::GlobString>(archive_pattern);
+    return [glob_string](const std::string & p) { return glob_string->matches(p); };
 }
 
 StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInArchive(
