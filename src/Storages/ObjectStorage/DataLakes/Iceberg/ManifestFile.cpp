@@ -562,9 +562,50 @@ ManifestFileEntryPtr ManifestFileContent::processRow(size_t row_index)
                 /*upper_reference_data_file_path_ = */ std::nullopt,
                 equality_ids,
                 /*sort_order_id = */ std::nullopt);
-            std::lock_guard lock(files_mutex);
-            this->equality_deletes_files.emplace_back(entry);
+
             break;
+        }
+    }
+    if (use_partition_pruning)
+    {
+        current_pruner.emplace(*schema_processor_ptr, table_schema_id, entry->schema_id, filter_dag.get(), *this, local_context);
+    }
+    auto pruning_status = current_pruner ? current_pruner->canBePruned(entry) : PruningReturnStatus::NOT_PRUNED;
+    insertRowToLogTable(
+        context,
+        manifest_file_deserializer->getContent(row_index),
+        DB::IcebergMetadataLogLevel::ManifestFileEntry,
+        common_path,
+        path_to_manifest_file,
+        row_index,
+        pruning_status);
+    switch (pruning_status)
+    {
+        case PruningReturnStatus::NOT_PRUNED: {
+            std::lock_guard lock(files_mutex);
+            switch (content_type)
+            {
+                case FileContentType::EQUALITY_DELETE: {
+                    this->equality_deletes_files.emplace_back(entry);
+                    return entry;
+                }
+                case FileContentType::POSITION_DELETE: {
+                    this->position_deletes_files_without_deleted.emplace_back(entry);
+                    return entry;
+                }
+                case FileContentType::DATA: {
+                    this->data_files_without_deleted.emplace_back(entry);
+                    return entry;
+                }
+            }
+        }
+        case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
+            ++min_max_index_pruned_files;
+            return nullptr;
+        }
+        case PruningReturnStatus::PARTITION_PRUNED: {
+            ++partition_pruned_files;
+            return nullptr;
         }
     }
     return entry;

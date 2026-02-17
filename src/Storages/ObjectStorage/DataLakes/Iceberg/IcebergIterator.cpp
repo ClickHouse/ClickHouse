@@ -217,6 +217,7 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                     ++partition_pruned_files;
                     break;
                 }
+                return nullptr;
             }
         }
         current_manifest_file_content = nullptr;
