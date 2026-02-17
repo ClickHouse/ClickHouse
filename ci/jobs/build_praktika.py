@@ -13,6 +13,16 @@ def run(cmd, check=True):
     subprocess.run(cmd, check=check)
 
 
+def run_env(cmd, check=True, env=None):
+    print(f"\n>>> Running: {' '.join(cmd)}")
+    env_copy = os.environ.copy()
+
+    for key, value in (env or {}).items():
+        env_copy[key] = value
+    subprocess.run(cmd, check=check, env=env_copy)
+
+
+
 def ensure_venv():
     if not VENV_DIR.exists():
         print("Creating PyPy virtual environment...")
@@ -41,9 +51,13 @@ def install_dependencies():
 
 
 def build_package():
-    run([str(venv_python()), "-m", "build", "ci/praktika"])
-    run([str(venv_python()), "-m", "twine", "check", "dist/*"])
-    run([str(venv_python()), "-m", "twine", "upload", "dist/*"])
+    run([str(venv_python()), "-m", "build"])
+    run([str(venv_python()), "-m", "twine", "check", "ci/praktika/dist/*"])
+
+    token = os.getenv("TWINE_PASSWORD")
+    run_env([str(venv_python()), "-m", "twine", "upload", "ci/praktika/dist/*"],
+            env={"TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token}
+            )
 
 
 def main():
