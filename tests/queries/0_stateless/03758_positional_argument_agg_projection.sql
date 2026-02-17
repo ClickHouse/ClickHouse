@@ -1,4 +1,5 @@
 -- Tags: no-random-detach
+-- no-random-detach: test checks table metadata
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test

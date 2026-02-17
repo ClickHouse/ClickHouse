@@ -1,4 +1,5 @@
 -- Tags: no-random-detach
+-- no-random-detach: test checks system.parts
 
 DROP TABLE IF EXISTS t_lightweight SYNC;
 SET enable_lightweight_update = 1;

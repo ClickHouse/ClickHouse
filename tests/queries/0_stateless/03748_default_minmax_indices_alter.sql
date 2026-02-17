@@ -1,5 +1,6 @@
 -- { echoOn }
 -- Tags: no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
 DROP TABLE IF EXISTS t_implicit;
 
 CREATE TABLE t_implicit (a UInt64, s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;
