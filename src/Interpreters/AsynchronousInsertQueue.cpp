@@ -12,7 +12,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromTrackedString.h>
+#include <IO/WriteBufferFromStrictString.h>
 #include <IO/copyData.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AsynchronousInsertLog.h>
@@ -369,10 +369,9 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto & insert_query = query->as<ASTInsertQuery &>();
     insert_query.async_insert_flush = true;
 
-    auto insert_context = Context::createCopy(query_context);
     InterpreterInsertQuery interpreter(
         query,
-        insert_context,
+        query_context,
         query_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
         /* no_squash */ false,
         /* no_destination */ false,
@@ -421,7 +420,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     }
     preprocessInsertQuery(query, query_context);
 
-    TrackedString bytes;
+    StrictString bytes;
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
         /// If limit is exceeded we will fallback to synchronous insert
@@ -446,7 +445,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
 
         {
-            WriteBufferFromTrackedString write_buf(bytes);
+            WriteBufferFromStrictString write_buf(bytes);
             copyData(limit_buf, write_buf);
         }
 
@@ -1169,12 +1168,15 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
+    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
-    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
+    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_query.table_id)
     {
-        const auto & columns = insert_context->getInsertionTableColumnsDescription().value();
+        StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
     }

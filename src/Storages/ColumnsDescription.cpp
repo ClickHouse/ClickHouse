@@ -712,9 +712,12 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
         if (jt != subcolumns.get<0>().end())
             return *jt;
 
-        /// Check for dynamic subcolumns.
-        if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
-            return dynamic_subcolumn;
+        if (options.with_dynamic_subcolumns)
+        {
+            /// Check for dynamic subcolumns.
+            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
+                return dynamic_subcolumn;
+        }
     }
 
     return {};
@@ -933,13 +936,11 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
         auto subcolumn = NameAndTypePair(name_in_storage, subname, type_in_storage, subdata.type);
-        /// Note, it is allowed to have columns with the same name as subcolumns, example:
-        ///
-        ///     `attribute.names` Array(LowCardinality(String)) ALIAS mapKeys(attribute),
-        ///     `attribute.values` Array(String) ALIAS mapValues(attribute),
-        ///     `attribute` Map(LowCardinality(String), String)
-        ///
-        /// Here, `attribute.values` is the column, **but**, `attribute` will have a `values` subcolumn.
+
+        if (has(subcolumn.name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
+
         subcolumns.get<0>().insert(std::move(subcolumn));
     }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
 }

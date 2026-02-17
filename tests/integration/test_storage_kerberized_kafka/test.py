@@ -212,9 +212,8 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
             source = node.ip_address
             destination = kafka_cluster.get_instance_ip(other_node)
             logging.debug(f"partitioning source {source}, destination {destination}")
-            pm.add_rule(
+            pm._add_rule(
                 {
-                    "instance": node,
                     "source": source,
                     "destination": destination,
                     "action": "REJECT",

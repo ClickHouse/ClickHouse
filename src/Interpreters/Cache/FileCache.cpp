@@ -46,7 +46,9 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
     extern const Metric FilesystemCacheReserveThreads;
+    extern const Metric FilesystemCacheSizeLimit;
 }
+
 
 namespace DB
 {
@@ -157,6 +159,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
+
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
 }
 
 const FileCache::UserInfo & FileCache::getCommonUser()
@@ -282,7 +286,7 @@ void FileCache::initializeImpl(bool load_metadata)
 
     if (keep_current_size_to_max_ratio != 1 || keep_current_elements_to_max_ratio != 1)
     {
-        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
+        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
     }
 
@@ -663,8 +667,7 @@ FileCache::getOrSet(
 
     assertInitialized();
 
-    size_t initial_range_right_offset = (file_size ? std::min(offset + size, file_size) : offset + size) - 1;
-    FileSegment::Range initial_range(offset, initial_range_right_offset);
+    FileSegment::Range initial_range(offset, std::min(offset + size, file_size) - 1);
     /// result_range is initial range, which will be adjusted according to
     /// 1. aligned_offset, aligned_end_offset
     /// 2. max_file_segments_limit
@@ -672,9 +675,7 @@ FileCache::getOrSet(
 
     const size_t alignment = boundary_alignment_.value_or(boundary_alignment);
     const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
-    auto aligned_end_offset = (file_size
-        ? std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size)
-        : FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment)) - 1;
+    auto aligned_end_offset = std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size) - 1;
 
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);
@@ -1278,11 +1279,6 @@ void FileCache::iterate(IterateFunc && func, const UserID & user_id)
         for (const auto & file_segment_metadata : locked_key)
             func(FileSegment::getInfo(file_segment_metadata.second->file_segment));
     }, user_id);
-}
-
-FileCache::CacheIteratorPtr FileCache::getCacheIterator(const UserID & user_id)
-{
-    return metadata.getIterator(user_id);
 }
 
 void FileCache::removeKey(const Key & key, const UserID & user_id)

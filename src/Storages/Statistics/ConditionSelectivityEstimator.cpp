@@ -127,9 +127,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     auto* final_element = rpn_stack.top();
     final_element->finalize(column_estimators);
     RelationProfile result;
-    Float64 final_rows = final_element->selectivity * total_rows;
-    final_rows = std::max<Float64>(final_rows, 0);
-    result.rows = static_cast<UInt64>(final_rows);
+    result.rows = static_cast<UInt64>(final_element->selectivity * total_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
@@ -349,9 +347,7 @@ Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const Pla
     /// In case that there is an empty statistics.
     if (stats->rowCount() == 0)
         return 0;
-    Float64 selectivity = result / stats->rowCount();
-    selectivity = std::max<Float64>(selectivity, 0);
-    return selectivity;
+    return result / stats->rowCount();
 }
 
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const

@@ -37,19 +37,18 @@ def test_alias_with_replicated(started_cluster):
 
     node1.query("INSERT INTO test_rmt.alias_rmt VALUES (1, 'one')")
 
-    node2.query("SYSTEM SYNC REPLICA test_rmt.rmt_table")
     assert node2.query("SELECT * FROM test_rmt.rmt_table") == "1\tone\n"
 
     node1.query("ALTER TABLE test_rmt.alias_rmt ADD COLUMN time DateTime DEFAULT now()")
 
-    node2.query("SYSTEM SYNC DATABASE REPLICA test_rmt")
+    node2.query("SYSTEM SYNC REPLICA test_rmt.rmt_table")
+
     assert "time" in node1.query("DESCRIBE test_rmt.alias_rmt")
     assert "time" in node2.query("DESCRIBE test_rmt.rmt_table")
     assert "time" in node2.query("DESCRIBE test_rmt.alias_rmt")
 
     node2.query("INSERT INTO test_rmt.alias_rmt VALUES (2, 'two', now())")
 
-    node1.query("SYSTEM SYNC REPLICA test_rmt.rmt_table")
     assert "2\ttwo" in node1.query("SELECT id, value FROM test_rmt.rmt_table WHERE id = 2")
     assert "2\ttwo" in node2.query("SELECT id, value FROM test_rmt.alias_rmt WHERE id = 2")
 

@@ -144,6 +144,10 @@ protected:
         {
             findURLSecretArguments();
         }
+        else if (function->name() == "redis")
+        {
+            findRedisFunctionSecretArguments();
+        }
         else if (function->name() == "ytsaurus")
         {
             findYTsaurusStorageTableEngineSecretArguments();
@@ -179,9 +183,7 @@ protected:
                 return;
 
             /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
-            if (findNamedArgument(&uri, "uri", 1) == -1)
-                return;
-
+            findNamedArgument(&uri, "uri", 1);
             result.are_named = true;
             result.start = 1;
         }
@@ -204,7 +206,7 @@ protected:
         result.replacement = std::move(uri);
     }
 
-    void findRedisSecretArguments()
+    void findRedisTableEngineSecretArguments()
     {
         /// Redis does not have URL/address argument,
         /// only 'host:port' and separate "password" argument.
@@ -554,7 +556,7 @@ protected:
         }
         else if (engine_name == "Redis")
         {
-            findRedisSecretArguments();
+            findRedisTableEngineSecretArguments();
         }
         else if (engine_name == "YTsaurus")
         {
@@ -652,6 +654,12 @@ protected:
         /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
         if (url_arg_idx + 4 < count)
             markSecretArgument(url_arg_idx + 4);
+    }
+
+    void findRedisFunctionSecretArguments()
+    {
+        // redis(host:port, key, structure, db_index, password, pool_size)
+        markSecretArgument(4);
     }
 
     void findYTsaurusStorageTableEngineSecretArguments()
@@ -767,6 +775,12 @@ protected:
         const String & engine_name = function->name();
         if (engine_name == "S3")
         {
+            if (isNamedCollectionName(0))
+            {
+                /// BACKUP ... TO S3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
+                findSecretNamedArgument("secret_access_key", 1);
+                return;
+            }
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
         }
@@ -787,7 +801,7 @@ protected:
 
     /// Looks for an argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// Returns -1 if no argument was found.
-    ssize_t findNamedArgument(String * res, std::string_view key, size_t start = 0)
+    ssize_t findNamedArgument(String * res, const std::string_view & key, size_t start = 0)
     {
         for (size_t i = start; i < function->arguments->size(); ++i)
         {
@@ -815,7 +829,7 @@ protected:
 
     /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// If the argument is found, it is marked as a secret.
-    bool findSecretNamedArgument(std::string_view key, size_t start = 0)
+    bool findSecretNamedArgument(const std::string_view & key, size_t start = 0)
     {
         ssize_t arg_idx = findNamedArgument(nullptr, key, start);
         if (arg_idx >= 0)

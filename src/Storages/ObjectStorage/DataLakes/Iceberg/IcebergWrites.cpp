@@ -1,57 +1,55 @@
 #include <Analyzer/FunctionNode.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/Range.h>
 #include <Core/Settings.h>
-#include <Core/TypeId.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Formats/FormatFactory.h>
-#include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/identity.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/sortBlock.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <base/Decimal.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <sys/stat.h>
-#include <Poco/Dynamic/Var.h>
-#include <Poco/JSON/Array.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
+#include <Columns/IColumn.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <sys/stat.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/Dynamic/Var.h>
+#include <Common/FailPoint.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/CastOverloadResolver.h>
+#include <IO/WriteHelpers.h>
+#include <base/Decimal.h>
+#include <Core/Range.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/TypeId.h>
 
 #include <cstdint>
 #include <memory>
@@ -568,40 +566,23 @@ IcebergStorageSink::IcebergStorageSink(
     SharedHeader sample_block_,
     ContextPtr context_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
-    const Iceberg::PersistentTableComponents & persistent_table_components_,
     const StorageID & table_id_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
     , context(context_)
+    , configuration(configuration_)
     , format_settings(format_settings_)
     , catalog(catalog_)
     , table_id(table_id_)
-    , persistent_table_components(persistent_table_components_)
-    , data_lake_settings(configuration_->getDataLakeSettings())
-    , write_format(configuration_->format)
-    , blob_storage_type_name(configuration_->getTypeName())
-    , blob_storage_namespace_name(configuration_->getNamespace())
 {
-    auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage,
-        persistent_table_components.table_path,
-        data_lake_settings,
-        persistent_table_components.metadata_cache,
-        context_,
-        log.get(),
-        persistent_table_components.table_uuid);
+    configuration->update(object_storage, context, /* if_not_updated_before */ true);
+    auto [last_version, metadata_path, compression_method]
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
-    metadata = getMetadataJSONObject(
-        metadata_path,
-        object_storage,
-        persistent_table_components.metadata_cache,
-        context,
-        log,
-        compression_method,
-        persistent_table_components.table_uuid);
+    metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
     metadata_compression_method = compression_method;
-    auto config_path = persistent_table_components.table_path;
+    auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
     if (!config_path.starts_with('/'))
@@ -609,16 +590,14 @@ IcebergStorageSink::IcebergStorageSink(
 
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(
-            config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
+        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.empty() || bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(
-            bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
+        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
     }
 
     filename_generator.setVersion(last_version + 1);
@@ -635,25 +614,14 @@ IcebergStorageSink::IcebergStorageSink(
             current_schema = schemas->getObject(static_cast<UInt32>(i));
         }
     }
-
-    sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
-
     for (size_t i = 0; i < partitions_specs->size(); ++i)
     {
         auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
         if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
         {
             partititon_spec = current_partition_spec;
-            Block extended_block_for_sorting = *sample_block_;
-            if (!sort_description.column_names.empty())
-                sortBlockByKeyDescription(extended_block_for_sorting, sort_description, context);
-
             if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
-                partitioner = ChunkPartitioner(
-                    current_partition_spec->getArray(Iceberg::f_fields),
-                    current_schema,
-                    context_,
-                    std::make_shared<const Block>(extended_block_for_sorting));
+                partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema, context_, sample_block_);
             break;
         }
     }
@@ -664,22 +632,6 @@ void IcebergStorageSink::consume(Chunk & chunk)
     if (isCancelled())
         return;
     total_rows += chunk.getNumRows();
-
-    size_t start_columns_size = chunk.getNumColumns();
-    if (!sort_description.column_names.empty())
-    {
-        ColumnsWithTypeAndName columns;
-        for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-        {
-            columns.push_back(ColumnWithTypeAndName(chunk.getColumns()[i], sample_block->getDataTypes()[i], sample_block->getNames()[i]));
-        }
-        auto block = Block(columns);
-        sortBlockByKeyDescription(block, sort_description, context);
-
-        for (size_t i = 0; i < block.columns(); ++i)
-            column_name_to_column_index[block.getNames()[i]] = i;
-        chunk = Chunk(block.getColumns(), block.rows());
-    }
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> partition_result;
     if (partitioner)
@@ -699,60 +651,13 @@ void IcebergStorageSink::consume(Chunk & chunk)
                 object_storage,
                 context,
                 format_settings,
-                write_format,
+                configuration,
                 sample_block);
             writer_per_partition_key.emplace(partition_key, std::move(writer));
         }
 
-        if (!sort_description.column_names.empty() && part_chunk.hasRows() && last_fields_of_last_chunks.contains(partition_key))
-        {
-            const auto & last_fields = last_fields_of_last_chunks.at(partition_key);
-            std::vector<Field> last_fields_new_chunk;
-            if (!last_fields.empty())
-            {
-                bool should_create_new_file = false;
-                for (size_t i = 0; i < sort_description.column_names.size(); ++i)
-                {
-                    auto column_idx = column_name_to_column_index[sort_description.column_names[i]];
-                    Field last_field_from_last_chunk = last_fields[i];
-                    Field first_field_from_new_chunk;
-                    part_chunk.getColumns()[column_idx]->get(0, first_field_from_new_chunk);
-
-                    Field last_field_from_new_chunk;
-                    part_chunk.getColumns()[column_idx]->get(part_chunk.getNumRows() - 1, first_field_from_new_chunk);
-
-                    last_fields_new_chunk.push_back(last_field_from_new_chunk);
-                    if (sort_description.reverse_flags.empty() || !sort_description.reverse_flags[i])
-                    {
-                        if (last_field_from_last_chunk > first_field_from_new_chunk)
-                        {
-                            should_create_new_file = true;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        if (last_field_from_last_chunk < first_field_from_new_chunk)
-                        {
-                            should_create_new_file = true;
-                            break;
-                        }
-                    }
-                }
-                if (should_create_new_file)
-                    writer_per_partition_key.at(partition_key).startNewFile();
-            }
-            last_fields_of_last_chunks[partition_key] = std::move(last_fields_new_chunk);
-        }
-
-        auto columns = part_chunk.getColumns();
-        columns.resize(start_columns_size);
-        Chunk part_chunk_without_sorting_columns(columns, part_chunk.getNumRows());
-        writer_per_partition_key.at(partition_key).consume(part_chunk_without_sorting_columns);
+        writer_per_partition_key.at(partition_key).consume(part_chunk);
     }
-    auto columns = chunk.getColumns();
-    columns.resize(start_columns_size);
-    chunk = Chunk(columns, chunk.getNumRows());
 }
 
 void IcebergStorageSink::onFinish()
@@ -834,28 +739,15 @@ bool IcebergStorageSink::initializeMetadata()
 
         if (retry_because_of_metadata_conflict)
         {
-            auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-                object_storage,
-                persistent_table_components.table_path,
-                data_lake_settings,
-                persistent_table_components.metadata_cache,
-                context,
-                getLogger("IcebergWrites").get(),
-                persistent_table_components.table_uuid);
+            auto [last_version, metadata_path, compression_method]
+                = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, getLogger("IcebergWrites").get());
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
             metadata_compression_method = compression_method;
             filename_generator.setVersion(last_version + 1);
 
-            metadata = getMetadataJSONObject(
-                metadata_path,
-                object_storage,
-                persistent_table_components.metadata_cache,
-                context,
-                getLogger("IcebergWrites"),
-                compression_method,
-                persistent_table_components.table_uuid);
+            metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, getLogger("IcebergWrites"), compression_method);
             partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 
@@ -906,7 +798,7 @@ bool IcebergStorageSink::initializeMetadata()
                     writer.getResultStatistics(),
                     sample_block,
                     new_snapshot,
-                    write_format,
+                    configuration->format,
                     partititon_spec,
                     partition_spec_id,
                     *buffer_manifest_entry,
@@ -949,15 +841,7 @@ bool IcebergStorageSink::initializeMetadata()
 
             LOG_DEBUG(log, "Writing new metadata file {}", storage_metadata_name);
             auto hint = filename_generator.generateVersionHint();
-            if (!writeMetadataFileAndVersionHint(
-                    storage_metadata_name,
-                    json_representation,
-                    hint.path_in_storage,
-                    storage_metadata_name,
-                    object_storage,
-                    context,
-                    metadata_compression_method,
-                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            if (!writeMetadataFileAndVersionHint(storage_metadata_name, json_representation, hint.path_in_storage, storage_metadata_name, object_storage, context, metadata_compression_method, configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
                 LOG_DEBUG(log, "Failed to write metadata {}, retrying", storage_metadata_name);
                 cleanup(true);
@@ -971,8 +855,8 @@ bool IcebergStorageSink::initializeMetadata()
             if (catalog)
             {
                 String catalog_filename = metadata_name;
-                if (!catalog_filename.starts_with(blob_storage_type_name))
-                    catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + metadata_name;
+                if (!catalog_filename.starts_with(configuration->getTypeName()))
+                    catalog_filename = configuration->getTypeName() + "://" + configuration->getNamespace() + "/" + metadata_name;
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))

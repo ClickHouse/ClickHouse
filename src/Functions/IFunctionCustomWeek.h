@@ -3,6 +3,9 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/CustomWeekTransforms.h>
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
@@ -29,25 +32,47 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        /// String default is empty (not parseable as DateTime), so avoid executing on LC default dictionary key
+        if constexpr (Transform::value_may_be_string)
+            return false;
+
+        return true;
+    }
+
     bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        const IDataType * type_ptr = &type;
+
+        if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
+            type_ptr = lc_type->getDictionaryType().get();
+
+        if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
+            type_ptr = nullable_type->getNestedType().get();
+
+        const IFunction::Monotonicity is_not_monotonic;
+
+        /// Parsing of String arguments is not monotonic w.r.t. String ordering
+        if (checkAndGetDataType<DataTypeString>(type_ptr))
+            return is_not_monotonic;
+
         if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
             return {.is_monotonic = true, .is_always_monotonic = true};
 
+        if (left.isNull() || right.isNull())
+            return is_not_monotonic;
+
         const IFunction::Monotonicity is_monotonic = {.is_monotonic = true};
-        const IFunction::Monotonicity is_not_monotonic;
 
         /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
         const DateLUTImpl & date_lut = DateLUT::instance();
 
-        if (left.isNull() || right.isNull())
-            return {};
-
         /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
-        if (checkAndGetDataType<DataTypeDate>(&type))
+        if (checkAndGetDataType<DataTypeDate>(type_ptr))
         {
             return Transform::FactorTransform::execute(UInt16(left.safeGet<UInt64>()), date_lut)
                     == Transform::FactorTransform::execute(UInt16(right.safeGet<UInt64>()), date_lut)
@@ -55,9 +80,16 @@ public:
                 : is_not_monotonic;
         }
 
-        if (checkAndGetDataType<DataTypeDateTime64>(&type))
+        if (checkAndGetDataType<DataTypeDate32>(type_ptr))
         {
+            return Transform::FactorTransform::execute(Int32(left.safeGet<Int32>()), date_lut)
+                    == Transform::FactorTransform::execute(Int32(right.safeGet<Int32>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
 
+        if (checkAndGetDataType<DataTypeDateTime64>(type_ptr))
+        {
             const auto & left_date_time = left.safeGet<DateTime64>();
             TransformDateTime64<typename Transform::FactorTransform> transformer_left(left_date_time.getScale());
 
@@ -70,10 +102,15 @@ public:
                 : is_not_monotonic;
         }
 
-        return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
-                == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
-            ? is_monotonic
-            : is_not_monotonic;
+        if (checkAndGetDataType<DataTypeDateTime>(type_ptr))
+        {
+            return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
+
+        return is_not_monotonic;
     }
 
 protected:

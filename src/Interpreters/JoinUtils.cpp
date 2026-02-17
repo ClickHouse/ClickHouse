@@ -234,7 +234,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
-            column.column = column.column->convertToFullColumnIfConst();
+            column.column = column.column->convertToFullIfNeeded();
             const auto * nullable_col = checkAndGetColumn<ColumnNullable>(column.column.get());
             if (!nullable_col)
             {
@@ -484,7 +484,8 @@ ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
     {
-        auto casted_column = ColumnUInt8::create(column->size());
+        auto casted_column = ColumnUInt8::create();
+        casted_column->getData().resize(column->size());
         if (!tryConvertAnyColumnToBool(*column, casted_column->getData()))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Illegal type {} of column for JOIN filter. Must be Number or Nullable(Number).", column->getName());

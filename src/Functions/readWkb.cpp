@@ -16,7 +16,6 @@
 #include <memory>
 #include <variant>
 
-
 namespace DB
 {
 
@@ -62,7 +61,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto str = column->getDataAt(i);
-            ReadBufferFromString in_buffer(str);
+            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
 
             auto object = parseWKBFormat(in_buffer);
             auto boost_object = std::get<Geometry>(object);
@@ -118,7 +117,7 @@ public:
 
     explicit FunctionReadWKBCommon() = default;
 
-    static constexpr const char * name = "readWKB";
+    static constexpr const char * name = "readWkb";
 
     String getName() const override
     {
@@ -158,7 +157,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto str = column->getDataAt(i);
-            ReadBufferFromString in_buffer(str);
+            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
 
             auto object = parseWKBFormat(in_buffer);
             UInt8 converted_type = -1;
@@ -188,7 +187,7 @@ public:
                 converted_type = static_cast<UInt8>(WKBTypes::MultiPolygon);
             }
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKB format value: {}", str);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKB format value: {}", str.data);
 
             discriminators_column->insertValue(converted_type);
         }
@@ -360,17 +359,17 @@ REGISTER_FUNCTION(ReadWKB)
             .description = R"(
     Parses a Well-Known Binary (WKB) representation of a Geometry and returns it in the internal ClickHouse format.
     )",
-            .syntax = "readWKB(wkt_string)",
+            .syntax = "readWkb(wkt_string)",
             .arguments{{"wkb_string", "The input WKB string representing a Point geometry."}},
             .returned_value = {"The function returns a ClickHouse internal representation of the Geometry."},
             .examples{
                 {"first call",
                  "SELECT "
-                 "readWKB(unhex('"
+                 "readWkb(unhex('"
                  "010100000000000000000000000000000000000000"
                  "'));",
                  R"(
-    ┌─readWKB(unhex'010100000000000000000000000...'))─┐
+    ┌─readWkb(unhex'010100000000000000000000000...'))─┐
     │ (0,0)                                           │
     └─────────────────────────────────────────────────┘
                 )"},
@@ -379,9 +378,6 @@ REGISTER_FUNCTION(ReadWKB)
             .category = FunctionDocumentation::Category::Geo,
         }
     );
-
-    /// This was initially added by mistake, but we have to keep it:
-    factory.registerAlias("readWkb", "readWKB");
 }
 
 }

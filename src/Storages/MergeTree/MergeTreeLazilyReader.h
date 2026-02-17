@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/LazilyReadInfo.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -30,17 +29,18 @@ public:
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         const LazilyReadInfoPtr & lazily_read_info_,
-        const ContextPtr & context,
+        const ContextPtr & context_,
         const AliasToName & alias_index_);
 
     void transformLazyColumns(
         const ColumnLazy & column_lazy,
         ColumnsWithTypeAndName & res_columns);
 
-    IMergeTreeDataPart::ColumnSizeByName getColumnSizes() const { return storage.getColumnSizes(); }
-
 private:
-    void readLazyColumns(const PartIndexToRowOffsets & part_to_row_offsets, MutableColumns & lazily_read_columns);
+    void readLazyColumns(
+        const MergeTreeReaderSettings & reader_settings,
+        const PartIndexToRowOffsets & part_to_row_offsets,
+        MutableColumns & lazily_read_columns);
 
     const MergeTreeData & storage;
     DataPartInfoByIndexPtr data_part_infos;
@@ -48,7 +48,6 @@ private:
     bool use_uncompressed_cache;
     Names requested_column_names;
     ColumnsWithTypeAndName lazy_columns;
-    MergeTreeReaderSettings reader_settings;
 };
 
 using MergeTreeLazilyReaderPtr = std::unique_ptr<MergeTreeLazilyReader>;

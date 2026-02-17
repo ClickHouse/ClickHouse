@@ -485,9 +485,11 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         left_to_right_key_remap[left_idx] = right_idx;
     }
 
-    const auto * smj_ptr = typeid_cast<const FullSortingMergeJoin *>(join_ptr.get());
-    if (smj_ptr)
-        null_direction_hint = smj_ptr->getNullDirection();
+    const auto *smjPtr = typeid_cast<const FullSortingMergeJoin *>(join_ptr.get());
+    if (smjPtr)
+    {
+        null_direction_hint = smjPtr->getNullDirection();
+    }
 
     if (strictness == JoinStrictness::Asof)
         setAsofInequality(join_ptr->getTableJoin().getAsofInequality());

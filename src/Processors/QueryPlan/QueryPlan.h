@@ -62,8 +62,6 @@ struct ExplainPlanOptions
     bool distributed = false;
     /// Add input headers to step.
     bool input_headers = false;
-    /// Print structure of columns instead of just their names and types.
-    bool column_structure = false;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -106,7 +104,7 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0, size_t max_description_length = 0) const;
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0, size_t max_description_lengs = 0) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
@@ -194,7 +192,6 @@ struct QueryPlanAndSets
     std::list<SetFromSubquery> sets_from_subquery;
 };
 
-std::string debugExplainStep(IQueryPlanStep & step);
-std::string debugExplainPlan(const QueryPlan & plan);
+std::string debugExplainStep(const IQueryPlanStep & step);
 
 }

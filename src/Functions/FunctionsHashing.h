@@ -1059,8 +1059,8 @@ private:
             ToType hash;
             if (type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             {
-                auto bytes = column->getDataAt(i);
-                hash = apply(key, bytes.data(), bytes.size());
+                StringRef bytes = column->getDataAt(i);
+                hash = apply(key, bytes.data, bytes.size);
             }
             else
             {

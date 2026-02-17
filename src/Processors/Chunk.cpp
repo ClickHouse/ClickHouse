@@ -155,14 +155,8 @@ UInt64 Chunk::allocatedBytes() const
 std::string Chunk::dumpStructure() const
 {
     WriteBufferFromOwnString out;
-    bool first = true;
     for (const auto & column : columns)
-    {
-        if (!first)
-            out << ", ";
-        out << column->dumpStructure();
-        first = false;
-    }
+        out << ' ' << column->dumpStructure();
 
     return out.str();
 }

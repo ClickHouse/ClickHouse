@@ -435,7 +435,7 @@ inline void touchBufferWithZeroFilling(char * buffer, UInt32 buffer_size)
     }
 }
 
-void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
 /// QPL library is using AVX-512 with some shuffle operations.
 /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
@@ -457,7 +457,7 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
             }
             else
                 sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
-            return;
+            return uncompressed_size;
         }
         case CodecMode::Asynchronous:
         {
@@ -466,11 +466,11 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
                 res = hw_codec->doDecompressDataAsynchronous(source, source_size, dest, uncompressed_size);
             if (res == HardwareCodecDeflateQpl::RET_ERROR)
                 sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
-            return;
+            return uncompressed_size;
         }
         case CodecMode::SoftwareFallback:
             sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
-            return;
+            return uncompressed_size;
     }
 }
 

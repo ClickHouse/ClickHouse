@@ -117,7 +117,7 @@ protected:
 
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     /// Flush result for previous asynchronous decompression requests on asynchronous mode.
     void flushAsynchronousDecompressRequests() override;

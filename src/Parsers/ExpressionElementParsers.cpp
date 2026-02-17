@@ -1,7 +1,6 @@
 #include <cerrno>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <cmath>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -430,7 +429,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
         return std::nullopt;
 
     String identifier;
-    ReadBufferFromMemory buf(std::string_view{name}.substr(1));
+    ReadBufferFromMemory buf(name.data() + 1, name.size() - 1);
     readBackQuotedString(identifier, buf);
     return std::make_pair(name[0], identifier);
 }
@@ -1062,8 +1061,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         errno = 0;    /// Functions strto* don't clear errno.
         /// The usage of strtod is needed, because we parse hex floating point literals as well.
         Float64 float_value = std::strtod(buf.c_str(), &str_end);
-        bool overflow = (errno == ERANGE && !std::isfinite(float_value));
-        if (str_end == buf.c_str() + buf.size() && !overflow)
+        if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
         {
             if (float_value < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,

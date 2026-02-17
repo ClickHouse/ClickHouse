@@ -212,12 +212,6 @@
     M(ThreadpoolReaderSubmitLookupInCacheMicroseconds) \
     M(AsynchronousReaderIgnoredBytes) \
 \
-    M(FileSegmentWaitReadBufferMicroseconds) \
-    M(FileSegmentReadMicroseconds) \
-    M(FileSegmentCacheWriteMicroseconds) \
-    M(FileSegmentPredownloadMicroseconds) \
-    M(FileSegmentUsedBytes) \
-\
     M(ReadBufferSeekCancelConnection) \
 \
     M(SleepFunctionCalls) \
@@ -269,10 +263,6 @@
     M(KeeperGetRequest) \
     M(KeeperListRequest) \
     M(KeeperExistsRequest) \
-    M(KeeperSetWatchesRequest) \
-    M(KeeperCheckWatchRequest) \
-    M(KeeperAddWatchRequest) \
-    M(KeeperRemoveWatchRequest) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \

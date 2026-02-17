@@ -104,7 +104,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (columns.indices)
     {
         for (const auto & child : columns.indices->children)
-            IndexDescription::getIndexFromAST(child, columns_desc, /* is_implicitly_created */ false, context);
+            IndexDescription::getIndexFromAST(child, columns_desc, context);
     }
     if (columns.constraints)
     {

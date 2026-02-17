@@ -12,7 +12,7 @@ CREATE TABLE qbits_16 (id UInt32, vec QBit(BFloat16, 16)) ENGINE = Memory;
 INSERT INTO qbits_16 VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
 INSERT INTO qbits_16 VALUES (2, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -32]);
 INSERT INTO qbits_16 (id) VALUES (3);
-INSERT INTO qbits_16 VALUES (4, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); -- { error TYPE_MISMATCH }
+INSERT INTO qbits_16 VALUES (4, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); -- { error SIZES_OF_ARRAYS_DONT_MATCH }
 
 
 SELECT * FROM qbits_16 ORDER BY id;
@@ -26,7 +26,7 @@ CREATE TABLE qbits_32 (id UInt32, vec QBit(Float32, 16)) ENGINE = Memory;
 INSERT INTO qbits_32 VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
 INSERT INTO qbits_32 VALUES (2, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -32]);
 INSERT INTO qbits_32 (id) VALUES (3);
-INSERT INTO qbits_32 VALUES (4, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); -- { error TYPE_MISMATCH }
+INSERT INTO qbits_32 VALUES (4, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); -- { error SIZES_OF_ARRAYS_DONT_MATCH }
 
 SELECT * FROM qbits_32 ORDER BY id;
 DROP TABLE qbits_32;
@@ -39,7 +39,7 @@ CREATE TABLE qbits_64 (id UInt32, vec QBit(Float64, 16)) ENGINE = Memory;
 INSERT INTO qbits_64 VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
 INSERT INTO qbits_64 VALUES (2, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -32]);
 INSERT INTO qbits_64 (id) VALUES (3);
-INSERT INTO qbits_64 VALUES (4, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); -- { error TYPE_MISMATCH }
+INSERT INTO qbits_64 VALUES (4, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); -- { error SIZES_OF_ARRAYS_DONT_MATCH }
 
 SELECT * FROM qbits_64 ORDER BY id;
 DROP TABLE qbits_64;
@@ -56,7 +56,7 @@ CREATE TABLE qbits_16 (id UInt32, vec QBit(BFloat16, 9)) ENGINE = Memory;
 INSERT INTO qbits_16 VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
 INSERT INTO qbits_16 VALUES (2, [0, 0, 0, 0, 0, 0, 0, 0, -32]);
 INSERT INTO qbits_16 (id) VALUES (3);
-INSERT INTO qbits_16 VALUES (4, [0]); -- { error TYPE_MISMATCH }
+INSERT INTO qbits_16 VALUES (4, [0]); -- { error SIZES_OF_ARRAYS_DONT_MATCH }
 
 SELECT * FROM qbits_16 ORDER BY id;
 DROP TABLE qbits_16;
@@ -68,7 +68,7 @@ CREATE TABLE qbits_32 (id UInt32, vec QBit(Float32, 9)) ENGINE = Memory;
 INSERT INTO qbits_32 VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
 INSERT INTO qbits_32 VALUES (2, [0, 0, 0, 0, 0, 0, 0, 0, -32]);
 INSERT INTO qbits_32 (id) VALUES (3);
-INSERT INTO qbits_32 VALUES (4, [0]); -- { error TYPE_MISMATCH }
+INSERT INTO qbits_32 VALUES (4, [0]); -- { error SIZES_OF_ARRAYS_DONT_MATCH }
 
 SELECT * FROM qbits_32 ORDER BY id;
 DROP TABLE qbits_32;
@@ -80,7 +80,7 @@ CREATE TABLE qbits_64 (id UInt32, vec QBit(Float64, 9)) ENGINE = Memory;
 INSERT INTO qbits_64 VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
 INSERT INTO qbits_64 VALUES (2, [0, 0, 0, 0, 0, 0, 0, 0, -32]);
 INSERT INTO qbits_64 (id) VALUES (3);
-INSERT INTO qbits_64 VALUES (4, [0]); -- { error TYPE_MISMATCH }
+INSERT INTO qbits_64 VALUES (4, [0]); -- { error SIZES_OF_ARRAYS_DONT_MATCH }
 
 SELECT * FROM qbits_64 ORDER BY id;
 DROP TABLE qbits_64;

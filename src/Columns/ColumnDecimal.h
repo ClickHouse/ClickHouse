@@ -97,9 +97,9 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
-        return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     Float64 getFloat64(size_t n) const final;

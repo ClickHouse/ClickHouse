@@ -192,11 +192,8 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
-        stop_reason = fmt::format(
-            "EOF (read offset: {}/{}, file size: {}, restricted seek: {})",
-            offset.load(), read_until_position.load(),
-            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
-
+        stop_reason = fmt::format("EOF (read offset: {}/{}, restricted seek: {})",
+                                  offset.load(), read_until_position.load(), restricted_seek);
         release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
@@ -217,10 +214,8 @@ bool ReadBufferFromS3::nextImpl()
     if (stream_eof || is_read_until_position)
     {
         release_reason = fmt::format(
-            "{} (read {}/{}, file size: {}, restricted seek: {})",
-            impl->isStreamEof() ? "stream EOF" : "read until position reached",
-            offset.load(), read_until_position.load(),
-            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
+            "{} ({}/{})", stream_eof ? "stream EOF" : "read until position reached",
+            offset.load(), read_until_position.load());
 
         impl->releaseResult();
     }

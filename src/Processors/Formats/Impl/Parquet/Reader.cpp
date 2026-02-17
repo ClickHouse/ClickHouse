@@ -1301,7 +1301,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         size_t end_row_idx = start_row_idx + num_rows;
         row_subidx += num_rows;
 
-        skipToRow(start_row_idx, column, column_info);
+        skipToRowOrNextPage(start_row_idx, column, column_info);
 
         while (true) // loop over pages
         {
@@ -1317,7 +1317,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
             /// Advance to next page.
             chassert(page.value_idx == page.num_values);
-            skipToRow(page.next_row_idx, column, column_info);
+            skipToRowOrNextPage(std::nullopt, column, column_info);
             chassert(page.value_idx == 0);
         }
     }
@@ -1372,32 +1372,38 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
 }
 
-void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     /// True if column.page is initialized and contains the requested row_idx.
     bool found_page = false;
     auto & page = column.page;
 
-    if (page.initialized && page.value_idx < page.num_values && page.end_row_idx.has_value() && *page.end_row_idx > row_idx)
+    if (!row_idx.has_value())
+        chassert(page.initialized);
+
+    if (row_idx.has_value() && page.initialized && page.value_idx < page.num_values &&
+        page.end_row_idx.has_value() && *page.end_row_idx > *row_idx)
         /// Fast path: we're just continuing reading the same page as before.
         found_page = true;
 
     if (!found_page && !column.data_pages.empty())
     {
         /// If we have offset index, find the row index there and jump to the correct page.
+        if (!row_idx.has_value())
+            row_idx = column.data_pages[column.data_pages_idx].end_row_idx;
         while (column.data_pages_idx < column.data_pages.size() &&
-            column.data_pages[column.data_pages_idx].end_row_idx <= row_idx)
+               column.data_pages[column.data_pages_idx].end_row_idx <= *row_idx)
             ++column.data_pages_idx;
         if (column.data_pages_idx == column.data_pages.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet offset index covers too few rows");
         const auto & page_info = column.data_pages[column.data_pages_idx];
         size_t first_row_idx = size_t(page_info.meta->first_row_index);
-        if (first_row_idx > row_idx)
+        if (first_row_idx > *row_idx)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Row passes filters but its page was not selected for reading. This is a bug.");
 
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
-        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
+        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, *row_idx, column, column_info))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Page doesn't contain requested row");
         found_page = true;
     }
@@ -1405,8 +1411,8 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
     while (true)
     {
         /// Skip rows inside the page.
-        if (page.initialized && page.value_idx < page.num_values &&
-            skipRowsInPage(row_idx, page, column, column_info))
+        if (row_idx.has_value() && page.initialized && page.value_idx < page.num_values &&
+            skipRowsInPage(*row_idx, page, column, column_info))
             return;
 
         if (found_page)
@@ -1419,8 +1425,10 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
         chassert(column.next_page_offset <= all_pages.size());
         const char * ptr = all_pages.data() + column.next_page_offset;
         const char * end = all_pages.data() + all_pages.size();
-        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
+        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx.value_or(page.next_row_idx), column, column_info);
         column.next_page_offset = ptr - all_pages.data();
+        if (!row_idx.has_value())
+            return;
     }
 }
 

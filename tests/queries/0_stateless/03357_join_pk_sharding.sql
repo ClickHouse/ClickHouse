@@ -1,6 +1,5 @@
 -- Tags: long
 
-SET allow_statistics_optimize = 0;
 drop table if exists tab_l;
 drop table if exists tab_m;
 drop table if exists tab_r;

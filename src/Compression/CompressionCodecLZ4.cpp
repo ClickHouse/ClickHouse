@@ -38,7 +38,7 @@ protected:
     String getDescription() const override { return "Extremely fast; good compression; balanced speed and efficiency."; }
 
 private:
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -97,12 +97,15 @@ UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_si
     return LZ4_compress_default(source, dest, source_size, LZ4_COMPRESSBOUND(source_size));
 }
 
-void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 
     if (!success)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress LZ4-encoded data");
+
+    /// LZ4::decompress only returns true when the dest buffer has been fully written (uncompressed_size)
+    return uncompressed_size;
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
