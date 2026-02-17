@@ -139,7 +139,7 @@ class Runner:
         else:
             print("Read GH Environment from workflow data")
             env = _Environment.from_workflow_data()
-        print("REMOVEME _setup_env", Info().env.WORKFLOW_CONFIG)
+            print("REMOVEME _setup_env", Info().env.WORKFLOW_CONFIG)
 
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
