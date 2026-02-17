@@ -15,7 +15,7 @@ ENGINE = Memory;
 INSERT INTO test_untuple_nullable_tuple VALUES ((1, 'a', [])), (NULL);
 SELECT untuple(x)
 FROM test_untuple_nullable_tuple
-ORDER BY isNull(x), x;
+ORDER BY x IS NULL, x;
 1	a	[]
 \N	\N	[]
 SELECT untuple(

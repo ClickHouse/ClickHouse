@@ -62,12 +62,12 @@ QUERY id: 0
     TABLE id: 7, alias: __table1, table_name: default.fuse_tbl
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(a, 1)) Nullable(Int64)
+    sum(a + 1) Nullable(Int64)
     sum(b) Int64
     count(b) UInt64
     avg(b) Float64
-    count(plus(a, 1)) UInt64
-    sum(plus(a, 2)) Nullable(Int64)
+    count(a + 1) UInt64
+    sum(a + 2) Nullable(Int64)
     count(a) UInt64
   PROJECTION
     LIST id: 1, nodes: 7
@@ -141,9 +141,9 @@ QUERY id: 0
     TABLE id: 7, alias: __table1, table_name: default.fuse_tbl
 QUERY id: 0
   PROJECTION COLUMNS
-    multiply(avg(b), 3) Float64
-    plus(plus(sum(b), 1), count(b)) Int64
-    multiply(count(b), count(b)) UInt64
+    avg(b) * 3 Float64
+    sum(b) + 1 + count(b) Int64
+    count(b) * count(b) UInt64
   PROJECTION
     LIST id: 1, nodes: 3
       FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: Float64

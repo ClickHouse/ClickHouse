@@ -221,7 +221,7 @@ QUERY id: 0
           COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 6
 QUERY id: 0
   PROJECTION COLUMNS
-    min(number) OVER (PARTITION BY modulo(number, 2)) UInt64
+    min(number) OVER (PARTITION BY number % 2) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: min, function_type: window, result_type: UInt64
@@ -500,7 +500,7 @@ QUERY id: 0
           COLUMN id: 12, column_name: number, result_type: UInt64, source_id: 8
 QUERY id: 0
   PROJECTION COLUMNS
-    min(number) OVER (PARTITION BY modulo(number, 2)) UInt64
+    min(number) OVER (PARTITION BY number % 2) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: min, function_type: window, result_type: UInt64

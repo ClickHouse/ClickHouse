@@ -49,7 +49,7 @@ SELECT
     any(toDate(k))
 FROM columns_transformers AS a
 SELECT
-    sum(i) + (1 * count(i)),
+    plus(sum(i), multiply(1, count(i))),
     sum(j),
     sum(k)
 FROM columns_transformers
@@ -70,7 +70,7 @@ SelectWithUnionQuery (children 1)
     TablesInSelectQueryElement (children 1)
      TableExpression (children 1)
       TableIdentifier columns_transformers
-SELECT sum(i) + (1 * count(i))
+SELECT plus(sum(i), multiply(1, count(i)))
 FROM columns_transformers
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
@@ -87,8 +87,8 @@ SelectWithUnionQuery (children 1)
      TableExpression (children 1)
       TableIdentifier columns_transformers
 SELECT
-    avg(i) + 1,
-    avg(j) + 2,
+    plus(avg(i), 1),
+    plus(avg(j), 2),
     avg(k)
 FROM columns_transformers
 SELECT
@@ -97,7 +97,7 @@ SELECT
     any(toDate(k))
 FROM columns_transformers AS a
 SELECT
-    (i + 1) + 1 AS i,
+    plus(plus(i, 1), 1) AS i,
     j,
     k
 FROM columns_transformers

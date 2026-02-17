@@ -10,7 +10,7 @@ Select sum(1 - number) from numbers(10);
 EXPLAIN QUERY TREE (Select sum(number + 1) from numbers(10));
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(number, 1)) UInt64
+    sum(number + 1) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -36,7 +36,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (Select sum(1 + number) from numbers(10));
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(1, number)) UInt64
+    sum(1 + number) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -62,7 +62,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (Select sum(number - 1) from numbers(10));
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(number, 1)) Int64
+    sum(number - 1) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -88,7 +88,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (Select sum(1 - number) from numbers(10));
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(1, number)) Int64
+    sum(1 - number) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -118,7 +118,7 @@ WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count()
 EXPLAIN QUERY TREE (WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0));
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(number, my_literal)) Nullable(UInt64)
+    sum(number + my_literal) Nullable(UInt64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Nullable(UInt64)
@@ -143,7 +143,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0));
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(number), multiply(my_literal, count())) Nullable(UInt64)
+    sum(number) + my_literal * count() Nullable(UInt64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Nullable(UInt64)
@@ -1253,7 +1253,7 @@ SELECT 2.11 * count(uint64) - sum(uint64) From test_table;
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 2.11) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(uint64, 2.11)) Float64
+    sum(uint64 + 2.11) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -1276,7 +1276,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2.11 + uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(2.11, uint64)) Float64
+    sum(2.11 + uint64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -1299,7 +1299,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 2.11) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(uint64, 2.11)) Float64
+    sum(uint64 - 2.11) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -1322,7 +1322,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2.11 - uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(2.11, uint64)) Float64
+    sum(2.11 - uint64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -1345,7 +1345,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64) + 2.11 * count(uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(uint64), multiply(2.11, count(uint64))) Float64
+    sum(uint64) + 2.11 * count(uint64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -1368,7 +1368,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT 2.11 * count(uint64) + sum(uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(multiply(2.11, count(uint64)), sum(uint64)) Float64
+    2.11 * count(uint64) + sum(uint64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -1391,7 +1391,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64) - 2.11 * count(uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(uint64), multiply(2.11, count(uint64))) Float64
+    sum(uint64) - 2.11 * count(uint64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -1414,7 +1414,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT 2.11 * count(uint64) - sum(uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(multiply(2.11, count(uint64)), sum(uint64)) Float64
+    2.11 * count(uint64) - sum(uint64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -1453,7 +1453,7 @@ SELECT 2 * count(uint64) - sum(uint64) From test_table;
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(uint64, 2)) UInt64
+    sum(uint64 + 2) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -1476,7 +1476,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 + uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(2, uint64)) UInt64
+    sum(2 + uint64) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -1499,7 +1499,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(uint64, 2)) Int64
+    sum(uint64 - 2) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -1522,7 +1522,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 - uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(2, uint64)) Int64
+    sum(2 - uint64) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -1545,7 +1545,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64) + 2 * count(uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(uint64), multiply(2, count(uint64))) UInt64
+    sum(uint64) + 2 * count(uint64) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -1568,7 +1568,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT 2 * count(uint64) + sum(uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(multiply(2, count(uint64)), sum(uint64)) UInt64
+    2 * count(uint64) + sum(uint64) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -1591,7 +1591,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64) - 2 * count(uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(uint64), multiply(2, count(uint64))) Int64
+    sum(uint64) - 2 * count(uint64) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -1614,7 +1614,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT 2 * count(uint64) - sum(uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(multiply(2, count(uint64)), sum(uint64)) Int64
+    2 * count(uint64) - sum(uint64) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -1653,7 +1653,7 @@ SELECT 2 * count(float64) - sum(float64) From test_table;
 EXPLAIN QUERY TREE (SELECT sum(float64 + 2) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(float64, 2)) Float64
+    sum(float64 + 2) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -1676,7 +1676,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 + float64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(2, float64)) Float64
+    sum(2 + float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -1699,7 +1699,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(float64 - 2) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(float64, 2)) Float64
+    sum(float64 - 2) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -1722,7 +1722,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 - float64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(2, float64)) Float64
+    sum(2 - float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -1745,7 +1745,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(float64) + 2 * count(float64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(float64), multiply(2, count(float64))) Float64
+    sum(float64) + 2 * count(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -1768,7 +1768,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT 2 * count(float64) + sum(float64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(multiply(2, count(float64)), sum(float64)) Float64
+    2 * count(float64) + sum(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -1791,7 +1791,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(float64) - 2 * count(float64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(float64), multiply(2, count(float64))) Float64
+    sum(float64) - 2 * count(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -1814,7 +1814,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT 2 * count(float64) - sum(float64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(multiply(2, count(float64)), sum(float64)) Float64
+    2 * count(float64) - sum(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -1853,7 +1853,7 @@ SELECT 2 * count(decimal32) - sum(decimal32) From test_table;
 EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(decimal32, 2)) Decimal(38, 5)
+    sum(decimal32 + 2) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -1876,7 +1876,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 + decimal32) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(plus(2, decimal32)) Decimal(38, 5)
+    sum(2 + decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -1899,7 +1899,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(decimal32, 2)) Decimal(38, 5)
+    sum(decimal32 - 2) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -1922,7 +1922,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 - decimal32) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(minus(2, decimal32)) Decimal(38, 5)
+    sum(2 - decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -1945,7 +1945,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(decimal32) + 2 * count(decimal32) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(decimal32), multiply(2, count(decimal32))) Decimal(38, 5)
+    sum(decimal32) + 2 * count(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -1968,7 +1968,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT 2 * count(decimal32) + sum(decimal32) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(multiply(2, count(decimal32)), sum(decimal32)) Decimal(38, 5)
+    2 * count(decimal32) + sum(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -1991,7 +1991,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(decimal32) - 2 * count(decimal32) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(decimal32), multiply(2, count(decimal32))) Decimal(38, 5)
+    sum(decimal32) - 2 * count(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -2014,7 +2014,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT 2 * count(decimal32) - sum(decimal32) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(multiply(2, count(decimal32)), sum(decimal32)) Decimal(38, 5)
+    2 * count(decimal32) - sum(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -2055,7 +2055,7 @@ SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - sum(uint64)) Fro
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) + sum(uint64 + 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(plus(uint64, 2)), sum(plus(uint64, 3))) UInt64
+    sum(uint64 + 2) + sum(uint64 + 3) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -2096,7 +2096,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) - sum(uint64 + 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(plus(uint64, 2)), sum(plus(uint64, 3))) Int64
+    sum(uint64 + 2) - sum(uint64 + 3) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -2137,7 +2137,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) + sum(uint64 - 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(minus(uint64, 2)), sum(minus(uint64, 3))) Int64
+    sum(uint64 - 2) + sum(uint64 - 3) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
@@ -2178,7 +2178,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) - sum(uint64 - 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(minus(uint64, 2)), sum(minus(uint64, 3))) Int64
+    sum(uint64 - 2) - sum(uint64 - 3) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -2219,7 +2219,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 - uint64) - sum(3 - uint64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(minus(2, uint64)), sum(minus(3, uint64))) Int64
+    sum(2 - uint64) - sum(3 - uint64) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -2260,7 +2260,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(uint64) + 2 * count(uint64)) + (sum(uint64) + 3 * count(uint64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(plus(sum(uint64), multiply(2, count(uint64))), plus(sum(uint64), multiply(3, count(uint64)))) UInt64
+    sum(uint64) + 2 * count(uint64) + sum(uint64) + 3 * count(uint64) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -2301,7 +2301,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(uint64) + 2 * count(uint64)) - (sum(uint64) + 3 * count(uint64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(plus(sum(uint64), multiply(2, count(uint64))), plus(sum(uint64), multiply(3, count(uint64)))) Int64
+    sum(uint64) + 2 * count(uint64) - sum(uint64) + 3 * count(uint64) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -2342,7 +2342,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(uint64) - 2 * count(uint64)) + (sum(uint64) - 3 * count(uint64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(minus(sum(uint64), multiply(2, count(uint64))), minus(sum(uint64), multiply(3, count(uint64)))) Int64
+    sum(uint64) - 2 * count(uint64) + sum(uint64) - 3 * count(uint64) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
@@ -2383,7 +2383,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(uint64) - 2 * count(uint64)) - (sum(uint64) - 3 * count(uint64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(minus(sum(uint64), multiply(2, count(uint64))), minus(sum(uint64), multiply(3, count(uint64)))) Int64
+    sum(uint64) - 2 * count(uint64) - sum(uint64) - 3 * count(uint64) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Int64
@@ -2424,7 +2424,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - sum(uint64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(minus(multiply(2, count(uint64)), sum(uint64)), minus(multiply(3, count(uint64)), sum(uint64))) Int64
+    2 * count(uint64) - sum(uint64) + 3 * count(uint64) - sum(uint64) Int64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Int64
@@ -2485,7 +2485,7 @@ SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64))
 EXPLAIN QUERY TREE (SELECT sum(float64 + 2) + sum(float64 + 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(plus(float64, 2)), sum(plus(float64, 3))) Float64
+    sum(float64 + 2) + sum(float64 + 3) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -2526,7 +2526,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(float64 + 2) - sum(float64 + 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(plus(float64, 2)), sum(plus(float64, 3))) Float64
+    sum(float64 + 2) - sum(float64 + 3) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -2567,7 +2567,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(float64 - 2) + sum(float64 - 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(minus(float64, 2)), sum(minus(float64, 3))) Float64
+    sum(float64 - 2) + sum(float64 - 3) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -2608,7 +2608,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(float64 - 2) - sum(float64 - 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(minus(float64, 2)), sum(minus(float64, 3))) Float64
+    sum(float64 - 2) - sum(float64 - 3) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -2649,7 +2649,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 - float64) - sum(3 - float64) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(minus(2, float64)), sum(minus(3, float64))) Float64
+    sum(2 - float64) - sum(3 - float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -2690,7 +2690,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(float64) + 2 * count(float64)) + (sum(float64) + 3 * count(float64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(plus(sum(float64), multiply(2, count(float64))), plus(sum(float64), multiply(3, count(float64)))) Float64
+    sum(float64) + 2 * count(float64) + sum(float64) + 3 * count(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -2731,7 +2731,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) + 3 * count(float64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(plus(sum(float64), multiply(2, count(float64))), plus(sum(float64), multiply(3, count(float64)))) Float64
+    sum(float64) + 2 * count(float64) - sum(float64) + 3 * count(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -2772,7 +2772,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(minus(sum(float64), multiply(2, count(float64))), minus(sum(float64), multiply(3, count(float64)))) Float64
+    sum(float64) - 2 * count(float64) + sum(float64) - 3 * count(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -2813,7 +2813,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(minus(sum(float64), multiply(2, count(float64))), minus(sum(float64), multiply(3, count(float64)))) Float64
+    sum(float64) - 2 * count(float64) - sum(float64) - 3 * count(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Float64
@@ -2854,7 +2854,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(minus(multiply(2, count(float64)), sum(float64)), minus(multiply(3, count(float64)), sum(float64))) Float64
+    2 * count(float64) - sum(float64) + 3 * count(float64) - sum(float64) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Float64
@@ -2915,7 +2915,7 @@ SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(dec
 EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) + sum(decimal32 + 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(plus(decimal32, 2)), sum(plus(decimal32, 3))) Decimal(38, 5)
+    sum(decimal32 + 2) + sum(decimal32 + 3) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -2956,7 +2956,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) - sum(decimal32 + 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(plus(decimal32, 2)), sum(plus(decimal32, 3))) Decimal(38, 5)
+    sum(decimal32 + 2) - sum(decimal32 + 3) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -2997,7 +2997,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) + sum(decimal32 - 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(sum(minus(decimal32, 2)), sum(minus(decimal32, 3))) Decimal(38, 5)
+    sum(decimal32 - 2) + sum(decimal32 - 3) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -3038,7 +3038,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) - sum(decimal32 - 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(minus(decimal32, 2)), sum(minus(decimal32, 3))) Decimal(38, 5)
+    sum(decimal32 - 2) - sum(decimal32 - 3) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -3079,7 +3079,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT sum(2 - decimal32) - sum(3 - decimal32) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(sum(minus(2, decimal32)), sum(minus(3, decimal32))) Decimal(38, 5)
+    sum(2 - decimal32) - sum(3 - decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -3120,7 +3120,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(decimal32) + 2 * count(decimal32)) + (sum(decimal32) + 3 * count(decimal32)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(plus(sum(decimal32), multiply(2, count(decimal32))), plus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
+    sum(decimal32) + 2 * count(decimal32) + sum(decimal32) + 3 * count(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -3161,7 +3161,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(decimal32) + 2 * count(decimal32)) - (sum(decimal32) + 3 * count(decimal32)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(plus(sum(decimal32), multiply(2, count(decimal32))), plus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
+    sum(decimal32) + 2 * count(decimal32) - sum(decimal32) + 3 * count(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -3202,7 +3202,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(decimal32) - 2 * count(decimal32)) + (sum(decimal32) - 3 * count(decimal32)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(minus(sum(decimal32), multiply(2, count(decimal32))), minus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
+    sum(decimal32) - 2 * count(decimal32) + sum(decimal32) - 3 * count(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -3243,7 +3243,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (sum(decimal32) - 2 * count(decimal32)) - (sum(decimal32) - 3 * count(decimal32)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    minus(minus(sum(decimal32), multiply(2, count(decimal32))), minus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
+    sum(decimal32) - 2 * count(decimal32) - sum(decimal32) - 3 * count(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
@@ -3284,7 +3284,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE (SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(decimal32)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(minus(multiply(2, count(decimal32)), sum(decimal32)), minus(multiply(3, count(decimal32)), sum(decimal32))) Decimal(38, 5)
+    2 * count(decimal32) - sum(decimal32) + 3 * count(decimal32) - sum(decimal32) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)

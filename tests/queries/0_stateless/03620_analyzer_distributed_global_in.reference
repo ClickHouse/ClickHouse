@@ -61,11 +61,11 @@ CreatingSets (Create sets before main query execution)
 system flush logs query_log;
 -- SKIP: current_database = currentDatabase()
 select normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() and log_comment like '%' || currentDatabase() || '%' and not is_initial_query and type != 'QueryStart' and query_kind = 'Select' order by event_time_microseconds;
-SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING in(`x`, (SELECT `__table1`.`number` + ? AS `?` FROM numbers(?) AS `__table1`))
-SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING globalIn(`x`, `?`)
-SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING in(`x`, (SELECT `__table1`.`number` + ? AS `?` FROM numbers(?) AS `__table1`))
-SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING globalIn(`x`, `?`)
-SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING in(`x`, (SELECT `__table1`.`number` + ? AS `?` FROM numbers(?) AS `__table1`))
-SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING in(`x`, (SELECT `__table1`.`number` + ? AS `?` FROM numbers(?) AS `__table1`))
-SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING globalIn(`x`, `?`)
-SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING globalIn(`x`, `?`)
+SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING `x` IN (SELECT `__table1`.`number` + ? AS `?` FROM numbers(?) AS `__table1`)
+SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING `x` GLOBAL IN `?`
+SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING `x` IN (SELECT `__table1`.`number` + ? AS `?` FROM numbers(?) AS `__table1`)
+SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING `x` GLOBAL IN `?`
+SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING `x` IN (SELECT `__table1`.`number` + ? AS `?` FROM numbers(?) AS `__table1`)
+SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING `x` IN (SELECT `__table1`.`number` + ? AS `?` FROM numbers(?) AS `__table1`)
+SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING `x` GLOBAL IN `?`
+SELECT `__table1`.`x` AS `x`, `__table1`.`y` AS `y` FROM `default`.`tab0` AS `__table1` HAVING `x` GLOBAL IN `?`

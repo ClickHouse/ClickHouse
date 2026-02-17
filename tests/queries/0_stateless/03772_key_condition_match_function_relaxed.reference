@@ -16,7 +16,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               url
-            Condition: not((url in [\'http\', \'httq\')))
+            Condition: NOT ((url in [\'http\', \'httq\')))
             Parts: 1/1
             Granules: 1/1
             Search Algorithm: generic exclusion search
@@ -38,7 +38,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               url
-            Condition: not((url in [\'abcd\', \'abce\')))
+            Condition: NOT ((url in [\'abcd\', \'abce\')))
             Parts: 1/1
             Granules: 1/1
             Search Algorithm: generic exclusion search

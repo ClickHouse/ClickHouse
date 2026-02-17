@@ -7,11 +7,11 @@ Positions: 1
   Header: __table1.id Int32
     Filter (( + (Calculate join left keys + Change column names to column identifiers)))
     Header: __table1.id Int32
-    Filter column: in(__table1.id, set column) (removed)
+    Filter column: __table1.id IN set column (removed)
     Actions: INPUT : 0 -> id Int32 : 0
              COLUMN Set -> set column Set : 1
              ALIAS id : 0 -> __table1.id Int32 : 2
-             FUNCTION in(id :: 0, set column :: 1) -> in(__table1.id, set column) UInt8 : 3
+             FUNCTION id :: 0 IN set column :: 1 -> __table1.id IN set column UInt8 : 3
     Positions: 3 2
       ReadFromMergeTree (default.t1)
       Header: id Int32

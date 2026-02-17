@@ -44,14 +44,14 @@ select id, length(m) from test_length_map settings optimize_functions_to_subcolu
 select id, length(m) from test_length_map settings optimize_functions_to_subcolumns=0;
 42	2
 -- { echo }
-select id from test_isnull where isNull(n) settings optimize_functions_to_subcolumns=1;
+select id from test_isnull where n IS NULL settings optimize_functions_to_subcolumns=1;
 42
-select id from test_isnull where isNull(n) settings optimize_functions_to_subcolumns=0;
+select id from test_isnull where n IS NULL settings optimize_functions_to_subcolumns=0;
 42
 -- { echo }
-select id from test_isnotnull where isNotNull(n) settings optimize_functions_to_subcolumns=1;
+select id from test_isnotnull where n IS NOT NULL settings optimize_functions_to_subcolumns=1;
 42
-select id from test_isnotnull where isNotNull(n) settings optimize_functions_to_subcolumns=0;
+select id from test_isnotnull where n IS NOT NULL settings optimize_functions_to_subcolumns=0;
 42
 -- { echo }
 select count(n) from test_count_nullable settings optimize_functions_to_subcolumns=1;

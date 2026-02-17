@@ -97,13 +97,13 @@ drop table if exists t_column_names;
 create table t_column_names (s String) engine Memory;
 insert into t_column_names values ('foo');
 explain query tree dump_tree = 0, dump_ast = 1 select s != '' from t_column_names;
-SELECT notEmpty(__table1.s) AS `notEquals(s, \'\')`
+SELECT notEmpty(__table1.s) AS `s != \'\'`
 FROM default.t_column_names AS __table1
 select s != '' from t_column_names;
 1
 set optimize_functions_to_subcolumns = 1;
 explain query tree dump_tree = 0, dump_ast = 1 select s != '' from t_column_names;
-SELECT notEquals(__table1.`s.size`, 0) AS `notEquals(s, \'\')`
+SELECT __table1.`s.size` != 0 AS `s != \'\'`
 FROM default.t_column_names AS __table1
 select s != '' from t_column_names;
 1

@@ -2,7 +2,7 @@
 1
 QUERY id: 0
   PROJECTION COLUMNS
-    max(greaterOrEquals(number, _subquery_1)) Nullable(UInt8)
+    max(number >= _subquery_1) Nullable(UInt8)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: max, function_type: aggregate, result_type: Nullable(UInt8)

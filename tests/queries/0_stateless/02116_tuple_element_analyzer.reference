@@ -15,11 +15,11 @@ SELECT __table1.`t2.1` AS `tupleElement(t2, 1)`
 FROM default.t_tuple_element AS __table1
 1	2
 SELECT
-    _CAST(1, \'UInt8\') AS `tupleElement(t, 1)`,
-    _CAST(2, \'UInt8\') AS `tupleElement(t, 2)`
+    tupleElement(_CAST((1, 2), \'Tuple(UInt8, UInt8)\'), 1) AS `tupleElement(t, 1)`,
+    tupleElement(_CAST((1, 2), \'Tuple(UInt8, UInt8)\'), 2) AS `tupleElement(t, 2)`
 FROM system.one AS __table1
 1	2
 SELECT
-    _CAST(1, \'UInt32\') AS `tupleElement(t, 1)`,
-    _CAST(2, \'UInt32\') AS `tupleElement(t, \'b\')`
+    tupleElement(CAST(\'(1, 2)\', \'Tuple(a UInt32, b UInt32)\'), 1) AS `tupleElement(t, 1)`,
+    tupleElement(CAST(\'(1, 2)\', \'Tuple(a UInt32, b UInt32)\'), \'b\') AS `tupleElement(t, \'b\')`
 FROM system.one AS __table1
