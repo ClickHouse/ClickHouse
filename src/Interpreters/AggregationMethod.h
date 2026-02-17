@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <queue>
 #include <vector>
 #include <Common/ColumnsHashing.h>
 
@@ -16,16 +17,13 @@ namespace DB
   * (signed integers, floats, strings, Nullable, LowCardinality, Enum, collations, etc.)
   * without extracting Field values.
   *
-  * The heap is a standard binary max-heap (for ascending) or min-heap (for descending)
-  * over row indices into `heap_column`. The boundary element is always at index 0
-  * (the root of the heap = the "worst" key that would be evicted next).
+  * Uses std::priority_queue over row indices into `heap_column`.
+  * The boundary element (the "worst" kept key that would be evicted next) is at the top.
   */
 struct ColumnBoundedHeap
 {
     /// Column holding the key values currently in the heap.
     MutableColumnPtr heap_column;
-    /// Binary heap of row indices into heap_column.
-    std::vector<size_t> heap_indices;
 
     int direction = 0;      /// 1 = ASC (max-heap to evict largest), -1 = DESC (min-heap to evict smallest)
     int nan_direction_hint = 1;  /// NULLs/NaNs go last by default
@@ -39,24 +37,34 @@ struct ColumnBoundedHeap
         /// For descending sort, NaN/NULL should be less (direction_hint=-1) so they get evicted first.
         nan_direction_hint = dir;
         heap_column = source_column.cloneEmpty();
+        heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(HeapComparator{this});
     }
 
-    size_t size() const { return heap_indices.size(); }
-    bool empty() const { return heap_indices.empty(); }
+    size_t size() const { return heap.size(); }
+    bool empty() const { return heap.empty(); }
 
-    /// Compare two rows within heap_column. Returns true if a should be "above" b in the heap.
-    /// For ascending (max-heap): a is above b if a > b (so root = max = boundary).
-    /// For descending (min-heap): a is above b if a < b (so root = min = boundary).
-    bool heapOrderBefore(size_t a, size_t b) const
+    /// Returns true if the source key at source_row is worse than the current boundary
+    /// (the heap root), meaning it should be skipped.
+    bool shouldSkip(const IColumn & source_column, size_t source_row) const
     {
-        int cmp;
-        if (collator)
-            cmp = heap_column->compareAtWithCollation(a, b, *heap_column, nan_direction_hint, *collator);
-        else
-            cmp = heap_column->compareAt(a, b, *heap_column, nan_direction_hint);
-        return direction == 1 ? (cmp > 0) : (cmp < 0);
+        return sourceAboveHeap(source_column, source_row, heap.top());
     }
 
+    /// Push a new key value from source_column[source_row] into the heap.
+    void push(const IColumn & source_column, size_t source_row)
+    {
+        size_t new_idx = heap_column->size();
+        heap_column->insertFrom(source_column, source_row);
+        heap.push(new_idx);
+    }
+
+    /// Remove the boundary element (heap root).
+    void pop()
+    {
+        heap.pop();
+    }
+
+private:
     /// Compare a row in source_column against a row in heap_column.
     /// Returns true if source row should be "above" the heap row (i.e. is worse).
     bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
@@ -69,69 +77,30 @@ struct ColumnBoundedHeap
         return direction == 1 ? (cmp > 0) : (cmp < 0);
     }
 
-    /// Returns true if the source key at source_row is worse than the current boundary
-    /// (the heap root), meaning it should be skipped.
-    bool shouldSkip(const IColumn & source_column, size_t source_row) const
+    /// Comparator for the priority queue. The "greatest" element sits at the top,
+    /// so we return true when a should be below b.
+    /// For ascending (max-heap): root = max, so a is below b when a < b.
+    /// For descending (min-heap): root = min, so a is below b when a > b.
+    struct HeapComparator
     {
-        return sourceAboveHeap(source_column, source_row, heap_indices[0]);
-    }
+        const ColumnBoundedHeap * owner;
 
-    /// Push a new key value from source_column[source_row] into the heap.
-    void push(const IColumn & source_column, size_t source_row)
-    {
-        size_t new_idx = heap_column->size();
-        heap_column->insertFrom(source_column, source_row);
-        heap_indices.push_back(new_idx);
-        siftUp(heap_indices.size() - 1);
-    }
-
-    /// Remove the boundary element (heap root).
-    void pop()
-    {
-        /// Move last element to root and sift down.
-        heap_indices[0] = heap_indices.back();
-        heap_indices.pop_back();
-        if (!heap_indices.empty())
-            siftDown(0);
-    }
-
-private:
-    void siftUp(size_t idx)
-    {
-        while (idx > 0)
+        bool operator()(size_t a, size_t b) const
         {
-            size_t parent = (idx - 1) / 2;
-            if (heapOrderBefore(heap_indices[idx], heap_indices[parent]))
-            {
-                std::swap(heap_indices[idx], heap_indices[parent]);
-                idx = parent;
-            }
+            int cmp;
+            if (owner->collator)
+                cmp = owner->heap_column->compareAtWithCollation(a, b, *owner->heap_column, owner->nan_direction_hint, *owner->collator);
             else
-                break;
+                cmp = owner->heap_column->compareAt(a, b, *owner->heap_column, owner->nan_direction_hint);
+            /// priority_queue puts the "greatest" element on top.
+            /// We want the boundary (worst kept key) on top.
+            /// For ASC (max-heap): boundary = max, so "greater" = larger value → return cmp < 0 (a < b means a is "less" in pq order).
+            /// For DESC (min-heap): boundary = min, so "greater" = smaller value → return cmp > 0.
+            return owner->direction == 1 ? (cmp < 0) : (cmp > 0);
         }
-    }
+    };
 
-    void siftDown(size_t idx)
-    {
-        size_t n = heap_indices.size();
-        while (true)
-        {
-            size_t best = idx;
-            size_t left = 2 * idx + 1;
-            size_t right = 2 * idx + 2;
-            if (left < n && heapOrderBefore(heap_indices[left], heap_indices[best]))
-                best = left;
-            if (right < n && heapOrderBefore(heap_indices[right], heap_indices[best]))
-                best = right;
-            if (best != idx)
-            {
-                std::swap(heap_indices[idx], heap_indices[best]);
-                idx = best;
-            }
-            else
-                break;
-        }
-    }
+    std::priority_queue<size_t, std::vector<size_t>, HeapComparator> heap;
 };
 
 /// For the case where there is one numeric key.
