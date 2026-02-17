@@ -1,4 +1,5 @@
 -- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-parallel, no-debug, no-random-detach
+-- no-random-detach: test checks system.parts
 
 DROP TABLE IF EXISTS t_patch_join_cache;
 
