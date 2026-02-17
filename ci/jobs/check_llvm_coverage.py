@@ -39,23 +39,20 @@ if __name__ == "__main__":
         current_commit_sha = Shell.get_output("git rev-parse HEAD", verbose=True).strip()
     os.environ["CURRENT_COMMIT"] = current_commit_sha
 
-    # Pass workspace path to the shell script via environment variable
-    # os.environ["WORKSPACE_PATH"] = current_directory
-
     result = Result.from_commands_run(
         name="LLVM Coverage Check",
         command=["bash ci/jobs/scripts/diff_coverage.sh"],
     )
 
     Utils.compress_gz(
-        f"{temp_dir}/diff-html",
-        f"{temp_dir}/diff-html.tar.gz",
+        f"{temp_dir}/llvm_coverage_diff_html_report",
+        f"{temp_dir}/llvm_coverage_diff_html_report.tar.gz",
     )
 
     files_to_attach = []
     assets_to_attach = []
     # Attach all HTML report files preserving directory structure
-    html_diff_report_dir = Path(temp_dir) / "diff-html"
+    html_diff_report_dir = Path(temp_dir) / "llvm_coverage_diff_html_report"
     if html_diff_report_dir.exists():
         # Add index.html first as it's the entry point (root level only)
         index_file = html_diff_report_dir / "index.html"

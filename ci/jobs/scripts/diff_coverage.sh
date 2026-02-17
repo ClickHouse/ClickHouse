@@ -73,7 +73,9 @@ exit 0
 fi
 
 # get diff between current commit and base commit
-git fetch origin ${BASE_COMMIT} ${CURRENT_COMMIT}
+# echo "Fetching commits ${BASE_COMMIT} and ${CURRENT_COMMIT} from origin..."
+# git status
+# git fetch origin ${BASE_COMMIT} ${CURRENT_COMMIT}
 git diff ${BASE_COMMIT}..${CURRENT_COMMIT} --unified=3 > changes.diff
 changed_files=$(git diff ${BASE_COMMIT}..${CURRENT_COMMIT} --name-only)
 echo "Changed files:"
@@ -104,7 +106,7 @@ echo Workspace path: $WORKSPACE_PATH
 genhtml \
   --baseline-file baseline.changed.info \
   --diff-file changes.diff \
-  --output-directory diff-html \
+  --output-directory llvm_coverage_diff_html_report \
   --no-function-coverage \
   --prefix $WORKSPACE_PATH \
   --substitute "s|/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse|$WORKSPACE_PATH|g" \
