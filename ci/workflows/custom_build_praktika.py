@@ -3,7 +3,7 @@ from ci.praktika.secret import Secret
 from praktika import Job, Workflow
 
 workflow = Workflow.Config(
-    name="Build Praktika for PyPy",
+    name="Build Praktika for PyPI",
     event=Workflow.Event.PULL_REQUEST, # for debug Workflow.Event.DISPATCH,
     base_branches=[BASE_BRANCH], # REMOVEME
     jobs=[
