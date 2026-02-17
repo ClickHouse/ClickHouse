@@ -398,12 +398,12 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
             type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
         object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
-    }
 
-    /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
-    /// so old versions can read this info if the flag is disabled.
-    if (settings.propagate_types_serialization_versions_to_nested_types)
-        object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
+        /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
+        /// so old versions can read this info if the flag is disabled.
+        if (settings.propagate_types_serialization_versions_to_nested_types)
+            object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
+    }
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
