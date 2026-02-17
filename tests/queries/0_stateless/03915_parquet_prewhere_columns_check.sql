@@ -7,4 +7,4 @@ set engine_file_truncate_on_insert = 1;
 insert into function file(currentDatabase() || '_03915.parquet')
     SELECT 1;
 
-SELECT * FROM file('a.parquet', Parquet, 'c0 Int') PREWHERE c0 = 1; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM file(currentDatabase() || '_03915.parquet', Parquet, 'c0 Int') PREWHERE c0 = 1; -- { serverError BAD_ARGUMENTS }
