@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+import argparse
 import subprocess
 import sys
 import os
 from pathlib import Path
+from ci.praktika.info import Info
 
 VENV_DIR = Path(".venv-pypy")
 
@@ -50,21 +52,30 @@ def install_dependencies():
         run([str(venv_pip()), "install", "-r", "requirements.txt"])
 
 
-def build_package():
+def build_package(token: str):
     run([str(venv_python()), "-m", "build"])
     run([str(venv_python()), "-m", "twine", "check", "ci/praktika/dist/*"])
 
-    token = os.getenv("TWINE_PASSWORD")
+    if not token:
+        token = Info.get_secret("PYPI_TOKEN")
+        print(token)
+
+    if not token:
+        token = os.getenv("TWINE_PASSWORD")
     run_env([str(venv_python()), "-m", "twine", "upload", "ci/praktika/dist/*"],
             env={"TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token}
             )
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Upload package to PyPI using a token")
+    parser.add_argument("--token", required=True, help="PyPI API token")
+    args = parser.parse_args()
+
     install_packages()
     ensure_venv()
     install_dependencies()
-    build_package()
+    build_package(token=args.token)
     print("\nBuild completed successfully.")
 
 

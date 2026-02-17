@@ -1,4 +1,5 @@
 from ci.defs.defs import RunnerLabels, BASE_BRANCH
+from ci.praktika.secret import Secret
 from praktika import Job, Workflow
 
 workflow = Workflow.Config(
@@ -12,6 +13,12 @@ workflow = Workflow.Config(
             command="python3 ./ci/jobs/build_praktika.py",
         ),
     ],
+    secrets=[
+        Secret.Config(
+            name="PYPI_TOKEN",
+            type=Secret.Type.GH_SECRET,
+        ),
+    ]
 )
 
 WORKFLOWS = [
