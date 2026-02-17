@@ -617,16 +617,29 @@ bool testForAggregationLimitPushdownOptimization(PlannerExpressionsAnalysisResul
 {
     auto aggregation_analysis_result = expression_analysis_result.getAggregation();
 
-    if (query_analysis_result.limit_offset)
-        return false; // FIXME
-
     if (expression_analysis_result.hasHaving())
         return false;
 
-    if (query_node.isGroupByWithCube() || query_node.isGroupByWithRollup() || query_node.isGroupByWithTotals())
+    if (query_node.isGroupByWithCube() || query_node.isGroupByWithRollup() || query_node.isGroupByWithTotals()
+        || query_node.isGroupByWithGroupingSets())
+        return false;
+
+    if (query_node.hasLimitBy())
+        return false;
+
+    /// The optimization cannot be applied for non-final aggregation (e.g. distributed queries
+    /// or parallel replicas) because each shard/replica would independently keep only its top-N
+    /// keys and the merge step would produce wrong results.
+    if (!query_analysis_result.aggregate_final)
         return false;
 
     if (aggregation_analysis_result.aggregation_keys.empty())
+        return false;
+
+    /// Currently only single-column GROUP BY is supported because the heap
+    /// compares keys as single Field values. Multi-column composite keys
+    /// would need lexicographic comparison which is not implemented yet.
+    if (aggregation_analysis_result.aggregation_keys.size() != 1)
         return false;
 
     SortDescription sort_description_for_group_by_limit_pushdown = query_analysis_result.sort_description;
@@ -641,7 +654,7 @@ bool testForAggregationLimitPushdownOptimization(PlannerExpressionsAnalysisResul
             return false;
     }
 
-    if (query_analysis_result.limit_length < 1)  // FIXME what does negative limit mean?
+    if (query_analysis_result.limit_length < 1)
         return false;
 
     return true;
@@ -665,10 +678,10 @@ void addAggregationStep(QueryPlan & query_plan,
         auto applicable = testForAggregationLimitPushdownOptimization(expression_analysis_result, query_analysis_result, query_node);
         LOG_DEBUG(getLogger("Planner"), "GROUP BY ... ORDER BY ... LIMIT optimization can be applied: {}", applicable);
 
-        if (applicable && settings[Setting::ordered_group_by_limit_pushdown])
+        if (applicable && settings[Setting::ordered_group_by_limit_pushdown] && !settings[Setting::exact_rows_before_limit])
         {
-            aggregator_params.top_n_keys = query_analysis_result.limit_length;
-            aggregator_params.top_n_keys_sort_direction = query_analysis_result.sort_description[0].direction; // FIXME
+            aggregator_params.top_n_keys = query_analysis_result.limit_length + query_analysis_result.limit_offset;
+            aggregator_params.top_n_keys_sort_direction = query_analysis_result.sort_description[0].direction;
         }
     }
 

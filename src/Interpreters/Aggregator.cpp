@@ -1479,6 +1479,12 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
+    /// When the top-N keys optimization is active, some rows may have been redirected
+    /// to a throwaway aggregate state (temp). The "equal keys range" optimization
+    /// (addBatchSinglePlace) must be disabled in this case, because it assumes all rows
+    /// belong to the single key — but skipped rows belong to no real group.
+    bool has_only_one_value = state.hasOnlyOneValueSinceLastReset() && params.top_n_keys == 0;
+
     executeAggregateInstructions(
         aggregates_pool,
         row_begin,
@@ -1486,7 +1492,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         aggregate_instructions,
         places.get(),
         key_start,
-        state.hasOnlyOneValueSinceLastReset(),
+        has_only_one_value,
         all_keys_are_const,
         use_compiled_functions);
 }
