@@ -18,6 +18,15 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
     message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
 endif ()
 
+# Verify C and C++ compiler versions match (catches cases where e.g. a PGO-optimized
+# `clang` is used as CC but system `clang` as CXX due to a missing `clang++` symlink)
+if (NOT CMAKE_C_COMPILER_VERSION STREQUAL CMAKE_CXX_COMPILER_VERSION)
+    message (FATAL_ERROR
+        "C compiler version (${CMAKE_C_COMPILER_VERSION}) does not match "
+        "C++ compiler version (${CMAKE_CXX_COMPILER_VERSION}). "
+        "This usually means CMAKE_C_COMPILER and CMAKE_CXX_COMPILER resolve to different installations.")
+endif ()
+
 string (REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
 list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 

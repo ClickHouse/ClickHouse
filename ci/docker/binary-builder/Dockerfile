@@ -46,7 +46,24 @@ RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     esac && \
     curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TOOLCHAIN_COMMIT}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
       | zstd -d | tar -xf - -C /usr/local/ && \
-    echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
+    echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" && \
+    # Ensure clang++-XX symlink exists (LLVM install creates clang-XX but not clang++-XX) \
+    if [ -f /usr/local/bin/clang-${LLVM_VERSION} ] && [ ! -e /usr/local/bin/clang++-${LLVM_VERSION} ]; then \
+        ln -sf clang-${LLVM_VERSION} /usr/local/bin/clang++-${LLVM_VERSION} && \
+        echo "Created symlink: clang++-${LLVM_VERSION} -> clang-${LLVM_VERSION}" ; \
+    elif [ -e /usr/local/bin/clang++-${LLVM_VERSION} ] && [ ! -L /usr/local/bin/clang++-${LLVM_VERSION} ]; then \
+        rm /usr/local/bin/clang++-${LLVM_VERSION} && \
+        ln -sf clang-${LLVM_VERSION} /usr/local/bin/clang++-${LLVM_VERSION} && \
+        echo "Replaced clang++-${LLVM_VERSION} with symlink to clang-${LLVM_VERSION}" ; \
+    fi && \
+    # Verify C and C++ compiler versions match \
+    cc_version=$(clang-${LLVM_VERSION} --version | head -1) && \
+    cxx_version=$(clang++-${LLVM_VERSION} --version | head -1) && \
+    echo "C compiler:   $cc_version" && \
+    echo "C++ compiler: $cxx_version" && \
+    if [ "$cc_version" != "$cxx_version" ]; then \
+        echo "FATAL: C and C++ compiler version mismatch!" && exit 1 ; \
+    fi \
     ; fi
 
 # Download and install mold for s390x build

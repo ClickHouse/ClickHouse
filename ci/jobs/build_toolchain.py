@@ -497,6 +497,21 @@ def main():
         )
         res = results[-1].is_ok()
 
+        # Ensure version-suffixed clang++ symlinks exist (LLVM install only creates
+        # clang-XX and clang++, but not clang++-XX which CI build scripts use).
+        if res:
+            clang_binaries = glob.glob(f"{STAGE2_INSTALL_DIR}/bin/clang-[0-9]*")
+            for clang_bin in clang_binaries:
+                version_suffix = os.path.basename(clang_bin).replace("clang-", "")
+                clangpp_versioned = os.path.join(
+                    os.path.dirname(clang_bin), f"clang++-{version_suffix}"
+                )
+                if not os.path.exists(clangpp_versioned):
+                    os.symlink(os.path.basename(clang_bin), clangpp_versioned)
+                    print(
+                        f"Created symlink: {clangpp_versioned} -> {os.path.basename(clang_bin)}"
+                    )
+
         if res:
             output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"
             results.append(
