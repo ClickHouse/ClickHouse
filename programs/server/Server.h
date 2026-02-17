@@ -133,6 +133,10 @@ private:
         std::vector<ProtocolServerAdapter> & servers,
         std::vector<ProtocolServerAdapter> & servers_to_start_before_tables);
 
+    void closeServerConnections(
+        std::vector<ProtocolServerAdapter> & servers,
+        const ServerType & server_type) const;
+
     void stopServers(
         std::vector<ProtocolServerAdapter> & servers,
         const ServerType & server_type) const;

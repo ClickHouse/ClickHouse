@@ -1,4 +1,5 @@
 #include <Server/MySQLHandler.h>
+#include <Server/TCPServer.h>
 
 #include <optional>
 #include <Core/MySQL/Authentication.h>
@@ -237,6 +238,7 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
+    TCPConnectionRegistration registration(tcp_server, socket());
     DB::setThreadName(ThreadName::MYSQL_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);

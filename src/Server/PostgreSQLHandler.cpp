@@ -1,5 +1,6 @@
 #include <memory>
 #include <Server/PostgreSQLHandler.h>
+#include <Server/TCPServer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -167,6 +168,7 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
+    TCPConnectionRegistration registration(tcp_server, socket());
     DB::setThreadName(ThreadName::POSTGRES_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);

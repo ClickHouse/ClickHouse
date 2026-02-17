@@ -387,6 +387,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::CLOSE_CONNECTIONS:
+        case Type::CLOSE_CONNECTIONS_AND_STOP_LISTEN:
         case Type::START_LISTEN:
         case Type::STOP_LISTEN:
         {

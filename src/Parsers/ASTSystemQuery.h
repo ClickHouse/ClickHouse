@@ -134,6 +134,8 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        CLOSE_CONNECTIONS_AND_STOP_LISTEN,
+        CLOSE_CONNECTIONS,
         END
     };
 
