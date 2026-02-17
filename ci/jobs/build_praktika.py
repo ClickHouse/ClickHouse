@@ -30,7 +30,8 @@ def venv_pip():
 
 
 def install_packages():
-    run(["sudo", "apt", "install", "-y", "python3-pip", "python3-venv", "python3-venv"])
+    run(["sudo", "apt-get", "update"])
+    run(["sudo", "apt-get", "install", "-y", "python3-pip", "python3-venv"])
 
 
 def install_dependencies():
