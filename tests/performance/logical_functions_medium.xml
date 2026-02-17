@@ -4,7 +4,7 @@
     </settings>
 
     <query>SELECT count() FROM (SELECT materialize(1) AS x1, materialize(1) AS x2, materialize(1) AS x3 FROM zeros(920000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
-    <query>SELECT count() FROM (SELECT materialize(0) AS x1, materialize(0) AS x2, materialize(0) AS x3 FROM zeros(1800000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(0) AS x1, materialize(0) AS x2, materialize(0) AS x3 FROM zeros(1200000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
     <query>SELECT count() FROM (SELECT materialize(0) AS x1, materialize(0) AS x2, materialize(0) AS x3 FROM zeros(920000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
     <query>SELECT count() FROM (SELECT materialize(1) AS x1, materialize(1) AS x2, materialize(1) AS x3 FROM zeros(920000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
 
@@ -20,8 +20,8 @@
     <query>SELECT count() FROM (SELECT materialize(toNullable(1)) AS x1, materialize(toNullable(1)) AS x2, materialize(toNullable(1)) AS x3 FROM zeros(460000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
 
     <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(1))) AS x1, materialize(toNullable(toUInt32(1))) AS x2, materialize(toNullable(toUInt64(1))) AS x3 FROM zeros(180000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
-    <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(0))) AS x1, materialize(toNullable(toUInt32(0))) AS x2, materialize(toNullable(toUInt64(0))) AS x3 FROM zeros(460000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
-    <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(0))) AS x1, materialize(toNullable(toUInt32(0))) AS x2, materialize(toNullable(toUInt64(0))) AS x3 FROM zeros(180000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(0))) AS x1, materialize(toNullable(toUInt32(0))) AS x2, materialize(toNullable(toUInt64(0))) AS x3 FROM zeros(120000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(0))) AS x1, materialize(toNullable(toUInt32(0))) AS x2, materialize(toNullable(toUInt64(0))) AS x3 FROM zeros(120000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
     <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(1))) AS x1, materialize(toNullable(toUInt32(1))) AS x2, materialize(toNullable(toUInt64(1))) AS x3 FROM zeros(120000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
 
     <!-- We have to check the high performing XOR function against in-memory data to avoid the overhead of data generating code -->

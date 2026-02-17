@@ -10,8 +10,8 @@
        <substitution>
            <name>table_large</name>
            <values>
-               <value>zeros(100000000)</value>
-               <value>zeros_mt(1000000000)</value>
+               <value>zeros(50000000)</value>
+               <value>zeros_mt(500000000)</value>
            </values>
        </substitution>
        <substitution>

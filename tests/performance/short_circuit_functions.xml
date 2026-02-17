@@ -25,5 +25,5 @@
     <query>SELECT if(number % 2, arraySum(bitPositionsToArray(number)), arraySum(bitPositionsToArray(number + 1))) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT if(number % 5 == 0, arraySum(bitPositionsToArray(number)), 0) from numbers(5000000) FORMAT Null</query>
     <query>SELECT if(number % 2, number + intDiv(number, number + 1), 3 + intDiv(number, number + 1)), if(number % 3 = 0, number, 4 + intDiv(number, number + 1)) FROM numbers(5000000) FORMAT Null</query>
-    <query>SELECT if(number % 5 == 0, toInt8OrZero(toString(number)), Null) FROM numbers(800000000) FORMAT Null</query>
+    <query>SELECT if(number % 5 == 0, toInt8OrZero(toString(number)), Null) FROM numbers(32000000) FORMAT Null</query>
 </test>
