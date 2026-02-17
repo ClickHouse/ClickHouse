@@ -66,6 +66,13 @@ namespace DB
         auto formatter = internal_formatter_creator(out);
         formatter->statistics = std::move(statistics);
         formatter->writeDeferredStatisticsAndFinalize();
+        /// Flush and finalize the formatter's internal write buffers
+        /// (e.g. UTF8 validation wrapper) to ensure all data reaches `out`.
+        /// Without this, data may remain in intermediate buffers and be
+        /// discarded when the formatter is destroyed.
+        formatter->flush();
+        formatter->finalizeBuffers();
+        out.next();
     }
 
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
