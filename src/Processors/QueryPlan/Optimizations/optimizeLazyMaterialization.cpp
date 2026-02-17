@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -294,9 +295,41 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (limit_step->withTies())
         return false;
 
-    auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
+    /// Navigate through optional LimitByStep + "Before LIMIT BY" ExpressionSteps to find SortingStep.
+    auto * limit_child_node = root.children.front();
+    LimitByStep * limit_by_step = nullptr;
+    QueryPlan::Node * limit_by_node = nullptr;
+    std::vector<QueryPlan::Node *> before_limit_by_nodes;
+
+    SortingStep * sorting_step = typeid_cast<SortingStep *>(limit_child_node->step.get());
     if (!sorting_step)
-        return false;
+    {
+        limit_by_step = typeid_cast<LimitByStep *>(limit_child_node->step.get());
+        if (!limit_by_step)
+            return false;
+
+        if (limit_child_node->children.size() != 1)
+            return false;
+
+        limit_by_node = limit_child_node;
+
+        auto * current = limit_by_node->children.front();
+        while (true)
+        {
+            sorting_step = typeid_cast<SortingStep *>(current->step.get());
+            if (sorting_step)
+                break;
+
+            if (!typeid_cast<ExpressionStep *>(current->step.get()))
+                return false;
+
+            if (current->children.size() != 1)
+                return false;
+
+            before_limit_by_nodes.push_back(current);
+            current = current->children.front();
+        }
+    }
 
     if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
         return false;
@@ -309,7 +342,20 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     StepStack steps_to_update;
 
-    auto * sorting_node = root.children.front();
+    /// Find the SortingStep node in the tree.
+    QueryPlan::Node * sorting_node;
+    if (limit_by_node)
+    {
+        if (before_limit_by_nodes.empty())
+            sorting_node = limit_by_node->children.front();
+        else
+            sorting_node = before_limit_by_nodes.back()->children.front();
+    }
+    else
+    {
+        sorting_node = root.children.front();
+    }
+
     auto * reading_step = findReadingStep(*sorting_node->children.front(), steps_to_update);
     if (!reading_step)
         return false;
@@ -322,6 +368,34 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     for (const auto & descr : sorting_step->getSortDescription())
         required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+
+    /// Also mark columns needed for LIMIT BY grouping keys.
+    /// Trace backward through "Before LIMIT BY" ExpressionSteps to find
+    /// which sorting header positions are needed for LIMIT BY.
+    /// Save these positions for reuse in the forward pass below.
+    std::vector<bool> limit_by_required_in_sorting_header;
+
+    if (limit_by_step)
+    {
+        const auto & lb_input_header = *limit_by_step->getInputHeaders().front();
+        std::vector<bool> lb_required(lb_input_header.columns(), false);
+
+        for (const auto & col_name : limit_by_step->getColumns())
+            lb_required[lb_input_header.getPositionByName(col_name)] = true;
+
+        for (auto it = before_limit_by_nodes.rbegin(); it != before_limit_by_nodes.rend(); ++it)
+        {
+            auto * expr_step = typeid_cast<ExpressionStep *>((*it)->step.get());
+            lb_required = getRequiredHeaderPositions(
+                expr_step->getExpression(), *expr_step->getInputHeaders().front(), std::move(lb_required));
+        }
+
+        chassert(lb_required.size() == required_columns.size());
+        limit_by_required_in_sorting_header = lb_required;
+        for (size_t i = 0; i < required_columns.size(); ++i)
+            if (lb_required[i])
+                required_columns[i] = true;
+    }
 
     bool has_filter = false;
 
@@ -368,6 +442,13 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     for (const auto & descr : sorting_step->getSortDescription())
         required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
 
+    /// Also mark LIMIT BY columns so their renaming stays in the main part
+    /// of the below-sorting expression split.
+    if (!limit_by_required_in_sorting_header.empty())
+        for (size_t i = 0; i < required_columns.size(); ++i)
+            if (limit_by_required_in_sorting_header[i])
+                required_columns[i] = true;
+
     node = sorting_node->children.front();
     while (!node->children.empty())
     {
@@ -399,6 +480,28 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         node = node->children.front();
     }
 
+    /// Forward pass: split "Before LIMIT BY" ExpressionSteps into main and lazy parts.
+    std::list<ActionsDAG> main_before_limit_by_steps;
+
+    if (limit_by_step)
+    {
+        const auto & lb_input_header = *limit_by_step->getInputHeaders().front();
+        std::vector<bool> lb_fwd_required(lb_input_header.columns(), false);
+
+        for (const auto & col_name : limit_by_step->getColumns())
+            lb_fwd_required[lb_input_header.getPositionByName(col_name)] = true;
+
+        /// Iterate from closest-to-LimitBy to closest-to-Sorting.
+        for (auto * before_lb_node : before_limit_by_nodes)
+        {
+            auto * expr_step = typeid_cast<ExpressionStep *>(before_lb_node->step.get());
+            auto split_result = splitExpressionStep(*expr_step, std::move(lb_fwd_required));
+            main_before_limit_by_steps.push_front(std::move(split_result.main_expression_step));
+            lazy_steps.push_back(std::move(split_result.lazy_expression_step));
+            lb_fwd_required = std::move(split_result.required_input_positions);
+        }
+    }
+
     QueryPlan main_plan;
     QueryPlan lazy_plan;
 
@@ -424,9 +527,20 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
     }
 
-    auto new_sorting_step = std::move(root.children.front()->step); // = std::make_unique<SortingStep>(main_plan.getCurrentHeader(), sorting_step->getSortDescription(), sorting_step->getLimit(), sorting_step->getSettings());
+    auto new_sorting_step = std::move(sorting_node->step);
     new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(new_sorting_step));
+
+    /// Add split "Before LIMIT BY" main expressions and LimitByStep.
+    for (auto & dag : main_before_limit_by_steps)
+        main_plan.addStep(std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(dag)));
+
+    if (limit_by_node)
+    {
+        auto moved_limit_by_step = std::move(limit_by_node->step);
+        moved_limit_by_step->updateInputHeader(main_plan.getCurrentHeader());
+        main_plan.addStep(std::move(moved_limit_by_step));
+    }
 
     limit_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(root.step));

@@ -25,6 +25,11 @@ public:
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     void applyOrder(SortDescription sort_desc);
+
+    const Names & getColumns() const { return columns; }
+    size_t getGroupLength() const { return group_length; }
+    size_t getGroupOffset() const { return group_offset; }
+
 private:
     void updateOutputHeader() override
     {
