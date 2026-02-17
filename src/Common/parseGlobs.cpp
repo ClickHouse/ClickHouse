@@ -388,6 +388,27 @@ GlobString::GlobString(std::string input): input_data(std::move(input))
     parse();
 }
 
+GlobString::GlobString(GlobString && other) noexcept
+    : input_data(std::move(other.input_data))
+{
+    parse();
+}
+
+GlobString & GlobString::operator=(GlobString && other) noexcept
+{
+    if (this != &other)
+    {
+        input_data = std::move(other.input_data);
+        has_globs = false;
+        has_ranges = false;
+        has_enums = false;
+        has_question_or_asterisk = false;
+        expressions.clear();
+        parse();
+    }
+    return *this;
+}
+
 std::string GlobString::dump() const
 {
     std::string result;

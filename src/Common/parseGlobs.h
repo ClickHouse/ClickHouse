@@ -95,6 +95,14 @@ class GlobString
 public:
     explicit GlobString(std::string input);
 
+    /// Expressions contain string_views into input_data, so copies are unsafe.
+    GlobString(const GlobString &) = delete;
+    GlobString & operator=(const GlobString &) = delete;
+
+    /// Move re-parses to get valid string_views into the new input_data.
+    GlobString(GlobString && other) noexcept;
+    GlobString & operator=(GlobString && other) noexcept;
+
     void parse();
     const std::vector<Expression> & getExpressions() const { return expressions; }
 
