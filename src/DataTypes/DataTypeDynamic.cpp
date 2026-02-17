@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
@@ -217,14 +218,25 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     if (is_null_map_subcolumn)
     {
         if (!canBeInsideNullableBySettings(subcolumn_type))
+        {
+            if (throw_if_null)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Dynamic type doesn't have subcolumn '{}'", subcolumn_name);
             return nullptr;
+        }
         res->type = std::make_shared<DataTypeUInt8>();
     }
     else if (!subcolumn_nested_name.empty())
     {
         res = getSubcolumnData(subcolumn_nested_name, *res, initial_array_level, throw_if_null);
         if (!res)
+        {
+            if (throw_if_null)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected getSubcolumnData() to throw for subcolumn '{}' in throw_if_null mode",
+                    subcolumn_name);
             return nullptr;
+        }
     }
 
     res->serialization = std::make_shared<SerializationDynamicElement>(res->serialization, subcolumn_type->getName(), String(subcolumn_nested_name), is_null_map_subcolumn);
