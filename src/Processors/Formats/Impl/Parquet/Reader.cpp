@@ -310,7 +310,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         extended_sample_block.insert(col);
     extended_sample_block_data_types = extended_sample_block.getDataTypes();
     const auto & row_level_filter = format_filter_info->row_level_filter;
-    const auto & prewhere_info = format_filter_info->prewhere_info;    
+    const auto & prewhere_info = format_filter_info->prewhere_info;
 
     /// Process schema.
     SchemaConverter schemer(file_metadata, options, &extended_sample_block);
