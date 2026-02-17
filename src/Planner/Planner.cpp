@@ -682,6 +682,8 @@ void addAggregationStep(QueryPlan & query_plan,
         {
             aggregator_params.top_n_keys = query_analysis_result.limit_length + query_analysis_result.limit_offset;
             aggregator_params.top_n_keys_sort_direction = query_analysis_result.sort_description[0].direction;
+            if (query_analysis_result.sort_description[0].collator)
+                aggregator_params.top_n_keys_collator = query_analysis_result.sort_description[0].collator.get();
         }
     }
 

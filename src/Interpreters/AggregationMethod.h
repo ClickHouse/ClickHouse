@@ -1,51 +1,136 @@
 #pragma once
-#include <queue>
+#include <algorithm>
 #include <vector>
 #include <Common/ColumnsHashing.h>
 
 #include <Columns/ColumnString.h>
+#include <Columns/IColumn.h>
+#include <Columns/Collator.h>
+
 namespace DB
 {
-class IColumn;
 
-struct MultiWayHeap
+/** A bounded heap that tracks the top-N smallest (ascending) or largest (descending) keys
+  * seen during aggregation. Keys are stored in a small IColumn and compared using
+  * IColumn::compareAt / compareAtWithCollation, which correctly handles all types
+  * (signed integers, floats, strings, Nullable, LowCardinality, Enum, collations, etc.)
+  * without extracting Field values.
+  *
+  * The heap is a standard binary max-heap (for ascending) or min-heap (for descending)
+  * over row indices into `heap_column`. The boundary element is always at index 0
+  * (the root of the heap = the "worst" key that would be evicted next).
+  */
+struct ColumnBoundedHeap
 {
-    std::priority_queue<Field, std::vector<Field>, std::less<>> pqueue_asc;
-    std::priority_queue<Field, std::vector<Field>, std::greater<>> pqueue_desc;
+    /// Column holding the key values currently in the heap.
+    MutableColumnPtr heap_column;
+    /// Binary heap of row indices into heap_column.
+    std::vector<size_t> heap_indices;
 
-    int direction;
+    int direction = 0;      /// 1 = ASC (max-heap to evict largest), -1 = DESC (min-heap to evict smallest)
+    int nan_direction_hint = 1;  /// NULLs/NaNs go last by default
+    const Collator * collator = nullptr;
 
-    void setDirection(int dir) { direction = dir; }
-
-    size_t size() const
+    void init(const IColumn & source_column, int dir, const Collator * col = nullptr)
     {
-        return direction == 1 ? pqueue_asc.size() : pqueue_desc.size();
+        direction = dir;
+        collator = col;
+        /// For ascending sort, NaN/NULL should be greater (direction_hint=1) so they get evicted first.
+        /// For descending sort, NaN/NULL should be less (direction_hint=-1) so they get evicted first.
+        nan_direction_hint = dir;
+        heap_column = source_column.cloneEmpty();
     }
 
-    bool empty() const
-    {
-        return direction == 1 ? pqueue_asc.empty() : pqueue_desc.empty();
-    }
+    size_t size() const { return heap_indices.size(); }
+    bool empty() const { return heap_indices.empty(); }
 
-    const Field & top() const
+    /// Compare two rows within heap_column. Returns true if a should be "above" b in the heap.
+    /// For ascending (max-heap): a is above b if a > b (so root = max = boundary).
+    /// For descending (min-heap): a is above b if a < b (so root = min = boundary).
+    bool heapOrderBefore(size_t a, size_t b) const
     {
-        return direction == 1 ? pqueue_asc.top() : pqueue_desc.top();
-    }
-
-    void push(const Field & value)
-    {
-        if (direction == 1)
-            pqueue_asc.push(value);
+        int cmp;
+        if (collator)
+            cmp = heap_column->compareAtWithCollation(a, b, *heap_column, nan_direction_hint, *collator);
         else
-            pqueue_desc.push(value);
+            cmp = heap_column->compareAt(a, b, *heap_column, nan_direction_hint);
+        return direction == 1 ? (cmp > 0) : (cmp < 0);
     }
 
+    /// Compare a row in source_column against a row in heap_column.
+    /// Returns true if source row should be "above" the heap row (i.e. is worse).
+    bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
+    {
+        int cmp;
+        if (collator)
+            cmp = source_column.compareAtWithCollation(source_row, heap_row, *heap_column, nan_direction_hint, *collator);
+        else
+            cmp = source_column.compareAt(source_row, heap_row, *heap_column, nan_direction_hint);
+        return direction == 1 ? (cmp > 0) : (cmp < 0);
+    }
+
+    /// Returns true if the source key at source_row is worse than the current boundary
+    /// (the heap root), meaning it should be skipped.
+    bool shouldSkip(const IColumn & source_column, size_t source_row) const
+    {
+        return sourceAboveHeap(source_column, source_row, heap_indices[0]);
+    }
+
+    /// Push a new key value from source_column[source_row] into the heap.
+    void push(const IColumn & source_column, size_t source_row)
+    {
+        size_t new_idx = heap_column->size();
+        heap_column->insertFrom(source_column, source_row);
+        heap_indices.push_back(new_idx);
+        siftUp(heap_indices.size() - 1);
+    }
+
+    /// Remove the boundary element (heap root).
     void pop()
     {
-        if (direction == 1)
-            pqueue_asc.pop();
-        else
-            pqueue_desc.pop();
+        /// Move last element to root and sift down.
+        heap_indices[0] = heap_indices.back();
+        heap_indices.pop_back();
+        if (!heap_indices.empty())
+            siftDown(0);
+    }
+
+private:
+    void siftUp(size_t idx)
+    {
+        while (idx > 0)
+        {
+            size_t parent = (idx - 1) / 2;
+            if (heapOrderBefore(heap_indices[idx], heap_indices[parent]))
+            {
+                std::swap(heap_indices[idx], heap_indices[parent]);
+                idx = parent;
+            }
+            else
+                break;
+        }
+    }
+
+    void siftDown(size_t idx)
+    {
+        size_t n = heap_indices.size();
+        while (true)
+        {
+            size_t best = idx;
+            size_t left = 2 * idx + 1;
+            size_t right = 2 * idx + 2;
+            if (left < n && heapOrderBefore(heap_indices[left], heap_indices[best]))
+                best = left;
+            if (right < n && heapOrderBefore(heap_indices[right], heap_indices[best]))
+                best = right;
+            if (best != idx)
+            {
+                std::swap(heap_indices[idx], heap_indices[best]);
+                idx = best;
+            }
+            else
+                break;
+        }
     }
 };
 
@@ -60,7 +145,7 @@ struct AggregationMethodOneNumber
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    MultiWayHeap pqueue;
+    ColumnBoundedHeap pqueue;
 
     AggregationMethodOneNumber() = default;
 
@@ -104,7 +189,7 @@ struct AggregationMethodString
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    MultiWayHeap pqueue;
+    ColumnBoundedHeap pqueue;
 
     AggregationMethodString() = default;
 
@@ -141,7 +226,7 @@ struct AggregationMethodStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    MultiWayHeap pqueue;
+    ColumnBoundedHeap pqueue;
 
     AggregationMethodStringNoCache() = default;
 
@@ -175,7 +260,7 @@ struct AggregationMethodFixedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    MultiWayHeap pqueue;
+    ColumnBoundedHeap pqueue;
 
     AggregationMethodFixedString() = default;
 
@@ -209,7 +294,7 @@ struct AggregationMethodFixedStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    MultiWayHeap pqueue;
+    ColumnBoundedHeap pqueue;
 
     AggregationMethodFixedStringNoCache() = default;
 
@@ -244,7 +329,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
-    MultiWayHeap pqueue;
+    ColumnBoundedHeap pqueue;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -282,7 +367,7 @@ struct AggregationMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
-    MultiWayHeap pqueue;
+    ColumnBoundedHeap pqueue;
 
     AggregationMethodKeysFixed() = default;
 
@@ -330,7 +415,7 @@ struct AggregationMethodSerialized
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    MultiWayHeap pqueue;
+    ColumnBoundedHeap pqueue;
 
     AggregationMethodSerialized() = default;
 

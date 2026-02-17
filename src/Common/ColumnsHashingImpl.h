@@ -287,9 +287,16 @@ public:
         }
     }
 
+    /// Returns the original key column pointer, used by the top-N heap optimization
+    /// to perform type-correct comparisons via IColumn::compareAt.
+    ALWAYS_INLINE const IColumn * getKeyColumn() const { return key_column; }
+
+    void setKeyColumn(const IColumn * col) { key_column = col; }
+
 protected:
     Cache cache;
     const IColumn * null_map = nullptr;
+    const IColumn * key_column = nullptr;
     bool has_null_data = false;
 
     /// column argument only for nullable column
@@ -309,6 +316,8 @@ protected:
 
         if constexpr (nullable)
             null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
+
+        key_column = column;
     }
 
     template <typename Data, typename KeyHolder>
