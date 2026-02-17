@@ -150,16 +150,16 @@ void ApproximateNumericRuntimeFilter::merge(const IRuntimeFilter * source)
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    auto merge_approximate_filters = [this](const ApproximateNumericRuntimeFilter * source)
+    auto merge_approximate_filters = [this](const ApproximateNumericRuntimeFilter * other)
     {
         /// Merge ranges
-        if (source->min_value < min_value)
-            min_value = source->min_value;
-        if (source->max_value > max_value)
-            max_value = source->max_value;
+        if (other->min_value < min_value)
+            min_value = other->min_value;
+        if (other->max_value > max_value)
+            max_value = other->max_value;
 
         /// Merge bloom filters
-        Base::merge(source);
+        Base::merge(other);
     };
 
     if (isApproximate())

@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -54,7 +55,7 @@ public:
     Field getMinValue() const override
     {
         if constexpr (WhichDataType(TypeToTypeIndex<T>).isNativeNumber())
-            return Field(std::numeric_limits<T>::min());
+            return Field(std::numeric_limits<T>::lowest());
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data type {} does not implement getMinValue() method", this->getName());
     }

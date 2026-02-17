@@ -36,19 +36,21 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
 
     if (allow_to_use_not_exact_filter_)
     {
-        if (MinMaxRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        if (ApproximateNumericRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
-            built_filter = std::make_unique<MinMaxRuntimeFilter>(
+            built_filter = std::make_unique<ApproximateNumericRuntimeFilter>(
                 filters_to_merge_,
                 filter_column_target_type,
                 pass_ratio_threshold_for_disabling_,
                 blocks_to_skip_before_reenabling_,
                 bloom_filter_bytes_,
-                exact_values_limit_);
+                exact_values_limit_,
+                bloom_filter_hash_functions_,
+                max_ratio_of_set_bits_in_bloom_filter_);
         }
-        else if (ApproximateRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        else if (ApproximateGenericRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
-            built_filter = std::make_unique<ApproximateRuntimeFilter>(
+            built_filter = std::make_unique<ApproximateGenericRuntimeFilter>(
                 filters_to_merge_,
                 filter_column_target_type,
                 pass_ratio_threshold_for_disabling_,
