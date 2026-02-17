@@ -9,6 +9,7 @@ from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -355,7 +356,11 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            tests = targeter.get_changed_tests()
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+                # Not a bugfix PR - run a simple sanity test
+                tests = ["00001_select_1"]
+            else:
+                tests = targeter.get_changed_tests()
 
         if tests:
             print(f"Test list: [{tests}]")
@@ -663,7 +668,7 @@ def main():
         results[-1].results = []
 
     # invert result status for bugfix validation
-    if is_bugfix_validation and test_result:
+    if is_bugfix_validation and test_result and Labels.PR_BUGFIX in info.pr_labels:
         has_failure = False
         for r in test_result.results:
             r.set_label("xfail")

@@ -74,6 +74,10 @@ public:
     BackupOperationInfo getInfo(const BackupOperationID & id) const;
     std::vector<BackupOperationInfo> getAllInfos() const;
 
+#if CLICKHOUSE_CLOUD
+    void unlockSnapshot(ASTPtr unlock_query, ContextPtr context);
+#endif
+
 private:
     std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     struct BackupStarter;
