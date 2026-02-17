@@ -37,7 +37,7 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
 
         /// Count d^2 sum
         Float64 answer = 0;
-        for (size_t j = 0; j < size; ++j)
+        for (size_t j = 0; j < static_cast<size_t>(size); ++j)
             answer += (ranks_x[j] - ranks_y[j]) * (ranks_x[j] - ranks_y[j]);
 
         answer *= 6;

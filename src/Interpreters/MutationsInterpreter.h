@@ -140,7 +140,7 @@ public:
 
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
-        bool hasSecondaryIndex(const String & name) const;
+        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
         bool hasProjection(const String & name) const;
         bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;

@@ -785,7 +785,7 @@ void RemoteQueryExecutor::finish()
       * - received an unknown packet from one replica;
       * then you do not need to read anything.
       */
-    if (!isQueryPending() || hasThrownException())
+    if (!isQueryPending() || hasThrownException() || was_cancelled)
         return;
 
     /// To make sure finish is only called once

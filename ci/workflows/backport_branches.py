@@ -53,10 +53,10 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_commit_status_on_failure=True,
     enable_gh_summary_comment=True,
-    enable_slack_feed=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/check_backport_branch.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

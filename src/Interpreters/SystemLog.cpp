@@ -88,63 +88,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
-}
-
-namespace
-{
-    class StorageWithComment : public IAST
-    {
-    public:
-        ASTPtr storage;
-        ASTPtr comment;
-
-        String getID(char) const override { return "Storage with comment definition"; }
-
-        ASTPtr clone() const override
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
-        }
-
-    protected:
-        void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
-        }
-    };
-
-    class ParserStorageWithComment : public IParserBase
-    {
-    protected:
-        const char * getName() const override { return "storage definition with comment"; }
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
-            ASTPtr storage;
-
-            if (!storage_p.parse(pos, storage, expected))
-                return false;
-
-            ParserKeyword s_comment(Keyword::COMMENT);
-            ParserStringLiteral string_literal_parser;
-            ASTPtr comment;
-
-            if (s_comment.ignore(pos, expected))
-                string_literal_parser.parse(pos, comment, expected);
-
-            auto storage_with_comment = std::make_shared<StorageWithComment>();
-            storage_with_comment->storage = std::move(storage);
-            storage_with_comment->comment = std::move(comment);
-
-            node = storage_with_comment;
-            return true;
-        }
-    };
 }
 
 namespace
@@ -680,9 +628,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
 
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+        auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = table_id;
-        ASTPtr query_ptr(insert.release());
+        ASTPtr query_ptr = std::move(insert);
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
@@ -766,13 +714,13 @@ void SystemLog<LogElement>::prepareTable()
             {
                 ASTRenameQuery::Table
                 {
-                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
-                    std::make_shared<ASTIdentifier>(table_id.table_name)
+                    table_id.database_name.empty() ? nullptr : make_intrusive<ASTIdentifier>(table_id.database_name),
+                    make_intrusive<ASTIdentifier>(table_id.table_name)
                 },
                 ASTRenameQuery::Table
                 {
-                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
-                    std::make_shared<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                    table_id.database_name.empty() ? nullptr : make_intrusive<ASTIdentifier>(table_id.database_name),
+                    make_intrusive<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
                 }
             };
 
@@ -784,7 +732,7 @@ void SystemLog<LogElement>::prepareTable()
                 old_create_query,
                 create_query);
 
-            auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+            auto rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
             ActionLock merges_lock;
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
@@ -844,12 +792,12 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
 template <typename LogElement>
 ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
-    auto create = std::make_shared<ASTCreateQuery>();
+    auto create = make_intrusive<ASTCreateQuery>();
 
     create->setDatabase(table_id.database_name);
     create->setTable(table_id.table_name);
 
-    auto new_columns_list = std::make_shared<ASTColumns>();
+    auto new_columns_list = make_intrusive<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
     ordinary_columns.setAliases(alias_columns);

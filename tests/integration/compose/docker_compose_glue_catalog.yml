@@ -47,6 +47,5 @@ services:
       until (/usr/bin/mc config host add minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
       /usr/bin/mc rm -r --force minio/warehouse-glue;
       /usr/bin/mc mb minio/warehouse-glue --ignore-existing;
-      /usr/bin/mc policy set public minio/warehouse-glue;
       tail -f /dev/null
       "

@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
@@ -200,6 +201,11 @@ namespace ErrorCodes
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128
     )", 0) \
+    DECLARE(Bool, escape_index_filenames, true, R"(
+    Prior to 26.1 we didn't escape special symbols in filenames created for secondary indices, which could lead to issues with some
+    characters in index names producing broken parts. This is added purely for compatibility reasons. It should not be changed unless you
+    are reading old parts with indices using non-ascii characters in their names.
+    )", 0) \
     DECLARE(UInt64, max_file_name_length, 127, R"(
     The maximal length of the file name to keep it as is without hashing.
     Takes effect only if setting `replace_long_file_name_to_hash` is enabled.
@@ -362,6 +368,14 @@ namespace ErrorCodes
 
     For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
     after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
+    )", 0) \
+    \
+    DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_compact_part, Field("auto"), R"(
+    The maximum number of dynamic subcolumns that can be created in every column in the Compact data part after merge.
+    It allows to control the number of dynamic subcolumns in Compact part regardless of dynamic parameters specified in the data type.
+
+    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_compact_part is set to 128,
+    after merge into the Compact data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
     )", 0) \
     \
     /** Merge selector settings. */ \
@@ -638,7 +652,7 @@ namespace ErrorCodes
     Possible values:
     - true, false
     )", false) \
-    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, false, R"(
+    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
     If settings `min_age_to_force_merge_seconds` and
     `min_age_to_force_merge_on_partition_only` should respect setting
     `max_bytes_to_merge_at_max_space_in_pool`.
@@ -1764,6 +1778,9 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
+    DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
+    When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
+    )", 0) \
     DECLARE(String, auto_statistics_types, "", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
@@ -1778,42 +1795,42 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
-    )", BETA) \
+    )", 0) \
     DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
     Activates rescheduling of coordinated merges tasks. It can be useful even when
     shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
     statistics and help with cold start.
-    )", BETA) \
+    )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
     Enables coordinated merges strategy
-    )", BETA) \
+    )", 0) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
     Number of merge entries that coordinator should prepare and distribute across workers
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
-    )", BETA) \
+    )", 0) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
     Number of merges that coordinator can request from MergerMutator at once
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
     Time between runs of merge coordinator election thread
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
     Minimum time between runs of merge coordinator thread
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
     Maximum time between runs of merge coordinator thread
-    )", BETA) \
+    )", 0) \
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
     Time changing factor for delay of coordinator thread
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
     Timeout that merge worker thread will use if it is needed to update it's state after immediate action
-    )", BETA) \
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
-    )", BETA) \
+    )", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
@@ -2019,7 +2036,7 @@ namespace ErrorCodes
 
     Possible values:
     - `rebuild` (default): Rebuilds any secondary indices affected by the column in the `ALTER` command.
-    - `throw`: Prevents any `ALTER` of columns covered by secondary indices by throwing an exception.
+    - `throw`: Prevents any `ALTER` of columns covered by **explicit** secondary indices by throwing an exception. Implicit indices are excluded from this restriction and will be rebuilt.
     - `drop`: Drop the dependent secondary indices. The new parts won't have the indices, requiring `MATERIALIZE INDEX` to recreate them.
     - `compatibility`: Matches the original behaviour: `throw` on `ALTER ... MODIFY COLUMN` and `rebuild` on `ALTER ... UPDATE/DELETE`.
     - `ignore`: Intended for expert usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
@@ -2048,8 +2065,17 @@ namespace ErrorCodes
     - local - scope is limited by local disks .
     - none - empty scope, do not search
     )", 0) \
-    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
+    DECLARE(Seconds, refresh_statistics_interval, 300, R"(
     The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
+    )", 0) \
+    DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
+    Minimal number of parts to activated distributed index analysis
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, distributed_index_analysis_min_indexes_bytes_to_activate, 1_GiB, R"(
+    Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
+    )", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
+    Batch size for ZooKeeper multi-create get-part requests when cloning replica.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
@@ -2191,7 +2217,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
@@ -2638,6 +2664,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "enable_mixed_granularity_parts"
         || name == "add_minmax_index_for_numeric_columns"
         || name == "add_minmax_index_for_string_columns"
+        || name == "add_minmax_index_for_temporal_columns"
         || name == "table_disk"
     ;
 }

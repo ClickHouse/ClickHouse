@@ -74,7 +74,14 @@ public:
 
     ~TemporaryReplicationSlot()
     {
-        handler->dropReplicationSlot(*tx, /* temporary */true);
+        try
+        {
+            handler->dropReplicationSlot(*tx, /* temporary */true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("TemporaryReplicationSlot");
+        }
     }
 
 private:
@@ -484,7 +491,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = nested_storage->getStorageID();
 
     auto insert_context = materialized_storage->getNestedTableContext();

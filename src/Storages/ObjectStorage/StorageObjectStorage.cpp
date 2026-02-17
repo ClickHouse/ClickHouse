@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -33,7 +34,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-
 
 namespace DB
 {
@@ -180,8 +180,6 @@ StorageObjectStorage::StorageObjectStorage(
     ColumnsDescription columns{columns_in_table_or_function_definition};
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
-    else
-        validateSupportedColumns(columns, *configuration);
 
     configuration->check(context);
 
@@ -210,6 +208,25 @@ StorageObjectStorage::StorageObjectStorage(
         columns_in_table_or_function_definition.empty(),
         format_settings,
         context);
+
+    bool validate_schema_with_remote = !need_resolve_columns_or_format
+        && !configuration->isDataLakeConfiguration()
+        && !columns_in_table_or_function_definition.empty()
+        && !is_table_function
+        && mode == LoadingStrictnessLevel::CREATE
+        && !do_lazy_init;
+
+    validateColumns(
+        columns,
+        configuration_,
+        validate_schema_with_remote,
+        object_storage_,
+        &format_settings,
+        &sample_path,
+        context,
+        &hive_partition_columns_to_read_from_file_path,
+        &columns_in_table_or_function_definition,
+        log);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -242,7 +259,7 @@ StorageObjectStorage::StorageObjectStorage(
     ///    There's probably no reason for this, and it should just copy those fields like the others.
     ///  * If the table contains files in different formats, with only some of them supporting
     ///    prewhere, things break.
-    supports_prewhere = !configuration->isDataLakeConfiguration() && format_supports_prewhere;
+    supports_prewhere = configuration->supportsPrewhere() && format_supports_prewhere;
     supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
@@ -273,6 +290,7 @@ StorageObjectStorage::StorageObjectStorage(
         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context);
         setInMemoryMetadata(metadata_snapshot);
     }
+
 }
 
 String StorageObjectStorage::getName() const
@@ -341,6 +359,9 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
+    if (!configuration->supportsTotalRows())
+        return std::nullopt;
+
     configuration->update(
         object_storage,
         query_context,
@@ -350,6 +371,9 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
+    if (!configuration->supportsTotalBytes())
+        return std::nullopt;
+
     configuration->update(
         object_storage,
         query_context,

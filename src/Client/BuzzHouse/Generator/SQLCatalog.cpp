@@ -100,7 +100,7 @@ void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
 
 void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
-    if (isDataLakeCatalogDatabase() && fc.dolor_server.has_value())
+    if (!random_engine && isDataLakeCatalogDatabase() && fc.dolor_server.has_value())
     {
         const uint32_t glue_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().glue_catalog.has_value());
         const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());

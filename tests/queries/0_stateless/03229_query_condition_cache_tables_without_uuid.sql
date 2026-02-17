@@ -25,7 +25,7 @@ SELECT uuid FROM system.parts WHERE database = 'memory_db';
 
 SET use_query_condition_cache = 1;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT count(*) from system.query_condition_cache; -- no entry
 

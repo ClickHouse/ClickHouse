@@ -205,10 +205,17 @@ bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadB
 }
 
 
-void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeAnyQuotedString<'\''>(pos, pos + n, ostr);
+    if (settings.values.escape_quote_with_quote)
+    {
+        writeChar('\'', ostr);
+        writeAnyEscapedString<'\'', true, false>(pos, pos + n, ostr);
+        writeChar('\'', ostr);
+    }
+    else
+        writeAnyQuotedString<'\''>(pos, pos + n, ostr);
 }
 
 

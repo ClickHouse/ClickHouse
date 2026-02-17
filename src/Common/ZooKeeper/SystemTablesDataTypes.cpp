@@ -50,6 +50,7 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"Error",               static_cast<Int16>(OpNum::Error)},
             {"Create",              static_cast<Int16>(OpNum::Create)},
             {"Remove",              static_cast<Int16>(OpNum::Remove)},
+            {"TryRemove",           static_cast<Int16>(OpNum::TryRemove)},
             {"Exists",              static_cast<Int16>(OpNum::Exists)},
             {"Reconfig",            static_cast<Int16>(OpNum::Reconfig)},
             {"Get",                 static_cast<Int16>(OpNum::Get)},

@@ -246,20 +246,20 @@ def test_many_tables(started_cluster, format_version, storage_type):
 
     instance.query(
         f"CREATE TABLE {table_name} (col INT) ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = 'disk_{storage_type}_common'",
-        settings={"allow_experimental_insert_into_iceberg": 1},
+        settings={"allow_insert_into_iceberg": 1},
     )
     instance.query(
         f"CREATE TABLE {table_name_2} (col INT) ENGINE=Iceberg(path = '{storage_path_2}', format = Parquet, compression_method = 'auto') SETTINGS disk = 'disk_{storage_type}_common'",
-        settings={"allow_experimental_insert_into_iceberg": 1},
+        settings={"allow_insert_into_iceberg": 1},
     )
 
     instance.query(
         f"INSERT INTO {table_name} VALUES (1);",
-        settings={"allow_experimental_insert_into_iceberg": 1},
+        settings={"allow_insert_into_iceberg": 1},
     )
     instance.query(
         f"INSERT INTO {table_name_2} VALUES (1);",
-        settings={"allow_experimental_insert_into_iceberg": 1},
+        settings={"allow_insert_into_iceberg": 1},
     )
 
     assert instance.query(f"SELECT * FROM {table_name}") == "1\n"

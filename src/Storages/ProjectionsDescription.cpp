@@ -270,6 +270,20 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         result.loadSettings(projection_definition->with_settings->changes);
 
     fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
+
+    /// When positional arguments were enabled and resolved (e.g., GROUP BY 1, 2 -> GROUP BY b, a),
+    /// update definition_ast to store the resolved column names instead of positional references.
+    /// This ensures the table can be re-attached on server restart even with the default setting
+    /// (enable_positional_arguments_for_projections = false).
+    if (query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections])
+    {
+        if (auto resolved_group_by = result.query_ast->as<ASTSelectQuery &>().groupBy())
+        {
+            auto & proj_query = result.definition_ast->as<ASTProjectionDeclaration &>().query->as<ASTProjectionSelectQuery &>();
+            proj_query.setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, resolved_group_by->clone());
+        }
+    }
+
     return result;
 }
 
@@ -329,16 +343,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             if (group_expression_list->children.size() == 1)
             {
                 result.key_size = 1;
-                order_expression = std::make_shared<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
+                order_expression = make_intrusive<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
             }
             else
             {
-                auto function_node = std::make_shared<ASTFunction>();
+                auto function_node = make_intrusive<ASTFunction>();
                 function_node->name = "tuple";
                 function_node->arguments = group_expression_list->clone();
                 result.key_size = function_node->arguments->children.size();
                 for (auto & child : function_node->arguments->children)
-                    child = std::make_shared<ASTIdentifier>(child->getColumnName());
+                    child = make_intrusive<ASTIdentifier>(child->getColumnName());
                 function_node->children.push_back(function_node->arguments);
                 order_expression = function_node;
             }
@@ -411,12 +425,12 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 {
     ProjectionDescription result;
 
-    auto select_query = std::make_shared<ASTProjectionSelectQuery>();
-    ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
+    auto select_query = make_intrusive<ASTProjectionSelectQuery>();
+    ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
     for (const auto & column : minmax_columns)
     {
-        select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
-        select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
     }
 
     auto primary_key_asts = primary_key.expression_list_ast->children;
@@ -547,7 +561,7 @@ Block ProjectionDescription::calculateByQuery(
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTOperator("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
+            makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
     }
 
     /// Only keep required columns
@@ -729,7 +743,7 @@ std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
 ExpressionActionsPtr
 ProjectionsDescription::getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const
 {
-    ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & projection : projections)
         for (const auto & projection_expr : projection.query_ast->children)
             combined_expr_list->children.push_back(projection_expr->clone());

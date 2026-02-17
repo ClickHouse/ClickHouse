@@ -318,7 +318,7 @@ def test_alter_settings(started_cluster):
         )
 
     expected_rows = files_to_generate
-    for _ in range(100):
+    for _ in range(300):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -347,7 +347,7 @@ def test_alter_settings(started_cluster):
         after_processing_retries=21,
         after_processing_tag_key='tagkey',
         after_processing_tag_value='tagvalue',
-        tracked_files_limit=50,
+        tracked_files_limit=2050,
         tracked_file_ttl_sec=10000,
         polling_min_timeout_ms=222,
         s3queue_polling_max_timeout_ms=333,
@@ -363,7 +363,9 @@ def test_alter_settings(started_cluster):
         cleanup_interval_min_ms=34500,
         cleanup_interval_max_ms=45600,
         persistent_processing_node_ttl_seconds=89,
-        commit_on_select=true
+        commit_on_select=true,
+        metadata_cache_size_bytes=12345,
+        metadata_cache_size_elements=54321
     """
     )
 
@@ -372,7 +374,7 @@ def test_alter_settings(started_cluster):
         "loading_retries": 44,
         "after_processing_retries": 21,
         "tracked_files_ttl_sec": 10000,
-        "tracked_files_limit": 50,
+        "tracked_files_limit": 2050,
         "polling_min_timeout_ms": 222,
         "polling_max_timeout_ms": 333,
         "polling_backoff_ms": 111,
@@ -387,6 +389,8 @@ def test_alter_settings(started_cluster):
         "cleanup_interval_min_ms": 34500,
         "cleanup_interval_max_ms": 45600,
         "persistent_processing_node_ttl_seconds": 89,
+        "metadata_cache_size_bytes": 12345,
+        "metadata_cache_size_elements": 54321,
     }
     string_settings = {
         "after_processing": "tag",

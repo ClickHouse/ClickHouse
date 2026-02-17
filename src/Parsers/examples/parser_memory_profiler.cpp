@@ -78,6 +78,7 @@
 #include <atomic>
 
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -197,19 +198,18 @@ std::string readQuery()
 
 void printUsage(const char * prog_name)
 {
-    std::cerr << "Usage: " << prog_name << " [--profile <prefix>]\n";
+    std::cerr << "Usage: " << prog_name << " [--profile <prefix>] [--symbolize]\n";
     std::cerr << "  Reads SQL query from stdin until EOF and prints memory stats.\n";
     std::cerr << "\nOptions:\n";
     std::cerr << "  --profile <prefix>  Dump jemalloc heap profiles to <prefix>*.heap\n";
+    std::cerr << "  --symbolize         Symbolize heap profiles (requires --profile)\n";
     std::cerr << "\nOutput format (tab-separated):\n";
     std::cerr << "  query_length  allocated_before  allocated_after  allocated_diff\n";
     std::cerr << "\nExamples:\n";
     std::cerr << "  # Memory stats only:\n";
     std::cerr << "  echo 'SELECT 1;' | " << prog_name << "\n";
-    std::cerr << "\n  # With heap profiling (macOS - use JE_MALLOC_CONF):\n";
-    std::cerr << "  JE_MALLOC_CONF=prof:true,prof_active:true " << prog_name << " --profile /tmp/p_ <<< 'SELECT 1;'\n";
-    std::cerr << "\n  # With heap profiling (Linux - use MALLOC_CONF):\n";
-    std::cerr << "  MALLOC_CONF=prof:true " << prog_name << " --profile /tmp/p_ <<< 'SELECT 1;'\n";
+    std::cerr << "\n  # With heap profiling and symbolization (Linux):\n";
+    std::cerr << "  MALLOC_CONF=prof:true,lg_prof_sample:0 " << prog_name << " --profile /tmp/p_ --symbolize <<< 'SELECT 1;'\n";
 }
 
 void printProfilingStatus()
@@ -252,6 +252,7 @@ try
 
     std::string profile_prefix;
     bool enable_profiling = false;
+    bool enable_symbolize = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -260,6 +261,10 @@ try
         {
             profile_prefix = argv[++i];
             enable_profiling = true;
+        }
+        else if (arg == "--symbolize")
+        {
+            enable_symbolize = true;
         }
         else if (arg == "--help" || arg == "-h")
         {
@@ -272,6 +277,12 @@ try
             printUsage(argv[0]);
             return 1;
         }
+    }
+
+    if (enable_symbolize && !enable_profiling)
+    {
+        std::cerr << "Error: --symbolize requires --profile\n";
+        return 1;
     }
 
     std::string query = readQuery();
@@ -305,6 +316,10 @@ try
                 return 1;
             }
         }
+
+        /// Enable per-thread profiling (ClickHouse jemalloc defaults to prof_thread_active_init:false)
+        bool thread_active = true;
+        mallctl("thread.prof.active", nullptr, nullptr, &thread_active, sizeof(thread_active));
 
         /// Reset profiler and dump initial state
         resetProfiler();
@@ -345,6 +360,16 @@ try
     {
         std::cerr << "Profile before: " << profile_before_path << "\n";
         std::cerr << "Profile after:  " << profile_after_path << "\n";
+
+        if (enable_symbolize)
+        {
+            std::string sym_before = profile_before_path + ".sym";
+            std::string sym_after = profile_after_path + ".sym";
+            Jemalloc::symbolizeHeapProfile(profile_before_path, sym_before);
+            Jemalloc::symbolizeHeapProfile(profile_after_path, sym_after);
+            std::cerr << "Symbolized before: " << sym_before << "\n";
+            std::cerr << "Symbolized after:  " << sym_after << "\n";
+        }
     }
 
     return 0;
