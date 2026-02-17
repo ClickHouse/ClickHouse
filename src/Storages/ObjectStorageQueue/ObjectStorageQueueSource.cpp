@@ -65,7 +65,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNKNOWN_EXCEPTION;
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
