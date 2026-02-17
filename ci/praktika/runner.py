@@ -135,12 +135,10 @@ class Runner:
             # Settings.CI_CONFIG_JOB_NAME initializes the workflow environment by reading it
             # directly from the GitHub context. For workflows without this config job, each
             # job reads the environment from the GitHub context independently.
-            print("Read GH Environment from GH context")
             env = _Environment.from_env()
         else:
             print("Read GH Environment from workflow data")
             env = _Environment.from_workflow_data()
-            print("REMOVEME _setup_env", Info().env.WORKFLOW_CONFIG)
 
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
@@ -270,7 +268,10 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if job.name != Settings.CI_CONFIG_JOB_NAME:
+        if (
+            job.name == Settings.CI_CONFIG_JOB_NAME
+            or _workflow.jobs[0].name != Settings.CI_CONFIG_JOB_NAME
+        ):
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
                     RunConfig.from_workflow_data().digest_dockers
