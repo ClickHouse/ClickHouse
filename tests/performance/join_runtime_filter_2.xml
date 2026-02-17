@@ -1,0 +1,26 @@
+<test>
+    <create_query>CREATE TABLE large ( a Int32, b Int32, x String, y String, z String )</create_query>
+    <create_query>CREATE TABLE small ( a Int32, b Int32 )</create_query>
+
+    <fill_query>INSERT INTO large SELECT r, r, randomPrintableASCII(10), randomPrintableASCII(10), randomPrintableASCII(10) FROM (SELECT randUniform(1, 100000000) AS r FROM numbers(100000000))</fill_query>
+    <fill_query>INSERT INTO small SELECT a, a FROM large ORDER BY rand() LIMIT 10000000</fill_query>
+
+    <query>
+        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b < 10000000 SETTINGS enable_join_runtime_filters = 0
+    </query>
+
+    <query>
+        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b < 10000000 SETTINGS enable_join_runtime_filters = 1
+    </query>
+
+    <query>
+        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b < 10000000 AND l.b BETWEEN 1 AND 9999997 SETTINGS enable_join_runtime_filters = 0
+    </query>
+
+    <query>
+        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b < 10000000 AND l.b BETWEEN 1 AND 9999997 SETTINGS enable_join_runtime_filters = 1
+    </query>
+
+    <drop_query>DROP TABLE large</drop_query>
+    <drop_query>DROP TABLE small</drop_query>
+</test>
