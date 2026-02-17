@@ -1641,7 +1641,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, top_n_group_by_limit_pushdown, true, R"(
+    DECLARE(Bool, ordered_group_by_limit_pushdown, true, R"(
 Possible values:
 
 - 0 — Disabled.

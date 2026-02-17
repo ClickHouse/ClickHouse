@@ -145,7 +145,7 @@ namespace Setting
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const SettingsBool top_n_group_by_limit_pushdown;
+    extern const SettingsBool ordered_group_by_limit_pushdown;
 }
 
 namespace ServerSetting
@@ -651,7 +651,7 @@ void addAggregationStep(QueryPlan & query_plan,
         auto applicable = testForAggregationLimitPushdownOptimization(aggregation_analysis_result, query_analysis_result);
         LOG_DEBUG(getLogger("Planner"), "GROUP BY ... ORDER BY ... LIMIT optimization can be applied: {}", applicable);
 
-        if (applicable && settings[Setting::top_n_group_by_limit_pushdown])
+        if (applicable && settings[Setting::ordered_group_by_limit_pushdown])
         {
             aggregator_params.top_n_keys = query_analysis_result.limit_length;
             aggregator_params.top_n_keys_sort_direction = query_analysis_result.sort_description[0].direction; // FIXME
