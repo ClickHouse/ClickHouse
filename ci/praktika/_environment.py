@@ -254,10 +254,8 @@ class _Environment(MetaClasses.Serializable):
 
     @classmethod
     def from_workflow_data(cls) -> "_Environment":
-        print("REMOVEME", "from_workflow_data(cls) -> _Environment")
         with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
             workflow_status_data = json.load(f)
-        print("REMOVEME", workflow_status_data)
         # Access the config job data and parse the JSON string in "data" field
         # Job names are normalized in the workflow status file
         normalized_job_name = Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME)

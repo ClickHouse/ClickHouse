@@ -112,7 +112,6 @@ class Runner:
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):
-        print("REMOVEME _setup_env start")
         # source env file to write data into fs (workflow config json, workflow status json)
         Shell.check(f". {Settings.ENV_SETUP_SCRIPT}", verbose=True, strict=True)
 
@@ -257,8 +256,6 @@ class Runner:
         workers=None,
     ):
         # re-set envs for local run
-        print("REMOVEME 1", Info().env.WORKFLOW_CONFIG)
-
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
@@ -268,10 +265,7 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if (
-            job.name == Settings.CI_CONFIG_JOB_NAME
-            or _workflow.jobs[0].name != Settings.CI_CONFIG_JOB_NAME
-        ):
+        if Info().env.WORKFLOW_CONFIG:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
                     RunConfig.from_workflow_data().digest_dockers
@@ -835,7 +829,6 @@ class Runner:
             )
             try:
                 setup_env_code = self._setup_env(workflow, job)
-                print("REMOVEME 2", Info().env.WORKFLOW_CONFIG)
 
                 # Source the bash script and capture the environment variables
                 res = setup_env_code == 0
@@ -852,7 +845,6 @@ class Runner:
             self.generate_local_run_environment(
                 workflow, job, pr=pr, sha=sha, branch=branch
             )
-        print("REMOVEME 3", Info().env.WORKFLOW_CONFIG)
 
         if res and (not local_run or ((pr or branch) and sha)):
             res = False
