@@ -31,6 +31,22 @@ BOLT_PROFILE_PARALLELISM = 4
 # All LLVM projects for the final toolchain (note: "all" doesn't work with cmake)
 STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
 
+# Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
+# (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
+# self-contained for all ClickHouse cross-compilation targets.
+# Must match triples in cmake/build_clang_builtin.cmake.
+CROSS_BUILTIN_TARGETS = [
+    ("x86_64-unknown-linux-gnu", "Linux"),
+    ("aarch64-unknown-linux-gnu", "Linux"),
+    ("s390x-unknown-linux-gnu", "Linux"),
+    ("powerpc64le-unknown-linux-gnu", "Linux"),
+    ("riscv64-unknown-linux-gnu", "Linux"),
+    ("loongarch64-unknown-linux-gnu", "Linux"),
+    ("x86_64-pc-freebsd13", "FreeBSD"),
+    ("aarch64-unknown-freebsd13", "FreeBSD"),
+    ("powerpc64le-unknown-freebsd13", "FreeBSD"),
+]
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     CLONE_LLVM = "clone_llvm"
@@ -247,6 +263,22 @@ def main():
         clean_dirs(STAGE2_BUILD_DIR, STAGE2_INSTALL_DIR)
         os.makedirs(STAGE2_BUILD_DIR, exist_ok=True)
 
+        # Install binutils-dev for the plugin-api.h header needed to build
+        # LLVMgold.so (required by mold when clang passes --plugin for LTO)
+        results.append(
+            Result.from_commands_run(
+                name="Install binutils-dev",
+                command="apt-get update && apt-get install -y --no-install-recommends binutils-dev",
+            )
+        )
+        res = results[-1].is_ok()
+
+        builtin_targets = ";".join(t for t, _ in CROSS_BUILTIN_TARGETS)
+        builtin_cmake_args = " ".join(
+            f"-DBUILTINS_{triple}_CMAKE_SYSTEM_NAME={system}"
+            for triple, system in CROSS_BUILTIN_TARGETS
+        )
+
         cmake_cmd = (
             f"cmake -G Ninja"
             f' -DLLVM_ENABLE_PROJECTS="{STAGE2_LLVM_PROJECTS}"'
@@ -263,6 +295,9 @@ def main():
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=OFF"
             f" -DLLVM_ENABLE_ZSTD=OFF"
+            f" -DLLVM_BINUTILS_INCDIR=/usr/include"
+            f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
+            f" {builtin_cmake_args}"
             f" -DCMAKE_INSTALL_PREFIX={STAGE2_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE2_BUILD_DIR}"

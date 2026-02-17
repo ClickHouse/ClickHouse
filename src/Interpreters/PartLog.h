@@ -74,7 +74,7 @@ struct PartLogElement
     String path_on_disk;
     Strings deduplication_block_ids;
 
-    MergeTreeDataPartType part_type;
+    MergeTreeDataPartFormat part_format;
 
     /// Size of the part
     UInt64 rows = 0;

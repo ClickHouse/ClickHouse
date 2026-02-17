@@ -569,8 +569,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     /// In Replicated databases, if we drop an MV first, its dropInnerTableIfAny() tries to
                     /// drop the inner table via executeDropQuery which fails because the replicated DDL path
                     /// rejects secondary queries. Dropping inner tables first makes dropInnerTableIfAny() a no-op.
-                    bool a_is_inner = a.first.table_name.starts_with(".inner_id.") || a.first.table_name.starts_with(".inner.");
-                    bool b_is_inner = b.first.table_name.starts_with(".inner_id.") || b.first.table_name.starts_with(".inner.");
+                    /// Note: refreshable MVs also create `.tmp.inner_id.*` temporary tables during refresh,
+                    /// and `dropInnerTableIfAny` drops those too, so they must also be classified as inner.
+                    auto is_inner_table_name = [](const String & name)
+                    {
+                        return name.starts_with(".inner_id.") || name.starts_with(".inner.")
+                            || name.starts_with(".tmp.inner_id.") || name.starts_with(".tmp.inner.");
+                    };
+                    bool a_is_inner = is_inner_table_name(a.first.table_name);
+                    bool b_is_inner = is_inner_table_name(b.first.table_name);
                     if (a_is_inner != b_is_inner)
                         return a_is_inner;
 
