@@ -99,9 +99,10 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.other_prefix;
     auto expression = std::make_shared<ExpressionActions>(actions_dag.clone());
-    expression->describeActions(settings.out, prefix);
+    if (settings.verbose)
+        expression->describeActions(settings.out, prefix);
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const

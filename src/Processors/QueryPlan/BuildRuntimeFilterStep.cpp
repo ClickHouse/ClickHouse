@@ -188,7 +188,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
 
 void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    const std::string & prefix = format_settings.other_prefix;
     format_settings.out
         << prefix << "Filter id: " << filter_name << '\n'
         << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';

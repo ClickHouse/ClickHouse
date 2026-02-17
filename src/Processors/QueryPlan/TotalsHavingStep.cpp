@@ -112,28 +112,28 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
-    settings.out << prefix << "Filter column: " << filter_column_name;
-    if (remove_filter)
-        settings.out << " (removed)";
-    settings.out << '\n';
-    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
+        const String & prefix = settings.other_prefix;
+        settings.out << prefix << "Filter column: " << filter_column_name;
+        if (remove_filter)
+            settings.out << " (removed)";
+        settings.out << '\n';
+        settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
-    if (actions_dag)
-    {
-        bool first = true;
         if (actions_dag)
         {
-            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
-            for (const auto & action : expression->getActions())
+            bool first = true;
+            if (actions_dag)
             {
-                settings.out << prefix << (first ? "Actions: "
-                                                : "         ");
-                first = false;
-                settings.out << action.toString() << '\n';
+                auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+                for (const auto & action : expression->getActions())
+                {
+                    settings.out << prefix << (first ? "Actions: "
+                                                    : "         ");
+                    first = false;
+                    settings.out << action.toString() << '\n';
+                }
             }
         }
-    }
 }
 
 void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
