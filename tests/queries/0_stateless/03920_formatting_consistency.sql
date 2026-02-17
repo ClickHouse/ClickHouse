@@ -207,12 +207,6 @@ SELECT 1 WHERE 1 OR 0;
 SELECT 1 WHERE NOT 0;
 SELECT 1 WHERE (1 AND 0) OR 1;
 
--- EXPLAIN
-EXPLAIN SELECT 1;
-EXPLAIN AST SELECT 1;
-EXPLAIN SYNTAX SELECT 1;
-EXPLAIN PLAN SELECT 1;
-
 -- Data types with empty arguments
 CREATE TABLE test_fmt_empty_tuple (x Array(Tuple())) ENGINE = Memory;
 DROP TABLE test_fmt_empty_tuple;

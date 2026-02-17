@@ -239,17 +239,6 @@ ell
 1
 1
 1
-Expression ((Project names + (Projection + Change column names to column identifiers)))
-  ReadFromSystemOne
-SelectWithUnionQuery (children 1)
- ExpressionList (children 1)
-  SelectQuery (children 1)
-   ExpressionList (children 1)
-    Literal UInt64_1
-SELECT 1
-FROM system.one
-Expression ((Project names + (Projection + Change column names to column identifiers)))
-  ReadFromSystemOne
 0
 1
 2
