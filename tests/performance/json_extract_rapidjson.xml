@@ -21,11 +21,11 @@
         <allow_simdjson>0</allow_simdjson>
     </settings>
 
-    <query>SELECT 'rapidjson-1', count() FROM zeros(440000) WHERE NOT ignore(JSONExtractString(materialize({json}), 'sparam'))</query>
-    <query>SELECT 'rapidjson-2', count() FROM zeros(440000) WHERE NOT ignore(JSONExtractString(materialize({json}), 'sparam', 'nested_1'))</query>
-    <query>SELECT 'rapidjson-3', count() FROM zeros(440000) WHERE NOT ignore(JSONExtractInt(materialize({json}), 'nparam'))</query>
-    <query>SELECT 'rapidjson-4', count() FROM zeros(440000) WHERE NOT ignore(JSONExtractUInt(materialize({json}), 'nparam'))</query>
-    <query>SELECT 'rapidjson-5', count() FROM zeros(440000) WHERE NOT ignore(JSONExtractFloat(materialize({json}), 'fparam'))</query>
+    <query>SELECT 'rapidjson-1', count() FROM zeros(860000) WHERE NOT ignore(JSONExtractString(materialize({json}), 'sparam'))</query>
+    <query>SELECT 'rapidjson-2', count() FROM zeros(860000) WHERE NOT ignore(JSONExtractString(materialize({json}), 'sparam', 'nested_1'))</query>
+    <query>SELECT 'rapidjson-3', count() FROM zeros(860000) WHERE NOT ignore(JSONExtractInt(materialize({json}), 'nparam'))</query>
+    <query>SELECT 'rapidjson-4', count() FROM zeros(860000) WHERE NOT ignore(JSONExtractUInt(materialize({json}), 'nparam'))</query>
+    <query>SELECT 'rapidjson-5', count() FROM zeros(860000) WHERE NOT ignore(JSONExtractFloat(materialize({json}), 'fparam'))</query>
 
     <query>SELECT 'rapidjson-6', count() FROM zeros(440000) WHERE NOT ignore(JSONExtractString(materialize({long_json}), 'sparam'))</query>
     <query>SELECT 'rapidjson-7', count() FROM zeros(440000) WHERE NOT ignore(JSONExtractString(materialize({long_json}), 'sparam', 'nested_1'))</query>

@@ -1,8 +1,8 @@
 <test>
-    <query>SELECT if(number % 100, number, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(5000000) FORMAT Null</query>
-    <query>SELECT multiIf(number % 100, number, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(5000000) FORMAT Null</query>
-    <query>SELECT and(number % 100 == 0, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(5000000) FORMAT Null</query>
-    <query>SELECT or(number % 100, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(5000000) FORMAT Null</query>
+    <query>SELECT if(number % 100, number, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(25000000) FORMAT Null</query>
+    <query>SELECT multiIf(number % 100, number, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(25000000) FORMAT Null</query>
+    <query>SELECT and(number % 100 == 0, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(25000000) FORMAT Null</query>
+    <query>SELECT or(number % 100, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(25000000) FORMAT Null</query>
 
     <query>SELECT if(number % 2, isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(400000) FORMAT Null</query>
     <query>SELECT and(not isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100)), isValidUTF8(repeat(toString(number + 20), 100))) FROM numbers(400000) FORMAT Null</query>
@@ -23,7 +23,7 @@
     <query>SELECT or(not isValidUTF8(repeat(toString(number), 100)), not isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 100))) from numbers(400000) FORMAT Null</query>
 
     <query>SELECT if(number % 2, arraySum(bitPositionsToArray(number)), arraySum(bitPositionsToArray(number + 1))) FROM numbers(5000000) FORMAT Null</query>
-    <query>SELECT if(number % 5 == 0, arraySum(bitPositionsToArray(number)), 0) from numbers(5000000) FORMAT Null</query>
-    <query>SELECT if(number % 2, number + intDiv(number, number + 1), 3 + intDiv(number, number + 1)), if(number % 3 = 0, number, 4 + intDiv(number, number + 1)) FROM numbers(5000000) FORMAT Null</query>
+    <query>SELECT if(number % 5 == 0, arraySum(bitPositionsToArray(number)), 0) from numbers(22000000) FORMAT Null</query>
+    <query>SELECT if(number % 2, number + intDiv(number, number + 1), 3 + intDiv(number, number + 1)), if(number % 3 = 0, number, 4 + intDiv(number, number + 1)) FROM numbers(22000000) FORMAT Null</query>
     <query>SELECT if(number % 5 == 0, toInt8OrZero(toString(number)), Null) FROM numbers(32000000) FORMAT Null</query>
 </test>
