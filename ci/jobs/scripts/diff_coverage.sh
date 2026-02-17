@@ -42,8 +42,8 @@ cd ci/tmp
 
 mv llvm_coverage.info current_llvm_coverage.info
 
-CURRENT_COMMIT=$(git rev-parse HEAD)
-BASE_COMMIT=$(git merge-base HEAD origin/master)
+CURRENT_COMMIT=${CURRENT_COMMIT}
+BASE_COMMIT=${BASE_COMMIT}
 
 # Try to find .info file from S3, checking up to 10 ancestor commits
 FOUND=0
