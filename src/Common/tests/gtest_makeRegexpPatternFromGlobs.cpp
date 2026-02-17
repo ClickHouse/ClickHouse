@@ -276,9 +276,25 @@ TEST(Common, BetterGlobExpand)
     EXPECT_EQ(BetterGlob::GlobString("file?.csv").expand(), V({"file?.csv"}));
     EXPECT_EQ(BetterGlob::GlobString("{a,b}/*.csv").expand(), V({"a/*.csv", "b/*.csv"}));
 
-    // Ranges are passed through as literal text.
+    // Ranges are passed through as literal text by default (expand_ranges=false).
     EXPECT_EQ(BetterGlob::GlobString("f{1..9}.csv").expand(), V({"f{1..9}.csv"}));
     EXPECT_EQ(BetterGlob::GlobString("{a,b}{1..3}.csv").expand(), V({"a{1..3}.csv", "b{1..3}.csv"}));
+
+    // Ranges are expanded into concrete values with expand_ranges=true.
+    EXPECT_EQ(BetterGlob::GlobString("f{1..3}.csv").expand(1000, true), V({"f1.csv", "f2.csv", "f3.csv"}));
+    EXPECT_EQ(BetterGlob::GlobString("f{1..1}.csv").expand(1000, true), V({"f1.csv"}));
+    EXPECT_EQ(BetterGlob::GlobString("f{3..1}.csv").expand(1000, true), V({"f1.csv", "f2.csv", "f3.csv"}));
+
+    // Ranges with zero-padding.
+    EXPECT_EQ(BetterGlob::GlobString("f{01..03}.csv").expand(1000, true), V({"f01.csv", "f02.csv", "f03.csv"}));
+    EXPECT_EQ(BetterGlob::GlobString("f{001..003}.csv").expand(1000, true), V({"f001.csv", "f002.csv", "f003.csv"}));
+
+    // Range + enum cartesian product.
+    EXPECT_EQ(BetterGlob::GlobString("{a,b}{1..3}.csv").expand(1000, true), V({"a1.csv", "a2.csv", "a3.csv", "b1.csv", "b2.csv", "b3.csv"}));
+
+    // Range cardinality guard.
+    EXPECT_THROW(BetterGlob::GlobString("f{1..2000}.csv").expand(100, true), DB::Exception);
+    EXPECT_NO_THROW(BetterGlob::GlobString("f{1..100}.csv").expand(1000, true));
 
     // Parity with old expandSelectionGlob.
     EXPECT_EQ(BetterGlob::GlobString("file{1,2,3}").expand(), expandSelectionGlob("file{1,2,3}"));
@@ -289,6 +305,17 @@ TEST(Common, BetterGlobExpand)
     // Cardinality guard.
     EXPECT_THROW(BetterGlob::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(100), DB::Exception);
     EXPECT_NO_THROW(BetterGlob::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(1000));
+
+    // isFullyExpandable tests.
+    EXPECT_TRUE(BetterGlob::GlobString("{a,b,c}").isFullyExpandable());
+    EXPECT_TRUE(BetterGlob::GlobString("{a,b}{1,2}").isFullyExpandable());
+    EXPECT_TRUE(BetterGlob::GlobString("prefix{a,b}suffix").isFullyExpandable());
+    EXPECT_TRUE(BetterGlob::GlobString("f{1..9}.csv").isFullyExpandable());
+    EXPECT_TRUE(BetterGlob::GlobString("{a,b}{1..3}.csv").isFullyExpandable());
+    EXPECT_FALSE(BetterGlob::GlobString("file.csv").isFullyExpandable());       // no globs at all
+    EXPECT_FALSE(BetterGlob::GlobString("*.csv").isFullyExpandable());          // wildcard
+    EXPECT_FALSE(BetterGlob::GlobString("{a,b}/*.csv").isFullyExpandable());    // wildcard
+    EXPECT_FALSE(BetterGlob::GlobString("file?.csv").isFullyExpandable());      // ? wildcard
 }
 
 /// Test suite for GlobString::matches() — direct AST-based matching without regex.
@@ -433,7 +460,26 @@ INSTANTIATE_TEST_SUITE_P(
         // --- Double brace ---
         std::make_tuple("*_{{a,b,c,d}}/?.csv", "x_{a}/1.csv", true),
         std::make_tuple("*_{{a,b,c,d}}/?.csv", "x_{d}/Z.csv", true),
-        std::make_tuple("*_{{a,b,c,d}}/?.csv", "x_{e}/1.csv", false)
+        std::make_tuple("*_{{a,b,c,d}}/?.csv", "x_{e}/1.csv", false),
+
+        // --- Consecutive ranges (backtracking) ---
+        std::make_tuple("f{0..9}{0..9}", "f00", true),
+        std::make_tuple("f{0..9}{0..9}", "f59", true),
+        std::make_tuple("f{0..9}{0..9}", "f99", true),
+        std::make_tuple("f{0..9}{0..9}", "f0", false),    // only 1 digit total, need 2
+        std::make_tuple("f{0..9}{0..9}", "f100", false),   // 3 digits but ranges only produce 2
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f000", true),
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f123", true),
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f999", true),
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f12", false),   // only 2 digits
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f1234", false), // 4 digits
+        std::make_tuple("/file{0..9}{0..9}{0..9}", "/file000", true),
+        std::make_tuple("/file{0..9}{0..9}{0..9}", "/file444", true),
+        std::make_tuple("/file{0..9}{0..9}{0..9}", "/file1", false),
+        std::make_tuple("f{0..10}{0..10}", "f00", true),
+        std::make_tuple("f{0..10}{0..10}", "f1010", true),
+        std::make_tuple("f{0..10}{0..10}", "f55", true),
+        std::make_tuple("f{0..10}{0..10}", "f110", true)  // 1+10: both in range
     )
 );
 
@@ -491,6 +537,13 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple("{a,b}/*.csv", V({"a/data.csv", "b/x.csv"}), V({"c/data.csv", "a/b/c.csv"})),
         std::make_tuple("*_{{a,b,c,d}}/?.csv",
             V({"x_{a}/1.csv", "test_{d}/Z.csv"}),
-            V({"x_{e}/1.csv", "x_{a}/12.csv"}))
+            V({"x_{e}/1.csv", "x_{a}/12.csv"})),
+        // Consecutive ranges — test backtracking
+        std::make_tuple("/file{0..9}{0..9}{0..9}",
+            V({"/file000", "/file111", "/file444", "/file999"}),
+            V({"/file1", "/file12", "/file1000", "/filexyz"})),
+        std::make_tuple("f{0..10}{0..10}",
+            V({"f00", "f55", "f1010", "f09", "f110"}),
+            V({"f"}))
     )
 );

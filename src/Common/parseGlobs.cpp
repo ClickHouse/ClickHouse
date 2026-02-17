@@ -408,7 +408,7 @@ std::string GlobString::asRegex() const
     return result;
 }
 
-std::vector<std::string> GlobString::expand(size_t max_expansion) const
+std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ranges) const
 {
     std::vector<std::string> result;
     result.emplace_back();
@@ -432,6 +432,43 @@ std::vector<std::string> GlobString::expand(size_t max_expansion) const
             for (const auto & prefix : result)
                 for (const auto & value : enum_values)
                     expanded.push_back(prefix + std::string(value));
+
+            result = std::move(expanded);
+        }
+        else if (expand_ranges && expression.type() == ExpressionType::RANGE)
+        {
+            const auto & range = std::get<Range>(expression.getData());
+            const size_t lo = std::min(range.start, range.end);
+            const size_t hi = std::max(range.start, range.end);
+            const size_t range_size = hi - lo + 1;
+
+            if (result.size() * range_size > max_expansion)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Glob expansion would produce too many paths ({} * {} > {}). "
+                    "Consider simplifying the glob pattern.",
+                    result.size(), range_size, max_expansion);
+
+            /// Determine zero-padding width: if either endpoint is zero-padded with >1 digit,
+            /// use the max digit count; otherwise no padding (values are unpadded).
+            const size_t pad_width = ((range.start_zero_padded && range.start_digit_count > 1)
+                                       || (range.end_zero_padded && range.end_digit_count > 1))
+                ? std::max(range.start_digit_count, range.end_digit_count)
+                : 0;
+
+            std::vector<std::string> expanded;
+            expanded.reserve(result.size() * range_size);
+
+            for (const auto & prefix : result)
+            {
+                for (size_t value = lo; value <= hi; ++value)
+                {
+                    if (pad_width > 0)
+                        expanded.push_back(prefix + fmt::format("{:0>{}}", value, pad_width));
+                    else
+                        expanded.push_back(prefix + fmt::format("{}", value));
+                }
+            }
 
             result = std::move(expanded);
         }
@@ -532,39 +569,57 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
                     ? std::max(range.start_digit_count, range.end_digit_count)
                     : 0;
 
-                /// Find the longest run of digits starting at `pos`.
-                size_t digit_start = pos;
-                while (pos < candidate.size() && candidate[pos] >= '0' && candidate[pos] <= '9')
-                    ++pos;
-                size_t digit_count = pos - digit_start;
-
-                if (digit_count == 0)
-                    return false;
-
-                /// Parse the numeric value.
-                size_t value = 0;
-                for (size_t i = digit_start; i < pos; ++i)
-                    value = value * 10 + static_cast<size_t>(candidate[i] - '0');
-
-                /// Check value is within range.
-                if (value < lo || value > hi)
-                    return false;
-
-                /// Check zero-padding width matches.
                 if (pad_width > 0)
                 {
-                    if (digit_count != pad_width)
+                    /// Zero-padded range: consume exactly pad_width digits.
+                    if (pos + pad_width > candidate.size())
                         return false;
+                    for (size_t i = 0; i < pad_width; ++i)
+                        if (candidate[pos + i] < '0' || candidate[pos + i] > '9')
+                            return false;
+
+                    size_t value = 0;
+                    for (size_t i = 0; i < pad_width; ++i)
+                        value = value * 10 + static_cast<size_t>(candidate[pos + i] - '0');
+
+                    if (value < lo || value > hi)
+                        return false;
+
+                    pos += pad_width;
+                    ++expr_idx;
                 }
                 else
                 {
-                    /// No padding — the number must not have leading zeros
-                    /// (unless the value is 0 itself, in which case exactly one digit is expected).
-                    if (digit_count > 1 && candidate[digit_start] == '0')
-                        return false;
-                }
+                    /// Non-padded range: try consuming different digit lengths (backtracking).
+                    /// A non-padded number cannot have leading zeros (except "0" itself).
+                    ++expr_idx;
 
-                ++expr_idx;
+                    /// Find the maximum run of consecutive digits.
+                    size_t max_digits = 0;
+                    while (pos + max_digits < candidate.size()
+                           && candidate[pos + max_digits] >= '0'
+                           && candidate[pos + max_digits] <= '9')
+                        ++max_digits;
+
+                    /// Try each possible digit count from 1 to max_digits.
+                    for (size_t digit_count = 1; digit_count <= max_digits; ++digit_count)
+                    {
+                        /// Leading zeros not allowed (except for single-digit "0").
+                        if (digit_count > 1 && candidate[pos] == '0')
+                            break; /// all longer counts would also have a leading zero
+
+                        size_t value = 0;
+                        for (size_t i = 0; i < digit_count; ++i)
+                            value = value * 10 + static_cast<size_t>(candidate[pos + i] - '0');
+
+                        if (value >= lo && value <= hi)
+                        {
+                            if (matchesImpl(candidate, pos + digit_count, expr_idx))
+                                return true;
+                        }
+                    }
+                    return false;
+                }
                 break;
             }
 
