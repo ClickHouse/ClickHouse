@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-random-detach
 
 DROP DICTIONARY IF EXISTS TestTblDict;
 DROP VIEW IF EXISTS TestTbl_view;
