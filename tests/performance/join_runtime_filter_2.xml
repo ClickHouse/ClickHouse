@@ -6,19 +6,19 @@
     <fill_query>INSERT INTO small SELECT a, a FROM large ORDER BY rand() LIMIT 10000000</fill_query>
 
     <query>
-        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b < 10000000 SETTINGS enable_join_runtime_filters = 0
+        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b &lt; 10000000 SETTINGS enable_join_runtime_filters = 0
     </query>
 
     <query>
-        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b < 10000000 SETTINGS enable_join_runtime_filters = 1
+        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b &lt; 10000000 SETTINGS enable_join_runtime_filters = 1
     </query>
 
     <query>
-        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b < 10000000 AND l.b BETWEEN 1 AND 9999997 SETTINGS enable_join_runtime_filters = 0
+        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b &lt; 10000000 AND l.b BETWEEN 1 AND 9999997 SETTINGS enable_join_runtime_filters = 0
     </query>
 
     <query>
-        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b < 10000000 AND l.b BETWEEN 1 AND 9999997 SETTINGS enable_join_runtime_filters = 1
+        SELECT count(*) FROM large l INNER JOIN small s ON l.a = s.a WHERE s.b &lt; 10000000 AND l.b BETWEEN 1 AND 9999997 SETTINGS enable_join_runtime_filters = 1
     </query>
 
     <drop_query>DROP TABLE large</drop_query>
