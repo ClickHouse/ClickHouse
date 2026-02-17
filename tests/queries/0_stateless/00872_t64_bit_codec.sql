@@ -1,3 +1,4 @@
+-- Tags: no-random-detach
 DROP TABLE IF EXISTS t64;
 
 CREATE TABLE t64
