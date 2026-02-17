@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnNullable.h>
+#include <Core/Types.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 
@@ -12,6 +13,25 @@ namespace DB
   * @returns ownership column of null_map.
   */
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map);
+
+/** Returns whether `type` can be wrapped into `Nullable(...)` with current
+  * `allow_experimental_nullable_tuple_type` setting.
+  * For non-tuple types this matches `IDataType::canBeInsideNullable()`.
+  */
+bool canBeInsideNullableBySettings(const DataTypePtr & type);
+
+/** Same check as `canBeInsideNullableBySettings()`, but for
+  * `LowCardinality(T)` checks whether nested `T` can be nullable by
+  * settings, i.e. whether wrapping into `LowCardinality(Nullable(T))` is
+  * possible.
+  */
+bool canBeInsideNullableOrLowCardinalityNullableBySettings(const DataTypePtr & type);
+
+/** Wraps `type` into `Nullable(...)` or `LowCardinality(Nullable(...))` when
+  * allowed by type capabilities and current `allow_experimental_nullable_tuple_type` setting.
+  * Returns `type` unchanged when wrapping is not allowed.
+  */
+DataTypePtr makeNullableOrLowCardinalityNullableSafeBySettings(const DataTypePtr & type);
 
 struct NullableSubcolumnCreator : public ISerialization::ISubcolumnCreator
 {

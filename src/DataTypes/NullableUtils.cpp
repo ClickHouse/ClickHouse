@@ -1,13 +1,51 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool allow_experimental_nullable_tuple_type;
+}
+
+static bool isNullableTupleEnabled()
+{
+    auto context = CurrentThread::getQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+    return context && context->getSettingsRef()[Setting::allow_experimental_nullable_tuple_type];
+}
+
+bool canBeInsideNullableBySettings(const DataTypePtr & type)
+{
+    if (isTuple(type))
+        return isNullableTupleEnabled();
+
+    return type->canBeInsideNullable();
+}
+
+bool canBeInsideNullableOrLowCardinalityNullableBySettings(const DataTypePtr & type)
+{
+    return canBeInsideNullableBySettings(removeLowCardinality(type));
+}
+
+DataTypePtr makeNullableOrLowCardinalityNullableSafeBySettings(const DataTypePtr & type)
+{
+    if (!canBeInsideNullableOrLowCardinalityNullableBySettings(type))
+        return type;
+
+    return makeNullableOrLowCardinalityNullableSafe(type);
+}
 
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map)
 {
