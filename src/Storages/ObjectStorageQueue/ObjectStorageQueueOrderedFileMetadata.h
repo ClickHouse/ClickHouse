@@ -62,6 +62,11 @@ public:
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser);
 
+    static std::string getPartitionKey(
+        const std::string & file_path,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
+
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
     static void migrateToBuckets(

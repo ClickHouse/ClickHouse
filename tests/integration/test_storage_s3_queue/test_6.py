@@ -810,27 +810,30 @@ def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bu
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue"])
-def test_collision_in_bucketing_mode_with_regex_partitioning(started_cluster, engine_name):
+def test_optimal_bucket_assignment_with_regex_partitioning(started_cluster, engine_name):
     """
-    Test that consistent hashing reduces collision probability compared to simple modulo.
+    Test that optimal bucket assignment achieves optimal distribution for partitions.
 
-    This test uses production-like hostnames that had collisions with simple modulo hashing:
-    - c-cluster-01-server-xscp10r-0  → bucket 0 (old approach)
-    - c-cluster-01-server-u1s3cbc-0  → bucket 0 (old approach) (COLLISION)
-    - c-cluster-01-server-f00dva3-0  → bucket 13 (old approach)
+    With bucketing_mode='partition', the algorithm:
+    1. Scans existing buckets to find where partition is already assigned
+    2. For NEW partitions: claims next available free bucket
+    3. Fallback to hash when all buckets occupied
 
-    Old approach: Simple modulo of siphash64(hostname).
-    New approach: Consistent hashing with 500 virtual nodes per bucket.
-    Collision probability is significantly reduced, and each hostname should get its own bucket.
+    This ensures:
+    - Each partition always maps to exactly ONE bucket
+    - When num_partitions <= num_buckets: each partition gets its own bucket
+    - When num_partitions > num_buckets: gracefully degrades to hash distribution
+
+    This test verifies: 3 hostnames + 16 buckets → 3 buckets used (one per hostname).
     """
     instance = started_cluster.instances["instance"]
 
-    table_name = f"test_consistent_hashing_{engine_name}_{generate_random_string()}"
+    table_name = f"test_optimal_partition_distribution_{engine_name}_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
 
-    # Use production-like hostnames that would collide with simple siphash64 of hostname.
+    # Use production-like hostnames
     # Filename pattern: hostname_timestamp_sequence.csv
     # Example: c-cluster-01-server-xscp10r-0_20251217T100000.000000Z_0001.csv
     # Extract hostname: everything before first underscore
@@ -840,12 +843,12 @@ def test_collision_in_bucketing_mode_with_regex_partitioning(started_cluster, en
     num_buckets = 16
     processing_threads_num = num_buckets
 
-    # Production-like hostnames with random suffixes that collide with simple modulo % 16
-    # These specific hostnames both hash to bucket 0 with simple modulo
+    # Each of these hostnames will get a unique bucket via hybrid assignment which are selected in a way that
+    # they will collide if we used hash-based assignment.
     hostnames = [
-        'c-cluster-01-server-xscp10r-0',  # Old: bucket 0
-        'c-cluster-01-server-u1s3cbc-0',  # Old: bucket 0 (COLLISION!)
-        'c-cluster-01-server-f00dva3-0',  # Old: bucket 13
+        'c-cluster-01-server-xscp10r-0',
+        'c-cluster-01-server-u1s3cbc-0',
+        'c-cluster-01-server-f00dva3-0',
     ]
 
     # Create files for each hostname
@@ -872,7 +875,7 @@ def test_collision_in_bucketing_mode_with_regex_partitioning(started_cluster, en
             "polling_backoff_ms": 1000,
             "processing_threads_num": processing_threads_num,
             "buckets": num_buckets,
-            "bucketing_mode": "partition",  # Uses consistent hashing
+            "bucketing_mode": "partition",
         },
         engine_name=engine_name,
         partitioning_mode="regex",
@@ -929,7 +932,7 @@ def test_collision_in_bucketing_mode_with_regex_partitioning(started_cluster, en
                 hostname_to_buckets[partition_key] = []
             hostname_to_buckets[partition_key].append(bucket_id)
 
-    print(f"\nConsistent hashing bucket assignment:")
+    print(f"\nHybrid bucket assignment:")
     for hostname, bucket_ids in sorted(hostname_to_buckets.items()):
         print(f"  {hostname} → bucket(s) {bucket_ids}")
 
@@ -937,16 +940,14 @@ def test_collision_in_bucketing_mode_with_regex_partitioning(started_cluster, en
     assert len(hostname_to_buckets) == len(hostnames), \
         f"Expected {len(hostnames)} partitions, got {len(hostname_to_buckets)}: {list(hostname_to_buckets.keys())}"
 
-    # With consistent hashing, each hostname should map to EXACTLY ONE bucket
-    # (no collisions within the same partition key)
+    # Each partition MUST map to EXACTLY ONE bucket (consistency guarantee)
     for hostname, bucket_ids in hostname_to_buckets.items():
         assert len(bucket_ids) == 1, \
             f"Hostname '{hostname}' found in multiple buckets {bucket_ids}. " \
             f"This should not happen - each partition should map to exactly one bucket."
 
-    # With 3 hostnames and 16 buckets using consistent hashing,
-    # collision probability is very low (~1%), so we expect 3 unique buckets
+    # With 3 partitions and 16 buckets, expect optimal distribution: 3 unique buckets
     assert len(buckets_with_data) == len(hostnames), \
-        f"Expected {len(hostnames)} unique buckets (one per hostname with consistent hashing), " \
+        f"Expected {len(hostnames)} unique buckets (one per hostname with optimal distribution), " \
         f"but got {len(buckets_with_data)} buckets: {buckets_with_data}. " \
-        f"This suggests a collision occurred, which is unexpected with consistent hashing."
+        f"This indicates the hybrid bucket assignment is not working correctly."

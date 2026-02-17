@@ -82,45 +82,6 @@ namespace
         return partitioning_mode != ObjectStorageQueuePartitioningMode::NONE;
     }
 
-    /// Consistent hashing implementation to reduce collision probability
-    /// Uses a hash ring with virtual nodes for better distribution
-    ObjectStorageQueueOrderedFileMetadata::Bucket consistentHash(
-        const std::string & key,
-        size_t buckets_num)
-    {
-        /// Number of virtual nodes per bucket for better distribution
-        /// Higher values = better distribution but more computation
-        constexpr size_t VIRTUAL_NODES_PER_BUCKET = 500;
-
-        uint64_t key_hash = sipHash64(key);
-        uint64_t min_distance = std::numeric_limits<uint64_t>::max();
-        size_t selected_bucket = 0;
-
-        /// Find the closest virtual node on the ring
-        for (size_t bucket = 0; bucket < buckets_num; ++bucket)
-        {
-            for (size_t vnode = 0; vnode < VIRTUAL_NODES_PER_BUCKET; ++vnode)
-            {
-                /// Create virtual node identifier: "bucket_id:vnode_id"
-                std::string vnode_id = std::to_string(bucket) + ":" + std::to_string(vnode);
-                uint64_t vnode_hash = sipHash64(vnode_id);
-
-                /// Calculate distance on the ring (with wraparound)
-                uint64_t distance = (vnode_hash >= key_hash)
-                    ? (vnode_hash - key_hash)
-                    : (std::numeric_limits<uint64_t>::max() - key_hash + vnode_hash);
-
-                if (distance < min_distance)
-                {
-                    min_distance = distance;
-                    selected_bucket = bucket;
-                }
-            }
-        }
-
-        return selected_bucket;
-    }
-
     ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPathImpl(
         const std::string & path,
         size_t buckets_num,
@@ -132,11 +93,12 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets number cannot be zero");
 
         /// Use partition key for bucketing when bucketing_mode is PARTITION
-        /// With consistent hashing to minimize collision probability
+        /// Note: The hybrid optimal assignment is handled in ObjectStorageQueueMetadata::getBucketForPath()
+        /// This is only used as a fallback for static calls
         if (bucketing_mode == ObjectStorageQueueBucketingMode::PARTITION)
         {
             auto partition_key = getPartitionKey(path, partitioning_mode, parser);
-            return consistentHash(partition_key, buckets_num);
+            return sipHash64(partition_key) % buckets_num;
         }
 
         /// Default hash the full file path
@@ -506,6 +468,14 @@ ObjectStorageQueueOrderedFileMetadata::getBucketForPath(
     const ObjectStorageQueueFilenameParser * parser)
 {
     return getBucketForPathImpl(path_, buckets_num, bucketing_mode, partitioning_mode, parser);
+}
+
+std::string ObjectStorageQueueOrderedFileMetadata::getPartitionKey(
+    const std::string & file_path,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser)
+{
+    return DB::getPartitionKey(file_path, partitioning_mode, parser);
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(

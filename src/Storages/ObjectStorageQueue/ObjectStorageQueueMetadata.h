@@ -237,6 +237,13 @@ private:
 
     FileStatusesCache local_file_statuses;
 
+    /// Cache for partition -> bucket mappings (for optimal distribution in PARTITION mode)
+    mutable std::mutex partition_bucket_cache_mutex;
+    mutable std::unordered_map<std::string, Bucket> partition_bucket_cache;
+
+    /// Find or claim buckets only when using bucketing mode = PARTITION. Scans existing buckets, then claims a free one.
+    Bucket findOrClaimBucketForPartition(const std::string & partition_key) const;
+
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().
     NameSet active_servers;
