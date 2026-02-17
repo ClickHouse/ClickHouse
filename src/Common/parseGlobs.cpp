@@ -449,11 +449,13 @@ void GlobString::parse()
         }
         else if (input[position] == '{')  /// NOLINT
         {
-            /// Handle double braces "{{" as a literal '{' character.
+            /// Handle double braces "{{" — the first '{' is a literal character,
+            /// and the second '{' starts a new expression (which may be a matcher).
+            /// E.g. "{{a,b,c}}" → literal '{' + enum {a,b,c} + literal '}'.
             if (position + 1 < input.length() && input[position + 1] == '{')
             {
-                expressions.emplace_back("{");
-                position += 2;
+                expressions.emplace_back(input.substr(position, 1));
+                position += 1;
                 continue;
             }
 

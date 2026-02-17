@@ -176,7 +176,7 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_pair("{123}", "(123)"),
         std::make_pair("{test}", "(test)"),
         std::make_pair("{test.tar.gz}", "(test\\.tar\\.gz)"),
-        // std::make_pair("*_{{a,b,c,d}}/?.csv", "[^/]*_\\{(a|b|c|d)\\}/[^/]\\.csv")
+        std::make_pair("*_{{a,b,c,d}}/?.csv", "[^/]*_\\{(a|b|c|d)\\}/[^/]\\.csv"),
 
         std::make_pair("f{1..9}", "f(1|2|3|4|5|6|7|8|9)"),
         std::make_pair("f{0..10}", "f(0|1|2|3|4|5|6|7|8|9|10)"),
