@@ -1,0 +1,11 @@
+<test>
+    <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize(randomString(8))))</query>
+    <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize(randomString(16))))</query>
+    <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize(randomString(32))))</query>
+    <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize(randomString(64))))</query>
+    <query>SELECT count(unhex(materialize(hex(randomString(8))))) FROM numbers(2_000_000)</query>
+    <query>SELECT count(unhex(materialize(hex(randomString(8)) || hex(randomString(8, 1)) ))) FROM numbers(2_000_000)</query>
+    <query>SELECT count(unhex(materialize(hex(randomString(8)) || hex(randomString(8, 1)) || hex(randomString(8, 2)) || hex(randomString(8, 3))))) FROM numbers(2_000_000)</query>
+    <query>SELECT count(unhex(materialize(hex(randomString(8)) || hex(randomString(8, 1)) || hex(randomString(8, 2)) || hex(randomString(8, 3) || hex(randomString(8, 4)) || hex(randomString(8, 5)) || hex(randomString(8, 6)) || hex(randomString(8, 7)))))) FROM numbers(2_000_000)</query>
+
+</test>
