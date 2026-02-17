@@ -807,3 +807,146 @@ def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bu
         # With 3 partitions and 4 buckets, we should use EXACTLY 3 buckets (one per partition)
         assert len(buckets_used) == num_hostnames, \
             f"Expected EXACTLY {num_hostnames} buckets to be used (one per partition), but {len(buckets_used)} were used: {buckets_used}"
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue"])
+def test_collision_in_bucketing_mode_with_regex_partitioning(started_cluster, engine_name):
+    """
+    Test that consistent hashing reduces collision probability compared to simple modulo.
+
+    This test uses production-like hostnames that had collisions with simple modulo hashing:
+    - c-cluster-01-server-xscp10r-0  → bucket 0 (old approach)
+    - c-cluster-01-server-u1s3cbc-0  → bucket 0 (old approach) (COLLISION)
+    - c-cluster-01-server-f00dva3-0  → bucket 13 (old approach)
+
+    Old approach: Simple modulo of siphash64(hostname).
+    New approach: Consistent hashing with 500 virtual nodes per bucket.
+    Collision probability is significantly reduced, and each hostname should get its own bucket.
+    """
+    instance = started_cluster.instances["instance"]
+
+    table_name = f"test_consistent_hashing_{engine_name}_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    # Use production-like hostnames that would collide with simple siphash64 of hostname.
+    # Filename pattern: hostname_timestamp_sequence.csv
+    # Example: c-cluster-01-server-xscp10r-0_20251217T100000.000000Z_0001.csv
+    # Extract hostname: everything before first underscore
+    partition_regex = r'(?P<hostname>[^_]+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)'
+    partition_component = 'hostname'
+
+    num_buckets = 16
+    processing_threads_num = num_buckets
+
+    # Production-like hostnames with random suffixes that collide with simple modulo % 16
+    # These specific hostnames both hash to bucket 0 with simple modulo
+    hostnames = [
+        'c-cluster-01-server-xscp10r-0',  # Old: bucket 0
+        'c-cluster-01-server-u1s3cbc-0',  # Old: bucket 0 (COLLISION!)
+        'c-cluster-01-server-f00dva3-0',  # Old: bucket 13
+    ]
+
+    # Create files for each hostname
+    expected_data = []
+    for idx, hostname in enumerate(hostnames):
+        for seq in range(1, 4):  # 3 files per hostname
+            value = (idx + 1) * 100 + seq
+            filename = f"{files_path}/{hostname}_{20251217}T100000.000000Z_{seq:04d}.csv"
+            content = f"{value},{idx + 1},{seq}\n".encode()
+            put_file_content(started_cluster, engine_name, filename, content)
+            expected_data.append(f"{value},{idx + 1},{seq}")
+
+    # Create table with bucketing_mode='partition'
+    create_table(
+        started_cluster,
+        instance,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "s3queue_loading_retries": 3,
+            "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 5000,
+            "polling_backoff_ms": 1000,
+            "processing_threads_num": processing_threads_num,
+            "buckets": num_buckets,
+            "bucketing_mode": "partition",  # Uses consistent hashing
+        },
+        engine_name=engine_name,
+        partitioning_mode="regex",
+        partition_regex=partition_regex,
+        partition_component=partition_component,
+    )
+    create_mv(instance, table_name, dst_table_name)
+
+    # Wait for table to be created
+    for _ in range(10):
+        try:
+            instance.query(f"EXISTS TABLE {table_name}_mv")
+            break
+        except:
+            time.sleep(0.5)
+
+    # Wait for all files to be processed
+    expected_count = len(hostnames) * 3  # 3 files per hostname
+    for i in range(30):
+        count = int(instance.query(f"SELECT count() FROM {dst_table_name}"))
+        print(f"Progress: {count}/{expected_count}")
+        if count >= expected_count:
+            break
+        time.sleep(1)
+
+    # Verify all files were processed
+    total_count = int(instance.query(f"SELECT count() FROM {dst_table_name}"))
+    assert total_count == expected_count, f"Expected {expected_count} rows, got {total_count}"
+
+    # Verify data correctness
+    data = instance.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1 FORMAT CSV")
+    data_lines = data.strip().split("\n")
+    data_lines.sort()
+    expected_data.sort()
+    assert data_lines == expected_data, f"Data mismatch"
+
+    # Check bucket distribution in ZooKeeper
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Collect which bucket each hostname was assigned to
+    hostname_to_buckets = {}
+    buckets_with_data = set()
+
+    for bucket_id in range(num_buckets):
+        bucket_path = f"{keeper_path}/buckets/{bucket_id}/processed"
+        if not zk.exists(bucket_path):
+            continue
+
+        buckets_with_data.add(bucket_id)
+        partition_keys = zk.get_children(bucket_path)
+        for partition_key in partition_keys:
+            # partition_key is the extracted hostname (without -0 suffix and timestamp)
+            if partition_key not in hostname_to_buckets:
+                hostname_to_buckets[partition_key] = []
+            hostname_to_buckets[partition_key].append(bucket_id)
+
+    print(f"\nConsistent hashing bucket assignment:")
+    for hostname, bucket_ids in sorted(hostname_to_buckets.items()):
+        print(f"  {hostname} → bucket(s) {bucket_ids}")
+
+    # Verify all hostnames are present as partition keys
+    assert len(hostname_to_buckets) == len(hostnames), \
+        f"Expected {len(hostnames)} partitions, got {len(hostname_to_buckets)}: {list(hostname_to_buckets.keys())}"
+
+    # With consistent hashing, each hostname should map to EXACTLY ONE bucket
+    # (no collisions within the same partition key)
+    for hostname, bucket_ids in hostname_to_buckets.items():
+        assert len(bucket_ids) == 1, \
+            f"Hostname '{hostname}' found in multiple buckets {bucket_ids}. " \
+            f"This should not happen - each partition should map to exactly one bucket."
+
+    # With 3 hostnames and 16 buckets using consistent hashing,
+    # collision probability is very low (~1%), so we expect 3 unique buckets
+    assert len(buckets_with_data) == len(hostnames), \
+        f"Expected {len(hostnames)} unique buckets (one per hostname with consistent hashing), " \
+        f"but got {len(buckets_with_data)} buckets: {buckets_with_data}. " \
+        f"This suggests a collision occurred, which is unexpected with consistent hashing."
