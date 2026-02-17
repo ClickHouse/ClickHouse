@@ -3,6 +3,9 @@
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+
 namespace DB
 {
 
@@ -58,6 +61,18 @@ static std::optional<UInt64> getMaxPatchVersionForStep(const MergeTreeRangeReade
 
 MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges)
 {
+    static const RuntimeDataflowStatisticsCacheUpdaterPtr dummy_updater;
+    static const MergeTreeReadTaskInfoPtr dummy_info;
+    return read(max_rows, ranges, patch_ranges, dummy_updater, dummy_info);
+}
+
+MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
+    size_t max_rows,
+    MarkRanges & ranges,
+    std::vector<MarkRanges> & patch_ranges,
+    const RuntimeDataflowStatisticsCacheUpdaterPtr & updater,
+    const MergeTreeReadTaskInfoPtr & info)
+{
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
 
@@ -83,6 +98,16 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
+
+        if (updater)
+        {
+            updater->recordInputColumns(
+                first_reader.getReadSampleBlock().cloneWithColumns(read_result.columns).getColumnsWithTypeAndName(),
+                info->data_part->getColumns(),
+                info->data_part->getColumnSizes(),
+                read_result.num_bytes_read);
+        }
+
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
@@ -91,6 +116,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
 
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
+        const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
 
@@ -108,6 +134,15 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
             /// In this case we need to use number of rows in the result to fill the default values and don't filter block.
             if (num_read_rows == 0)
                 num_read_rows = read_result.num_rows;
+
+            if (updater)
+            {
+                updater->recordInputColumns(
+                    range_readers[i].getReadSampleBlock().cloneWithColumns(columns).getColumnsWithTypeAndName(),
+                    info->data_part->getColumns(),
+                    info->data_part->getColumnSizes(),
+                    read_result.num_bytes_read - num_bytes_read_so_far);
+            }
 
             executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, num_read_rows);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());

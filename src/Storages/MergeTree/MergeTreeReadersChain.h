@@ -7,6 +7,12 @@ namespace DB
 
 using RangeReaders = std::vector<MergeTreeRangeReader>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
+struct MergeTreeReadTaskInfo;
+using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
+
 struct ColumnForPatch
 {
     enum class Order
@@ -36,7 +42,15 @@ public:
     bool isInitialized() const { return is_initialized; }
 
     using ReadResult = MergeTreeRangeReader::ReadResult;
+
     ReadResult read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges);
+
+    ReadResult read(
+        size_t max_rows,
+        MarkRanges & ranges,
+        std::vector<MarkRanges> & patch_ranges,
+        const RuntimeDataflowStatisticsCacheUpdaterPtr & updater,
+        const MergeTreeReadTaskInfoPtr & info);
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;
