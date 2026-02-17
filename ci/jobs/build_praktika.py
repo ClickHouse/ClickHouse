@@ -70,7 +70,7 @@ def build_package(token: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Upload package to PyPI using a token")
-    parser.add_argument("--token", required=True, help="PyPI API token")
+    parser.add_argument("--token", help="PyPI API token")
     args = parser.parse_args()
 
     install_packages()
