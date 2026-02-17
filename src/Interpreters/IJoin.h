@@ -100,6 +100,16 @@ public:
     /// @returns false, if some limit was exceeded and you should not insert more data.
     virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
 
+    /// Overload that accepts the actual number of rows from the Chunk.
+    /// Needed because Block::rows() returns 0 when the block has no columns
+    /// (e.g., when PREWHERE consumed all columns from the right side of a cross join).
+    virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits = true) /// NOLINT
+    {
+        /// Default implementation ignores num_rows; HashJoin overrides this for CROSS joins.
+        (void)num_rows;
+        return addBlockToJoin(block, check_limits);
+    }
+
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
      * TODO: pass correct left block sample to the constructor.

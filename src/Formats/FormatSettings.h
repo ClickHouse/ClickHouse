@@ -91,6 +91,7 @@ struct FormatSettings
 
     UInt64 schema_inference_make_columns_nullable = 1;
     bool schema_inference_make_json_columns_nullable = false;
+    bool schema_inference_allow_nullable_tuple_type = false;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
@@ -161,6 +162,7 @@ struct FormatSettings
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
+        bool output_date_as_uint16 = false;
     } arrow{};
 
     struct

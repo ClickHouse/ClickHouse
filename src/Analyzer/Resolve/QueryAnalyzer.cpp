@@ -1604,7 +1604,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
 
     const auto * join_node = join_tree->as<JoinNode>();
-    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(join_node);
+    bool join_node_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(join_node);
     if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
     {
         const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
@@ -1625,6 +1625,18 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
                 const auto & join_using_column_nodes_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
                 const auto & join_using_column_nodes = join_using_column_nodes_list.getNodes();
+                for (const auto & join_using_column_inner_node : join_using_column_nodes)
+                {
+                    const auto * join_using_column_inner_column_node = join_using_column_inner_node->as<ColumnNode>();
+                    if (!join_using_column_inner_column_node || !join_using_column_inner_column_node->hasExpression())
+                        continue;
+                    if (matched_column_node_typed.getColumnSource().get() == join_using_column_inner_column_node->getColumnSource().get())
+                    {
+                        /// If the USING key was taken from the SELECT projection (`analyzer_compatibility_join_using_top_level_identifier`),
+                        /// do not override the matched column type, keep one based on table columns in this case.
+                        return;
+                    }
+                }
 
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
@@ -4414,6 +4426,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                             auto [expression_source, is_single_source] = getExpressionSource(resolved_nodes.front());
                             /// Do not support `SELECT t1.a + t2.a AS id ... USING id`
                             if (!is_single_source)
+                                return nullptr;
+
+                            /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
+                            /// and left_table_expression is a JOIN node, we must not assign the JOIN as the column source.
+                            /// That would create a ColumnNode with a JOIN source and non-ListNode expression,
+                            /// which CollectSourceColumnsVisitor doesn't expect (it assumes ListNode for JOIN USING).
+                            if (!expression_source && left_table_expression->getNodeType() == QueryTreeNodeType::JOIN)
                                 return nullptr;
 
                             /// Create ColumnNode with expression from parent projection

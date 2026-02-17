@@ -26,10 +26,10 @@ Where:
 - $\bar{x}$ is the arithmetic mean of the data set
 - $n$ is the number of data points in the data set
 
-The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varpop) instead.
+The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](/sql-reference/aggregate-functions/reference/varPop) instead.
 
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varSampStable`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varsampstable) function. It works slower but provides a lower computational error.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varSampStable`](/sql-reference/aggregate-functions/reference/varsampstable) function. It works slower but provides a lower computational error.
 :::
     )";
     FunctionDocumentation::Syntax syntax_varSamp = R"(
@@ -126,7 +126,7 @@ FROM test_data;
     factory.registerFunction("varPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::varPop>, {}, documentation_varPop});
     FunctionDocumentation::Description description_stddevSamp = R"(
 Returns the sample standard deviation of a numeric data sequence.
-The result is equal to the square root of [`varSamp`](/sql-reference/aggregate-functions/reference/varsamp).
+The result is equal to the square root of [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp).
 
 :::note
 This function uses a numerically unstable algorithm.
@@ -171,7 +171,7 @@ FROM test_data;
     factory.registerFunction("stddevSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionSecondMoment, StatisticsFunctionKind::stddevSamp>, {}, documentation_stddevSamp});
     FunctionDocumentation::Description description_stddevPop = R"(
 Returns the population standard deviation of a numeric data sequence.
-The result is equal to the square root of [`varPop`](/sql-reference/aggregate-functions/reference/varpop).
+The result is equal to the square root of [`varPop`](/sql-reference/aggregate-functions/reference/varPop).
 
 :::note
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevPopStable`](/sql-reference/aggregate-functions/reference/stddevpopstable) function. It works slower but provides a lower computational error.

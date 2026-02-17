@@ -10,7 +10,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -27,7 +28,7 @@ struct AggregateFunctionDistinctDynamicTypesData
 {
     constexpr static size_t MAX_ARRAY_SIZE = 0xFFFFFF;
 
-    std::unordered_set<String> data;
+    UnorderedSetWithMemoryTracking<String> data;
 
     void add(const String & type)
     {

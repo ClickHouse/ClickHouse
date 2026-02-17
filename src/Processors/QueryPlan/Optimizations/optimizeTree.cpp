@@ -374,10 +374,6 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
-    // Some tests fail because on uninitialized `MergeTreeData::SnapshotData`
-    if (optimization_settings.enable_full_text_index)
-        return;
-
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
@@ -530,8 +526,7 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        if (optimization_settings.direct_read_from_text_index)
-            optimizeDirectReadFromTextIndex(stack, nodes);
+        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index);
 
         auto & frame = stack.back();
 
@@ -543,10 +538,6 @@ void optimizeTreeSecondPass(
             stack.push_back(next_frame);
             continue;
         }
-
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
-        if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(*frame.node);
 
         stack.pop_back();
     }
@@ -581,7 +572,7 @@ void optimizeTreeSecondPass(
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-    /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
+    /// If join runtime filters were added re-run push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
@@ -599,11 +590,16 @@ void optimizeTreeSecondPass(
                     if (!changed_nodes)
                         break;
                 }
-            },
+            });
+    }
+
+    /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
+    if (optimization_settings.optimize_prewhere)
+    {
+        traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                if (optimization_settings.optimize_prewhere)
-                    optimizePrewhere(frame_node);
+                optimizePrewhere(frame_node);
             });
     }
 
@@ -784,7 +780,10 @@ void optimizeTreeSecondPass(
             if (frame.next_child == 0)
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
-                    break;
+                {
+                    stack.pop_back();
+                    continue;
+                }
             }
 
             /// Traverse all children first.

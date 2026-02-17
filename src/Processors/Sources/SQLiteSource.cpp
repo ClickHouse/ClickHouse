@@ -9,9 +9,15 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -91,15 +97,17 @@ Chunk SQLiteSource::generate()
             }
 
             auto & [type, is_nullable] = description.types[column_index];
+            const auto & sample = description.sample_block.getByPosition(column_index);
             if (is_nullable)
             {
                 ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[column_index]);
-                insertValue(column_nullable.getNestedColumn(), type, column_index);
+                const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
+                insertValue(column_nullable.getNestedColumn(), type, column_index, *data_type.getNestedType());
                 column_nullable.getNullMapData().emplace_back(false);
             }
             else
             {
-                insertValue(*columns[column_index], type, column_index);
+                insertValue(*columns[column_index], type, column_index, *sample.type);
             }
         }
 
@@ -116,7 +124,7 @@ Chunk SQLiteSource::generate()
     return Chunk(std::move(columns), num_rows);
 }
 
-void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx)
+void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx, const IDataType & data_type)
 {
     switch (type)
     {
@@ -151,11 +159,92 @@ void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::Valu
         case ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(sqlite3_column_double(compiled_statement.get(), idx));
             break;
-        default:
+        case ValueType::vtEnum8:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            assert_cast<ColumnInt8 &>(column).insertValue(
+                static_cast<Int8>(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(data).safeGet<Int8>()));
+            break;
+        }
+        case ValueType::vtEnum16:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            assert_cast<ColumnInt16 &>(column).insertValue(
+                static_cast<Int16>(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(data).safeGet<Int16>()));
+            break;
+        }
+        case ValueType::vtString:
+        {
             const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
             int len = sqlite3_column_bytes(compiled_statement.get(), idx);
             assert_cast<ColumnString &>(column).insertData(data, len);
             break;
+        }
+        case ValueType::vtDate:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            ReadBufferFromString in(std::string_view(data, len));
+            DayNum day;
+            readDateText(day, in);
+            assert_cast<ColumnUInt16 &>(column).insertValue(day);
+            break;
+        }
+        case ValueType::vtDate32:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            ReadBufferFromString in(std::string_view(data, len));
+            ExtendedDayNum day;
+            readDateText(day, in);
+            assert_cast<ColumnInt32 &>(column).insertValue(day);
+            break;
+        }
+        case ValueType::vtDateTime:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            ReadBufferFromString in(std::string_view(data, len));
+            time_t time = 0;
+            readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
+            time = std::max<time_t>(time, 0);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
+            break;
+        }
+        case ValueType::vtUUID:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            assert_cast<ColumnUUID &>(column).insert(parse<UUID>(data, len));
+            break;
+        }
+        case ValueType::vtDateTime64:
+        case ValueType::vtDecimal32:
+        case ValueType::vtDecimal64:
+        case ValueType::vtDecimal128:
+        case ValueType::vtDecimal256:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            ReadBufferFromString buffer(std::string_view(data, len));
+            data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, FormatSettings{});
+            break;
+        }
+        case ValueType::vtFixedString:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            assert_cast<ColumnFixedString &>(column).insertData(data, len);
+            break;
+        }
+        default:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            ReadBufferFromString buffer(std::string_view(data, len));
+            data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, FormatSettings{});
+            break;
+        }
     }
 }
 

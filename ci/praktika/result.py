@@ -401,6 +401,7 @@ class Result(MetaClasses.Serializable):
         name="Tests",
         env=None,
         pytest_report_file=None,
+        pytest_logfile=None,
         logfile=None,
     ):
         """
@@ -423,14 +424,15 @@ class Result(MetaClasses.Serializable):
             files.append(pytest_report_file)
         else:
             pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
-        if logfile:
-            files.append(logfile)
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
             full_command = f"pytest {command} --report-log={pytest_report_file}"
+            if pytest_logfile:
+                full_command += f" --log-file={pytest_logfile}"
+                files.append(pytest_logfile)
             if logfile:
-                full_command += f" --log-file={logfile}"
+                files.append(logfile)
 
             # Apply environment
             for key, value in (env or {}).items():
@@ -441,7 +443,7 @@ class Result(MetaClasses.Serializable):
                 name = f"pytest_{command}"
 
             # Run pytest
-            _res = Shell.check(full_command, verbose=True)
+            Shell.run(full_command, log_file=logfile)
             test_result = ResultTranslator.from_pytest_jsonl(
                 pytest_report_file=pytest_report_file
             )
@@ -1042,57 +1044,35 @@ class _ResultS3:
     def copy_result_from_s3_with_version(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        local_dir = Path(local_path).parent
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
-        latest_result_file = Shell.get_output(
-            f"aws s3 ls {s3_path}/{file_name}_ | awk '{{print $4}}' | sort -r | head -n 1",
-            strict=True,
-            verbose=True,
-        )
-        version = int(latest_result_file.split("_")[-1])
-        S3.copy_file_from_s3(
-            s3_path=f"{s3_path}/{latest_result_file}", local_path=local_dir
-        )
-        Shell.check(
-            f"cp {local_dir}/{latest_result_file} {local_path}",
-            strict=True,
-            verbose=True,
-        )
-        return version
+        s3_file = f"{s3_path}/{file_name}"
+
+        return S3.copy_file_from_s3_with_version(s3_path=s3_file, local_path=local_path)
 
     @classmethod
     def copy_result_to_s3_with_version(cls, result, version, no_strict=False):
         result.dump()
         filename = Path(result.file_name()).name
-        file_name_versioned = f"{filename}_{str(version).zfill(3)}"
         env = _Environment.get()
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
-        s3_path_versioned = f"{s3_path}{file_name_versioned}"
-        if version == 0:
-            S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
-        if not S3.put(
-            s3_path=s3_path_versioned,
+        s3_file = f"{s3_path}{filename}"
+
+        return S3.copy_file_to_s3_with_version(
+            s3_path=s3_file,
             local_path=result.file_name(),
-            if_none_matched=True,
-            no_strict=no_strict,
+            version=version,
             text=True,
-        ):
-            print("Failed to put versioned Result")
-            return False
-        if not S3.put(
-            s3_path=s3_path,
-            local_path=result.file_name(),
             no_strict=no_strict,
-            text=True,
-        ):
-            print("Failed to put non-versioned Result")
-        return True
+        )
 
     @classmethod
     def upload_result_files_to_s3(
         cls, result: Result, s3_subprefix="", _uploaded_file_link=None
     ):
-        parts = [s3_subprefix.strip("/"), Utils.normalize_string(result.name).strip("/")]
+        parts = [
+            s3_subprefix.strip("/"),
+            Utils.normalize_string(result.name).strip("/"),
+        ]
         s3_subprefix = "/".join([p for p in parts if p])
         if not _uploaded_file_link:
             _uploaded_file_link = {}
@@ -1145,13 +1125,19 @@ class _ResultS3:
 
         # Upload assets in parallel (preserving relative paths for HTML interlinking)
         if result.assets:
-            asset_paths = [Path(a).resolve() for a in result.assets if Path(a).is_file()]
+            asset_paths = [
+                Path(a).resolve() for a in result.assets if Path(a).is_file()
+            ]
             if asset_paths:
                 common_root = os.path.commonpath([p.parent for p in asset_paths])
                 env = _Environment.get()
-                base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace("//", "/")
+                base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
+                    "//", "/"
+                )
 
-                print(f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel")
+                print(
+                    f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel"
+                )
                 print(asset_paths)
                 with ThreadPoolExecutor(max_workers=10) as executor:
                     for asset in asset_paths:
@@ -1768,31 +1754,33 @@ class ResultTranslator:
 
             R = Result.create_from(name=name, results=list(test_results.values()))
 
-            if session_exitstatus not in (0, 1):
-                R.status = Result.Status.ERROR
-                if session_exitstatus not in (2,):
-                    R.info = f"Test execution was interrupted (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (3,):
-                    R.info = f"Internal error in pytest or a plugin (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (4,):
-                    R.info = f"pytest command line usage error (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (5,):
-                    R.info = (
-                        f"No tests were collected (exit status: {session_exitstatus})"
-                    )
-                else:
-                    R.info = f"Unknown error (exit status: {session_exitstatus})"
+            if session_exitstatus == 0:
+                assert (
+                    R.status == Result.Status.SUCCESS
+                ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
+                return R
+
             if session_exitstatus == 1:
                 if R.status == Result.Status.SUCCESS:
                     print(
                         f"WARNING: Tests are all OK, but exit code is 1; timeout or other runner issue - reset overall status to [{Result.Status.ERROR}]"
                     )
                     R.status = Result.Status.ERROR
-            elif session_exitstatus == 0:
-                assert (
-                    R.status == Result.Status.SUCCESS
-                ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
+                return R
 
+            R.status = Result.Status.ERROR
+            if session_exitstatus == 2:
+                R.info = "Test execution was interrupted"
+            elif session_exitstatus == 3:
+                R.info = "Internal error in pytest or a plugin"
+            elif session_exitstatus == 4:
+                R.info = "pytest command line usage error"
+            elif session_exitstatus == 5:
+                R.info = "No tests were collected"
+            else:
+                R.info = "Unknown error"
+
+            R.info += f" (exit status: {session_exitstatus})"
             return R
 
         except Exception as e:

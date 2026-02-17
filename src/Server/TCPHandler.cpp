@@ -862,6 +862,7 @@ void TCPHandler::runImpl()
 #ifdef DEBUG_OR_SANITIZER_BUILD
         catch (const std::logic_error & e)
         {
+            tryLogCurrentException(log);
             if (query_state)
                 query_state->io.onException();
             exception = std::make_unique<DB::Exception>(Exception::CreateFromSTDTag{}, e);
@@ -1210,7 +1211,7 @@ void TCPHandler::startInsertQuery(QueryState & state)
         if (state.query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
         {
             if (state.query_context->hasInsertionTableColumnsDescription())
-                sendTableColumns(state, state.query_context->getInsertionTableColumnsDescription().value());
+                sendTableColumns(state, *state.query_context->getInsertionTableColumnsDescription());
         }
     }
 
@@ -1317,8 +1318,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
             /// Reset pipeline because it may hold write lock for some storages.
-            state.io.pipeline.cancel();
-            state.io.pipeline.reset();
+            state.io.resetPipeline(/*cancel=*/true);
             if (settings[Setting::wait_for_async_insert])
             {
                 size_t timeout_ms = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
@@ -1759,19 +1759,25 @@ bool TCPHandler::receiveProxyHeader()
 namespace
 {
 
-std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Util::AbstractConfiguration& config)
+std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Util::AbstractConfiguration & config, bool is_secure)
 {
+    std::string tcp_port_config = is_secure ? "tcp_port_secure" : "tcp_port";
+    std::string http_port_config = is_secure ? "https_port" : "http_port";
+
     std::string result = fmt::format(
         "HTTP/1.0 400 Bad Request\r\n\r\n"
         "Port {} is for clickhouse-client program\r\n",
-        config.getString("tcp_port"));
+        config.getString(tcp_port_config));
 
-    if (config.has("http_port"))
+    if (config.has(http_port_config))
     {
         result += fmt::format(
             "You must use port {} for HTTP.\r\n",
-            config.getString("http_port"));
+            config.getString(http_port_config));
     }
+
+    result += "You can also use the /play endpoint for interactive queries\r\n"
+              "and the /dashboard endpoint for the Dashboard.\r\n";
 
     return result;
 }
@@ -1812,7 +1818,7 @@ void TCPHandler::receiveHello()
           */
         if (packet_type == 'G' || packet_type == 'P')
         {
-            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
+            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config(), socket().secure()), *out);
             out->next();
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
@@ -1871,7 +1877,7 @@ void TCPHandler::receiveHello()
             {
                 session->authenticate(
                     SSLCertificateCredentials{user, X509Certificate(secure_socket.peerCertificate()).extractAllSubjects()},
-                    getClientAddress(client_info));
+                    getClientAddress(client_info), socket().peerAddress());
                 return;
             }
             catch (const Exception & e)
@@ -1939,12 +1945,12 @@ void TCPHandler::receiveHello()
         };
 
         auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
-        session->authenticate(cred, getClientAddress(client_info));
+        session->authenticate(cred, getClientAddress(client_info), socket().peerAddress());
         return;
     }
 #endif
 
-    session->authenticate(user, password, getClientAddress(client_info));
+    session->authenticate(user, password, getClientAddress(client_info), socket().peerAddress());
 }
 
 
@@ -2266,7 +2272,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             /// the query was come, since the real address is the address of
             /// the initiator server, while we are interested in client's
             /// address.
-            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, external_roles);
+            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, *client_info.current_address, external_roles);
         }
 
         is_interserver_authenticated = true;

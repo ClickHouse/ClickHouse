@@ -41,9 +41,20 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
+            {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
+            {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
-            {"default_dictionary_database", "", "", "New setting"},
+            {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+            {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
+            {"enable_full_text_index", false, true, "The text index is now GA"},
+            {"allow_experimental_full_text_index", false, true, "The text index is now GA"},
+            {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
+            {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
+            {"use_statistics_cache", false, true, "Enable statistics cache"},
+            {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
+            {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
+            {"opentelemetry_start_keeper_trace_probability", 0.0, 0.0, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -129,6 +140,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
+
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -539,7 +551,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
-            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
+            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with the analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
             {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
             {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
@@ -1038,9 +1050,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
+            {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
             {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
             {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
-            {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
+            {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
+            {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {

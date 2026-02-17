@@ -1,4 +1,5 @@
 #include <Databases/IDatabase.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -128,16 +129,19 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 
 BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
+    if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
+
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
-    if (query.temporary || table_id.database_name.empty())
+    if (query.isTemporary() || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
         query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
-    if (query.temporary)
+    if (query.isTemporary())
     {
         if (query.if_exists)
             return {};
@@ -228,7 +232,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {});
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -328,9 +332,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
-    if (kind == ASTDropQuery::Kind::Detach)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
-
     auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
     auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
     if (resolved_id)
@@ -535,6 +536,54 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             prepare_tables(tables_to_prepare);
 
+            /// Sort tables in reverse loading dependency order (dependents first, then their dependencies).
+            /// This way, if the server crashes mid-drop, the remaining tables will still have their
+            /// dependencies intact and can be loaded on restart.
+            {
+                TablesDependencyGraph local_graph("drop_database");
+                std::unordered_set<String> table_names_in_drop;
+                for (const auto & [id, _] : tables_to_drop)
+                    table_names_in_drop.insert(id.getFullTableName());
+
+                for (const auto & [id, _] : tables_to_drop)
+                {
+                    auto deps = DatabaseCatalog::instance().getLoadingDependencies(id);
+                    std::vector<StorageID> relevant_deps;
+                    for (const auto & dep : deps)
+                        if (table_names_in_drop.contains(dep.getFullTableName()))
+                            relevant_deps.push_back(dep);
+                    local_graph.addDependencies(id, relevant_deps);
+                }
+
+                auto sorted = local_graph.getTablesSortedByDependency();
+
+                /// Build a position map: tables sorted by loading order (dependencies first).
+                /// For dropping, we reverse: higher position (more dependencies) should be dropped first.
+                std::unordered_map<String, size_t> position;
+                for (size_t i = 0; i < sorted.size(); ++i)
+                    position[sorted[i].getFullTableName()] = i;
+
+                std::sort(tables_to_drop.begin(), tables_to_drop.end(), [&](const auto & a, const auto & b)
+                {
+                    /// Inner tables (e.g. `.inner_id.*` for MVs) must be dropped before their parent views.
+                    /// In Replicated databases, if we drop an MV first, its dropInnerTableIfAny() tries to
+                    /// drop the inner table via executeDropQuery which fails because the replicated DDL path
+                    /// rejects secondary queries. Dropping inner tables first makes dropInnerTableIfAny() a no-op.
+                    bool a_is_inner = a.first.table_name.starts_with(".inner_id.") || a.first.table_name.starts_with(".inner.");
+                    bool b_is_inner = b.first.table_name.starts_with(".inner_id.") || b.first.table_name.starts_with(".inner.");
+                    if (a_is_inner != b_is_inner)
+                        return a_is_inner;
+
+                    size_t pos_a = 0;
+                    size_t pos_b = 0;
+                    if (auto it = position.find(a.first.getFullTableName()); it != position.end())
+                        pos_a = it->second;
+                    if (auto it = position.find(b.first.getFullTableName()); it != position.end())
+                        pos_b = it->second;
+                    return pos_a > pos_b;
+                });
+            }
+
             for (const auto & table : tables_to_drop)
             {
                 query_for_table.setTable(table.first.getTableName());
@@ -580,7 +629,12 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         for (const auto & table_id : tables_to_truncate)
         {
-            runner.enqueueAndKeepTrack([&, table_id]()
+            /// Passing by references here is fine:
+            /// query: Outlives runner
+            /// table_context: Outlives runner
+            /// mutex_for_uuids: Outlives runner
+            /// uuids_to_wait: Outlives runner
+            runner.enqueueAndKeepTrack([this, table_id, &query, &table_context, &mutex_for_uuids, &uuids_to_wait]()
             {
                 // Create a proper AST for a single-table TRUNCATE query.
                 auto sub_query_ptr = make_intrusive<ASTDropQuery>();
@@ -678,7 +732,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
         else if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.getDatabase(), drop.getTable());
     }
-    else if (!drop.temporary)
+    else if (!drop.isTemporary())
     {
         /// It can be view or table.
         if (drop.kind == ASTDropQuery::Kind::Drop)
@@ -738,7 +792,7 @@ bool InterpreterDropQuery::supportsTransactions() const
     auto & drop = query_ptr->as<ASTDropQuery &>();
 
     return drop.cluster.empty()
-            && !drop.temporary
+            && !drop.isTemporary()
             && drop.kind == ASTDropQuery::Kind::Truncate
             && drop.table;
 }

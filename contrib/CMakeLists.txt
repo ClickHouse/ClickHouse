@@ -49,6 +49,7 @@ add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
+add_contrib (libllvmlibc-cmake llvm-project)
 add_contrib (llvm-project-cmake llvm-project)
 
 enable_dummy_launchers_if_needed()
@@ -246,6 +247,8 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
+
+add_contrib (libcotp-cmake libcotp)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

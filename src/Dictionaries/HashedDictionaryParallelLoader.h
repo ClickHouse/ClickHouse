@@ -186,8 +186,16 @@ private:
             if (!shard_queue.tryPop(block, /* milliseconds= */ 100))
             {
                 /// Check if we need to stop
-                if (stop_all_workers || shard_queue.isFinished())
+                if (stop_all_workers)
                     break;
+
+                /// Note: we use isFinishedAndEmpty() instead of isFinished() to avoid
+                /// a race condition where items could be pushed to the queue between
+                /// tryPop timing out and this check. With isFinished(), the worker
+                /// could exit while the queue still had unprocessed blocks.
+                if (shard_queue.isFinishedAndEmpty())
+                    break;
+
                 /// Timeout expired, but the queue is not finished yet, try again
                 continue;
             }

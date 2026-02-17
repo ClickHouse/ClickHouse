@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <base/range.h>
@@ -53,26 +54,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        for (size_t index = 0; index < getNumberOfArguments(); ++index)
-        {
-            const auto * arg = arguments[index].get();
-            if (index == 1 || index == 3)
-            {
-                if (!WhichDataType(arg).isFloat64())
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument {} of function {}. Must be Float64",
-                        arg->getName(), index + 1, getName());
-            }
-            else if (!WhichDataType(arg).isUInt64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), index + 1, getName()
-                    );
-        }
+        FunctionArgumentDescriptors mandatory_args{
+            {"center1", &isUInt64, nullptr, "UInt64"},
+            {"radius1", &isFloat, nullptr, "Float64"},
+            {"center2", &isUInt64, nullptr, "UInt64"},
+            {"radius2", &isFloat, nullptr, "Float64"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         DataTypePtr center = std::make_shared<DataTypeUInt64>();
         DataTypePtr radius = std::make_shared<DataTypeFloat64>();

@@ -4,7 +4,7 @@ import random
 from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import run_fuzz_job
-from ci.praktika.info import Info
+from ci.jobs.ci_utils import is_extended_run
 from ci.praktika.utils import Utils
 
 
@@ -194,7 +194,7 @@ def main():
         "enable_fault_injection_settings": random.randint(1, 4) == 1,
         "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
-        "use_dump_table_oracle": random.randint(1, 3) == 1,
+        "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
@@ -223,8 +223,8 @@ def main():
         "allow_transactions": allow_transactions,
         # Run query oracles sometimes
         "allow_query_oracles": random.randint(1, 4) == 1,
-        # Run for 30 minutes max
-        "time_to_run": 30,
+        # Run for 30 minutes by default, or 60 minutes for feature/improvement/performance PRs
+        "time_to_run": 60 if is_extended_run() else 30,
         "remote_servers": ["localhost:9000"],
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],

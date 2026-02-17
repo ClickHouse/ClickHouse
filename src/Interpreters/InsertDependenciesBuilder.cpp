@@ -733,9 +733,6 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     collectAllDependencies();
 
-    LOG_TEST(logger, "InsertDependenciesBuilder created for table {} with query: {}, debugTree:\n{}",
-        init_table_id.getFullTableName(), init_query->formatForLogging(), debugTree());
-
     auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
         { return isView(storage.first) || storage.second->supportsParallelInsert();});
     if (all_sinks_support_parallel_insert && (settings[Setting::parallel_view_processing] || !isViewsInvolved()))
@@ -757,11 +754,6 @@ struct SquashingTransformContext
 
 std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
-    LOG_DEBUG(
-        logger,
-        "createChainWithDependenciesForAllStreams called, sink_stream_size={}, squash_parallel_inserts={} deduplicate_blocks={} deduplicate_blocks_in_dependent_materialized_views={}",
-        sink_stream_size, squash_parallel_inserts, deduplicate_blocks, deduplicate_blocks_in_dependent_materialized_views);
-
     std::vector<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
@@ -1026,7 +1018,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 {
     const auto & parent = path.parent(1);
     const auto & current = path.current();
-    LOG_TEST(logger, "observePath {}", path.debugInfo());
 
     auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
