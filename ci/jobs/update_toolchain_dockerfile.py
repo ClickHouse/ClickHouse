@@ -51,6 +51,8 @@ def create_pr(sha):
 """
 
     commands = [
+        'git config user.name "clickhouse-gh"',
+        'git config user.email "clickhouse-gh@users.noreply.github.com"',
         f"git checkout -b {branch}",
         f"git add {DOCKERFILE_PATH}",
         f'git commit -m "Update PGO+BOLT toolchain to {short_sha}"',
