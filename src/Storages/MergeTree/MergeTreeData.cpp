@@ -205,6 +205,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_reverse_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
+    extern const MergeTreeSettingsBool allow_uuid_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
@@ -656,6 +657,7 @@ MergeTreeData::MergeTreeData(
     bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
+    allow_uuid_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_uuid_key];
     allow_reverse_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_experimental_reverse_key];
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
@@ -860,7 +862,7 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
 
-static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
+static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key, bool allow_uuid_key)
 {
     if (expr.hasArrayJoin())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain array joins", key_name);
@@ -886,6 +888,12 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
                             ErrorCodes::ILLEGAL_COLUMN,
                             "{} key contains nullable columns, "
                             "but merge tree setting `allow_nullable_key` is disabled", key_name);
+
+        if (!allow_uuid_key && isUUID(element.type))
+            throw Exception(
+                            ErrorCodes::ILLEGAL_COLUMN,
+                            "{} key contains uuid columns, "
+                            "but merge tree setting `allow_uuid_key` is disabled", key_name);
     }
 }
 
@@ -896,6 +904,7 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_reverse_sorting_key,
     bool allow_nullable_key_,
+    bool allow_uuid_key_,
     ContextPtr local_context) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
@@ -1075,6 +1084,7 @@ void MergeTreeData::checkProperties(
                 is_aggregate,
                 allow_reverse_key,
                 true /* allow_nullable_key */,
+                false /* allow_uuid_key */,
                 local_context);
 
             if (projection.index_granularity || projection.index_granularity_bytes)
@@ -1134,7 +1144,7 @@ void MergeTreeData::checkProperties(
             MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type);
     }
 
-    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
+    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_, allow_uuid_key_);
 }
 
 void MergeTreeData::setProperties(
@@ -1150,6 +1160,7 @@ void MergeTreeData::setProperties(
         false,
         allow_reverse_key,
         allow_nullable_key,
+        allow_uuid_key,
         local_context);
 
     setInMemoryMetadata(new_metadata);
@@ -1222,7 +1233,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     if (new_partition_key.expression_list_ast->children.empty())
         return;
 
-    checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key);
+    checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key, allow_uuid_key);
 
     /// Add all columns used in the partition key to the min-max index.
     DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
@@ -4537,7 +4548,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    checkProperties(new_metadata, old_metadata, false, false, allow_reverse_key, allow_nullable_key, local_context);
+    checkProperties(new_metadata, old_metadata, false, false, allow_reverse_key, allow_nullable_key, allow_uuid_key, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())

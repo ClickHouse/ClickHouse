@@ -1,0 +1,6 @@
+Assert UUID primary key is not allowed by default on CREATE TABLE DDL
+Assert UUID partition key is not allowed by default on CREATE TABLE DDL
+Assert explicit UUID PRIMARY KEY clause is not allowed by default on CREATE TABLE DDL
+Assert UUID primary key is allowed when allow_uuid_key set to true
+Assert pre-existing table with UUID primary key and allow_uuid_key reset to default is allowed
+1

@@ -1594,6 +1594,7 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_reverse_sorting_key,
         bool allow_nullable_key_,
+        bool allow_uuid_key_,
         ContextPtr local_context) const;
 
     void setProperties(
@@ -1909,6 +1910,7 @@ private:
     virtual void startBackgroundMovesIfNeeded() = 0;
 
     bool allow_nullable_key = false;
+    bool allow_uuid_key = false;
     bool allow_reverse_key = false;
 
     void addPartContributionToDataVolume(const DataPartPtr & part);

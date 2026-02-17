@@ -1633,6 +1633,9 @@ namespace ErrorCodes
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
     )", 0) \
+    DECLARE(Bool, allow_uuid_key, false, R"(
+    Allow UUID types as primary keys.
+    )", 0) \
     DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
     Allow usage of '_part_offset' column in projections select query.
     )", 0) \

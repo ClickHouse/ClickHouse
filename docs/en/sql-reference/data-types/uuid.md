@@ -83,6 +83,16 @@ Result:
 └──────────────────────────────────────┘
 ```
 
+:::warning UUID In MergeTree Key Expressions
+In MergeTree-family tables, `UUID` is disallowed by default in key expressions (`PRIMARY KEY`, `ORDER BY`, `PARTITION BY`).
+
+This is controlled by the MergeTree setting [`allow_uuid_key`](/operations/settings/merge-tree-settings/#allow_uuid_key), which is `0` by default.
+
+The restriction exists because `UUID` values are ordered by their second half, which can reduce sparse primary-index selectivity and query pruning efficiency.
+
+Prefer using a key expression such as `toUInt128(uuid)` if you need intuitive UUID ordering.
+:::
+
 ## Generating UUIDs {#generating-uuids}
 
 ClickHouse provides the [generateUUIDv4](../../sql-reference/functions/uuid-functions.md) function to generate random UUID version 4 values.
