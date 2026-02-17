@@ -79,7 +79,14 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
 done
 
 # Check for existence of __init__.py files
-# for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
+# This check is necessary to prevent issues with Python imports when test directories are missing this file.
+# See https://stackoverflow.com/questions/53918088/import-file-mismatch-in-pytest
+for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
+
+# Docker compose files in integration tests should not use :latest for third-party images,
+# because it leads to non-reproducible builds and unexpected breakage when upstream images change.
+# ClickHouse-owned images with ${VAR:-latest} pattern are excluded since the variable is set in CI.
+find "${ROOT_PATH}/tests/integration/compose" -name '*.yml' -print0 | xargs -0 grep -P 'image:\s*\S+:latest\s*$' | grep -v '\${\|clickhouse/' && echo "Docker compose files should use pinned versions instead of :latest for third-party images"
 
 # Check for executable bit on non-executable files
 git ls-files -s $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} | \
@@ -182,6 +189,48 @@ find $ROOT_PATH/tests/queries -name '*.sh' |
     echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
 
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e 'system\s*flush\s*logs\s*(;|$|")' && echo "Please use SYSTEM FLUSH LOGS log_name over global SYSTEM FLUSH LOGS"
+
+# Tests with SYSTEM DROP should have no-parallel tag, because SYSTEM DROP commands
+# (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
+# and interfere with other tests running concurrently.
+tests_with_system_drop=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep -liP 'system\s+drop' |
+        sort -u
+) )
+for test_case in "${tests_with_system_drop[@]}"; do
+    grep -qP '(--|#)\s*[Tt]ags:.*no-parallel' "$test_case" || echo "Test with SYSTEM DROP should have no-parallel tag: $test_case"
+done
+
+# Shell tests that send HTTP requests via curl and then check system log tables
+# must use a retry loop around SYSTEM FLUSH LOGS, because the query_log entry is
+# written after the HTTP response is sent (see executeQuery.cpp).
+# https://github.com/ClickHouse/ClickHouse/issues/84364
+#
+# Known exceptions where the retry is not needed:
+# - 00956: checks for ABSENCE of secrets in logs, missing entries = pass
+# - 02122: curl reads FROM query_log, doesn't send queries being checked
+# - 02125: curl sends mutations, part_log is checked for merges
+# - 03229: SYSTEM FLUSH ASYNC INSERT QUEUE synchronizes before FLUSH LOGS
+# - 03760: checks for absence of error in text_log
+curl_flush_logs_tests=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sh' |
+        xargs grep -l -E 'CLICKHOUSE_CURL|curl ' |
+        xargs grep -l -iE 'system\.(query_log|query_views_log|text_log|trace_log|asynchronous_insert_log|part_log)' |
+        xargs grep -l -iE 'SYSTEM\s+FLUSH\s+LOGS' |
+        grep -vP '00956_sensitive_data_masking|02122_join_group_by_timeout|02125_many_mutations|03229_async_insert_alter|03760_keep_alive_insert_select' |
+        sort -u
+) )
+for test_case in "${curl_flush_logs_tests[@]}"; do
+    has_retry=false
+    # for ... seq/range ... sleep pattern
+    if grep -qP 'for .* in .*(seq|\{)' "$test_case" && grep -q 'sleep' "$test_case"; then has_retry=true; fi
+    # while ... sleep/break pattern
+    if grep -qP 'while ' "$test_case" && (grep -q 'sleep' "$test_case" || grep -q 'break' "$test_case"); then has_retry=true; fi
+    if [ "$has_retry" = false ]; then
+        echo "$test_case uses curl and SYSTEM FLUSH LOGS without a retry loop. Add a retry loop to handle the race between HTTP response and log entry writing. See https://github.com/ClickHouse/ClickHouse/issues/84364"
+    fi
+done
 
 # CLICKHOUSE_URL already includes "?"
 git grep -P 'CLICKHOUSE_URL(|_HTTPS)(}|}/|/|)\?' $ROOT_PATH/tests/queries/0_stateless/*.sh

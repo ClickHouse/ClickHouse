@@ -1,7 +1,7 @@
 import sys
+
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
-
 
 if __name__ == "__main__":
     info = Info()

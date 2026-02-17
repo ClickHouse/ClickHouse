@@ -20,6 +20,8 @@ class ObjectStorageQueueIFileMetadata
 public:
     struct FileStatus
     {
+        explicit FileStatus(const std::string & path_) : path(path_) {}
+
         enum class State : uint8_t
         {
             Processing,
@@ -41,6 +43,7 @@ public:
 
         std::mutex processing_lock;
 
+        const std::string path;
         std::atomic<State> state = State::None;
         std::atomic<size_t> processed_rows = 0;
         std::atomic<time_t> processing_start_time = 0;
@@ -92,6 +95,7 @@ public:
 
     explicit ObjectStorageQueueIFileMetadata(
         const std::string & path_,
+        const std::string & zookeeper_name_,
         const std::string & processing_node_path_,
         const std::string & processed_node_path_,
         const std::string & failed_node_path_,
@@ -189,12 +193,12 @@ protected:
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
+    const std::string zookeeper_name;
     const std::string node_name;
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
-
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;

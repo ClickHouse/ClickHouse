@@ -58,11 +58,11 @@ using DictionaryLifetime = ExternalLoadableLifetime;
 struct DictionaryAttribute final
 {
     const std::string name;
-    const AttributeUnderlyingType underlying_type;
     const DataTypePtr type;
     const SerializationPtr type_serialization;
     const std::string expression;
     const Field null_value;
+    const AttributeUnderlyingType underlying_type;
     const bool hierarchical;
     const bool bidirectional;
     const bool injective;

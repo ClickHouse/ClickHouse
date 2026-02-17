@@ -367,11 +367,13 @@ protected:
     static std::unique_ptr<SubstreamData> getSubcolumnData(
         std::string_view subcolumn_name,
         const SubstreamData & data,
+        size_t initial_array_level,
         bool throw_if_null);
 
     virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
         std::string_view /*subcolumn_name*/,
         const SubstreamData & /*data*/,
+        size_t /*initial_array_level*/,
         bool throw_if_null) const
     {
         if (throw_if_null)
@@ -504,6 +506,7 @@ bool isInteger(TYPE data_type); \
 bool isNativeInteger(TYPE data_type); \
 \
 bool isDecimal(TYPE data_type); \
+bool isDecimal64(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
 \

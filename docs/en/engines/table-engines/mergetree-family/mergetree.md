@@ -357,6 +357,8 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`bloom_filter`](#bloom-filter) index
 - [`ngrambf_v1`](#n-gram-bloom-filter) index
 - [`tokenbf_v1`](#token-bloom-filter) index
+- [`text`]({#text}) index
+- [`vector_similarity`]({#vector-similarity}) index
 
 #### MinMax skip index {#minmax}
 
@@ -488,7 +490,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Supports full-text search, see [here](textindexes.md) for details.
+Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 
@@ -1057,6 +1059,8 @@ Configuration markup:
 ```
 
 Also see [configuring external storage options](/operations/storing-data.md/#configuring-external-storage).
+
+It is possible to set up non-replicated MergeTree tables with a one-writer, many-readers scenario on shared storage. This is provided by the automatic refresh of the parts list, which can be set up on readers. Note that this requires shared filesystem metadata across replicas (or `table_disk = true` with a table-local disk). See [refresh_parts_interval and table_disk](/operations/storing-data.md/#refresh-parts-interval-and-table-disk).
 
 :::note cache configuration
 ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/operations/storing-data.md/#using-local-cache) if you are using one of those versions.

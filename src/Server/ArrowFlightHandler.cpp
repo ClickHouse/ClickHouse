@@ -1846,7 +1846,7 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
             if (poll_info->ticket)
             {
                 arrow::flight::FlightEndpoint endpoint;
-                endpoint.ticket = arrow::flight::Ticket{.ticket = *poll_info->ticket};
+                endpoint.ticket = arrow::flight::Ticket{*poll_info->ticket};
                 endpoint.expiration_time = calls_data->getTicketExpirationTime(*poll_info->ticket);
                 endpoints.emplace_back(endpoint);
             }

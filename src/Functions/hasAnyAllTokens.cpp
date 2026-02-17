@@ -4,12 +4,15 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ITokenizer.h>
+#include <Interpreters/TokenizerFactory.h>
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/dynamic_bitset.hpp>
@@ -17,56 +20,65 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool enable_full_text_index;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
-}
-
-template <class HasTokensTraits>
-FunctionPtr FunctionHasAnyAllTokens<HasTokensTraits>::create(ContextPtr context)
-{
-    return std::make_shared<FunctionHasAnyAllTokens>(context);
-}
-
-template <class HasTokensTraits>
-FunctionHasAnyAllTokens<HasTokensTraits>::FunctionHasAnyAllTokens(ContextPtr context)
-    : enable_full_text_index(context->getSettingsRef()[Setting::enable_full_text_index])
-{
-}
-
-template <class HasTokensTraits>
-void FunctionHasAnyAllTokens<HasTokensTraits>::setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor)
-{
-    /// Index parameters can be set multiple times.
-    /// This happens exactly in a case that same hasAnyTokens/hasAllTokens query is used again.
-    /// This is fine because the parameters would be same.
-    if (token_extractor != nullptr)
-        return;
-
-    token_extractor = std::move(new_token_extractor);
-}
-
-template <class HasTokensTraits>
-void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector<String> & new_search_tokens)
-{
-    if (search_tokens.has_value())
-        return;
-
-    search_tokens = TokensWithPosition();
-    for (UInt64 pos = 0; const auto & new_search_token : new_search_tokens)
-        if (auto [_, inserted] = search_tokens->emplace(new_search_token, pos); inserted)
-            ++pos;
-
 }
 
 namespace
 {
+
+constexpr size_t arg_input = 0;
+constexpr size_t arg_needles = 1;
+constexpr size_t arg_tokenizer = 2;
+
+TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
+{
+    if (arguments.size() < 2)
+        return {};
+
+    auto column_needles = arguments[arg_needles].column;
+    if (!column_needles || column_needles->empty())
+        return {};
+
+    Field needles_field = (*column_needles)[0];
+    if (needles_field.isNull())
+        return {};
+
+    TokensWithPosition search_tokens;
+    std::vector<String> tokens_array;
+
+    if (needles_field.getType() == Field::Types::String)
+    {
+        auto tokens_str = needles_field.safeGet<String>();
+        tokenizer.stringToTokens(tokens_str.data(), tokens_str.size(), tokens_array);
+        tokens_array = tokenizer.compactTokens(tokens_array);
+    }
+    else if (needles_field.getType() == Field::Types::Array)
+    {
+        Array array_data = needles_field.safeGet<Array>();
+
+        for (const auto & element : array_data)
+        {
+            if (element.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type of column '{}'", function_name, column_needles->getName());
+
+            tokens_array.emplace_back(element.safeGet<String>());
+        }
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type of column '{}'", function_name, column_needles->getName());
+    }
+
+    size_t pos = 0;
+    for (const auto & token : tokens_array)
+    {
+        if (search_tokens.emplace(token, pos).second)
+            ++pos;
+    }
+    return search_tokens;
+}
 
 /// Function input accept string, fixed string, array of string or array of fixed strings.
 bool isStringOrFixedStringOrArrayOfStringOrFixedString(const IDataType & type)
@@ -98,48 +110,55 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 
     return false;
 }
-
-
-TokensWithPosition extractTokensFromString(std::string_view value)
-{
-    SplitByNonAlphaTokenExtractor default_token_extractor;
-    TokensWithPosition tokens;
-    size_t pos = 0;
-
-    forEachTokenPadded(default_token_extractor, value.data(), value.size(), [&](const char * token_start, size_t token_len)
-    {
-        tokens.emplace(std::string{token_start, token_len}, pos);
-        ++pos;
-        return false;
-    });
-
-    return tokens;
-}
-
 }
 
 template <class HasTokensTraits>
-DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::FunctionHasAnyAllTokensOverloadResolver(ContextPtr)
 {
-    if (!enable_full_text_index)
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Enable the setting 'enable_full_text_index' to use function {}", getName());
+}
 
-    FunctionArgumentDescriptors mandatory_args{
+template <class HasTokensTraits>
+DataTypePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    FunctionArgumentDescriptors mandatory_args
+    {
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString), nullptr, "String, FixedString, Array(String) or Array(FixedString)"},
         {"needles",
          static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType),
          isColumnConst,
-         "const String or const Array(String)"}};
+         "const String or const Array(String)"}
+    };
 
-    validateFunctionArguments(*this, arguments, mandatory_args);
+    FunctionArgumentDescriptors optional_args;
+    if (arguments.size() == 3)
+        optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
 
+    validateFunctionArguments(name, arguments, mandatory_args, optional_args);
     return std::make_shared<DataTypeNumber<UInt8>>();
+}
+
+template <class HasTokensTraits>
+FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const
+{
+    const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column
+        ? SplitByNonAlphaTokenizer::getExternalName()
+        : arguments[arg_tokenizer].column->getDataAt(0);
+
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
+    auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName());
+    DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
+    return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(tokenizer), std::move(search_tokens), std::move(argument_types), return_type);
+}
+
+template <class HasTokensTraits>
+ExecutableFunctionPtr FunctionBaseHasAnyAllTokens<HasTokensTraits>::prepare(const ColumnsWithTypeAndName &) const
+{
+    return std::make_unique<ExecutableFunctionHasAnyAllTokens<HasTokensTraits>>(tokenizer, search_tokens);
 }
 
 namespace
 {
+
 struct HasAnyTokensMatcher
 {
     explicit HasAnyTokensMatcher(const TokensWithPosition & tokens_)
@@ -222,7 +241,7 @@ void searchOnArray(
     const StringColumnType auto & input_string,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     MatcherType auto matcher)
 {
     ArrayOffset current_offset = 0;
@@ -236,7 +255,7 @@ void searchOnArray(
         {
             std::string_view input = input_string.getDataAt(current_offset + j);
 
-            forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+            forEachTokenPadded(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
 
             if (col_result[i])
                 break;
@@ -251,7 +270,7 @@ void searchOnString(
     const StringColumnType auto & col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     MatcherType auto matcher)
 {
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -260,7 +279,7 @@ void searchOnString(
         col_result[i] = false;
         matcher.reset();
 
-        forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+        forEachTokenPadded(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
     }
 }
 
@@ -269,7 +288,7 @@ void executeString(
     const StringColumnType auto & col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
     if (tokens.empty())
@@ -282,9 +301,9 @@ void executeString(
     col_result.resize(input_rows_count);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        searchOnString(col_input, col_result, input_rows_count, token_extractor, HasAnyTokensMatcher(tokens));
+        searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        searchOnString(col_input, col_result, input_rows_count, token_extractor, HasAllTokensMatcher(tokens));
+        searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -294,7 +313,7 @@ void executeArray(
     const ColumnArray * array,
     const StringColumnType auto & input_string,
     PaddedPODArray<UInt8> & col_result,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
     const auto & offsets = array->getOffsets();
@@ -310,125 +329,74 @@ void executeArray(
     col_result.resize(input_size);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        searchOnArray(offsets, input_string, col_result, input_size, token_extractor, HasAnyTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, col_result, input_size, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        searchOnArray(offsets, input_string, col_result, input_size, token_extractor, HasAllTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, col_result, input_size, tokenizer, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
 
 template <class HasTokensTraits>
-void execute(
+void executeStringOrArray(
     ColumnPtr col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
-    /// String
     if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        executeString<HasTokensTraits>(*col_input_string, col_result, input_rows_count, token_extractor, tokens);
-    /// FixedString
+        executeString<HasTokensTraits>(*col_input_string, col_result, input_rows_count, tokenizer, tokens);
     else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        executeString<HasTokensTraits>(*col_input_fixedstring, col_result, input_rows_count, token_extractor, tokens);
-    /// Array(String) or Array(FixedString)
+        executeString<HasTokensTraits>(*col_input_fixedstring, col_result, input_rows_count, tokenizer, tokens);
     else if (const auto * col_input_array = checkAndGetColumn<ColumnArray>(col_input.get()))
     {
-        /// String
         if (const auto * input_string = checkAndGetColumn<ColumnString>(&col_input_array->getData()))
-            executeArray<HasTokensTraits>(col_input_array, *input_string, col_result, token_extractor, tokens);
-        /// FixedString
+            executeArray<HasTokensTraits>(col_input_array, *input_string, col_result, tokenizer, tokens);
         else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(&col_input_array->getData()))
-            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, col_result, token_extractor, tokens);
+            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, col_result, tokenizer, tokens);
     }
-}
-
-template <typename ColumnType>
-const ColumnType * getTypedColumn(const IColumn & column)
-{
-    if (const auto * column_const_typed = checkAndGetColumnConstData<ColumnType>(&column))
-        return column_const_typed;
-
-    return checkAndGetColumn<ColumnType>(&column);
 }
 
 }
 
 template <class HasTokensTraits>
-ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
+ColumnPtr ExecutableFunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
-    constexpr size_t arg_input = 0;
-    constexpr size_t arg_needles = 1;
-
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
-    ColumnPtr col_input = arguments[arg_input].column;
     auto col_result = ColumnVector<UInt8>::create();
 
-    if (token_extractor == nullptr)
+    if (search_tokens.empty())
     {
-        /// If token_extractor == nullptr, we do a full-table scan on a column without index
-        /// By default, the default tokenizer will be used to tokenize the input column.
-        /// Additionally, the search tokens need to be extract from the needle argument.
-        chassert(!search_tokens.has_value());
+        col_result->getData().assign(input_rows_count, UInt8(0));
+        return col_result;
+    }
 
-        /// Populate needles from function arguments
-        TokensWithPosition search_tokens_from_args;
-        const ColumnPtr col_needles = arguments[arg_needles].column;
+    ColumnPtr col_input = arguments[arg_input].column;
 
-        if (const ColumnString * column_needles_string = getTypedColumn<ColumnString>(*col_needles))
-        {
-            search_tokens_from_args = extractTokensFromString(column_needles_string->getDataAt(0));
-        }
-        else if (const ColumnArray * column_needles_array = getTypedColumn<ColumnArray>(*col_needles))
-        {
-            const IColumn & array_data = column_needles_array->getData();
-
-            /// Argument has Array(Nothing) type if a constant array is empty.
-            if (checkAndGetColumn<ColumnNothing>(&array_data))
-            {
-                col_result->getData().assign(input_rows_count, UInt8(0));
-                return col_result;
-            }
-
-            const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(array_data);
-            const ColumnArray::Offsets & array_offsets = column_needles_array->getOffsets();
-
-            for (size_t i = 0; i < array_offsets[0]; ++i)
-                search_tokens_from_args.emplace(needles_data_string.getDataAt(i), i);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
-        }
-
-        static SplitByNonAlphaTokenExtractor default_token_extractor;
-        execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, &default_token_extractor, search_tokens_from_args);
+    if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+    {
+        /// The sparse gram token extractor stores an internal state which modified during the execution.
+        /// This leads to an error while executing this function multi-threaded because that state is not protected.
+        /// To avoid this case, a clone of the sparse gram token extractor will be used.
+        auto sparse_grams_tokenizer = tokenizer->clone();
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
     }
     else
     {
-        /// If token_extractor != nullptr, a text index exists and we are doing text index lookups
-        if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
-        {
-            /// The sparse gram token extractor stores an internal state which modified during the execution.
-            /// This leads to an error while executing this function multi-threaded because that state is not protected.
-            /// To avoid this case, a clone of the sparse gram token extractor will be used.
-            auto sparse_gram_extractor = token_extractor->clone();
-            execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_gram_extractor.get(), search_tokens.value());
-        }
-        else
-        {
-            execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, token_extractor.get(), search_tokens.value());
-        }
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, tokenizer.get(), search_tokens);
     }
 
     return col_result;
 }
 
-template class FunctionHasAnyAllTokens<traits::HasAnyTokensTraits>;
-template class FunctionHasAnyAllTokens<traits::HasAllTokensTraits>;
+template class ExecutableFunctionHasAnyAllTokens<HasAnyTokensTraits>;
+template class ExecutableFunctionHasAnyAllTokens<HasAllTokensTraits>;
+
+template class FunctionBaseHasAnyAllTokens<HasAnyTokensTraits>;
+template class FunctionBaseHasAnyAllTokens<HasAllTokensTraits>;
 
 REGISTER_FUNCTION(HasAnyTokens)
 {
@@ -455,12 +423,13 @@ hasAnyTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
-        {"needles", "Tokens to be searched.", {"String", "Array(String)"}}
+        {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
     {
-        "Usage example for a string column",
+        "Basic usage with a string needle",
         R"(
 CREATE TABLE table (
     id UInt32,
@@ -560,8 +529,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
     FunctionDocumentation::Category category_hasAnyTokens = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation_hasAnyTokens = {description_hasAnyTokens, syntax_hasAnyTokens, arguments_hasAnyTokens, {}, returned_value_hasAnyTokens, examples_hasAnyTokens, introduced_in_hasAnyTokens, category_hasAnyTokens};
 
-    factory.registerFunction<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits>>(documentation_hasAnyTokens);
-    factory.registerAlias("hasAnyToken", traits::HasAnyTokensTraits::name);
+    factory.registerFunction<FunctionHasAnyAllTokensOverloadResolver<HasAnyTokensTraits>>(documentation_hasAnyTokens);
+    factory.registerAlias("hasAnyToken", HasAnyTokensTraits::name);
 }
 
 REGISTER_FUNCTION(HasAllTokens)
@@ -589,12 +558,13 @@ hasAllTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
-        {"needles", "Tokens to be searched.", {"String", "Array(String)"}}
+        {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {
     {
-        "Usage example for a string column",
+        "Basic usage with a string needle",
         R"(
 CREATE TABLE table (
     id UInt32,
@@ -634,6 +604,17 @@ SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString'
 ┌─count()─┐
 │       1 │
 └─────────┘
+        )"
+    },
+    {
+        "Use a custom tokenizer via the 3rd argument",
+        R"(
+SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
+        )",
+        R"(
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                            1 │
+└──────────────────────────────────────────────┘
         )"
     },
     {
@@ -694,7 +675,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
     FunctionDocumentation::Category category_hasAllTokens = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation_hasAllTokens = {description_hasAllTokens, syntax_hasAllTokens, arguments_hasAllTokens, {}, returned_value_hasAllTokens, examples_hasAllTokens, introduced_in_hasAllTokens, category_hasAllTokens};
 
-    factory.registerFunction<FunctionHasAnyAllTokens<traits::HasAllTokensTraits>>(documentation_hasAllTokens);
-    factory.registerAlias("hasAllToken", traits::HasAllTokensTraits::name);
+    factory.registerFunction<FunctionHasAnyAllTokensOverloadResolver<HasAllTokensTraits>>(documentation_hasAllTokens);
+    factory.registerAlias("hasAllToken", HasAllTokensTraits::name);
 }
 }

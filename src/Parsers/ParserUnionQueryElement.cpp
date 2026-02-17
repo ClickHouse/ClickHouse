@@ -10,13 +10,17 @@ namespace DB
 
 bool ParserUnionQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserSubquery().parse(pos, node, expected) && !ParserSelectQuery().parse(pos, node, expected))
-        return false;
+    if (ParserSubquery().parse(pos, node, expected))
+    {
+        if (const auto * ast_subquery = node->as<ASTSubquery>())
+            node = ast_subquery->children.at(0);
+        return true;
+    }
 
-    if (const auto * ast_subquery = node->as<ASTSubquery>())
-        node = ast_subquery->children.at(0);
+    if (ParserSelectQuery().parse(pos, node, expected))
+        return true;
 
-    return true;
+    return false;
 }
 
 }

@@ -19,7 +19,6 @@ namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
-    extern const SettingsBool enable_qbit_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -44,7 +43,6 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
-    , enable_qbit_type(settings[Setting::enable_qbit_type])
 {
 }
 
@@ -137,18 +135,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot create column with type '{}' because Time64 type is not allowed. "
                     "Set setting enable_time_time64_type = 1 in order to allow it",
-                    data_type.getName());
-            }
-        }
-
-        if (!settings.enable_qbit_type)
-        {
-            if (isQBit(data_type))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because QBit type is not allowed. "
-                    "Set setting enable_qbit_type = 1 in order to allow it",
                     data_type.getName());
             }
         }
