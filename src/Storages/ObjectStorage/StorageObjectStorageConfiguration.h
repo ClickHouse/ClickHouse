@@ -84,7 +84,8 @@ public:
         StorageObjectStorageConfiguration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure);
+        bool with_table_structure,
+        const StorageID * table_id = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;

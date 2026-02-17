@@ -3408,7 +3408,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
             part_log_elem.rows = part->rows_count;
-            part_log_elem.part_type = part->getType();
+            part_log_elem.part_format = part->getFormat();
 
             part_log->add(part_log_elem);
         }
@@ -9307,7 +9307,7 @@ try
         part_log_elem.bytes_compressed_on_disk = result_part->getBytesOnDisk();
         part_log_elem.bytes_uncompressed = result_part->getBytesUncompressedOnDisk();
         part_log_elem.rows = result_part->rows_count;
-        part_log_elem.part_type = result_part->getType();
+        part_log_elem.part_format = result_part->getFormat();
     }
 
     part_log_elem.source_part_names.reserve(source_parts.size());

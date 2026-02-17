@@ -4,12 +4,12 @@ drop table if exists t_stat_nullable_2 sync;
 create table t_stat_nullable_1(A Int64, B String, C String)
 Engine = ReplicatedMergeTree('/clickhouse/{database}/tables/t_stat_nullable', '1')
 order by A
-SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'uniq';
+SETTINGS auto_statistics_types = 'uniq';
 
 create table t_stat_nullable_2( A Int64, B String, C String)
 Engine = ReplicatedMergeTree('/clickhouse/{database}/tables/t_stat_nullable', '2')
 order by A
-SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'uniq';
+SETTINGS auto_statistics_types = 'uniq';
 
 set mutations_sync = 2;
 

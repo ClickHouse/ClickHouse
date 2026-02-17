@@ -19,6 +19,7 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_storage_s3_queue/test_6.py",
     "test_named_collections_encrypted2/",
     "test_multiple_disks/",
+    "test_ytsaurus/",
 ]
 
 TEST_CONFIGS = [

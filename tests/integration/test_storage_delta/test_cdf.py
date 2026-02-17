@@ -47,6 +47,7 @@ from helpers.s3_tools import (
     upload_directory,
     LocalDownloader,
 )
+from helpers.spark_tools import ResilientSparkSession
 
 
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
@@ -123,7 +124,7 @@ def started_cluster():
         # extend this if testing on other nodes becomes necessary
         cluster.local_uploader = LocalUploader(cluster.instances["instance1"])
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(get_spark)
 
         for file in S3_DATA:
             print(f"Copying object {file}")
