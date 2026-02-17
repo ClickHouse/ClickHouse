@@ -6,9 +6,14 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/PartLog.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/StorageMergeTree.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
@@ -34,6 +39,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsUInt64 max_insert_parts_buffer_rows;
+    extern const SettingsUInt64 max_insert_parts_buffer_bytes;
 }
 
 namespace MergeTreeSetting
@@ -68,6 +75,15 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
+    , max_parts_buffer_rows(
+        context_->getSettingsRef()[Setting::max_insert_parts_buffer_rows].changed
+        ? std::optional{context_->getSettingsRef()[Setting::max_insert_parts_buffer_rows].value}
+        : std::nullopt)
+    , max_parts_buffer_bytes(
+        context_->getSettingsRef()[Setting::max_insert_parts_buffer_bytes].changed
+        ? std::optional{context_->getSettingsRef()[Setting::max_insert_parts_buffer_bytes].value}
+        : std::nullopt)
+    , insert_parts_buffered(max_parts_buffer_rows.has_value() || max_parts_buffer_bytes.has_value())
 {
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 }
@@ -84,7 +100,12 @@ void MergeTreeSink::onFinish()
     if (isCancelled())
         return;
 
-    finishDelayedChunk();
+    LOG_TRACE(storage.log, "onFinish() called");
+
+    if (insert_parts_buffered)
+        flushPartsBuffer(false);
+    else
+        finishDelayedChunk();
 }
 
 void MergeTreeSink::consume(Chunk & chunk)
@@ -97,18 +118,48 @@ void MergeTreeSink::consume(Chunk & chunk)
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
 
-    using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;
-    DelayedPartitions partitions;
+    if (insert_parts_buffered)
+        consumePartsBuffered(std::move(part_blocks), std::move(deduplication_info));
+    else
+        consumePartsSimple(std::move(part_blocks), std::move(deduplication_info));
 
+    ++num_blocks_processed;
+}
+
+size_t MergeTreeSink::BufferedPartitionKey::Hash::operator()(const BufferedPartitionKey & p) const
+{
+    SipHash hash;
+    for (auto & key_field : p.fields)
+        applyVisitor(FieldVisitorHash(hash), key_field);
+    return hash.get64();
+}
+
+size_t MergeTreeSink::BufferedPartitionData::getMetric(const Settings & settings) const
+{
+    // We will use bytes for heap ordering even when both limits are enabled,
+    // because it is expected for both metrics to be correlated in general case.
+    return settings[Setting::max_insert_parts_buffer_rows] ? bytes : rows;
+}
+
+void MergeTreeSink::consumePartsSimple(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationInfo> deduplication_info)
+{
     const Settings & settings = context->getSettingsRef();
+
     size_t total_streams = 0;
     bool support_parallel_write = false;
 
     std::vector<UInt128> all_partwriter_hashes;
     all_partwriter_hashes.reserve(part_blocks.size());
 
+    using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;
+    DelayedPartitions partitions;
+
+    size_t total_rows = 0;
+
     for (auto & current_block : part_blocks)
     {
+        total_rows += current_block.block->rows();
+
         ProfileEvents::Counters part_counters;
         auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
@@ -209,13 +260,100 @@ void MergeTreeSink::consume(Chunk & chunk)
 
         total_streams += current_streams;
     }
-    deduplication_info->setPartWriterHashes(all_partwriter_hashes, chunk.getNumRows());
+    deduplication_info->setPartWriterHashes(all_partwriter_hashes, total_rows);
 
     finishDelayedChunk();
     delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+}
 
-    ++num_blocks_processed;
+void MergeTreeSink::consumePartsBuffered(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationInfo> /*deduplication_info*/)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    auto bufferizeOnePart = [this, &settings] (BlockWithPartition & part_block)
+    {
+        size_t addendum_rows = part_block.block->rows();
+        size_t addendum_bytes = max_parts_buffer_bytes.value_or(0) ? part_block.block->bytes() : 0; // Avoid counting bytes when unneeded
+
+        auto key = BufferedPartitionKey{std::move(part_block.partition.value)};
+        auto iter = parts_buffer.try_emplace(key).first;
+        auto & data = iter->second;
+        data.blocks.push_back(std::move(*part_block.block));
+        parts_heap.erase({data.getMetric(settings), &*iter});
+        data.rows += addendum_rows;
+        data.bytes += addendum_bytes;
+        parts_heap.insert({data.getMetric(settings), &*iter});
+
+        return std::pair{addendum_rows, addendum_bytes};
+    };
+
+    LOG_TRACE(storage.log, "Consuming chunk using parts buffer (parts = {})", part_blocks.size());
+
+    for (auto & part_block : part_blocks)
+    {
+        auto [rows, bytes] = bufferizeOnePart(part_block);
+        parts_buffer_rows += rows;
+        parts_buffer_bytes += bytes;
+
+        while ((max_parts_buffer_rows.value_or(0) && max_parts_buffer_rows.value() < parts_buffer_rows) ||
+            (max_parts_buffer_bytes.value_or(0) && max_parts_buffer_bytes.value() < parts_buffer_bytes))
+            flushPartsBuffer(true);
+    }
+
+    LOG_TRACE(storage.log, "Consumed chunk using parts buffer");
+}
+
+void MergeTreeSink::flushPartsBuffer(bool just_one_bucket)
+{
+    auto flushOnePartition = [this](decltype(parts_buffer)::reference partition)
+    {
+        auto & [key, data] = partition;
+
+        auto big_block = concatenateBlocks(data.blocks);
+        data.blocks.clear();
+
+        auto block_with_partition = BlockWithPartition(std::make_shared<Block>(std::move(big_block)), Row(key.fields));
+        auto temp_part = storage.writer.writeTempPart(block_with_partition, metadata_snapshot, context);
+        block_with_partition.block->clear();
+        block_with_partition.partition.value.clear();
+        temp_part->finalize();
+
+        MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
+        {
+            auto lock = storage.lockParts();
+            storage.fillNewPartName(temp_part->part, lock);
+            storage.renameTempPartAndAdd(temp_part->part, transaction, lock, false);
+            transaction.commit(lock);
+        }
+
+        temp_part->prewarmCaches();
+    };
+
+    LOG_TRACE(storage.log, "Flushing buffered parts from {} buckets (just one = {})", parts_buffer.size(), just_one_bucket);
+
+    if (just_one_bucket)
+    {
+        auto heap_iter = --parts_heap.rbegin().base();
+        auto & partition = *heap_iter->second;
+        auto & [key, data] = partition;
+        flushOnePartition(partition);
+        parts_buffer_rows -= data.rows;
+        parts_buffer_bytes -= data.bytes;
+        parts_buffer.erase(key);
+        parts_heap.erase(heap_iter);
+    }
+    else
+    {
+        for (auto & partition : parts_buffer)
+            flushOnePartition(partition);
+
+        parts_buffer.clear();
+        parts_heap.clear();
+        parts_buffer_rows = parts_buffer_bytes = 0;
+    }
+
+    LOG_TRACE(storage.log, "Buffered flush finished");
 }
 
 void MergeTreeSink::finishDelayedChunk()
