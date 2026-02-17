@@ -94,6 +94,7 @@ namespace Setting
     extern const SettingsBool engine_file_skip_empty_files;
     extern const SettingsBool engine_file_truncate_on_insert;
     extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_glob_ast_parser;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
@@ -146,7 +147,8 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    bool recursive)
+    bool recursive,
+    bool use_glob_ast)
 {
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
@@ -177,7 +179,16 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
-    BetterGlob::GlobString glob_string(current_glob);
+    std::optional<GlobMatcher> glob_matcher;
+    if (use_glob_ast)
+        glob_matcher.emplace(GlobMatcher::createNew(current_glob));
+    else
+        glob_matcher.emplace(GlobMatcher::createLegacy(current_glob));
+
+    auto matches_name = [&](const String & name) -> bool
+    {
+        return glob_matcher->matches(name);
+    };
 
     bool skip_regex = current_glob == "/*";
     if (!recursive)
@@ -200,7 +211,7 @@ void listFilesWithRegexpMatchingImpl(
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!it->is_directory() && !looking_for_directory)
         {
-            if (skip_regex || glob_string.matches(file_name))
+            if (skip_regex || matches_name(file_name))
             {
                 total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
@@ -212,12 +223,12 @@ void listFilesWithRegexpMatchingImpl(
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive);
+                                                total_bytes_to_read, result, recursive, use_glob_ast);
             }
-            else if (looking_for_directory && glob_string.matches(file_name))
+            else if (looking_for_directory && matches_name(file_name))
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false);
+                                                total_bytes_to_read, result, false, use_glob_ast);
         }
     }
 }
@@ -225,14 +236,19 @@ void listFilesWithRegexpMatchingImpl(
 std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    size_t max_expansion)
+    size_t max_expansion,
+    bool use_glob_ast)
 {
     std::vector<std::string> result;
 
-    Strings for_match_paths_expanded = BetterGlob::GlobString(for_match).expand(max_expansion);
+    Strings for_match_paths_expanded;
+    if (use_glob_ast)
+        for_match_paths_expanded = GlobAST::GlobString(for_match).expand(max_expansion);
+    else
+        for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, use_glob_ast);
 
     return result;
 }
@@ -304,6 +320,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     Strings paths;
 
     const size_t max_expansion = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+    const bool use_glob_ast = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
@@ -330,14 +347,14 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, max_expansion);
+            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, max_expansion, use_glob_ast);
             can_be_directory = false;
         }
     }
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, max_expansion);
+        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, max_expansion, use_glob_ast);
         can_be_directory = false;
     }
 
@@ -360,14 +377,25 @@ StorageFile::ArchiveInfo getArchiveInfo(
     StorageFile::ArchiveInfo archive_info;
     archive_info.path_in_archive = file_in_archive;
 
-    BetterGlob::GlobString glob_string(file_in_archive);
+    const bool use_glob_ast = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
-    if (glob_string.hasGlobs())
+    if (use_glob_ast)
     {
-        archive_info.filter = [glob = std::make_shared<BetterGlob::GlobString>(file_in_archive)](const std::string & p)
+        GlobAST::GlobString glob_string(file_in_archive);
+
+        if (glob_string.hasGlobs())
         {
-            return glob->matches(p);
-        };
+            auto matcher = std::make_shared<GlobMatcher>(GlobMatcher::createNew(file_in_archive));
+            archive_info.filter = [matcher](const std::string & p) { return matcher->matches(p); };
+        }
+    }
+    else
+    {
+        if (file_in_archive.find_first_of("*?{") != std::string::npos)
+        {
+            auto matcher = std::make_shared<GlobMatcher>(GlobMatcher::createLegacy(file_in_archive));
+            archive_info.filter = [matcher](const std::string & p) { return matcher->matches(p); };
+        }
     }
 
     archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);

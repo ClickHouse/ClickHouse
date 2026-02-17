@@ -1,9 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
+
+namespace re2 { class RE2; }
 
 
 namespace DB
@@ -20,7 +23,7 @@ namespace DB
     /// E.g. for a string like `file{1,2,3}.csv` return vector of strings: {`file1.csv`,`file2.csv`,`file3.csv`}
     std::vector<std::string> expandSelectionGlob(const std::string & path);
 
-namespace BetterGlob
+namespace GlobAST
 {
 
 /// fixme more clever range:
@@ -158,4 +161,30 @@ private:
 };
 
 }
+
+/// Unified glob matcher that delegates to either GlobAST::GlobString (new)
+/// or re2::RE2 (legacy), controlled by the use_glob_ast_parser setting.
+class GlobMatcher
+{
+public:
+    /// Create a matcher using the new AST-based glob parser.
+    static GlobMatcher createNew(const std::string & glob_pattern);
+
+    static GlobMatcher createLegacy(const std::string & glob_pattern);
+
+    bool matches(const std::string & candidate) const;
+
+    GlobMatcher();
+    ~GlobMatcher();
+
+    GlobMatcher(const GlobMatcher &) = delete;
+    GlobMatcher & operator=(const GlobMatcher &) = delete;
+    GlobMatcher(GlobMatcher &&) noexcept;
+    GlobMatcher & operator=(GlobMatcher &&) noexcept;
+
+private:
+    std::optional<GlobAST::GlobString> glob_string;
+    std::unique_ptr<re2::RE2> re2_matcher;
+};
+
 }

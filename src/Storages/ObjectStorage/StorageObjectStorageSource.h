@@ -217,7 +217,7 @@ private:
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;
 
-    std::optional<BetterGlob::GlobString> matcher;
+    std::optional<GlobMatcher> matcher;
 
     bool is_finished = false;
     bool first_iteration = true;

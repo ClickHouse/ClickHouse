@@ -65,6 +65,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_glob_ast_parser;
     extern const SettingsUInt64 max_download_buffer_size;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
@@ -182,20 +183,37 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    BetterGlob::GlobString glob_string(reading_path.path);
 
     const size_t max_expansion = local_context->getSettingsRef()[Setting::glob_expansion_max_elements];
+    const bool use_glob_ast = local_context->getSettingsRef()[Setting::use_glob_ast_parser];
 
-    if (glob_string.hasGlobs() && glob_string.isFullyExpandable()
-        && glob_string.cardinality() <= max_expansion)
+    std::optional<GlobAST::GlobString> glob_string;
+    if (use_glob_ast)
+        glob_string.emplace(reading_path.path);
+
+    bool has_globs = use_glob_ast ? glob_string->hasGlobs() : reading_path.hasGlobs();
+
+    bool can_expand = use_glob_ast
+        && glob_string->isFullyExpandable()
+        && glob_string->cardinality() <= max_expansion;
+
+    if (!can_expand && !use_glob_ast && has_globs)
+        can_expand = hasExactlyOneBracketsExpansion(reading_path.path);
+
+    if (has_globs && can_expand)
     {
-        auto paths = glob_string.expand(max_expansion, /*expand_ranges=*/true);
+        Strings paths;
+        if (use_glob_ast)
+            paths = glob_string->expand(max_expansion, /*expand_ranges=*/true);
+        else
+            paths = expandSelectionGlob(reading_path.path);
+
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
             file_progress_callback);
     }
-    else if (glob_string.hasGlobs())
+    else if (has_globs)
     {
         // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
         std::optional<Strings> paths;
@@ -223,11 +241,24 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         {
             // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
             Strings validated_paths;
-            for (const auto & path : paths.value())
+            if (use_glob_ast)
             {
-                const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
-                if (glob_string.matches(relative_path))
-                    validated_paths.push_back(relative_path);
+                for (const auto & path : paths.value())
+                {
+                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                    if (glob_string->matches(relative_path))
+                        validated_paths.push_back(relative_path);
+                }
+            }
+            else
+            {
+                GlobMatcher legacy_matcher = GlobMatcher::createLegacy(reading_path.path);
+                for (const auto & path : paths.value())
+                {
+                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                    if (legacy_matcher.matches(relative_path))
+                        validated_paths.push_back(relative_path);
+                }
             }
 
             iterator = std::make_unique<KeysIterator>(
@@ -954,8 +985,11 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags);
 
-        BetterGlob::GlobString glob_string(key_with_globs.path);
-        matcher.emplace(std::move(glob_string));
+        const bool use_glob_ast = getContext()->getSettingsRef()[Setting::use_glob_ast_parser];
+        if (use_glob_ast)
+            matcher.emplace(GlobMatcher::createNew(key_with_globs.path));
+        else
+            matcher.emplace(GlobMatcher::createLegacy(key_with_globs.path));
 
         recursive = key_with_globs.path == "/**";
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
@@ -1255,10 +1289,11 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         archive_object, path_in_archive, archive_reader, archive_reader->getFileInfo(path_in_archive));
 }
 
-static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
+static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern, bool use_glob_ast)
 {
-    auto glob_string = std::make_shared<BetterGlob::GlobString>(archive_pattern);
-    return [glob_string](const std::string & p) { return glob_string->matches(p); };
+    auto matcher = std::make_shared<GlobMatcher>(
+        use_glob_ast ? GlobMatcher::createNew(archive_pattern) : GlobMatcher::createLegacy(archive_pattern));
+    return [matcher](const std::string & p) { return matcher->matches(p); };
 }
 
 StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInArchive(
@@ -1281,7 +1316,9 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     , object_storage(object_storage_)
     , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())
     , archives_iterator(std::move(archives_iterator_))
-    , filter(is_path_in_archive_with_globs ? createArchivePathFilter(configuration_->getPathInArchive()) : IArchiveReader::NameFilter{})
+    , filter(is_path_in_archive_with_globs
+        ? createArchivePathFilter(configuration_->getPathInArchive(), context_->getSettingsRef()[Setting::use_glob_ast_parser])
+        : IArchiveReader::NameFilter{})
     , log(getLogger("ArchiveIterator"))
     , path_in_archive(is_path_in_archive_with_globs ? "" : configuration_->getPathInArchive())
     , read_keys(read_keys_)

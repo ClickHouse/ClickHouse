@@ -5,78 +5,78 @@
 
 using namespace DB;
 
-TEST(Common, BetterGlob)
+TEST(Common, GlobAST)
 {
     // Smoke tests.
-    auto s = BetterGlob::GlobString("123");
+    auto s = GlobAST::GlobString("123");
 
     EXPECT_EQ(s.getExpressions().size(), 1);
-    EXPECT_EQ(s.getExpressions().front().type(), BetterGlob::ExpressionType::CONSTANT);
+    EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
 
-    s = BetterGlob::GlobString("123{123,456,789,234,567,890}");
+    s = GlobAST::GlobString("123{123,456,789,234,567,890}");
 
     EXPECT_EQ(s.getExpressions().size(), 2);
-    EXPECT_EQ(s.getExpressions().front().type(), BetterGlob::ExpressionType::CONSTANT);
-    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::ENUM);
+    EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
+    EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::ENUM);
     EXPECT_EQ(s.getExpressions().back().cardinality(), 6);
 
-    s = BetterGlob::GlobString("123{123}{12..23}");
+    s = GlobAST::GlobString("123{123}{12..23}");
 
     EXPECT_EQ(s.getExpressions().size(), 3);
-    EXPECT_EQ(s.getExpressions().front().type(), BetterGlob::ExpressionType::CONSTANT);
-    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::RANGE);
+    EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
+    EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
 
-    s = BetterGlob::GlobString("123{12..23}{1223}");
+    s = GlobAST::GlobString("123{12..23}{1223}");
 
     EXPECT_EQ(s.getExpressions().size(), 3);
-    EXPECT_EQ(s.getExpressions().front().type(), BetterGlob::ExpressionType::CONSTANT);
-    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::ENUM);
+    EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
+    EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::ENUM);
 
     // Range tests.
     //
-    BetterGlob::Range r;
-    s = BetterGlob::GlobString("f{1..9}");
+    GlobAST::Range r;
+    s = GlobAST::GlobString("f{1..9}");
 
     EXPECT_EQ(s.getExpressions().size(), 2);
-    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::RANGE);
+    EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
 
-    r = std::get<BetterGlob::Range>(s.getExpressions().back().getData());
+    r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
     EXPECT_EQ(r.start, 1);
     EXPECT_EQ(r.end, 9);
 
-    s = BetterGlob::GlobString("f{0..10}");
+    s = GlobAST::GlobString("f{0..10}");
     EXPECT_EQ(s.getExpressions().size(), 2);
-    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::RANGE);
+    EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
 
-    r = std::get<BetterGlob::Range>(s.getExpressions().back().getData());
+    r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
     EXPECT_EQ(r.start, 0);
     EXPECT_EQ(r.end, 10);
 
-    s = BetterGlob::GlobString("f{10..20}");
+    s = GlobAST::GlobString("f{10..20}");
     EXPECT_EQ(s.getExpressions().size(), 2);
-    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::RANGE);
+    EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
 
-    r = std::get<BetterGlob::Range>(s.getExpressions().back().getData());
+    r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
     EXPECT_EQ(r.start, 10);
     EXPECT_EQ(r.end, 20);
 
-    s = BetterGlob::GlobString("f{00..10}");
+    s = GlobAST::GlobString("f{00..10}");
     EXPECT_EQ(s.getExpressions().size(), 2);
-    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::RANGE);
+    EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
 
-    r = std::get<BetterGlob::Range>(s.getExpressions().back().getData());
+    r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
     EXPECT_EQ(r.start, 0);
     EXPECT_EQ(r.end, 10);
 
     EXPECT_EQ(r.start_digit_count, 2);
     EXPECT_EQ(r.end_digit_count, 2);
 
-    s = BetterGlob::GlobString("f{9..000}");
+    s = GlobAST::GlobString("f{9..000}");
     EXPECT_EQ(s.getExpressions().size(), 2);
-    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::RANGE);
+    EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
     EXPECT_EQ(s.getExpressions().back().dump(), "{9..000}");
 
-    r = std::get<BetterGlob::Range>(s.getExpressions().back().getData());
+    r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
     EXPECT_EQ(r.start, 9);
     EXPECT_EQ(r.end, 0);
 
@@ -84,18 +84,18 @@ TEST(Common, BetterGlob)
     EXPECT_EQ(r.end_digit_count, 3);
 }
 
-class BetterGlobEchoTest : public ::testing::TestWithParam<std::string> {};
-class BetterGlobRegexTest : public ::testing::TestWithParam<std::pair<std::string, std::string>> {};
+class GlobASTEchoTest : public ::testing::TestWithParam<std::string> {};
+class GlobASTRegexTest : public ::testing::TestWithParam<std::pair<std::string, std::string>> {};
 
-TEST_P(BetterGlobEchoTest, EchoTest)
+TEST_P(GlobASTEchoTest, EchoTest)
 {
     const auto & glob = GetParam();
-    EXPECT_EQ(BetterGlob::GlobString(glob).dump(), glob);
+    EXPECT_EQ(GlobAST::GlobString(glob).dump(), glob);
 }
 
 INSTANTIATE_TEST_SUITE_P(
     Common,
-    BetterGlobEchoTest,
+    GlobASTEchoTest,
     ::testing::Values(
         // Basic constant
         "a",
@@ -160,15 +160,15 @@ INSTANTIATE_TEST_SUITE_P(
     )
 );
 
-TEST_P(BetterGlobRegexTest, RegexTest)
+TEST_P(GlobASTRegexTest, RegexTest)
 {
     const auto & [glob, regex] = GetParam();
-    EXPECT_EQ(BetterGlob::GlobString(glob).asRegex(), regex);
+    EXPECT_EQ(GlobAST::GlobString(glob).asRegex(), regex);
 }
 
 INSTANTIATE_TEST_SUITE_P(
     Common,
-    BetterGlobRegexTest,
+    GlobASTRegexTest,
     ::testing::Values(
         std::make_pair("?", "[^/]"),
         std::make_pair("*", "[^/]*"),
@@ -250,88 +250,88 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*"), "(1|2|3)blabla(a\\.x|b\\.x|c\\.x)smth\\[\\]_else(aa|bb)[^/][^/]*");
 }
 
-TEST(Common, BetterGlobExpand)
+TEST(Common, GlobASTExpand)
 {
     using V = std::vector<std::string>;
 
     // No globs — single result.
-    EXPECT_EQ(BetterGlob::GlobString("file.csv").expand(), V({"file.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("file.csv").expand(), V({"file.csv"}));
 
     // Single enum.
-    EXPECT_EQ(BetterGlob::GlobString("file{a,b,c}.csv").expand(), V({"filea.csv", "fileb.csv", "filec.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("file{a,b,c}.csv").expand(), V({"filea.csv", "fileb.csv", "filec.csv"}));
 
     // Multiple enums — cartesian product.
-    EXPECT_EQ(BetterGlob::GlobString("{a,b}{1,2}").expand(), V({"a1", "a2", "b1", "b2"}));
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1,2}").expand(), V({"a1", "a2", "b1", "b2"}));
 
     // Enum with prefix, middle, suffix.
     EXPECT_EQ(
-        BetterGlob::GlobString("prefix{a,b}middle{1,2}suffix").expand(),
+        GlobAST::GlobString("prefix{a,b}middle{1,2}suffix").expand(),
         V({"prefixamiddle1suffix", "prefixamiddle2suffix", "prefixbmiddle1suffix", "prefixbmiddle2suffix"}));
 
     // Single-element enum — acts like a constant.
-    EXPECT_EQ(BetterGlob::GlobString("{test}").expand(), V({"{test}"}));
+    EXPECT_EQ(GlobAST::GlobString("{test}").expand(), V({"{test}"}));
 
     // Wildcards are passed through as literal text.
-    EXPECT_EQ(BetterGlob::GlobString("*.csv").expand(), V({"*.csv"}));
-    EXPECT_EQ(BetterGlob::GlobString("file?.csv").expand(), V({"file?.csv"}));
-    EXPECT_EQ(BetterGlob::GlobString("{a,b}/*.csv").expand(), V({"a/*.csv", "b/*.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("*.csv").expand(), V({"*.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("file?.csv").expand(), V({"file?.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("{a,b}/*.csv").expand(), V({"a/*.csv", "b/*.csv"}));
 
     // Ranges are passed through as literal text by default (expand_ranges=false).
-    EXPECT_EQ(BetterGlob::GlobString("f{1..9}.csv").expand(), V({"f{1..9}.csv"}));
-    EXPECT_EQ(BetterGlob::GlobString("{a,b}{1..3}.csv").expand(), V({"a{1..3}.csv", "b{1..3}.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{1..9}.csv").expand(), V({"f{1..9}.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1..3}.csv").expand(), V({"a{1..3}.csv", "b{1..3}.csv"}));
 
     // Ranges are expanded into concrete values with expand_ranges=true.
-    EXPECT_EQ(BetterGlob::GlobString("f{1..3}.csv").expand(1000, true), V({"f1.csv", "f2.csv", "f3.csv"}));
-    EXPECT_EQ(BetterGlob::GlobString("f{1..1}.csv").expand(1000, true), V({"f1.csv"}));
-    EXPECT_EQ(BetterGlob::GlobString("f{3..1}.csv").expand(1000, true), V({"f1.csv", "f2.csv", "f3.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{1..3}.csv").expand(1000, true), V({"f1.csv", "f2.csv", "f3.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{1..1}.csv").expand(1000, true), V({"f1.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{3..1}.csv").expand(1000, true), V({"f1.csv", "f2.csv", "f3.csv"}));
 
     // Ranges with zero-padding.
-    EXPECT_EQ(BetterGlob::GlobString("f{01..03}.csv").expand(1000, true), V({"f01.csv", "f02.csv", "f03.csv"}));
-    EXPECT_EQ(BetterGlob::GlobString("f{001..003}.csv").expand(1000, true), V({"f001.csv", "f002.csv", "f003.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{01..03}.csv").expand(1000, true), V({"f01.csv", "f02.csv", "f03.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{001..003}.csv").expand(1000, true), V({"f001.csv", "f002.csv", "f003.csv"}));
 
     // Range + enum cartesian product.
-    EXPECT_EQ(BetterGlob::GlobString("{a,b}{1..3}.csv").expand(1000, true), V({"a1.csv", "a2.csv", "a3.csv", "b1.csv", "b2.csv", "b3.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1..3}.csv").expand(1000, true), V({"a1.csv", "a2.csv", "a3.csv", "b1.csv", "b2.csv", "b3.csv"}));
 
     // Range cardinality guard.
-    EXPECT_THROW(BetterGlob::GlobString("f{1..2000}.csv").expand(100, true), DB::Exception);
-    EXPECT_NO_THROW(BetterGlob::GlobString("f{1..100}.csv").expand(1000, true));
+    EXPECT_THROW(GlobAST::GlobString("f{1..2000}.csv").expand(100, true), DB::Exception);
+    EXPECT_NO_THROW(GlobAST::GlobString("f{1..100}.csv").expand(1000, true));
 
     // Parity with old expandSelectionGlob.
-    EXPECT_EQ(BetterGlob::GlobString("file{1,2,3}").expand(), expandSelectionGlob("file{1,2,3}"));
+    EXPECT_EQ(GlobAST::GlobString("file{1,2,3}").expand(), expandSelectionGlob("file{1,2,3}"));
     EXPECT_EQ(
-        BetterGlob::GlobString("{a,b}{1,2}").expand(),
+        GlobAST::GlobString("{a,b}{1,2}").expand(),
         expandSelectionGlob("{a,b}{1,2}"));
 
     // Cardinality guard.
-    EXPECT_THROW(BetterGlob::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(100), DB::Exception);
-    EXPECT_NO_THROW(BetterGlob::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(1000));
+    EXPECT_THROW(GlobAST::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(100), DB::Exception);
+    EXPECT_NO_THROW(GlobAST::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(1000));
 
     // isFullyExpandable tests.
-    EXPECT_TRUE(BetterGlob::GlobString("{a,b,c}").isFullyExpandable());
-    EXPECT_TRUE(BetterGlob::GlobString("{a,b}{1,2}").isFullyExpandable());
-    EXPECT_TRUE(BetterGlob::GlobString("prefix{a,b}suffix").isFullyExpandable());
-    EXPECT_TRUE(BetterGlob::GlobString("f{1..9}.csv").isFullyExpandable());
-    EXPECT_TRUE(BetterGlob::GlobString("{a,b}{1..3}.csv").isFullyExpandable());
-    EXPECT_FALSE(BetterGlob::GlobString("file.csv").isFullyExpandable());       // no globs at all
-    EXPECT_FALSE(BetterGlob::GlobString("*.csv").isFullyExpandable());          // wildcard
-    EXPECT_FALSE(BetterGlob::GlobString("{a,b}/*.csv").isFullyExpandable());    // wildcard
-    EXPECT_FALSE(BetterGlob::GlobString("file?.csv").isFullyExpandable());      // ? wildcard
+    EXPECT_TRUE(GlobAST::GlobString("{a,b,c}").isFullyExpandable());
+    EXPECT_TRUE(GlobAST::GlobString("{a,b}{1,2}").isFullyExpandable());
+    EXPECT_TRUE(GlobAST::GlobString("prefix{a,b}suffix").isFullyExpandable());
+    EXPECT_TRUE(GlobAST::GlobString("f{1..9}.csv").isFullyExpandable());
+    EXPECT_TRUE(GlobAST::GlobString("{a,b}{1..3}.csv").isFullyExpandable());
+    EXPECT_FALSE(GlobAST::GlobString("file.csv").isFullyExpandable());       // no globs at all
+    EXPECT_FALSE(GlobAST::GlobString("*.csv").isFullyExpandable());          // wildcard
+    EXPECT_FALSE(GlobAST::GlobString("{a,b}/*.csv").isFullyExpandable());    // wildcard
+    EXPECT_FALSE(GlobAST::GlobString("file?.csv").isFullyExpandable());      // ? wildcard
 }
 
 /// Test suite for GlobString::matches() — direct AST-based matching without regex.
-class BetterGlobMatchTest : public ::testing::TestWithParam<std::tuple<std::string, std::string, bool>> {};
+class GlobASTMatchTest : public ::testing::TestWithParam<std::tuple<std::string, std::string, bool>> {};
 
-TEST_P(BetterGlobMatchTest, MatchTest)
+TEST_P(GlobASTMatchTest, MatchTest)
 {
     const auto & [glob, candidate, expected] = GetParam();
-    auto glob_string = BetterGlob::GlobString(glob);
+    auto glob_string = GlobAST::GlobString(glob);
     EXPECT_EQ(glob_string.matches(candidate), expected)
         << "glob=" << glob << " candidate=" << candidate << " expected=" << expected;
 }
 
 INSTANTIATE_TEST_SUITE_P(
     Common,
-    BetterGlobMatchTest,
+    GlobASTMatchTest,
     ::testing::Values(
         // --- Constants ---
         std::make_tuple("abc", "abc", true),
@@ -483,13 +483,13 @@ INSTANTIATE_TEST_SUITE_P(
     )
 );
 
-/// Verify that matches() agrees with asRegex() + RE2::FullMatch on all BetterGlobRegexTest patterns.
-class BetterGlobMatchVsRegexTest : public ::testing::TestWithParam<std::tuple<std::string, std::vector<std::string>, std::vector<std::string>>> {};
+/// Verify that matches() agrees with asRegex() + RE2::FullMatch on all GlobASTRegexTest patterns.
+class GlobASTMatchVsRegexTest : public ::testing::TestWithParam<std::tuple<std::string, std::vector<std::string>, std::vector<std::string>>> {};
 
-TEST_P(BetterGlobMatchVsRegexTest, MatchVsRegex)
+TEST_P(GlobASTMatchVsRegexTest, MatchVsRegex)
 {
     const auto & [glob, positives, negatives] = GetParam();
-    auto glob_string = BetterGlob::GlobString(glob);
+    auto glob_string = GlobAST::GlobString(glob);
     auto regex_str = glob_string.asRegex();
     re2::RE2 matcher(regex_str);
     ASSERT_TRUE(matcher.ok()) << "Regex failed to compile: " << regex_str;
@@ -521,7 +521,7 @@ using V = std::vector<std::string>;
 
 INSTANTIATE_TEST_SUITE_P(
     Common,
-    BetterGlobMatchVsRegexTest,
+    GlobASTMatchVsRegexTest,
     ::testing::Values(
         std::make_tuple("?", V({"a", "1", "Z"}), V({"", "ab", "/"})),
         std::make_tuple("*", V({"", "abc", "file.csv"}), V({"/", "a/b"})),

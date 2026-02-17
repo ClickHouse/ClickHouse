@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
     extern const int LOGICAL_ERROR;
 }
 
@@ -59,7 +60,7 @@ bool hasExactlyOneBracketsExpansion(const std::string & input)
     return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
 }
 
-namespace BetterGlob
+namespace GlobAST
 {
 
 std::string Expression::dump() const
@@ -989,4 +990,36 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
     expandSelectorGlobImpl(path, result);
     return result;
 }
+
+GlobMatcher::GlobMatcher() = default;
+GlobMatcher::~GlobMatcher() = default;
+GlobMatcher::GlobMatcher(GlobMatcher &&) noexcept = default;
+GlobMatcher & GlobMatcher::operator=(GlobMatcher &&) noexcept = default;
+
+bool GlobMatcher::matches(const std::string & candidate) const
+{
+    if (glob_string)
+        return glob_string->matches(candidate);
+    if (re2_matcher)
+        return re2::RE2::FullMatch(candidate, *re2_matcher);
+    return false;
+}
+
+GlobMatcher GlobMatcher::createNew(const std::string & glob_pattern)
+{
+    GlobMatcher m;
+    m.glob_string.emplace(glob_pattern);
+    return m;
+}
+
+GlobMatcher GlobMatcher::createLegacy(const std::string & glob_pattern)
+{
+    GlobMatcher m;
+    m.re2_matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(glob_pattern));
+    if (!m.re2_matcher->ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "Cannot compile regex from glob ({}): {}", glob_pattern, m.re2_matcher->error());
+    return m;
+}
+
 }

@@ -43,6 +43,7 @@ namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsBool use_glob_ast_parser;
 }
 
 namespace ObjectStorageQueueSetting
@@ -64,6 +65,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNKNOWN_EXCEPTION;
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
@@ -125,7 +127,11 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
         list_objects_batch_size_,
         /*with_tags=*/ false);
 
-    matcher.emplace(globbed_key);
+    const bool use_glob_ast = context_->getSettingsRef()[Setting::use_glob_ast_parser];
+    if (use_glob_ast)
+        matcher.emplace(GlobMatcher::createNew(globbed_key));
+    else
+        matcher.emplace(GlobMatcher::createLegacy(globbed_key));
 
     recursive = globbed_key == "/**";
     if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
