@@ -4781,7 +4781,7 @@ def parse_args():
     parser.add_argument(
         "--reattach-tables-probability",
         type=float,
-        default=1.0,
+        default=0.1,
         help="The probability of reattaching tables before execution of query if it's enabled",
     )
     parser.add_argument(
