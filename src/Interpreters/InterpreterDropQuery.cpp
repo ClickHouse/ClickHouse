@@ -14,6 +14,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -260,6 +261,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
                 bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
@@ -315,6 +317,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            NamedCollectionFactory::instance().removeDependencies(table_id);
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
@@ -569,8 +572,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     /// In Replicated databases, if we drop an MV first, its dropInnerTableIfAny() tries to
                     /// drop the inner table via executeDropQuery which fails because the replicated DDL path
                     /// rejects secondary queries. Dropping inner tables first makes dropInnerTableIfAny() a no-op.
-                    bool a_is_inner = a.first.table_name.starts_with(".inner_id.") || a.first.table_name.starts_with(".inner.");
-                    bool b_is_inner = b.first.table_name.starts_with(".inner_id.") || b.first.table_name.starts_with(".inner.");
+                    /// Note: refreshable MVs also create `.tmp.inner_id.*` temporary tables during refresh,
+                    /// and `dropInnerTableIfAny` drops those too, so they must also be classified as inner.
+                    auto is_inner_table_name = [](const String & name)
+                    {
+                        return name.starts_with(".inner_id.") || name.starts_with(".inner.")
+                            || name.starts_with(".tmp.inner_id.") || name.starts_with(".tmp.inner.");
+                    };
+                    bool a_is_inner = is_inner_table_name(a.first.table_name);
+                    bool b_is_inner = is_inner_table_name(b.first.table_name);
                     if (a_is_inner != b_is_inner)
                         return a_is_inner;
 
