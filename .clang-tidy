@@ -41,10 +41,6 @@ Checks: [
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
 
-  '-clang-analyzer-core.UndefinedBinaryOperatorResult', # false positive in contrib/fast_float
-
-  '-clang-analyzer-optin.core.EnumCastOutOfRange', # false positive with bitmask enums in contrib/fast_float
-
   '-clang-analyzer-optin.performance.Padding',
 
   '-clang-analyzer-security.ArrayBound', # only false positives
