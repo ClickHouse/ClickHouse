@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <absl/container/flat_hash_map.h>
+#include <Common/OptimizedRegularExpression.h>
 
 namespace ProfileEvents
 {
@@ -49,6 +50,11 @@ public:
         if (auto it = token_infos.find(token); it != token_infos.end())
             return &it->second;
         return {};
+    }
+
+    const absl::flat_hash_map<String, TokenPostingsInfo> & getAllTokens() const
+    {
+        return token_infos;
     }
 
     size_t approximateMemoryUsage() const

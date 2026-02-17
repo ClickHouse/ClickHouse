@@ -362,6 +362,8 @@ private:
         NameSet used_index_columns;
         std::vector<SelectedCondition> selected_conditions;
 
+        auto logger = getLogger("processAndOptimizeTextIndexFunctions");
+
         for (const auto & [index_name, info] : text_index_read_infos)
         {
             auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*info.index->condition);

@@ -2,6 +2,7 @@
 #include <memory>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/OptimizedRegularExpression.h>
 
 namespace DB
 {
@@ -39,10 +40,13 @@ struct TextSearchQuery
 {
     TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_);
 
+    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_, std::vector<OptimizedRegularExpression> similar_tokens_);
+
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
     std::vector<String> tokens;
+    std::vector<OptimizedRegularExpression> regex_tokens;
 
     SipHash getHash() const;
 };
@@ -74,6 +78,7 @@ public:
     std::string getDescription() const override;
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
+    const auto & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
@@ -98,6 +103,7 @@ private:
         {
             /// Atoms
             FUNCTION_EQUALS,
+            FUNCTION_LIKE,
             FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,

@@ -250,8 +250,8 @@ struct TextIndexSerialization
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
-    using TokenToPostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
+    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string, TokenPostingsInfo>;
+    using TokenToPostingsMap = absl::flat_hash_map<std::string, PostingListPtr>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, PostingListCodecPtr posting_list_codec_);
     ~MergeTreeIndexGranuleText() override = default;
@@ -269,6 +269,11 @@ public:
     bool hasAnyQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
+    bool hasAnyLikeTokensQueries(const TextSearchQuery & query) const;
+
+    /// Scans the entire dictionary, applies LIKE pattern as regex to each token,
+    /// collects posting lists for all matching tokens, and returns their union.
+    bool likeQueryTokens(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
@@ -285,7 +290,8 @@ public:
 private:
     void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForExactTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForRegexTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()

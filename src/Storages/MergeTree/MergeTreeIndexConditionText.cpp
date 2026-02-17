@@ -36,6 +36,17 @@ TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mo
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
+    , regex_tokens()
+{
+    std::sort(tokens.begin(), tokens.end());
+}
+
+TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_,  std::vector<OptimizedRegularExpression> similar_tokens_)
+    : function_name(std::move(function_name_))
+    , search_mode(search_mode_)
+    , direct_read_mode(direct_read_mode_)
+    , tokens(std::move(tokens_))
+    , regex_tokens(std::move(similar_tokens_))
 {
     std::sort(tokens.begin(), tokens.end());
 }
@@ -47,9 +58,13 @@ SipHash TextSearchQuery::getHash() const
     hash.update(search_mode);
     hash.update(direct_read_mode);
     hash.update(tokens.size());
+    hash.update(regex_tokens.size());
 
     for (const auto & token : tokens)
         hash.update(token);
+
+    for (const auto & similar_token : regex_tokens)
+        hash.update(similar_token.getNumberOfSubpatterns());
 
     return hash;
 }
@@ -208,7 +223,7 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
-    if (query.tokens.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
+    if (query.tokens.empty() && query.regex_tokens.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
@@ -238,6 +253,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
         {RPNElement::FUNCTION_EQUALS,
+         RPNElement::FUNCTION_LIKE,
          RPNElement::FUNCTION_NOT_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
@@ -260,6 +276,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_LIKE)
+        {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule_1 = false; // granule->hasAnyQueryTokens(*text_search_query);
+            bool exists_in_granule_2 = granule->likeQueryTokens(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule_1 || exists_in_granule_2, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_TOKENS)
         {
@@ -614,9 +638,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "like" && tokenizer->supportsStringLike())
     {
         std::vector<String> tokens = stringLikeToTokens(value_field);
+        const String pattern = preprocessor->processConstant(value_field.safeGet<String>());
+        String regex_pattern;
+        for (const auto & ch : pattern) {
+            if (ch == '%')
+                regex_pattern.append(".*");
+            else if (ch == '_')
+                regex_pattern.append(".");
+            else
+                regex_pattern += ch;
+        }
 
-        out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        std::vector<OptimizedRegularExpression> similar_tokens;
+        similar_tokens.emplace_back(OptimizedRegularExpression(regex_pattern));
+
+        out.function = RPNElement::FUNCTION_LIKE;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, direct_read_mode, std::move(tokens), std::move(similar_tokens)));
         return true;
     }
     if (function_name == "notLike" && tokenizer->supportsStringLike())
@@ -624,7 +661,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         std::vector<String> tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), std::vector<OptimizedRegularExpression>{}));
         return true;
     }
     if (function_name == "match" && tokenizer->supportsStringLike())

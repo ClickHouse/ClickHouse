@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Columns/ColumnString.h>
@@ -5,6 +6,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -32,6 +34,8 @@
 #include <base/range.h>
 #include <base/types.h>
 #include <fmt/ranges.h>
+#include <roaring/roaring.hh>
+#include <roaring/roaring_array.h>
 
 namespace ProfileEvents
 {
@@ -301,6 +305,8 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 
 }
 
+#define LOG_PATTERNS 0
+
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
@@ -312,8 +318,38 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
+#if LOG_PATTERNS
+    auto logger = getLogger("textIndexLikeOptimization");
+
+    LOG_DEBUG(logger, "Before reading sparse index: size = {}", remaining_tokens.size());
+    for (const auto & [token, token_info] : remaining_tokens)
+        LOG_DEBUG(logger, "Before reading sparse index: {}", token);
+#endif
+
     readSparseIndex(*index_stream, state);
-    analyzeDictionary(*dictionary_stream, state);
+
+#if LOG_PATTERNS
+    LOG_DEBUG(logger, "Before analyzing for exact tokens: size = {}", remaining_tokens.size());
+    for (const auto & [token, token_info] : remaining_tokens)
+        LOG_DEBUG(logger, "Before analyzing for exact tokens: {}", token);
+#endif
+
+    analyzeDictionaryForExactTokens(*dictionary_stream, state);
+
+#if LOG_PATTERNS
+    LOG_DEBUG(logger, "Before analyzing for similar tokens: size = {}", remaining_tokens.size());
+    for (const auto & [token, token_info] : remaining_tokens)
+        LOG_DEBUG(logger, "Before analyzing for similar tokens: token = {}", token);
+#endif
+
+    analyzeDictionaryForRegexTokens(*dictionary_stream, state);
+
+#if LOG_PATTERNS
+    LOG_DEBUG(logger, "Before reading postings for the rare tokens: size = {}", remaining_tokens.size());
+    for (const auto & [token, token_info] : remaining_tokens)
+        LOG_DEBUG(logger, "Before reading postings for the rare tokens: {}", token);
+#endif
+
     readPostingsForRareTokens(*postings_stream, state);
 }
 
@@ -331,7 +367,7 @@ void MergeTreeIndexGranuleText::readSparseIndex(MergeTreeIndexReaderStream & str
     sparse_index = condition_text.headerCache()->getOrSet(hash, load_sparse_index);
 }
 
-void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
+void MergeTreeIndexGranuleText::analyzeDictionaryForExactTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
     if (sparse_index->empty())
         return;
@@ -388,6 +424,49 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     }
 }
 
+void MergeTreeIndexGranuleText::analyzeDictionaryForRegexTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
+{
+    Stopwatch watch;
+    if (sparse_index->empty())
+        return;
+
+    [[maybe_unused]] const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    [[maybe_unused]] const auto & all_search_queries = condition_text.getAllSearchQueries();
+
+    stream.seekToStart();
+    auto * data_buffer = stream.getDataBuffer();
+
+    const size_t num_blocks = sparse_index->size();
+
+
+    std::vector<std::unique_ptr<TextIndexDictionaryBlockCacheEntry>> dictionary_blocks;
+    dictionary_blocks.reserve(100);
+    for (size_t block_idx = 0; block_idx < 100; ++block_idx)
+        dictionary_blocks.emplace_back(std::make_unique<TextIndexDictionaryBlockCacheEntry>(TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, posting_list_codec)));
+
+    size_t matched = 0;
+    // for (const auto & dictionary_block : dictionary_blocks)
+    // {
+    //     for ([[maybe_unused]] const auto & [token, token_info] : dictionary_block->getAllTokens())
+    //     {
+    //         ++matched;
+    //         // for (const auto & [_, searcy_query] : all_search_queries)
+    //         // {
+    //         //     for ([[maybe_unused]] const auto & token_pattern : searcy_query->regex_tokens)
+    //         //     {
+    //         //         // if (token_pattern.match(token))
+    //         //         // {
+    //         //         //     remaining_tokens.emplace(token, token_info);
+    //         //         // }
+    //         //     }
+    //         // }
+    //     }
+    // }
+
+    auto logger = getLogger("analyzeDictionaryForRegexTokens");
+    LOG_TRACE(logger, "took {}ms to read {} blocks | matched = {}", watch.elapsedMilliseconds(), num_blocks, matched);
+}
+
 PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     MergeTreeIndexReaderStream & stream,
     MergeTreeIndexDeserializationState & state,
@@ -438,6 +517,17 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
         + sparse_index->memoryUsageBytes()
         + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin())
         + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin());
+}
+
+bool MergeTreeIndexGranuleText::likeQueryTokens(const TextSearchQuery & query) const
+{
+    if (query.regex_tokens.empty())
+        return false;
+
+    /// Check if all tokens exist in the granule using the fast path
+    /// The actual posting list intersection for virtual column filling
+    /// is handled by MergeTreeReaderTextIndex::applyPostingsAll
+    return hasAnyLikeTokensQueries(query);
 }
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
@@ -529,6 +619,51 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     }
 
     return true;
+}
+
+bool MergeTreeIndexGranuleText::hasAnyLikeTokensQueries(const TextSearchQuery & /* query */) const
+{
+#if 1
+    return true;
+#else
+    if (!current_range.has_value())
+    {
+        return std::ranges::any_of(query.tokens, [this](const auto & token)
+        {
+            return remaining_tokens.contains(token);
+        });
+    }
+
+    PostingList intersection;
+    intersection.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
+
+    for (const auto & token : query.tokens)
+    {
+        auto it = remaining_tokens.find(token);
+        if (it == remaining_tokens.end())
+            return false;
+
+        bool has_any_range = std::ranges::any_of(it->second.ranges, [this](const auto & range)
+        {
+            return current_range->intersects(range);
+        });
+
+        if (!has_any_range)
+            return false;
+
+        /// We read postings only for tokens that has one block.
+        /// Otherwise, assume that the token is not useful
+        /// for filtering and is present in all granules.
+        if (auto postings = getPostingsForRareToken(token))
+        {
+            intersection &= *postings;
+            if (intersection.cardinality() == 0)
+                return false;
+        }
+    }
+
+    return true;
+#endif
 }
 
 PostingListPtr MergeTreeIndexGranuleText::getPostingsForRareToken(std::string_view token) const
