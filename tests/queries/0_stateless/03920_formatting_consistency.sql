@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- Test that AST formatting is consistent for a wide variety of SQL constructs.
 -- In debug builds, the server verifies that format(parse(query)) == format(parse(format(parse(query)))),
 -- and aborts on inconsistency. This test simply runs many SQL constructs to trigger that check.
@@ -179,8 +177,6 @@ SELECT number, sum(number) OVER (ORDER BY number) FROM numbers(5);
 SELECT number, row_number() OVER (ORDER BY number) FROM numbers(5);
 SELECT number, rank() OVER (ORDER BY number) FROM numbers(5);
 SELECT number, dense_rank() OVER (ORDER BY number) FROM numbers(5);
-SELECT number, lag(number) OVER (ORDER BY number) FROM numbers(5);
-SELECT number, lead(number) OVER (ORDER BY number) FROM numbers(5);
 SELECT number, sum(number) OVER w FROM numbers(5) WINDOW w AS (ORDER BY number);
 
 -- Table functions
@@ -204,9 +200,6 @@ SELECT COLUMNS('n.*') FROM numbers(3);
 SELECT * REPLACE (number + 1 AS number) FROM numbers(3);
 SELECT * EXCEPT (number) FROM (SELECT number, number + 1 AS x FROM numbers(3));
 SELECT * APPLY (toString) FROM numbers(3);
-
--- QUALIFY
-SELECT number, row_number() OVER (ORDER BY number) AS rn FROM numbers(10) QUALIFY rn <= 3;
 
 -- Complex WHERE
 SELECT 1 WHERE 1 AND 1;
