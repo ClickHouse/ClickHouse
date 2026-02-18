@@ -541,7 +541,8 @@ private:
         if (unlikely(min_value > max_value))
             return sizeof(Int64) * 8; // Edge case when no values are encoded or overflow happened.
 
-        const UInt64 diff = static_cast<UInt64>(max_value - min_value);
+        // Cast to UInt64 to correctly handle the full Int64 range and potential overflow when values are close to the limits.
+        const UInt64 diff = static_cast<UInt64>(max_value) - static_cast<UInt64>(min_value);
         if (unlikely(diff == 0))
             return 0; // Edge case when all values are the same.
 
