@@ -13,6 +13,7 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
+from helpers.spark_tools import ResilientSparkSession
 from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
@@ -124,7 +125,7 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(get_spark)
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )

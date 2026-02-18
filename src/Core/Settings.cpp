@@ -234,6 +234,11 @@ This may reduce memory usage in case of row with many matches in right table, bu
 Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
 The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
 )", 0) \
+    DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
+Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
+This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
+When disabled, non-joined rows are processed by a single thread.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -6164,6 +6169,9 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
 )", 0) \
     DECLARE(Bool, check_referential_table_dependencies, false, R"(
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
+)", 0) \
+    DECLARE(Bool, check_named_collection_dependencies, true, R"(
+Check that DROP NAMED COLLECTION will not break tables that depend on it
 )", 0) \
     \
     DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(

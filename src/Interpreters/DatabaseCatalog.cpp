@@ -1681,6 +1681,7 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
             old_view_dependencies.push_back(the_table_from);
         }
     }
+
     return {
         referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),

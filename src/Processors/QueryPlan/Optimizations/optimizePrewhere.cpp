@@ -1,3 +1,5 @@
+#include <Core/Block.h>
+#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -12,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -20,6 +23,11 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool vector_search_with_rescoring;
+}
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -115,7 +123,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     return std::move(split_result.second);
 }
 
-void optimizePrewhere(QueryPlan::Node & parent_node)
+void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_columns)
 {
     /// Assume that there are at least 2 nodes:
     /// 1. FilterNode - parent_node
@@ -220,6 +228,43 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
 
     new_step->setStepDescription(*filter_step);
     parent_node.step = std::move(new_step);
+
+    if (!remove_unused_columns)
+        return;
+
+    auto & parent_step = parent_node.step;
+    if (source_step_with_filter->canRemoveUnusedColumns() && source_step_with_filter->canRemoveColumnsFromOutput()
+        && parent_step->canRemoveUnusedColumns())
+    {
+        NameMultiSet required_outputs;
+
+        for (const auto & column_name_and_type : *parent_step->getOutputHeader())
+            required_outputs.insert(column_name_and_type.name);
+
+        const auto result = parent_step->removeUnusedColumns(required_outputs, true);
+
+        if (result == IQueryPlanStep::RemovedUnusedColumns::OutputAndInput)
+        {
+            required_outputs.clear();
+            for (const auto & column_name_and_type : *parent_step->getInputHeaders().at(0))
+                required_outputs.insert(column_name_and_type.name);
+
+            source_step_with_filter->removeUnusedColumns(required_outputs, true);
+
+            // Here the output of the source step should match the input of the parent step, even though that is not
+            // generally true after unused column removal. There might be outputs that are not removed in some step
+            // (e.g. JoinLogicalStep). However as currently the only source that implements unused column removal is
+            // ReadFromMergeTree, which can remove any columns, therefore let's throw a logical error in case this is
+            // not true.
+            if (!blocksHaveEqualStructure(*parent_step->getInputHeaders().at(0), *source_step_with_filter->getOutputHeader()))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Input-output header mismatch after removing unused columns after pushing down filters to prewhere. Input header: {}, "
+                    "output header: {}",
+                    parent_step->getInputHeaders().at(0)->dumpStructure(),
+                    source_step_with_filter->getOutputHeader()->dumpStructure());
+        }
+    }
 }
 
 }

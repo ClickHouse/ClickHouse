@@ -661,6 +661,7 @@ class ClickHouseCluster:
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
         self.minio_bucket_db_disk = "root-db-disk"
+        self.minio_s3_port = 9000
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
@@ -674,8 +675,11 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
+        self.iceberg_rest_catalog_port = 8182
         self.with_glue_catalog = False
+        self.glue_catalog_port = 3000
         self.with_hms_catalog = False
+        self.hms_catalog_port = 9083
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -2507,8 +2511,15 @@ class ClickHouseCluster:
             exec_cmd += [container_id]
             exec_cmd += list(cmd)
 
+            timeout = kwargs.get("timeout", None)
+            extra_kwargs = {}
+            if env is not None:
+                extra_kwargs["env"] = env
+            if timeout is not None:
+                extra_kwargs["timeout"] = timeout
+
             result = subprocess_check_call(
-                exec_cmd, detach=detach, nothrow=nothrow, env=env
+                exec_cmd, detach=detach, nothrow=nothrow, **extra_kwargs
             )
             return result
         else:
@@ -4480,7 +4491,7 @@ class ClickHouseInstance:
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return "NDEBUG" not in build_opts
-    
+
     def is_built_with_llvm_coverage(self):
         with_coverage = self.query(
             "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"

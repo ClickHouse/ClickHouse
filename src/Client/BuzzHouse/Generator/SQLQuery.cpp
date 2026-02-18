@@ -2222,11 +2222,11 @@ void StatementGenerator::generateSelect(
         {
             addWindowDefs(rg, ssc);
         }
-        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 3)
+        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextMediumNumber() < 35)
         {
             generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
         }
-        if ((allowed_clauses & allow_where) && this->depth < this->fc.max_depth && rg.nextSmallNumber() < 5)
+        if ((allowed_clauses & allow_where) && this->depth < this->fc.max_depth && rg.nextMediumNumber() < 35)
         {
             generateWherePredicate(rg, ssc->mutable_where()->mutable_expr()->mutable_expr());
         }
@@ -2312,7 +2312,7 @@ void StatementGenerator::generateSelect(
         }
     }
     /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
-    if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextSmallNumber() < 3)
+    if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextMediumNumber() < 35)
     {
         generateSettingValues(rg, serverSettings, sel->mutable_setting_values());
     }
