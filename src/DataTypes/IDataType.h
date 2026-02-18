@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
@@ -192,10 +191,6 @@ public:
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
       */
     virtual Field getDefault() const = 0;
-
-    virtual Field getMinValue() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data type {} does not have minimum value", getName()); }
-
-    virtual Field getMaxValue() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data type {} does not have maximum value", getName()); }
 
     /** The data type can be promoted in order to try to avoid overflows.
       * Data types which can be promoted are typically Number or Decimal data types.

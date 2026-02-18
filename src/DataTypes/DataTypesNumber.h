@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -51,22 +50,6 @@ public:
     }
 
     bool canUnsignedBeSigned() const { return unsigned_can_be_signed; }
-
-    Field getMinValue() const override
-    {
-        if constexpr (WhichDataType(TypeToTypeIndex<T>).isNativeNumber())
-            return Field(std::numeric_limits<T>::lowest());
-        else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data type {} does not implement getMinValue() method", this->getName());
-    }
-
-    Field getMaxValue() const override
-    {
-        if constexpr (WhichDataType(TypeToTypeIndex<T>).isNativeNumber())
-            return Field(std::numeric_limits<T>::max());
-        else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data type {} does not implement getMaxValue() method", this->getName());
-    }
 
 private:
     bool unsigned_can_be_signed = false;
