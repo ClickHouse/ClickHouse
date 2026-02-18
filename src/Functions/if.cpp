@@ -1033,8 +1033,17 @@ private:
             return nullptr;
 
         const ColumnWithTypeAndName & arg_cond = arguments[0];
-        const ColumnWithTypeAndName & arg_then = arguments[1];
-        const ColumnWithTypeAndName & arg_else = arguments[2];
+        ColumnWithTypeAndName arg_then = arguments[1];
+        ColumnWithTypeAndName arg_else = arguments[2];
+
+        /// checkAndGetColumn<ColumnNullable> doesn't see through ColumnConst, so we need
+        /// to convert ColumnConst to full column when the type is Nullable. Otherwise, a
+        /// Nullable branch wrapped in ColumnConst would not be detected, causing the function
+        /// to fall through to a non-Nullable code path and return a wrong type.
+        if (arg_then.type->isNullable() && isColumnConst(*arg_then.column))
+            arg_then.column = arg_then.column->convertToFullColumnIfConst();
+        if (arg_else.type->isNullable() && isColumnConst(*arg_else.column))
+            arg_else.column = arg_else.column->convertToFullColumnIfConst();
 
         const auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_then.column);
         const auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_else.column);

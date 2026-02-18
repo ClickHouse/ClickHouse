@@ -588,11 +588,17 @@ public:
         {
             /// It is possible that ActionsDAG already has an input with the same name as constant.
             /// In this case, prefer constant to input.
-            /// Constatns affect function return type, which should be consistent with QueryTree.
+            /// Constants affect function return type, which should be consistent with QueryTree.
             /// Query example:
             /// SELECT materialize(toLowCardinality('b')) || 'a' FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a'
             bool materialized_input = it->second->type == ActionsDAG::ActionType::INPUT && !it->second->column;
-            if (!materialized_input)
+            /// Also prefer the new constant when the existing node has a different type than what the
+            /// QueryTree expects, e.g. when group_by_use_nulls wraps GROUP BY keys in Nullable but
+            /// a literal constant in the expression should keep its original non-nullable type for
+            /// correct function return type inference. The existing node can be either an INPUT or
+            /// a COLUMN (the ActionsDAG constructor duplicates const inputs as COLUMN nodes).
+            bool mismatched_type = !it->second->result_type->equals(*column.type);
+            if (!materialized_input && !mismatched_type)
                 return it->second;
         }
 
