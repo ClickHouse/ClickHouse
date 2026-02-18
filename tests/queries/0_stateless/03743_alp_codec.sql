@@ -88,13 +88,13 @@ TRUNCATE TABLE base64; INSERT INTO base64 SELECT number,
         -- Largest finite values
         WHEN 16 THEN 1.7976931348623157e308
         WHEN 17 THEN -1.7976931348623157e308
-        -- Near clamp bounds (UPPER = 9223372036854774272.0)
-        WHEN 18 THEN 9223372036854774272.0  -- exactly at upper bound
-        WHEN 19 THEN -9223372036854774272.0 -- exactly at lower bound
-        WHEN 20 THEN 9223372036854774273.0   -- just above upper bound
-        WHEN 21 THEN -9223372036854774273.0  -- just below lower bound
-        WHEN 22 THEN 9223372036854774000.0   -- near upper bound
-        WHEN 23 THEN -9223372036854774000.0  -- near lower bound
+        -- Near clamp bounds (UPPER = 9223372036854773760.0)
+        WHEN 18 THEN 9223372036854773760.0  -- exactly at upper bound
+        WHEN 19 THEN -9223372036854773760.0 -- exactly at lower bound
+        WHEN 20 THEN 9223372036854773761.0   -- just above upper bound
+        WHEN 21 THEN -9223372036854773761.0  -- just below lower bound
+        WHEN 22 THEN 9223372036854773000.0   -- near upper bound
+        WHEN 23 THEN -9223372036854773000.0  -- near lower bound
         -- Large values beyond clamp
         WHEN 24 THEN 1e19
         WHEN 25 THEN -1e19
@@ -133,9 +133,9 @@ TRUNCATE TABLE base32; INSERT INTO base32 SELECT number,
         -- Largest finite values
         WHEN 16 THEN toFloat32(3.4028235e38)
         WHEN 17 THEN toFloat32(-3.4028235e38)
-        -- Clamp bounds (UPPER = 9223371761976868863.0f)
-        WHEN 18 THEN 9223371761976868863.0  -- exactly at upper bound
-        WHEN 19 THEN -9223371761976868863.0 -- exactly at lower bound
+        -- Clamp bounds (UPPER = 9223371487098961920.0f)
+        WHEN 18 THEN 9223371487098961920.0  -- exactly at upper bound
+        WHEN 19 THEN -9223371487098961920.0 -- exactly at lower bound
         -- Large values (testing precision)
         WHEN 20 THEN toFloat32(1e10)
         WHEN 21 THEN toFloat32(-1e10)

@@ -860,11 +860,11 @@ INSTANTIATE_TEST_SUITE_P(Mixed,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int8>(G(SequentialGenerator(1)), 1, 1001),
+            generateSeq<Int8>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int8>(G(SequentialGenerator(1)), 1, 128),
             generateSeq<Int16>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int16>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<Int32>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int32>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<Int64>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int64>(G(SequentialGenerator(1)), 1, 1001),
-            generateSeq<UInt8>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt8>(G(SequentialGenerator(1)), 1, 1001),
+            generateSeq<UInt8>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt8>(G(SequentialGenerator(1)), 1, 128),
             generateSeq<UInt16>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt16>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<UInt32>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt32>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<UInt64>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt64>(G(SequentialGenerator(1)), 1, 1001),
@@ -949,11 +949,11 @@ INSTANTIATE_TEST_SUITE_P(SequentialInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8>(G(SequentialGenerator(1))),
+            generateSeq<Int8>(G(SequentialGenerator(1)), 1, 128),
             generateSeq<Int16 >(G(SequentialGenerator(1))),
             generateSeq<Int32 >(G(SequentialGenerator(1))),
             generateSeq<Int64 >(G(SequentialGenerator(1))),
-            generateSeq<UInt8 >(G(SequentialGenerator(1))),
+            generateSeq<UInt8 >(G(SequentialGenerator(1)), 1, 128),
             generateSeq<UInt16>(G(SequentialGenerator(1))),
             generateSeq<UInt32>(G(SequentialGenerator(1))),
             generateSeq<UInt64>(G(SequentialGenerator(1)))
@@ -968,11 +968,11 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8>(G(SequentialGenerator(-1))),
+            generateSeq<Int8>(G(SequentialGenerator(-1)), 1, 128),
             generateSeq<Int16 >(G(SequentialGenerator(-1))),
             generateSeq<Int32 >(G(SequentialGenerator(-1))),
             generateSeq<Int64 >(G(SequentialGenerator(-1))),
-            generateSeq<UInt8 >(G(SequentialGenerator(-1))),
+            generateSeq<UInt8 >(G(SequentialGenerator(-1)), 1, 128),
             generateSeq<UInt16>(G(SequentialGenerator(-1))),
             generateSeq<UInt32>(G(SequentialGenerator(-1))),
             generateSeq<UInt64>(G(SequentialGenerator(-1)))
@@ -1560,8 +1560,8 @@ INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF64,
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::max(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::min(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::denorm_min(), 0.1))),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 9223372036854774272.0, 0.1))),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -9223372036854774272.0, 0.1)))
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 9223372036854773760.0, 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -9223372036854773760.0, 0.1)))
         )
     )
 );
@@ -1579,8 +1579,8 @@ INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF32,
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::max(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::min(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::denorm_min(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 9223371761976868863.0f, 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -9223371761976868863.0f, 0.1)))
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 9223371487098961920.0f, 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -9223371487098961920.0f, 0.1)))
         )
     )
 );

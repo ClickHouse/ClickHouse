@@ -161,25 +161,36 @@ constexpr std::array<T, exponent_count> generatePowersOf10()
     return arr;
 }
 
+/**
+ * ALP Float64 parameters.
+ *
+ * Float64 scaling is limited to 10^18 and inputs are clamped to ±9223372036854773760 (2^63 − 2048).
+ * In this range, a meaningful subset of values still "survives" scale by 10^e → round → cast to Int64.
+ * The reference implementation use 9223372036854774784 (2^63 − 1024), which led to integer overflow after rounding (num + magic - magic).
+ */
 template<>
 struct ALPFloatTraits<Float64>
 {
-    /**
-     * Float64 scaling is limited to 10^18 and inputs are clamped to ±9223372036854774272.
-     * In this range, a meaningful subset of values still "survives" scale by 10^e → round → cast to int64.
-     * The reference implementation use 9223372036854774784, which led to integer overflow after rounding.
-     */
     static constexpr UInt8 EXPONENT_COUNT = 19;
 
     static constexpr std::array<Float64, EXPONENT_COUNT> EXPONENTS = generatePowersOf10<Float64, EXPONENT_COUNT, false>();
     static constexpr std::array<Float64, EXPONENT_COUNT> FRACTIONS = generatePowersOf10<Float64, EXPONENT_COUNT, true>();
 
-    static constexpr Float64 UPPER = 9223372036854774272.0;
-    static constexpr Float64 LOWER = -9223372036854774272.0;
+    static constexpr Float64 UPPER = 9223372036854773760.0;
+    static constexpr Float64 LOWER = -9223372036854773760.0;
 
     static constexpr Float64 ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
 };
 
+/**
+ * ALP Float32 parameters.
+ *
+ * Float32 scaling is limited to 10^9 and inputs are clamped to ±9223371487098961920.
+ * In this range, a meaningful subset of values still "survives" scale by 10^e → round → cast to Int64.
+ *
+ * The UPPER value is the largest Float32 value that has an exact Int64 representation.
+ * Higher values would overflow when cast to Int64 after Float32 rounding (num + magic - magic).
+ */
 template<>
 struct ALPFloatTraits<Float32>
 {
@@ -188,8 +199,8 @@ struct ALPFloatTraits<Float32>
     static constexpr std::array<Float32, EXPONENT_COUNT> EXPONENTS = generatePowersOf10<Float32, EXPONENT_COUNT, false>();
     static constexpr std::array<Float32, EXPONENT_COUNT> FRACTIONS = generatePowersOf10<Float32, EXPONENT_COUNT, true>();
 
-    static constexpr Float32 UPPER = 9223371761976868863.0f;
-    static constexpr Float32 LOWER = -9223371761976868863.0f;
+    static constexpr Float32 UPPER = 9223371487098961920.0f;
+    static constexpr Float32 LOWER = -9223371487098961920.0f;
 
     static constexpr Float32 ROUND_MAGIC = 12582912.0; // 2^22 + 2^23
 };
