@@ -991,7 +991,14 @@ public:
     /// insertion table depending on select expression.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
     /// Overload for the analyzer. Structure inference is performed in QueryAnalysisPass.
-    StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
+    /// The execution_context is used for the actual table function execution
+    /// (to respect per-subquery SETTINGS), while `this` context is used for caching.
+    /// The cache key incorporates a hash of the settings changes so that identical table functions
+    /// with the same settings are still reused from cache.
+    StoragePtr executeTableFunction(
+        const ASTPtr & table_expression,
+        const TableFunctionPtr & table_function_ptr,
+        const ContextPtr & execution_context);
 
     StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
 

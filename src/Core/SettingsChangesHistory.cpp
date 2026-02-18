@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+            {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
             {"enable_full_text_index", false, true, "The text index is now GA"},
             {"allow_experimental_full_text_index", false, true, "The text index is now GA"},

@@ -181,6 +181,10 @@ public:
     IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+        size_t bucket_idx, size_t num_buckets) const override;
+
     void onBuildPhaseFinish() override;
 
     /// Number of keys in all built JOIN maps.

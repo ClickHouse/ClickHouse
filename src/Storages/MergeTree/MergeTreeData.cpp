@@ -8238,31 +8238,57 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         std::vector<DataPartsVector> covered_parts_for_commit;
         covered_parts_for_commit.reserve(precommitted_parts.size());
 
-        for (const auto & part : precommitted_parts)
+        /// Track covered parts locked by non-transactional operations for cleanup on failure.
+        /// For transactional operations, MergeTreeTransaction rollback handles unlocking.
+        DataPartsVector locked_parts_to_cleanup;
+
+        try
         {
-            DataPartPtr covering_part;
-            DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
-
-            if (txn)
+            for (const auto & part : precommitted_parts)
             {
-                /// outdated parts should be also collected here
-                /// the visible outdated parts should be tried to be removed
-                /// more likely the conflict happens at the removing visible outdated parts, what is right actually
-                DataPartsVector covered_outdated_parts = data.getCoveredOutdatedParts(part, acquired_parts_lock);
+                DataPartPtr covering_part;
+                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
 
-                LOG_TEST(data.log, "Got {} oudated parts covered by {} (TID {} CSN {}): {}",
-                         covered_outdated_parts.size(), part->getNameWithState(), txn->tid, txn->getSnapshot(), fmt::join(getPartsNames(covered_outdated_parts), ", "));
-                data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
+                if (txn)
+                {
+                    /// outdated parts should be also collected here
+                    /// the visible outdated parts should be tried to be removed
+                    /// more likely the conflict happens at the removing visible outdated parts, what is right actually
+                    DataPartsVector covered_outdated_parts = data.getCoveredOutdatedParts(part, acquired_parts_lock);
 
-                std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
+                    LOG_TEST(data.log, "Got {} oudated parts covered by {} (TID {} CSN {}): {}",
+                             covered_outdated_parts.size(), part->getNameWithState(), txn->tid, txn->getSnapshot(), fmt::join(getPartsNames(covered_outdated_parts), ", "));
+                    data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
+
+                    std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
+                }
+
+                /// Call addNewPartAndRemoveCovered only if there's no covering part.
+                /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
+                if (!covering_part)
+                {
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
+                    /// Track successfully locked parts for cleanup in case a later iteration fails.
+                    if (!txn)
+                        locked_parts_to_cleanup.insert(locked_parts_to_cleanup.end(), covered_parts.begin(), covered_parts.end());
+                }
+
+                covered_parts_for_commit.push_back(std::move(covered_parts));
             }
-
-            /// Call addNewPartAndRemoveCovered only if there's no covering part.
-            /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
-            if (!covering_part)
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-
-            covered_parts_for_commit.push_back(std::move(covered_parts));
+        }
+        catch (...)
+        {
+            /// If lockRemovalTID throws (e.g. SERIALIZATION_ERROR due to a concurrent transaction),
+            /// unlock the removal TIDs that were already set on covered parts in previous iterations.
+            /// Without this cleanup, subsequent non-transactional operations would fail with
+            /// "Tried to lock part for removal second time" because the dangling PrehistoricTID locks
+            /// are never cleared.
+            for (const auto & locked_part : locked_parts_to_cleanup)
+            {
+                TransactionInfoContext context{data.getStorageID(), locked_part->name};
+                locked_part->version.unlockRemovalTID(Tx::PrehistoricTID, context);
+            }
+            throw;
         }
 
         NOEXCEPT_SCOPE({
