@@ -44,8 +44,6 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include <Server/arrowFlightProto.h>
-
 #include <arrow/array/builder_base.h>
 #include <arrow/array/builder_binary.h>
 #include <arrow/array/builder_nested.h>
@@ -1593,7 +1591,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
             total_bytes = calculateTableBytes(table);
             auto ticket_info = calls_data->createTicket(table);
             arrow::flight::FlightEndpoint endpoint;
-            endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+            endpoint.ticket = arrow::flight::Ticket(ticket_info->ticket);
             endpoint.expiration_time = ticket_info->expiration_time;
             endpoints.emplace_back(endpoint);
         }
@@ -1616,7 +1614,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                 total_bytes += calculateTableBytes(t);
                 auto ticket_info = calls_data->createTicket(t);
                 arrow::flight::FlightEndpoint endpoint;
-                endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+                endpoint.ticket = arrow::flight::Ticket(ticket_info->ticket);
                 endpoint.expiration_time = ticket_info->expiration_time;
                 endpoints.emplace_back(endpoint);
             }
@@ -1792,7 +1790,7 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
                 auto ticket_info = calls_data->createTicket(table);
                 std::vector<arrow::flight::FlightEndpoint> endpoints;
                 arrow::flight::FlightEndpoint endpoint;
-                endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+                endpoint.ticket = arrow::flight::Ticket(ticket_info->ticket);
                 endpoint.expiration_time = ticket_info->expiration_time;
                 endpoints.emplace_back(endpoint);
 
