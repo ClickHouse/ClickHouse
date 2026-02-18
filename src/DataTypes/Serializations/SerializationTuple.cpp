@@ -12,6 +12,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <iostream>
+
 namespace DB
 {
 
@@ -36,6 +38,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 
 UInt128 SerializationTuple::getHash() const
 {
+    std::cout << "Fatal SerializationTuple::getHash " << this << std::endl;
     SipHash hash;
     hash.update("Tuple");
     hash.update(has_explicit_names);

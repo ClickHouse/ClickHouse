@@ -1,8 +1,8 @@
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
-
 
 namespace DB
 {
@@ -24,7 +24,11 @@ SerializationObjectDistinctPaths::~SerializationObjectDistinctPaths() = default;
 
 UInt128 SerializationObjectDistinctPaths::getHash() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "getHash is not implemented for SerializationObjectDistinctPaths");
+    SipHash hash;
+    for (const auto & path : typed_paths)
+        hash.update(path);
+    hash.update(shared_data_paths_serialization->getHash());
+    return hash.get128();
 }
 
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState

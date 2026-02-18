@@ -1,4 +1,5 @@
 #include <Columns/ColumnDynamic.h>
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
@@ -48,7 +49,13 @@ SerializationObjectDynamicPath::~SerializationObjectDynamicPath() = default;
 
 UInt128 SerializationObjectDynamicPath::getHash() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method getHash is not implemented for SerializationObjectDynamicPath");
+    SipHash hash;
+    hash.update(path);
+    hash.update(path_subcolumn);
+    hash.update(dynamic_serialization->getHash());
+    hash.update(dynamic_type->getName());
+    hash.update(subcolumn_type->getName());
+    return hash.get128();
 }
 
 void SerializationObjectDynamicPath::enumerateStreams(

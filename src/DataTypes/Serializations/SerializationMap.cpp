@@ -16,7 +16,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 
-
 namespace DB
 {
 
