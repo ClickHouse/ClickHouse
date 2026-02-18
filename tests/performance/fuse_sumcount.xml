@@ -34,6 +34,6 @@
     <query>SELECT sum(key) / count(key)                   FROM ( SELECT materialize(toNullable(number)) AS key FROM numbers(450000000) ) FORMAT Null</query>
     <query>SELECT sum(key) / count(key)                   FROM ( SELECT materialize(toNullable(number)) AS key FROM numbers(460000000) ) SETTINGS optimize_syntax_fuse_functions = 0 FORMAT Null</query>
 
-    <query>SELECT sumCountIf(key, key != -1)              FROM ( SELECT materialize(number) AS key FROM numbers(210000000) ) FORMAT Null</query>
+    <query>SELECT sumCountIf(key, key != -1)              FROM ( SELECT materialize(number) AS key FROM numbers(390000000) ) FORMAT Null</query>
     <query>SELECT sumCountIf(key, key != -1)              FROM ( SELECT materialize(toNullable(number)) AS key FROM numbers(210000000) ) FORMAT Null</query>
 </test>

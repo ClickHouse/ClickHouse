@@ -84,8 +84,8 @@
   
   <query>
     SELECT count()
-    FROM numbers_mt(1e7) AS lhs
-    INNER JOIN numbers_mt(1e5) AS rhs ON (lhs.number % 100000) = rhs.number
+    FROM numbers_mt(19000000) AS lhs
+    INNER JOIN numbers_mt(190000) AS rhs ON (lhs.number % 100000) = rhs.number
     FORMAT Null
     SETTINGS max_threads = 1, join_algorithm = 'hash'
   </query>

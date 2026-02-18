@@ -11,7 +11,7 @@
         <substitution>
             <name>dictionary_shards</name>
             <values>
-                <value>1</value>
+                <value>3</value>
                 <value>16</value>
             </values>
         </substitution>

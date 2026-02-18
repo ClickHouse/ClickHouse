@@ -3,7 +3,7 @@
         <substitution>
            <name>uniq_keys</name>
            <values>
-               <value>10000</value>
+               <value>27200</value>
                <value>50000</value>
                <value>100000</value>
                <value>250000</value>

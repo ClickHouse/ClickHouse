@@ -12,14 +12,14 @@
         <substitution>
             <name>parts</name>
             <values>
-                <value>100</value>
+                <value>430</value>
                 <value>1000</value>
             </values>
         </substitution>
         <substitution>
             <name>uniqs</name>
             <values>
-                <value>100</value>
+                <value>430</value>
                 <value>10000</value>
             </values>
         </substitution>

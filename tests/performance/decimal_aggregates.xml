@@ -5,7 +5,7 @@
 
     <create_query>CREATE TABLE t (x UInt64, d32 Decimal32(3), d64 Decimal64(4), d128 Decimal128(5)) ENGINE = Memory</create_query>
     <!-- use less threads and several queries to save memory -->
-    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(60000000) SETTINGS max_threads = 2</fill_query>
+    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(76000000) SETTINGS max_threads = 2</fill_query>
     <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(60000000, 100000000) SETTINGS max_threads = 2</fill_query>
     <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(200000000, 100000000) SETTINGS max_threads = 2</fill_query>
     <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(300000000, 100000000) SETTINGS max_threads = 2</fill_query>
@@ -21,9 +21,9 @@
     <query>SELECT avg(d64), sum(d64), sumWithOverflow(d64) FROM t</query>
     <query>SELECT avg(d128), sum(d128), sumWithOverflow(d128) FROM t</query>
 
-    <query>SELECT uniq(d32), uniqCombined(d32), uniqHLL12(d32) FROM (SELECT * FROM t LIMIT 23000000)</query>
+    <query>SELECT uniq(d32), uniqCombined(d32), uniqHLL12(d32) FROM (SELECT * FROM t LIMIT 37000000)</query>
     <query>SELECT uniqExact(d32) FROM (SELECT * FROM t LIMIT 2000000) SETTINGS max_threads = 1</query>
-    <query>SELECT uniq(d64), uniqCombined(d64), uniqHLL12(d64) FROM (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT uniq(d64), uniqCombined(d64), uniqHLL12(d64) FROM (SELECT * FROM t LIMIT 25000000)</query>
     <query>SELECT uniqExact(d64) FROM (SELECT * FROM t LIMIT 2000000) SETTINGS max_threads = 1</query>
     <query>SELECT uniq(d128), uniqCombined(d128), uniqHLL12(d128) FROM (SELECT * FROM t LIMIT 10000000)</query>
     <query>SELECT uniqExact(d128) FROM (SELECT * FROM t LIMIT 2000000) SETTINGS max_threads = 1</query>

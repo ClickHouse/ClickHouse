@@ -9,7 +9,7 @@
         <substitution>
             <name>uniqs</name>
             <values>
-                <value>100</value>
+                <value>960</value>
                 <value>10000</value>
                 <value>1000000</value>
             </values>
