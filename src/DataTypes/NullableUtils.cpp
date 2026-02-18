@@ -4,8 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <Core/Settings.h>
-#include <Common/CurrentThread.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
@@ -13,17 +12,15 @@
 namespace DB
 {
 
-namespace Setting
+namespace ServerSetting
 {
-extern const SettingsBool allow_experimental_nullable_tuple_type;
+extern const ServerSettingsBool allow_nullable_tuple_in_variant_and_dynamic_subcolumn;
 }
 
 static bool isNullableTupleEnabled()
 {
-    auto context = CurrentThread::getQueryContext();
-    if (!context)
-        context = Context::getGlobalContextInstance();
-    return context && context->getSettingsRef()[Setting::allow_experimental_nullable_tuple_type];
+    auto context = Context::getGlobalContextInstance();
+    return context && context->getServerSettings()[ServerSetting::allow_nullable_tuple_in_variant_and_dynamic_subcolumn];
 }
 
 bool canBeInsideNullableBySettings(const DataTypePtr & type)
