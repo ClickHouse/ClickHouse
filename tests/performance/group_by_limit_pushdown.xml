@@ -3,30 +3,23 @@
 <!-- Benchmarks for the ordered_group_by_limit_pushdown optimization.
      This optimization uses a heap during aggregation to skip GROUP BY keys
      that won't make it into the ORDER BY ... LIMIT top-N results.
-     The pattern is: GROUP BY col ORDER BY col LIMIT N (ORDER BY key = GROUP BY key).
+     The pattern is: GROUP BY col ORDER BY col ASC LIMIT N (ORDER BY key = GROUP BY key).
 -->
 
 <!-- High cardinality: WatchID (~100M unique values out of 100M rows) -->
 <query>SELECT WatchID, count() FROM hits_100m_single GROUP BY WatchID ORDER BY WatchID ASC LIMIT 10 FORMAT Null</query>
-<query>SELECT WatchID, count() FROM hits_100m_single GROUP BY WatchID ORDER BY WatchID DESC LIMIT 10 FORMAT Null</query>
 
 <!-- High cardinality: UserID (~17M unique values) -->
 <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
-<query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID DESC LIMIT 10 FORMAT Null</query>
 <query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID ASC LIMIT 1000 FORMAT Null</query>
 
 <!-- High cardinality string: URL (~10M unique values) -->
 <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC LIMIT 10 FORMAT Null</query>
-<query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL DESC LIMIT 10 FORMAT Null</query>
-
-<!-- Medium cardinality: EventTime (~15M unique values) -->
-<query>SELECT EventTime, count() FROM hits_100m_single GROUP BY EventTime ORDER BY EventTime DESC LIMIT 10 FORMAT Null</query>
 
 <!-- Medium cardinality: RegionID (~10K unique values) -->
 <query>SELECT RegionID, count() FROM hits_100m_single GROUP BY RegionID ORDER BY RegionID ASC LIMIT 10 FORMAT Null</query>
 
 <!-- Synthetic high cardinality with numbers_mt() -->
 <query>SELECT number, count() FROM numbers_mt(50000000) GROUP BY number ORDER BY number ASC LIMIT 100 FORMAT Null</query>
-<query>SELECT number, count() FROM numbers_mt(50000000) GROUP BY number ORDER BY number DESC LIMIT 100 FORMAT Null</query>
 
 </test>

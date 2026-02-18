@@ -652,6 +652,10 @@ bool testForAggregationLimitPushdownOptimization(PlannerExpressionsAnalysisResul
     {
         if (sort_description_for_group_by_limit_pushdown[i].column_name != aggregation_analysis_result.aggregation_keys[i])
             return false;
+
+        /// Currently only ascending sort order is supported.
+        if (sort_description_for_group_by_limit_pushdown[i].direction != 1)
+            return false;
     }
 
     if (query_analysis_result.limit_length < 1)
