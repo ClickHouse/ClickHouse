@@ -273,18 +273,15 @@ bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
 {
-    /// For PARTITION mode, use an optimal approach by scanning existing buckets and claim free buckets first.
-    /// This ensures optimal distribution (1:1 mapping when num_partitions <= num_buckets). When num_partitions >=
-    /// num_buckets switch to a hash-based assignment without causing errors.
     if (bucketing_mode == ObjectStorageQueueBucketingMode::PARTITION
         && partitioning_mode != ObjectStorageQueuePartitioningMode::NONE)
     {
         auto partition_key = ObjectStorageQueueOrderedFileMetadata::getPartitionKey(
             path, partitioning_mode, filename_parser.get());
+
         return findOrClaimBucketForPartition(partition_key);
     }
 
-    /// For other modes, use default hash-based assignment
     return getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, filename_parser.get());
 }
 
@@ -300,65 +297,64 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::findOrClaimBucketForPartition(const std::string & partition_key) const
 {
-    /// Check cache first
     {
         std::lock_guard lock(partition_bucket_cache_mutex);
         if (auto it = partition_bucket_cache.find(partition_key); it != partition_bucket_cache.end())
             return it->second;
     }
 
-    /// Scan existing buckets to find where this partition already exists
-    auto zk = getZooKeeper();
-    for (Bucket bucket_id = 0; bucket_id < buckets_num; ++bucket_id)
+    Bucket result_bucket = buckets_num;
+    auto retry_ctrl = getKeeperRetriesControl(log);
+
+    retry_ctrl.retryLoop([&]
     {
-        const auto processed_path = zookeeper_path / "buckets" / toString(bucket_id) / "processed";
+        auto zk = getZooKeeper();
 
-        /// Check if this partition key exists in this bucket
-        if (zk->exists(processed_path / partition_key))
+        for (Bucket bucket_id = 0; bucket_id < buckets_num; ++bucket_id)
         {
-            LOG_TRACE(log, "Found existing partition '{}' in bucket {}", partition_key, bucket_id);
+            const auto claimed_dir = zookeeper_path / "buckets" / toString(bucket_id) / "claimed";
 
-            std::lock_guard lock(partition_bucket_cache_mutex);
-            partition_bucket_cache[partition_key] = bucket_id;
-            return bucket_id;
+            Strings claimed_children;
+            auto code = zk->tryGetChildren(claimed_dir, claimed_children);
+
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(code, claimed_dir);
+
+            if (code == Coordination::Error::ZNONODE)
+                claimed_children.clear();
+
+            if (std::find(claimed_children.begin(), claimed_children.end(), partition_key) != claimed_children.end())
+            {
+                result_bucket = bucket_id;
+                return;
+            }
+
+            if (!claimed_children.empty())
+                continue;
+
+            code = zk->tryCreate(claimed_dir / partition_key, "", zkutil::CreateMode::Persistent);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                result_bucket = bucket_id;
+                return;
+            }
+
+            if (code != Coordination::Error::ZNODEEXISTS)
+                throw zkutil::KeeperException::fromPath(code, claimed_dir / partition_key);
         }
+    });
+
+    if (result_bucket < buckets_num)
+    {
+        std::lock_guard lock(partition_bucket_cache_mutex);
+        partition_bucket_cache[partition_key] = result_bucket;
+        return result_bucket;
     }
 
-    /// If partition is not found, claim next available bucket
-    for (Bucket bucket_id = 0; bucket_id < buckets_num; ++bucket_id)
-    {
-        const auto processed_path = zookeeper_path / "buckets" / toString(bucket_id) / "processed";
-
-        /// Check if this bucket is free (no partitions assigned yet)
-        /// If the processed path doesn't exist, the bucket is definitely free
-        if (!zk->exists(processed_path))
-        {
-            LOG_INFO(log, "Claiming free bucket {} (no processed dir) for new partition '{}'", bucket_id, partition_key);
-
-            std::lock_guard lock(partition_bucket_cache_mutex);
-            partition_bucket_cache[partition_key] = bucket_id;
-            return bucket_id;
-        }
-
-        /// If processed path exists, check if it has any children (partitions)
-        Coordination::Stat stat;
-        auto children = zk->getChildren(processed_path, &stat);
-
-        if (children.empty())
-        {
-            LOG_INFO(log, "Claiming empty bucket {} for new partition '{}'", bucket_id, partition_key);
-
-            std::lock_guard lock(partition_bucket_cache_mutex);
-            partition_bucket_cache[partition_key] = bucket_id;
-            return bucket_id;
-        }
-    }
-
-    /// If all buckets have partitions, use hash as fallback.
     Bucket bucket_id = sipHash64(partition_key) % buckets_num;
-    LOG_INFO(log, "All buckets occupied, using hash fallback for partition '{}' -> bucket {}", partition_key, bucket_id);
+    LOG_WARNING(log, "All buckets occupied, using hash fallback for partition '{}'", partition_key);
 
-    /// update cache before returning
     std::lock_guard lock(partition_bucket_cache_mutex);
     partition_bucket_cache[partition_key] = bucket_id;
     return bucket_id;

@@ -6,7 +6,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
-#include <limits>
 #include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -252,7 +251,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         path_,
         zookeeper_name_,
         /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
-        /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
+        /* processed_node_path */bucket_info_ ? getProcessedPathWithBucket(zk_path_, bucket_info_->bucket) : getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
@@ -282,7 +281,10 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
     {
         std::vector<std::string> paths{"buckets", "failed", "processing", "persistent_processing"};
         for (size_t i = 0; i < buckets_num; ++i)
+        {
             paths.push_back("buckets/" + toString(i));
+            paths.push_back("buckets/" + toString(i) + "/claimed");  /// For atomic bucket claiming
+        }
         return paths;
     }
     /// We do not return "processed" node here,

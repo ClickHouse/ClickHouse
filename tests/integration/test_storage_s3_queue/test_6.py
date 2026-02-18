@@ -833,10 +833,8 @@ def test_optimal_bucket_assignment_with_regex_partitioning(started_cluster, engi
     files_path = f"{table_name}_data"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
 
-    # Use production-like hostnames
     # Filename pattern: hostname_timestamp_sequence.csv
     # Example: c-cluster-01-server-xscp10r-0_20251217T100000.000000Z_0001.csv
-    # Extract hostname: everything before first underscore
     partition_regex = r'(?P<hostname>[^_]+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)'
     partition_component = 'hostname'
 
