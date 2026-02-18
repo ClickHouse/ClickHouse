@@ -27,7 +27,7 @@
     <query>SELECT number FROM numbers_mt({numbers_threshold_value}) GROUP BY number FORMAT Null SETTINGS group_by_two_level_threshold = 1e12, group_by_two_level_threshold_bytes = 1e12</query>
 
     <query>SELECT WatchID FROM {table_name} GROUP BY WatchID FORMAT Null</query>
-    <query>SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM {table_name} GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10</query>
-    <query>SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM {table_name} WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10</query>
+    <query>SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM {table_name} GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 35</query>
+    <query>SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM {table_name} WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 19</query>
     <query>SELECT min(MobilePhoneModel) FROM {table_name} WHERE MobilePhoneModel != '' GROUP BY intHash32(UserID) % 1000000 FORMAT Null</query>
 </test>

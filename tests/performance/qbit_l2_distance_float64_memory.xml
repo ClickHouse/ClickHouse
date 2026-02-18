@@ -3,14 +3,14 @@
         <substitution>
             <name>vector_size</name>
             <values>
-                <value>100</value>
+                <value>305</value>
             </values>
         </substitution>
 
         <substitution>
             <name>elements</name>
             <values>
-                <value>200000</value>
+                <value>610997</value>
             </values>
         </substitution>
 

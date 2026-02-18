@@ -70,10 +70,10 @@
     </fill_query>
 
     <query>
-        SELECT {func}('hierarchical_flat_dictionary', number + 1) FROM numbers(430000) FORMAT Null;
+        SELECT {func}('hierarchical_flat_dictionary', number + 1) FROM numbers(900000) FORMAT Null;
     </query>
     <query>
-        SELECT {func}('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(430000) FORMAT Null;
+        SELECT {func}('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(830000) FORMAT Null;
     </query>
 
     <drop_query>DROP DICTIONARY IF EXISTS hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary;</drop_query>

@@ -10,14 +10,14 @@
     <query>SELECT multiIf(number >= 500000, isValidUTF8(repeat(toString(number), 100)), less(number, 50000), number * 2, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(790000) FORMAT Null</query>
 
     <query>SELECT toTypeName(isValidUTF8(repeat(toString(number), 100))) FROM numbers(60000000) FORMAT Null</query>
-    <query>SELECT toColumnTypeName(isValidUTF8(repeat(toString(number), 100))) FROM numbers(400000) FORMAT Null</query>
+    <query>SELECT toColumnTypeName(isValidUTF8(repeat(toString(number), 100))) FROM numbers(8000000) FORMAT Null</query>
 
     <query>SELECT if(isValidUTF8(repeat(toString(number), 10)), isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(400000) FORMAT Null</query>
     <query>SELECT and(isValidUTF8(repeat(toString(number), 10)), not isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(400000) FORMAT Null</query>
     <query>SELECT or(not isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(400000) FORMAT Null</query>
-    <query>SELECT multiIf(isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(400000) FORMAT Null</query>
+    <query>SELECT multiIf(isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(800000) FORMAT Null</query>
 
-    <query>SELECT if(number % 2, isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 100))) FROM numbers(400000) FORMAT Null</query>
+    <query>SELECT if(number % 2, isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 100))) FROM numbers(657174) FORMAT Null</query>
     <query>SELECT multiIf(number % 2, isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 100))) FROM numbers(780000) FORMAT Null</query>
     <query>SELECT and(isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 10)), isValidUTF8(repeat(toString(number), 100))) from numbers(400000) FORMAT Null</query>
     <query>SELECT or(not isValidUTF8(repeat(toString(number), 100)), not isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number), 100))) from numbers(620000) FORMAT Null</query>

@@ -10,9 +10,9 @@
         <substitution>
             <name>ratio</name>
             <values>
-                <value>10</value>
-                <value>100</value>
-                <value>1000</value>
+                <value>26</value>
+                <value>267</value>
+                <value>2673</value>
             </values>
         </substitution>
     </substitutions>

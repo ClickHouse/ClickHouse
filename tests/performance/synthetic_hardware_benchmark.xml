@@ -44,7 +44,7 @@
 
 <query>SELECT number % 10 AS k, count() FROM numbers(88000000) GROUP BY k FORMAT Null</query>
 <query>SELECT number % 10 AS k, count() FROM numbers_mt(1500000000) GROUP BY k FORMAT Null</query>
-<query>SELECT number % 256 AS k, count() FROM numbers(88000000) GROUP BY k FORMAT Null</query>
+<query>SELECT number % 256 AS k, count() FROM numbers(146341463) GROUP BY k FORMAT Null</query>
 <query>SELECT number % 256 AS k, count() FROM numbers_mt(1500000000) GROUP BY k FORMAT Null</query>
 
 <query>SELECT number % 10 AS k, count(), sum(number), avg(number) FROM numbers(88000000) GROUP BY k FORMAT Null</query>

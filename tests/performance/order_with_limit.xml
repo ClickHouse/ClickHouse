@@ -1,7 +1,7 @@
 <test>
     <query>SELECT number AS n FROM numbers_mt(1900000000) ORDER BY n DESC LIMIT 9 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 10 FORMAT Null</query>
-    <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 100 FORMAT Null</query>
+    <query>SELECT number AS n FROM numbers_mt(931677018) ORDER BY n DESC LIMIT 100 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(670000000) ORDER BY n DESC LIMIT 5000 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(540000000) ORDER BY n DESC LIMIT 8100 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(510000000) ORDER BY n DESC LIMIT 12600 FORMAT Null</query>
