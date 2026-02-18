@@ -71,7 +71,7 @@ public:
     void addRequestOnRollback(Coordination::RequestPtr request);
     Coordination::Requests getRequestsOnRollback() const;
 
-    static void setAndStoreNonTransactionalTID(const DataPartPtr & part, const TransactionInfoContext & transaction_context);
+    static void setAndStoreNonTransactionalRemovalTID(const DataPartPtr & part, const TransactionInfoContext & transaction_context);
 
 private:
     scope_guard beforeCommit();

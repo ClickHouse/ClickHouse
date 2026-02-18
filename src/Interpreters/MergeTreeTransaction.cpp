@@ -95,16 +95,32 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
     }
 }
 
-void MergeTreeTransaction::setAndStoreNonTransactionalTID(const DataPartPtr & part, const TransactionInfoContext & transaction_context)
+void MergeTreeTransaction::setAndStoreNonTransactionalRemovalTID(
+    const DataPartPtr & part, const TransactionInfoContext & transaction_context)
 {
+    bool is_locked = false;
     try
     {
         part->version->lockRemovalTID(Tx::NonTransactionalTID, transaction_context);
+        is_locked = true;
         part->version->setAndStoreRemovalTID(Tx::NonTransactionalTID);
         part->version->unlockRemovalTID(Tx::NonTransactionalTID, transaction_context);
+        is_locked = false;
     }
     catch (const Exception & e)
     {
+        if (is_locked)
+        {
+            try
+            {
+                part->version->unlockRemovalTID(Tx::NonTransactionalTID, transaction_context);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(part->version->getLogger(), fmt::format("Unable to unlock part {}, error", part->name));
+            }
+        }
+
         if (e.code() != ErrorCodes::SERIALIZATION_ERROR)
             throw;
 
@@ -127,7 +143,7 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         return;
     }
 
-    setAndStoreNonTransactionalTID(part_to_remove, transaction_context);
+    setAndStoreNonTransactionalRemovalTID(part_to_remove, transaction_context);
 }
 
 void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn)
@@ -152,7 +168,7 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         for (const auto & covered : covered_parts)
         {
             transaction_context.part_name = covered->name;
-            setAndStoreNonTransactionalTID(covered, transaction_context);
+            setAndStoreNonTransactionalRemovalTID(covered, transaction_context);
         }
     }
 }
