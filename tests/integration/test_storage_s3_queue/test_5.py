@@ -442,11 +442,13 @@ def test_ordered_start_after_avoids_deep_relisting(started_cluster):
     )
 
     expected_rows = initial_files + 1
-    for _ in range(30):
+    # Polling interval is configured to 60s for this test, so allow enough
+    # time for the first post-restart polling cycle to process the new file.
+    for _ in range(90):
         if expected_rows == get_count():
             break
         time.sleep(1)
-    assert expected_rows == get_count()
+    assert expected_rows == get_count(), f"Timed out waiting for {expected_rows} rows"
 
     list_calls_delta = int(
         node.query(
