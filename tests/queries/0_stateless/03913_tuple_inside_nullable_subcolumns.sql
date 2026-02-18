@@ -1,5 +1,5 @@
 -- Regardless of the setting allow_experimental_nullable_tuple_type, the output should be same.
--- The behavior is controlled by server setting `allow_nullable_tuple_in_variant_and_dynamic_subcolumn`
+-- The behavior is controlled by server setting `allow_nullable_tuple_in_extracted_subcolumns`
 
 -- { echo }
 

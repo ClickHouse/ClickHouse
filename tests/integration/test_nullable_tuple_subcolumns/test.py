@@ -167,7 +167,7 @@ def test_queries_for_on_server_mode(started_cluster):
 
 
 def test_setting_is_restart_only_does_not_change_on_config_reload(started_cluster):
-    server_setting_name = "allow_nullable_tuple_in_variant_and_dynamic_subcolumn"
+    server_setting_name = "allow_nullable_tuple_in_extracted_subcolumns"
     reload_probe_query = """
 SELECT toTypeName(v.`Tuple(UInt64, String)`), v.`Tuple(UInt64, String)`
 FROM (SELECT 42::Variant(Tuple(UInt64, String), UInt64) AS v)
@@ -196,8 +196,8 @@ FORMAT TSV
 
     original_config = config_path.read_text(encoding="utf-8")
     updated_config = original_config.replace(
-        "<allow_nullable_tuple_in_variant_and_dynamic_subcolumn>0</allow_nullable_tuple_in_variant_and_dynamic_subcolumn>",
-        "<allow_nullable_tuple_in_variant_and_dynamic_subcolumn>1</allow_nullable_tuple_in_variant_and_dynamic_subcolumn>",
+        "<allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>",
+        "<allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>",
     )
     assert updated_config != original_config
 

@@ -1440,17 +1440,17 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <mlock_executable>false</mlock_executable>
     ```
     )", 0) \
-    DECLARE(Bool, allow_nullable_tuple_in_variant_and_dynamic_subcolumn, false, R"(
-    Controls how `Tuple(...)` subcolumns extracted from `Variant` and `Dynamic` are typed.
-    - `false`: Return `Tuple(...)` and use default tuple values for non-matching rows.
-    - `true`: Return `Nullable(Tuple(...))` and use `NULL` for non-matching rows.
+    DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
+    Controls whether extracted `Tuple(...)` subcolumns can be typed as `Nullable(Tuple(...))`.
+    - `false`: Return `Tuple(...)` and use default tuple values for rows where the subcolumn is missing.
+    - `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
 
     This setting is server-wide and can only be changed via server restart.
 
     **Example**
 
     ```xml
-    <allow_nullable_tuple_in_variant_and_dynamic_subcolumn>false</allow_nullable_tuple_in_variant_and_dynamic_subcolumn>
+    <allow_nullable_tuple_in_extracted_subcolumns>false</allow_nullable_tuple_in_extracted_subcolumns>
     ```
     )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \

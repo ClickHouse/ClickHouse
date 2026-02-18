@@ -1,5 +1,5 @@
 -- These tuple .null subcolumns should succeed when
--- allow_nullable_tuple_in_variant_and_dynamic_subcolumn = 0.
+-- allow_nullable_tuple_in_extracted_subcolumns = 1.
 
 SET enable_analyzer = 1;
 

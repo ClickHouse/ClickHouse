@@ -15,7 +15,7 @@ namespace DB
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map);
 
 /** Returns whether `type` can be wrapped into `Nullable(...)` with current
-  * `allow_nullable_tuple_in_variant_and_dynamic_subcolumn` server setting.
+  * `allow_nullable_tuple_in_extracted_subcolumns` server setting.
   * This setting can only be updated with a server restart.
   * For non-tuple types this matches `IDataType::canBeInsideNullable()`.
   */
@@ -30,7 +30,7 @@ bool canBeInsideNullableOrLowCardinalityNullableBySettings(const DataTypePtr & t
 
 /** Wraps `type` into `Nullable(...)` or `LowCardinality(Nullable(...))` when
   * allowed by type capabilities and current
-  * `allow_nullable_tuple_in_variant_and_dynamic_subcolumn` server setting.
+  * `allow_nullable_tuple_in_extracted_subcolumns` server setting.
   * This setting can only be updated with a server restart.
   * Returns `type` unchanged when wrapping is not allowed.
   */

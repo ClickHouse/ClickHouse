@@ -14,19 +14,19 @@ namespace DB
 
 namespace ServerSetting
 {
-extern const ServerSettingsBool allow_nullable_tuple_in_variant_and_dynamic_subcolumn;
+extern const ServerSettingsBool allow_nullable_tuple_in_extracted_subcolumns;
 }
 
-static bool isNullableTupleEnabled()
+static bool isNullableTupleEnabledByServerSetting()
 {
     auto context = Context::getGlobalContextInstance();
-    return context && context->getServerSettings()[ServerSetting::allow_nullable_tuple_in_variant_and_dynamic_subcolumn];
+    return context && context->getServerSettings()[ServerSetting::allow_nullable_tuple_in_extracted_subcolumns];
 }
 
 static bool canBeInsideNullableBySettings(const ColumnPtr & column)
 {
     if (checkAndGetColumn<ColumnTuple>(column.get()))
-        return isNullableTupleEnabled();
+        return isNullableTupleEnabledByServerSetting();
 
     return column->canBeInsideNullable();
 }
@@ -34,7 +34,7 @@ static bool canBeInsideNullableBySettings(const ColumnPtr & column)
 bool canBeInsideNullableBySettings(const DataTypePtr & type)
 {
     if (isTuple(type))
-        return isNullableTupleEnabled();
+        return isNullableTupleEnabledByServerSetting();
 
     return type->canBeInsideNullable();
 }
