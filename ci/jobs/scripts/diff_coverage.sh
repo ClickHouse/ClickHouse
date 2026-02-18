@@ -90,18 +90,20 @@ done
 patterns=()
 while IFS= read -r f; do
   [ -n "$f" ] && patterns+=("*$f")
-done < changed_files
-
+done < <(echo "$changed_files")
 
 lcov --extract current_llvm_coverage.info  "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt \
+  --quiet \
   -o current.changed.info 2>/dev/null
 
 lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt \
+  --quiet \
   -o baseline.changed.info 2>/dev/null
 
 echo Workspace path: $WORKSPACE_PATH
+
 
 genhtml \
   --baseline-file baseline.changed.info \

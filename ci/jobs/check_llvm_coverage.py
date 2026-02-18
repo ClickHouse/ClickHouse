@@ -20,20 +20,16 @@ if __name__ == "__main__":
         ).strip()
     os.environ["BASE_COMMIT"] = merge_base_commit_sha
 
-    prev_10_commits = info.get_kv_data("master_commits_after_merge_base")
-    if prev_10_commits is None:
+    prev_30_commits = info.get_kv_data("master_commits_before_merge_base")
+    if prev_30_commits is None:
         # Get merge base commit and next 30 newer commits in master (oldest to newest)
         master_commits = Shell.get_output(
-            "git rev-list --reverse origin/master --max-count=500", verbose=True
+            "git rev-list origin/master --max-count=500", verbose=True
         ).splitlines()
         if merge_base_commit_sha in master_commits:
             idx = master_commits.index(merge_base_commit_sha)
             # List: merge base + next 30 newer commits
             prev_30_commits = master_commits[idx:idx+31]
-        else:
-            prev_30_commits = master_commits[:31]
-        info.store_kv_data("master_commits_after_merge_base", prev_30_commits)
-        prev_30_commits = prev_30_commits
     os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits or [])
 
     current_commit_sha = info.get_kv_data("current_commit_sha")

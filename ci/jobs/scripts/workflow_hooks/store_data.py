@@ -39,8 +39,7 @@ if __name__ == "__main__":
 
         info.store_kv_data("previous_commits_sha", commits)
 
-    # get merge base for master and current branch and store 10 previous commits in master
-    # Use gh api to get the merge base (base commit) between master and info.sha
+    # get merge base for master and current branch and store 30 previous commits in master
     try:
         info.store_kv_data("current_commit_sha", info.sha)
         # Get the merge base commit using git
@@ -49,16 +48,14 @@ if __name__ == "__main__":
         ).strip()
         info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
 
-        # Get 10 previous commits from master after the base commit
+        # Get 30 previous commits from master after the base commit
         master_commits = Shell.get_output(
-            "git rev-list --reverse origin/master --max-count=100", verbose=True
+            "git rev-list origin/master --max-count=500", verbose=True
         ).splitlines()
         if merge_base_commit_sha in master_commits:
             idx = master_commits.index(merge_base_commit_sha)
-            prev_30_commits = master_commits[idx:idx+31]
-        else:
-            prev_30_commits = master_commits[:31]
-        info.store_kv_data("master_commits_after_merge_base", prev_30_commits)
+            prev_30_commits = master_commits[max(0, idx-29):idx+1]
+        info.store_kv_data("master_commits_before_merge_base", prev_30_commits)
     except Exception as e:
         print(f"Failed to get merge base or previous master commits via git: {e}")
 
