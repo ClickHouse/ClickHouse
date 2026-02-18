@@ -258,7 +258,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
-            {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
             {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
             {"DROP DISTRIBUTED CACHE", Type::CLEAR_DISTRIBUTED_CACHE},
             {"DROP DISK METADATA CACHE", Type::CLEAR_DISK_METADATA_CACHE},
@@ -347,6 +346,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
                 res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
 
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->delta_kernel_tracing_level = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
             break;
         }
 

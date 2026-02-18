@@ -106,6 +106,7 @@ add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 add_headers_and_sources(clickhouse_common_io Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
@@ -265,7 +266,10 @@ if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_access_ssh Access/SSH)
 endif()
 add_object_library(clickhouse_backups Backups)
+
 add_object_library(clickhouse_core Core)
+list (APPEND dbms_sources Common/ExceptionExt.cpp)
+
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)

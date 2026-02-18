@@ -51,11 +51,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Config Workflow' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Config Workflow' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
@@ -91,11 +89,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -131,11 +127,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_debug:
     runs-on: [self-hosted, arm-large]
@@ -171,11 +165,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_debug)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_debug)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_debug)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_asan:
     runs-on: [self-hosted, arm-large]
@@ -211,11 +203,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_asan)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_asan)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_asan)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_tsan:
     runs-on: [self-hosted, arm-large]
@@ -251,11 +241,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_tsan)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_tsan)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_tsan)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_release:
     runs-on: [self-hosted, arm-large]
@@ -291,11 +279,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_release)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_release)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_arm_release:
     runs-on: [self-hosted, arm-large]
@@ -331,11 +317,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_release)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (arm_release)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_darwin:
     runs-on: [self-hosted, amd-large]
@@ -371,11 +355,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_darwin)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_darwin)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_darwin)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_arm_darwin:
     runs-on: [self-hosted, arm-large]
@@ -411,11 +393,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_darwin)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (arm_darwin)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_darwin)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   docker_server_image:
     runs-on: [self-hosted, style-checker]
@@ -451,11 +431,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docker server image' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Docker server image' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker server image' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   docker_keeper_image:
     runs-on: [self-hosted, style-checker]
@@ -491,11 +469,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docker keeper image' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Docker keeper image' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker keeper image' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   install_packages_amd_release:
     runs-on: [self-hosted, style-checker]
@@ -531,11 +507,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Install packages (amd_release)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Install packages (amd_release)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   install_packages_arm_release:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -571,11 +545,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Install packages (arm_release)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Install packages (arm_release)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   compatibility_check_amd_release:
     runs-on: [self-hosted, style-checker]
@@ -611,11 +583,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Compatibility check (amd_release)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Compatibility check (amd_release)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Compatibility check (amd_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   compatibility_check_arm_release:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -651,11 +621,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Compatibility check (arm_release)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Compatibility check (arm_release)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Compatibility check (arm_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   stateless_tests_amd_asan_distributed_plan_parallel_1_2:
     runs-on: [self-hosted, amd-medium-cpu]
@@ -691,11 +659,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   stateless_tests_amd_asan_distributed_plan_parallel_2_2:
     runs-on: [self-hosted, amd-medium-cpu]
@@ -731,11 +697,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   stateless_tests_amd_asan_db_disk_distributed_plan_sequential:
     runs-on: [self-hosted, amd-small-mem]
@@ -771,11 +735,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   stress_test_amd_tsan:
     runs-on: [self-hosted, amd-medium]
@@ -811,11 +773,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stress test (amd_tsan)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_asan_db_disk_old_analyzer_1_6:
     runs-on: [self-hosted, amd-medium]
@@ -851,11 +811,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_asan_db_disk_old_analyzer_2_6:
     runs-on: [self-hosted, amd-medium]
@@ -891,11 +849,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_asan_db_disk_old_analyzer_3_6:
     runs-on: [self-hosted, amd-medium]
@@ -931,11 +887,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_asan_db_disk_old_analyzer_4_6:
     runs-on: [self-hosted, amd-medium]
@@ -971,11 +925,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_asan_db_disk_old_analyzer_5_6:
     runs-on: [self-hosted, amd-medium]
@@ -1011,11 +963,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_asan_db_disk_old_analyzer_6_6:
     runs-on: [self-hosted, amd-medium]
@@ -1051,11 +1001,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_1_6:
     runs-on: [self-hosted, amd-medium]
@@ -1091,11 +1039,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_2_6:
     runs-on: [self-hosted, amd-medium]
@@ -1131,11 +1077,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_3_6:
     runs-on: [self-hosted, amd-medium]
@@ -1171,11 +1115,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_4_6:
     runs-on: [self-hosted, amd-medium]
@@ -1211,11 +1153,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_5_6:
     runs-on: [self-hosted, amd-medium]
@@ -1251,11 +1191,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_6_6:
     runs-on: [self-hosted, amd-medium]
@@ -1291,11 +1229,9 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -1331,8 +1267,6 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Finish Workflow' --workflow "BackportPR" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Finish Workflow' --workflow "BackportPR" --ci 2>&1 | tee ./ci/tmp/job.log
-          fi
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log

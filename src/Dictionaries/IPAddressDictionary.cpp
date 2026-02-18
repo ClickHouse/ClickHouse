@@ -643,7 +643,7 @@ void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, con
 
 IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}};
+    Attribute attr{.null_values = {}, .maps = {}, .string_arena = {}, .type = type};
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {

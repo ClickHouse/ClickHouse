@@ -5,9 +5,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/demangle.h>
+#include <Core/LogsLevel.h>
 #include <Common/AtomicLogger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/ExceptionExt.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
 #include <Common/SensitiveDataMasker.h>
@@ -294,58 +296,6 @@ try
 }
 catch (...) // NOLINT(bugprone-empty-catch)
 {
-}
-
-static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
-{
-    try
-    {
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-        if (start_of_message.empty())
-        {
-            switch (level)
-            {
-                case LogsLevel::none: break;
-                case LogsLevel::test: LOG_TEST(logger, message); break;
-                case LogsLevel::trace: LOG_TRACE(logger, message); break;
-                case LogsLevel::debug: LOG_DEBUG(logger, message); break;
-                case LogsLevel::information: LOG_INFO(logger, message); break;
-                case LogsLevel::warning: LOG_WARNING(logger, message); break;
-                case LogsLevel::error: LOG_ERROR(logger, message); break;
-                case LogsLevel::fatal: LOG_FATAL(logger, message); break;
-            }
-        }
-        else
-        {
-            switch (level)
-            {
-                case LogsLevel::none: break;
-                case LogsLevel::test: LOG_TEST(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::trace: LOG_TRACE(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::debug: LOG_DEBUG(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::information: LOG_INFO(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::warning: LOG_WARNING(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::error: LOG_ERROR(logger, "{}: {}", start_of_message, message.text); break;
-                case LogsLevel::fatal: LOG_FATAL(logger, "{}: {}", start_of_message, message.text); break;
-            }
-        }
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    /// Mark the exception as logged.
-    try
-    {
-        throw;
-    }
-    catch (Exception & e)
-    {
-        e.markAsLogged();
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-    }
 }
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)

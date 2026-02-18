@@ -357,6 +357,8 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`bloom_filter`](#bloom-filter) index
 - [`ngrambf_v1`](#n-gram-bloom-filter) index
 - [`tokenbf_v1`](#token-bloom-filter) index
+- [`text`]({#text}) index
+- [`vector_similarity`]({#vector-similarity}) index
 
 #### MinMax skip index {#minmax}
 
@@ -488,7 +490,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Supports full-text search, see [here](textindexes.md) for details.
+Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 
