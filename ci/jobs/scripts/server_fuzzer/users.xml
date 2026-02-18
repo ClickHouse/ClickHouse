@@ -38,7 +38,6 @@
             <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
             <allow_experimental_hash_functions>1</allow_experimental_hash_functions>
             <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>
-            <allow_experimental_insert_into_iceberg>1</allow_experimental_insert_into_iceberg>
             <allow_experimental_inverted_index>1</allow_experimental_inverted_index>
             <allow_experimental_join_condition>1</allow_experimental_join_condition>
             <allow_experimental_join_right_table_sorting>1</allow_experimental_join_right_table_sorting>
@@ -60,6 +59,7 @@
             <allow_experimental_ts_to_grid_aggregate_function>1</allow_experimental_ts_to_grid_aggregate_function>
             <allow_experimental_variant_type>1</allow_experimental_variant_type>
             <allow_experimental_vector_similarity_index>1</allow_experimental_vector_similarity_index>
+            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
             <allow_introspection_functions>1</allow_introspection_functions>
             <allow_materialized_view_with_bad_select>1</allow_materialized_view_with_bad_select>
             <allow_named_collection_override_by_default>1</allow_named_collection_override_by_default>

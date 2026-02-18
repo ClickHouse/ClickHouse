@@ -323,6 +323,7 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
 """
 
     base_command = base_command.replace("\n", " ").strip()
+    base_command = f"bash -o pipefail -c {shlex.quote(base_command)}"
     print(f"Using server fuzzer command: {base_command}")
     with open(server_cmd, "w") as outfile:
         outfile.write("#!/bin/bash\n")
@@ -333,7 +334,7 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
     test_results = [
         Result.from_commands_run(
             name="dolor",
-            command=f"bash -o pipefail -c {shlex.quote(base_command)}",
+            command=base_command,
         )
     ]
 

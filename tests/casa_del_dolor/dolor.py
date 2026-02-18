@@ -13,7 +13,7 @@ import signal
 import sys
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 from tests.integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
@@ -441,6 +441,7 @@ cluster = ClickHouseCluster(
     server_bin_path=first_server,
     client_bin_path=args.client_binary,
     server_binaries=sorted_binaries,
+    with_dolor=True,
 )
 
 # Set environment variables such as locales and timezones
@@ -477,7 +478,6 @@ for i in range(0, len(args.replica_values)):
     servers.append(
         cluster.add_instance(
             f"node{i}",
-            with_dolor=True,
             stay_alive=True,
             copy_common_configs=False,
             with_zookeeper=args.with_zookeeper,
