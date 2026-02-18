@@ -554,9 +554,9 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
     return parseTables(*buf, base_namespace, limit);
 }
 
-void RestCatalog::checkDatabase(std::string database_name) const
+void RestCatalog::checkDatabase(std::string /*database_name*/) const
 {
-    getTables(database_name, /* limit */ 1);
+    getTables();
 }
 
 DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const

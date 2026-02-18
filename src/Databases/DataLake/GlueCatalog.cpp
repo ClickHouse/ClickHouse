@@ -270,9 +270,9 @@ DB::Names GlueCatalog::getTables() const
     return result;
 }
 
-void GlueCatalog::checkDatabase(std::string database_name) const
+void GlueCatalog::checkDatabase(std::string /*database_name*/) const
 {
-    getTablesForDatabase(database_name, /* limit */ 1);
+    getTables();
 }
 
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
