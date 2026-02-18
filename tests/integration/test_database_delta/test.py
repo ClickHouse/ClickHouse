@@ -22,16 +22,7 @@ from datetime import date
 import uuid
 
 from helpers.test_tools import TSV
-
-
-def start_unity_catalog(node):
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"""cp -r /unitycatalog /var/lib/clickhouse/user_files/ && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
-        ]
-    )
+from helpers.unity_catalog import start_unity_catalog
 
 
 @pytest.fixture(scope="module")

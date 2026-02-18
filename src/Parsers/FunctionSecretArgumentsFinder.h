@@ -737,10 +737,21 @@ protected:
 
     void findDataLakeCatalogSecretArguments()
     {
-        /// datalake catalog should support different storage types,
-        /// we need a function to check if the url is S3 or Azure.
-        /// right now we assume it's a S3 url
-        findS3DatabaseSecretArguments();
+        if (isNamedCollectionName(0))
+        {
+            /// DataLakeCatalog(named_collection, ..., catalog_credential = 'secret', ...)
+            findSecretNamedArgument("secret_access_key", 1);
+            findSecretNamedArgument("catalog_credential", 1);
+            findSecretNamedArgument("aws_secret_access_key", 1);
+            findSecretNamedArgument("onelake_client_secret", 1);
+            findSecretNamedArgument("dlf_access_key_secret", 1);
+            findSecretNamedArgument("auth_header", 1);
+        }
+        else
+        {
+            /// DataLakeCatalog('url', 'access_key_id', 'secret_access_key')
+            markSecretArgument(2);
+        }
     }
 
     void findBackupDatabaseSecretArguments()
