@@ -41,11 +41,11 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const ContextPtr & context_)
     : WithContext(context_)
+    , storage_snapshot(storage_snapshot_)
     , parts_ranges(std::move(parts_))
     , mutations_snapshot(std::move(mutations_snapshot_))
     , shared_virtual_fields(std::move(shared_virtual_fields_))
     , index_read_tasks(index_read_tasks_)
-    , storage_snapshot(storage_snapshot_)
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
@@ -74,8 +74,8 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const ContextPtr & context_)
     : WithContext(context_)
-    , mutations_snapshot(std::move(mutations_snapshot_))
     , storage_snapshot(storage_snapshot_)
+    , mutations_snapshot(std::move(mutations_snapshot_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
     , reader_settings(reader_settings_)
