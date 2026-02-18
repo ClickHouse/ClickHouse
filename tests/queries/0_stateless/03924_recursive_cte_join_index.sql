@@ -32,7 +32,7 @@ WITH RECURSIVE traverse AS
 )
 SELECT current_id FROM traverse ORDER BY current_id;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- Check that the total rows read is small (index was used).
 -- Without optimization: ~999010 * 10 steps = ~10M rows read.
@@ -61,7 +61,7 @@ WITH RECURSIVE traverse2 AS
 )
 SELECT current_id FROM traverse2 ORDER BY current_id;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     read_rows < 100000 AS read_rows_ok
