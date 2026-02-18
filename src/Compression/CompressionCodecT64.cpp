@@ -20,6 +20,10 @@ namespace DB
 /// In example, if we have UInt8 with only 0 and 1 inside 64xUInt8 would be compressed into 1xUInt64.
 /// It detects unused bits by calculating min and max values of data part, saving them in header in compression phase.
 /// There's a special case with signed integers parts with crossing zero data. Here it stores one more bit to detect sign of value.
+///
+/// With 'remove_offset' option, subtracts min from each value before transposing. The delta (value - min)
+/// is always unsigned and non-negative, which avoids sign-bit complexity and eliminates redundant bits
+/// when values cluster around a non-zero baseline.
 class CompressionCodecT64 : public ICompressionCodec
 {
 public:
@@ -35,8 +39,8 @@ public:
         Bit
     };
 
-    // type_idx_ is required for compression, but not for decompression.
-    CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_);
+    // type_idx, variant, remove_offset_ is required for compression, but not for decompression.
+    CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_, bool remove_offset_ = false);
 
     uint8_t getMethodByte() const override;
 
@@ -56,12 +60,14 @@ protected:
     bool isGenericCompression() const override { return false; }
     String getDescription() const override
     {
-        return "Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.";
+        return "Preprocessor. Crops unused bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types. ";
     }
 
 private:
+    // type_idx, variant, remove_offset_ is required for compression, but not for decompression.
     std::optional<TypeIndex> type_idx;
     Variant variant;
+    bool remove_offset;
 };
 
 
@@ -335,7 +341,14 @@ void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
     value |= static_cast<UInt32>(matrix8[col]);
 }
 
+template <typename T>
+void clear(T * buf)
+{
+    for (UInt32 i = 0; i < 64; ++i)
+        buf[i] = 0;
+}
 
+/// Load / store helpers — no offset removal path
 template <typename T>
 void load(const char * src, T * buf, UInt32 tail = 64)
 {
@@ -361,12 +374,113 @@ void store(const T * buf, char * dst, UInt32 tail = 64)
 }
 
 template <typename T>
-void clear(T * buf)
+using UnsignedOf = std::make_unsigned_t<T>;
+
+/// Two's complement maps 
+///
+///   unsigned:  0    1  ...  127  128  129  ...  255
+///   signed:    0    1  ...  127 -128 -127  ...   -1
+///
+/// Subtracting min measures the distance between two positions on this circle.
+///
+///   both negative:  value= -50, umin=-100 -> 11001110 - 10011100 = 00110010 = 50
+///   cross zero:     value=  50, umin=-100 -> 00110010 - 10011100 = 10010110 = 150
+///   both positive:  value= 100, umin=  50 -> 01100100 - 00110010 = 00110010 = 50
+///
+/// We cast to unsigned to make wraparound well-defined in C++,
+/// since signed overflow is undefined behavior.
+MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T>
+void), loadDeltaImpl, MULTITARGET_FUNCTION_BODY((const char * src, UnsignedOf<T> * buf, T min_val, UInt32 tail) /// NOLINT
 {
-    for (UInt32 i = 0; i < 64; ++i)
-        buf[i] = 0;
+    using U = UnsignedOf<T>;
+    U umin = static_cast<U>(min_val);
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        for (UInt32 i = 0; i < tail; ++i)
+            buf[i] = static_cast<U>(unalignedLoad<T>(src + i * sizeof(T))) - umin;
+    }
+    else
+    {
+        for (UInt32 i = 0; i < tail; ++i)
+            buf[i] = static_cast<U>(unalignedLoadLittleEndian<T>(src + i * sizeof(T))) - umin;
+    }
+})
+)
+
+template <typename T>
+ALWAYS_INLINE void loadDelta(const char * src, UnsignedOf<T> * buf, T min_val, UInt32 tail = 64)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512BW))
+    {
+        loadDeltaImplAVX512BW<T>(src, buf, min_val, tail);
+        return;
+    }
+    if (isArchSupported(TargetArch::AVX512F))
+    {
+        loadDeltaImplAVX512F<T>(src, buf, min_val, tail);
+        return;
+    }
+    if (isArchSupported(TargetArch::AVX2))
+    {
+        loadDeltaImplAVX2<T>(src, buf, min_val, tail);
+        return;
+    }
+#endif
+    {
+        loadDeltaImpl<T>(src, buf, min_val, tail);
+    }
 }
 
+/// Restore original values by adding min back to each unsigned delta.
+///
+/// Adding min moves each value back to its original position on the circle.
+/// Any carry bit beyond 2^N is simply discarded, giving back the original bits:
+///
+/// both negative:  
+/// delta= 50, umin=156 -> 00110010 + 10011100 = (0)11001110 -> 11001110 = Int8  -50
+/// cross zero:     
+/// delta=150, umin=156 -> 10010110 + 10011100 = (1)00110010 -> 00110010 = Int8   50
+/// both positive:  
+/// delta= 50, umin=50 -> 00110010 + 00110010 = (0)01100100 -> 01100100 = Int8  100
+MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T>
+void), storeDeltaImpl, MULTITARGET_FUNCTION_BODY((const UnsignedOf<T> * buf, char * dst, T min_val, UInt32 tail) /// NOLINT
+{
+    using U = UnsignedOf<T>;
+    U umin = static_cast<U>(min_val);
+    for (UInt32 i = 0; i < tail; ++i)
+        unalignedStore<T>(dst + i * sizeof(T), static_cast<T>(buf[i] + umin));
+})
+)
+
+template <typename T>
+ALWAYS_INLINE void storeDelta(const UnsignedOf<T> * buf, char * dst, T min_val, UInt32 tail = 64)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512BW))
+    {
+        storeDeltaImplAVX512BW<T>(buf, dst, min_val, tail);
+        return;
+    }
+    if (isArchSupported(TargetArch::AVX512F))
+    {
+        storeDeltaImplAVX512F<T>(buf, dst, min_val, tail);
+        return;
+    }
+    if (isArchSupported(TargetArch::AVX2))
+    {
+        storeDeltaImplAVX2<T>(buf, dst, min_val, tail);
+        return;
+    }
+#endif
+    {
+        storeDeltaImpl<T>(buf, dst, min_val, tail);
+    }
+}
 
 MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
@@ -473,12 +587,23 @@ ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, 
     }
 }
 
+/// No offset removal:
+/// 3 cases for restoring cropped high bits:
+/// case 1: unsigned T -> sign_bit/upper_max compiled away, all values same side
+///         just OR upper_min for all values
+///
+/// case 2: signed T, same side (no cross-zero) -> sign_bit=0
+///         just OR upper_min for all values
+///
+/// case 3: signed T, cross-zero (min=-5, max=10) -> sign_bit=10000
+///         check each value individually:      
+///         bit4=1 -> was negative -> OR upper_min (1111...100000)
+///         bit4=0 -> was positive -> OR upper_max (0000...000000)
 template <typename T, typename MinMaxT = std::conditional_t<is_signed_v<T>, Int64, UInt64>>
 void restoreUpperBits(T * buf, T upper_min, T upper_max [[maybe_unused]], T sign_bit [[maybe_unused]], UInt32 tail = 64)
 {
     if constexpr (is_signed_v<T>)
     {
-        /// Restore some data as negatives and others as positives
         if (sign_bit)
         {
             for (UInt32 col = 0; col < tail; ++col)
@@ -508,6 +633,14 @@ UInt32 getValuableBitsNumber(UInt64 min, UInt64 max)
     return 0;
 }
 
+
+// SIGNED cross-zero (min=-5, max=10): XOR breaks
+// -5  = 1111...11111011
+// 10  = 0000...00001010
+// XOR = 1111...11110001 -> sign bit pollutes, says 64 bits
+// so: which side needs more bits?
+//   min+max >= 0 -> positive side larger
+//   count bits of max: 10 = 1010 -> 4 bits + 1 sign = 5
 UInt32 getValuableBitsNumber(Int64 min, Int64 max)
 {
     if (min < 0 && max >= 0)
@@ -517,6 +650,15 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
         return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
     }
     return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+}
+
+// REMOVE_OFFSET:
+// range = max - min = 10 - (-5) = 15 -> 4 bits, no special case
+UInt32 getDeltaBitsNumber(UInt64 range)
+{
+    if (range)
+        return 64 - std::countl_zero(range);
+    return 0;
 }
 
 
@@ -540,9 +682,10 @@ void findMinMax(const char * src, UInt32 src_size, T & min, T & max)
 
 using Variant = CompressionCodecT64::Variant;
 
-template <typename T, bool full>
+template <typename T, bool full, bool remove_offset>
 UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 {
+    using U = UnsignedOf<T>;
     using MinMaxType = std::conditional_t<is_signed_v<T>, Int64, UInt64>;
 
     static constexpr const UInt32 matrix_size = 64;
@@ -573,36 +716,83 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
         dst += header_size;
     }
 
-    UInt32 num_bits = getValuableBitsNumber(min64, max64);
+    UInt32 num_bits;
+    if constexpr (remove_offset)
+    {
+        U delta_range = static_cast<U>(max) - static_cast<U>(min);
+        num_bits = getDeltaBitsNumber(static_cast<UInt64>(delta_range));
+    }
+    else
+    {
+        num_bits = getValuableBitsNumber(min64, max64);
+    }
+
     if (!num_bits)
         return header_size + bytes_to_skip;
 
-    T buf[matrix_size];
     UInt32 src_shift = sizeof(T) * matrix_size;
     UInt32 dst_shift = sizeof(UInt64) * num_bits;
-    for (UInt32 i = 0; i < num_full; ++i)
+
+    if constexpr (remove_offset)
     {
-        load<T>(src, buf, matrix_size);
-        transpose<T, full>(buf, dst, num_bits);
-        src += src_shift;
-        dst += dst_shift;
+        U delta_buf[matrix_size];
+
+        for (UInt32 i = 0; i < num_full; ++i)
+        {
+            loadDelta<T>(src, delta_buf, min, matrix_size);
+            transpose<U, full>(delta_buf, dst, num_bits);
+            src += src_shift;
+            dst += dst_shift;
+        }
+
+        UInt32 dst_bytes = num_full * dst_shift;
+
+        if (tail)
+        {
+            loadDelta<T>(src, delta_buf, min, tail);
+            transpose<U, full>(delta_buf, dst, num_bits, tail);
+            dst_bytes += dst_shift;
+        }
+
+        return header_size + dst_bytes + bytes_to_skip;
     }
-
-    UInt32 dst_bytes = num_full * dst_shift;
-
-    if (tail)
+    else
     {
-        load<T>(src, buf, tail);
-        transpose<T, full>(buf, dst, num_bits, tail);
-        dst_bytes += dst_shift;
-    }
+        T buf[matrix_size];
 
-    return header_size + dst_bytes + bytes_to_skip;
+        for (UInt32 i = 0; i < num_full; ++i)
+        {
+            load<T>(src, buf, matrix_size);
+            transpose<T, full>(buf, dst, num_bits);
+            src += src_shift;
+            dst += dst_shift;
+        }
+
+        UInt32 dst_bytes = num_full * dst_shift;
+
+        if (tail)
+        {
+            load<T>(src, buf, tail);
+            transpose<T, full>(buf, dst, num_bits, tail);
+            dst_bytes += dst_shift;
+        }
+
+        return header_size + dst_bytes + bytes_to_skip;
+    }
 }
 
-template <typename T, bool full>
+/// Remove_offset: num_bits covers the unsigned range (max - min), deltas are
+/// always non-negative so no sign handling is needed. On decompression,
+/// storeDelta adds min back to each delta to recover the original value.
+///
+/// No offset removal: num_bits is derived via XOR of min and max, which may require
+/// an extra sign bit for signed types spanning zero. On decompression, the
+/// stripped upper bits must be restored — either uniformly from upper_min,
+/// or conditionally from upper_max for the cross-zero signed case.
+template <typename T, bool full, bool remove_offset>
 UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 uncompressed_size)
 {
+    using U = UnsignedOf<T>;
     using MinMaxType = std::conditional_t<is_signed_v<T>, Int64, UInt64>;
 
     static constexpr const UInt32 matrix_size = 64;
@@ -625,24 +815,40 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
     if (uncompressed_size == 0)
         return static_cast<UInt32>(dst - original_dst);
 
+    if (bytes_size < header_size)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is less than the size of T64 header",
+                        bytes_size);
+
     UInt64 num_elements = uncompressed_size / sizeof(T);
-    MinMaxType min;
-    MinMaxType max;
+    MinMaxType min64;
+    MinMaxType max64;
 
     /// Read header
     {
-        memcpy(&min, src, sizeof(MinMaxType));
-        memcpy(&max, src + 8, sizeof(MinMaxType));
+        memcpy(&min64, src, sizeof(MinMaxType));
+        memcpy(&max64, src + 8, sizeof(MinMaxType));
         src += header_size;
         bytes_size -= header_size;
     }
 
-    UInt32 num_bits = getValuableBitsNumber(min, max);
+    T min_val = static_cast<T>(min64);
+    T max_val [[maybe_unused]] = static_cast<T>(max64);
+
+    UInt32 num_bits;
+    if constexpr (remove_offset)
+    {
+        U delta_range = static_cast<U>(max_val) - static_cast<U>(min_val);
+        num_bits = getDeltaBitsNumber(static_cast<UInt64>(delta_range));
+    }
+    else
+    {
+        num_bits = getValuableBitsNumber(min64, max64);
+    }
+
     if (!num_bits)
     {
-        T min_value = static_cast<T>(min);
-        for (UInt32 i = 0; i < num_elements; ++i, dst += sizeof(T))
-            unalignedStore<T>(dst, min_value);
+        for (UInt64 i = 0; i < num_elements; ++i, dst += sizeof(T))
+            unalignedStore<T>(dst, min_val);
         return static_cast<UInt32>(dst - original_dst);
     }
 
@@ -664,85 +870,129 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
                         " is not equal to the expected number of elements in the decompressed data ({})",
                         expected, num_elements);
 
-    T upper_min = 0;
-    T upper_max [[maybe_unused]] = 0;
-    T sign_bit [[maybe_unused]] = 0;
-    if (num_bits < 64)
-        upper_min = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
-
-    if constexpr (is_signed_v<T>)
+    if constexpr (remove_offset)
     {
-        if (min < 0 && max >= 0 && num_bits < 64)
+        U delta_buf[matrix_size];
+
+        for (UInt32 i = 0; i < num_full; ++i)
         {
-            sign_bit = static_cast<T>(1ull << (num_bits - 1));
-            upper_max = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
+            reverseTranspose<U, full>(src, delta_buf, num_bits);
+            storeDelta<T>(delta_buf, dst, min_val, matrix_size);
+            src += src_shift;
+            dst += dst_shift;
+        }
+
+        if (tail)
+        {
+            reverseTranspose<U, full>(src, delta_buf, num_bits, tail);
+            storeDelta<T>(delta_buf, dst, min_val, tail);
+            dst += tail * sizeof(T);
         }
     }
-
-    T buf[matrix_size];
-    for (UInt32 i = 0; i < num_full; ++i)
+    else
     {
-        reverseTranspose<T, full>(src, buf, num_bits);
-        restoreUpperBits(buf, upper_min, upper_max, sign_bit);
-        store<T>(buf, dst, matrix_size);
-        src += src_shift;
-        dst += dst_shift;
-    }
+        T upper_min = 0;
+        T upper_max [[maybe_unused]] = 0;
+        T sign_bit [[maybe_unused]] = 0;
+        if (num_bits < 64)
+            upper_min = static_cast<T>(static_cast<UInt64>(min64) >> num_bits << num_bits);
 
-    if (tail)
-    {
-        reverseTranspose<T, full>(src, buf, num_bits, tail);
-        restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
-        store<T>(buf, dst, tail);
-        dst += tail * sizeof(T);
+        if constexpr (is_signed_v<T>)
+        {
+            if (min64 < 0 && max64 >= 0 && num_bits < 64)
+            {
+                sign_bit = static_cast<T>(1ull << (num_bits - 1));
+                upper_max = static_cast<T>(static_cast<UInt64>(max64) >> num_bits << num_bits);
+            }
+        }
+
+        T buf[matrix_size];
+        for (UInt32 i = 0; i < num_full; ++i)
+        {
+            reverseTranspose<T, full>(src, buf, num_bits);
+            restoreUpperBits(buf, upper_min, upper_max, sign_bit);
+            store<T>(buf, dst, matrix_size);
+            src += src_shift;
+            dst += dst_shift;
+        }
+
+        if (tail)
+        {
+            reverseTranspose<T, full>(src, buf, num_bits, tail);
+            restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
+            store<T>(buf, dst, tail);
+            dst += tail * sizeof(T);
+        }
     }
 
     return static_cast<UInt32>(dst - original_dst);
 }
 
 template <typename T>
-UInt32 compressData(const char * src, UInt32 src_size, char * dst, Variant variant)
+UInt32 compressData(const char * src, UInt32 src_size, char * dst, Variant variant, bool do_remove_offset)
 {
+    if (do_remove_offset)
+    {
+        if (variant == Variant::Bit)
+            return compressData<T, true, true>(src, src_size, dst);
+        return compressData<T, false, true>(src, src_size, dst);
+    }
+
     if (variant == Variant::Bit)
-        return compressData<T, true>(src, src_size, dst);
-    return compressData<T, false>(src, src_size, dst);
+        return compressData<T, true, false>(src, src_size, dst);
+    return compressData<T, false, false>(src, src_size, dst);
 }
 
 template <typename T>
-UInt32 decompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size, Variant variant)
+UInt32 decompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size, Variant variant, bool do_remove_offset)
 {
+    if (do_remove_offset)
+    {
+        if (variant == Variant::Bit)
+            return decompressData<T, true, true>(src, src_size, dst, uncompressed_size);
+        return decompressData<T, false, true>(src, src_size, dst, uncompressed_size);
+    }
+
     if (variant == Variant::Bit)
-        return decompressData<T, true>(src, src_size, dst, uncompressed_size);
-    else
-        return decompressData<T, false>(src, src_size, dst, uncompressed_size);
+        return decompressData<T, true, false>(src, src_size, dst, uncompressed_size);
+    return decompressData<T, false, false>(src, src_size, dst, uncompressed_size);
 }
 
-}
+} // anonymous namespace
 
 
+/// ============================================================================
+/// Cookie layout (1 byte):
+///   bit 7: Variant (0=Byte, 1=Bit)
+///   bit 6: remove_offset flag (0=original, 1=remove_offset)
+///   bits 0-5: MagicNumber (type id)
+///
+/// ============================================================================
 UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, char * dst) const
 {
-    UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | static_cast<UInt8>(static_cast<UInt8>(variant) << 7);
+    UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx))
+                 | static_cast<UInt8>(static_cast<UInt8>(variant) << 7)
+                 | static_cast<UInt8>(static_cast<UInt8>(remove_offset) << 6);
     memcpy(dst, &cookie, 1);
     dst += 1;
     switch (baseType(*type_idx))
     {
         case TypeIndex::Int8:
-            return 1 + compressData<Int8>(src, src_size, dst, variant);
+            return 1 + compressData<Int8>(src, src_size, dst, variant, remove_offset);
         case TypeIndex::Int16:
-            return 1 + compressData<Int16>(src, src_size, dst, variant);
+            return 1 + compressData<Int16>(src, src_size, dst, variant, remove_offset);
         case TypeIndex::Int32:
-            return 1 + compressData<Int32>(src, src_size, dst, variant);
+            return 1 + compressData<Int32>(src, src_size, dst, variant, remove_offset);
         case TypeIndex::Int64:
-            return 1 + compressData<Int64>(src, src_size, dst, variant);
+            return 1 + compressData<Int64>(src, src_size, dst, variant, remove_offset);
         case TypeIndex::UInt8:
-            return 1 + compressData<UInt8>(src, src_size, dst, variant);
+            return 1 + compressData<UInt8>(src, src_size, dst, variant, remove_offset);
         case TypeIndex::UInt16:
-            return 1 + compressData<UInt16>(src, src_size, dst, variant);
+            return 1 + compressData<UInt16>(src, src_size, dst, variant, remove_offset);
         case TypeIndex::UInt32:
-            return 1 + compressData<UInt32>(src, src_size, dst, variant);
+            return 1 + compressData<UInt32>(src, src_size, dst, variant, remove_offset);
         case TypeIndex::UInt64:
-            return 1 + compressData<UInt64>(src, src_size, dst, variant);
+            return 1 + compressData<UInt64>(src, src_size, dst, variant, remove_offset);
         default:
             break;
     }
@@ -759,27 +1009,27 @@ UInt32 CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, 
     src += 1;
     src_size -= 1;
 
-    auto saved_variant = static_cast<Variant>(cookie >> 7);
-    TypeIndex saved_type_id = deserializeTypeId(cookie & 0x7F);
-
+    auto saved_variant = static_cast<Variant>((cookie >> 7) & 0x1);
+    auto saved_remove_offset = static_cast<bool>((cookie >> 6) & 0x1);
+    TypeIndex saved_type_id = deserializeTypeId(cookie & 0x3F);
     switch (baseType(saved_type_id))
     {
         case TypeIndex::Int8:
-            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant, saved_remove_offset);
         case TypeIndex::Int16:
-            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant, saved_remove_offset);
         case TypeIndex::Int32:
-            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant, saved_remove_offset);
         case TypeIndex::Int64:
-            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant, saved_remove_offset);
         case TypeIndex::UInt8:
-            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant, saved_remove_offset);
         case TypeIndex::UInt16:
-            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant, saved_remove_offset);
         case TypeIndex::UInt32:
-            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant, saved_remove_offset);
         case TypeIndex::UInt64:
-            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant, saved_remove_offset);
         default:
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
     }
@@ -790,14 +1040,22 @@ uint8_t CompressionCodecT64::getMethodByte() const
     return codecId();
 }
 
-CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_)
+CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_, bool remove_offset_)
     : type_idx(type_idx_)
     , variant(variant_)
+    , remove_offset(remove_offset_)
 {
-    if (variant == Variant::Byte)
+    /// Build codec description: T64, T64('bit'), T64(true), T64('bit', true)
+    ASTs params;
+    if (variant == Variant::Bit)
+        params.push_back(make_intrusive<ASTLiteral>("bit"));
+    if (remove_offset)
+        params.push_back(make_intrusive<ASTLiteral>(true));
+
+    if (params.empty())
         setCodecDescription("T64");
     else
-        setCodecDescription("T64", {make_intrusive<ASTLiteral>("bit")});
+        setCodecDescription("T64", params);
 }
 
 void CompressionCodecT64::updateHash(SipHash & hash) const
@@ -805,6 +1063,7 @@ void CompressionCodecT64::updateHash(SipHash & hash) const
     getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(type_idx.value_or(TypeIndex::Nothing));
     hash.update(variant);
+    hash.update(remove_offset);
 }
 
 void registerCodecT64(CompressionCodecFactory & factory)
@@ -812,25 +1071,35 @@ void registerCodecT64(CompressionCodecFactory & factory)
     auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
     {
         Variant variant = Variant::Byte;
+        bool remove_offset = false;
 
         if (arguments && !arguments->children.empty())
         {
-            if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 support zero or one parameter, given {}",
+            if (arguments->children.size() > 2)
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 supports zero, one, or two parameters, given {}",
                                 arguments->children.size());
 
-            const auto children = arguments->children;
-            const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64. Expected: 'bit', 'byte')");
-            String name = literal->value.safeGet<String>();
+            for (const auto & child : arguments->children)
+            {
+                const auto * literal = child->as<ASTLiteral>();
+                if (!literal)
+                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong parameter for T64. Expected: 'bit', 'byte', or a boolean");
 
-            if (name == "byte")
-                variant = Variant::Byte;
-            else if (name == "bit")
-                variant = Variant::Bit;
-            else
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64: {}", name);
+                if (literal->value.getType() == Field::Types::Bool)
+                {
+                    remove_offset = literal->value.safeGet<bool>();
+                }
+                else
+                {
+                    String name = literal->value.safeGet<String>();
+                    if (name == "byte")
+                        variant = Variant::Byte;
+                    else if (name == "bit")
+                        variant = Variant::Bit;
+                    else
+                        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong parameter for T64: {}", name);
+                }
+            }
         }
 
         std::optional<TypeIndex> type_idx;
@@ -841,7 +1110,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
                 throw Exception(
                     ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
         }
-        return std::make_shared<CompressionCodecT64>(type_idx, variant);
+        return std::make_shared<CompressionCodecT64>(type_idx, variant, remove_offset);
     };
 
     factory.registerCompressionCodecWithType("T64", codecId(), reg_func);

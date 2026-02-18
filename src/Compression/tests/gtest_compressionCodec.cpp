@@ -1381,30 +1381,77 @@ TEST(T64Test, TranscodeRawInput)
         std::make_shared<DataTypeUInt64>(),
     };
 
-    for (const auto & type : types)
+    for (const std::string & codec_name : {"T64", "T64('bit')"})
     {
-        for (size_t buffer_size = 1; buffer_size < 2000; buffer_size++)
+        for (const auto & type : types)
         {
-            DB::Memory<> source_memory;
-            source_memory.resize(buffer_size);
+            for (size_t buffer_size = 1; buffer_size < 2000; buffer_size++)
+            {
+                DB::Memory<> source_memory;
+                source_memory.resize(buffer_size);
 
-            for (size_t i = 0; i < buffer_size; ++i)
-                source_memory.data()[i] = static_cast<char>(i);
+                for (size_t i = 0; i < buffer_size; ++i)
+                    source_memory.data()[i] = static_cast<char>(i);
 
-            DB::Memory<> memory_for_compression;
-            auto codec = makeCodec("T64", type);
+                DB::Memory<> memory_for_compression;
+                auto codec = makeCodec(codec_name, type);
 
-            memory_for_compression.resize(codec->getCompressedReserveSize(static_cast<UInt32>(buffer_size)));
+                memory_for_compression.resize(codec->getCompressedReserveSize(static_cast<UInt32>(buffer_size)));
 
-            auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+                auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
 
-            DB::Memory<> memory_for_decompression;
-            memory_for_decompression.resize(buffer_size);
-            auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+                DB::Memory<> memory_for_decompression;
+                memory_for_decompression.resize(buffer_size);
+                auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
 
-            ASSERT_EQ(decompressed, source_memory.size());
-            for (size_t i = 0; i < decompressed; ++i)
-                ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+                ASSERT_EQ(decompressed, source_memory.size());
+                for (size_t i = 0; i < decompressed; ++i)
+                    ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "codec " << codec_name << " with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+            }
+        }
+    }
+}
+
+TEST(T64NormalizeTest, TranscodeRawInput)
+{
+    std::vector<DataTypePtr> types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+    };
+
+    for (const std::string & codec_name : {"T64(true)", "T64('bit', true)"})
+    {
+        for (const auto & type : types)
+        {
+            for (size_t buffer_size = 1; buffer_size < 2000; buffer_size++)
+            {
+                DB::Memory<> source_memory;
+                source_memory.resize(buffer_size);
+
+                for (size_t i = 0; i < buffer_size; ++i)
+                    source_memory.data()[i] = static_cast<char>(i);
+
+                DB::Memory<> memory_for_compression;
+                auto codec = makeCodec(codec_name, type);
+
+                memory_for_compression.resize(codec->getCompressedReserveSize(static_cast<UInt32>(buffer_size)));
+
+                auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+                DB::Memory<> memory_for_decompression;
+                memory_for_decompression.resize(buffer_size);
+                auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+                ASSERT_EQ(decompressed, source_memory.size());
+                for (size_t i = 0; i < decompressed; ++i)
+                    ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "codec " << codec_name << " with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+            }
         }
     }
 }
