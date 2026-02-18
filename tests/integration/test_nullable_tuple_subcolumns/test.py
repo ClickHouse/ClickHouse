@@ -14,6 +14,7 @@ SPECIAL_EXPECTED_DIR = EXPECTED_DIR / "special"
 
 # Contents of this file are frm the tests/queries/0_stateless/ directory, with only tuple related queries kept.
 BASE_CASES = [
+    "02731_analyzer_join_resolve_nested",
     "02940_variant_text_deserialization",
     "02941_variant_type_1",
     "03036_dynamic_read_subcolumns_small",
