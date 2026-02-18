@@ -10,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_)

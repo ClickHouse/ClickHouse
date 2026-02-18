@@ -29,8 +29,9 @@ UInt128 SerializationMap::getHash() const
 {
     SipHash hash;
     hash.update("Map");
-    hash.update(key->getHash());
-    hash.update(value->getHash());
+    /// We don't include the "key" and "value" in the hash
+    /// Hashing only Array(Tuple(key_type, value_type)) still
+    /// makes in unique and collision-free.
     hash.update(nested->getHash());
     return hash.get128();
 }
