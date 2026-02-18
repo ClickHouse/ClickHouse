@@ -123,6 +123,11 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
     return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
 }
 
+QueryPlanStepPtr LimitStep::clone() const
+{
+    return std::make_unique<LimitStep>(*this);
+}
+
 void registerLimitStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Limit", LimitStep::deserialize);
