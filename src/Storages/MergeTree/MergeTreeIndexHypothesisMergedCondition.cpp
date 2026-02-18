@@ -16,7 +16,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
 MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition(
     const SelectQueryInfo & query, const ConstraintsDescription & constraints, size_t granularity_)
     : IMergeTreeIndexMergedCondition(granularity_)
