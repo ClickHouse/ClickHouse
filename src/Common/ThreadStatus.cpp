@@ -169,9 +169,10 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
     return thread_group;
 }
 
-void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
+void ThreadStatus::setQueryId(std::string && new_query_id, bool assert_empty) noexcept
 {
-    chassert(query_id.empty());
+    if (assert_empty)
+        chassert(query_id.empty());
     query_id = std::move(new_query_id);
 }
 

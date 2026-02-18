@@ -6,14 +6,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Test that internal queries are logged correctly
 
-$CLICKHOUSE_CLIENT --query "SHOW TABLES FORMAT Null"
-$CLICKHOUSE_CLIENT --query "SHOW ENGINES FORMAT Null"
-$CLICKHOUSE_CLIENT --query "SHOW FUNCTIONS LIKE 'plus' FORMAT Null"
-$CLICKHOUSE_CLIENT --query "SHOW SETTING max_threads FORMAT Null"
-$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'nonexistent' SYNC" &>/dev/null
+$CLICKHOUSE_CLIENT --query "SHOW TABLES FORMAT Null" --trace_profile_events 1 --trace_profile_events_list 'Query'
+$CLICKHOUSE_CLIENT --query "SHOW ENGINES FORMAT Null" --trace_profile_events 1 --trace_profile_events_list 'Query'
+$CLICKHOUSE_CLIENT --query "SHOW FUNCTIONS LIKE 'plus' FORMAT Null" --trace_profile_events 1 --trace_profile_events_list 'Query'
+$CLICKHOUSE_CLIENT --query "SHOW SETTING max_threads FORMAT Null" --trace_profile_events 1 --trace_profile_events_list 'Query'
+$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'nonexistent' SYNC" --trace_profile_events 1 --trace_profile_events_list 'Query' &>/dev/null
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, trace_log"
 
+# Verify that the internal queries have been logged to system.query_log
+# and that trace_log entries carry the internal query's query_id (not the outer query's).
 $CLICKHOUSE_CLIENT --query "
 SELECT
     countIf(query LIKE '%system.tables%' AND type = 'QueryStart'),
@@ -27,4 +29,9 @@ SELECT
     countIf(query LIKE '%system.processes%' AND type = 'QueryStart'),
     countIf(query LIKE '%system.processes%' AND type = 'QueryFinish')
 FROM system.query_log
-WHERE is_internal = 1 AND current_database = currentDatabase()"
+WHERE is_internal = 1 AND current_database = currentDatabase()
+  AND query_id IN (
+    SELECT query_id
+    FROM system.trace_log
+    WHERE trace_type = 'ProfileEvent' AND event = 'Query'
+  )"

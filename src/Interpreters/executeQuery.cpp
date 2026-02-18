@@ -1084,6 +1084,19 @@ static BlockIO executeQueryImpl(
 {
     const bool internal = flags.internal;
 
+    /// For internal queries, switch the thread's query_id so that the query profiler attributes traces correctly.
+    std::function<void()> restore_query_id;
+    if (internal && current_thread)
+    {
+        String prev_query_id = current_thread->getQueryId();
+        current_thread->setQueryId(String(context->getCurrentQueryId()), /*assert_empty=*/ false);
+        restore_query_id = [prev_id = std::move(prev_query_id)]() mutable
+        {
+            if (current_thread)
+                current_thread->setQueryId(std::move(prev_id));
+        };
+    }
+
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
     /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
@@ -1892,7 +1905,8 @@ static BlockIO executeQueryImpl(
                                     implicit_tcl_executor,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
-                                    query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
+                                    query_span,
+                                    my_restore_query_id = restore_query_id](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
@@ -1900,10 +1914,13 @@ static BlockIO executeQueryImpl(
                 {
                     implicit_tcl_executor->commit(context);
                 }
+
+                if (my_restore_query_id)
+                    my_restore_query_id();
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span, my_restore_query_id = restore_query_id](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -1922,6 +1939,9 @@ static BlockIO executeQueryImpl(
                 }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
+
+                if (my_restore_query_id)
+                    my_restore_query_id();
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
@@ -1931,6 +1951,9 @@ static BlockIO executeQueryImpl(
     }
     catch (...)
     {
+        if (restore_query_id)
+            restore_query_id();
+
         if (implicit_tcl_executor->transactionRunning())
         {
             implicit_tcl_executor->rollback(context);

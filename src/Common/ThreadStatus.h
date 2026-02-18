@@ -289,7 +289,7 @@ public:
 
     ThreadGroupPtr getThreadGroup() const;
 
-    void setQueryId(std::string && new_query_id) noexcept;
+    void setQueryId(std::string && new_query_id, bool assert_empty = true) noexcept;
     void clearQueryId() noexcept;
     const String & getQueryId() const;
 
