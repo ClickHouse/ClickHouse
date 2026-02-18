@@ -1,3 +1,4 @@
+import os
 import random
 import re
 import string
@@ -20,6 +21,9 @@ node = cluster.add_instance(
     with_azurite=True,
     # Disable `with_remote_database_disk` as `test_create_table` might access minIO and expect `DNS_ERROR`. However, minIO might be enabled when `with_remote_database_disk` is enabled;
     with_remote_database_disk=False,
+    image="clickhouse/integration-test-with-unity-catalog",
+    with_installed_binary=False,
+    tag=os.environ.get("DOCKER_BASE_WITH_UNITY_CATALOG_TAG", "latest"),
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
@@ -459,6 +463,86 @@ def test_create_database():
     for database_name, query, error in test_cases:
         if not error:
             node.query(f"DROP DATABASE {database_name}")
+
+
+def test_create_database_datalake():
+    password = new_password()
+    password2 = new_password()
+
+    settings = {"allow_experimental_database_unity_catalog": "1"}
+
+    # Scenario A: Secrets as named collection key-value overrides.
+    # Create a named collection with non-secret base config.
+    node.query(
+        "CREATE NAMED COLLECTION IF NOT EXISTS datalake_nc AS "
+        "url = 'http://localhost:12345', "
+        "catalog_type = 'unity', "
+        "warehouse = 'my_warehouse', "
+        "vended_credentials = false"
+    )
+
+    secret_keys = [
+        "catalog_credential",
+        "aws_secret_access_key",
+        "onelake_client_secret",
+        "dlf_access_key_secret",
+        "auth_header",
+    ]
+
+    database_engines_a = [
+        f"DataLakeCatalog(datalake_nc, {key} = '{password}')"
+        for key in secret_keys
+    ]
+
+    def make_test_case_a(i):
+        database_name = f"datalake_db_a{i}"
+        database_engine = database_engines_a[i]
+        query = f"CREATE DATABASE {database_name} ENGINE = {database_engine}"
+        return database_name, query
+
+    test_cases_a = [make_test_case_a(i) for i in range(len(database_engines_a))]
+
+    for database_name, query in test_cases_a:
+        node.query(query, settings=settings)
+
+    must_contain_a = [
+        f"CREATE DATABASE datalake_db_a{i} ENGINE = DataLakeCatalog(datalake_nc, {key} = '[HIDDEN]')"
+        for i, key in enumerate(secret_keys)
+    ]
+
+    check_logs(
+        must_contain=must_contain_a,
+        must_not_contain=[password],
+    )
+
+    for database_name, query in test_cases_a:
+        node.query(f"DROP DATABASE IF EXISTS {database_name}")
+
+    # Scenario B: Secrets stored inside the named collection.
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS datalake_nc_secrets AS "
+        f"url = 'http://localhost:12345', "
+        f"catalog_type = 'unity', "
+        f"warehouse = 'my_warehouse', "
+        f"vended_credentials = false, "
+        f"catalog_credential = '{password2}'"
+    )
+
+    node.query(
+        "CREATE DATABASE datalake_db_b0 ENGINE = DataLakeCatalog(datalake_nc_secrets)",
+        settings=settings,
+    )
+
+    check_logs(
+        must_contain=[
+            "CREATE NAMED COLLECTION",
+        ],
+        must_not_contain=[password2],
+    )
+
+    node.query("DROP DATABASE IF EXISTS datalake_db_b0")
+    node.query("DROP NAMED COLLECTION IF EXISTS datalake_nc")
+    node.query("DROP NAMED COLLECTION IF EXISTS datalake_nc_secrets")
 
 
 def test_table_functions():
