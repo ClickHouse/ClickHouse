@@ -2293,7 +2293,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         waitForOutdatedPartsToBeLoaded();
         auto merge_blocker = stopMergesAndWait();
 
-        auto thread_group = ThreadGroup::createForWritePart();
+        auto thread_group = ThreadGroup::createForScope(query_context);
         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         auto txn = query_context->getCurrentTransaction();
@@ -2344,7 +2344,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
 
-        auto thread_group = ThreadGroup::createForWritePart();
+        auto thread_group = ThreadGroup::createForScope(query_context);
         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         /// It's important to create it outside of lock scope because
@@ -2408,7 +2408,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
 
-        auto thread_group = ThreadGroup::createForWritePart();
+        auto thread_group = ThreadGroup::createForScope(query_context);
         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         /// It's important to create it outside of lock scope because
@@ -2589,7 +2589,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
 
-    auto thread_group = ThreadGroup::createForWritePart();
+    auto thread_group = ThreadGroup::createForScope(local_context);
     ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
@@ -2741,7 +2741,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    auto thread_group = ThreadGroup::createForWritePart();
+    auto thread_group = ThreadGroup::createForScope(local_context);
     ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);

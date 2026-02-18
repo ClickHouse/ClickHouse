@@ -101,8 +101,8 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     , fatal_error_callback(parent->fatal_error_callback)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
-    , performance_counters(VariableContext::Process, &parent->performance_counters)
-    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , performance_counters(VariableContext::Scope, &parent->performance_counters)
+    , memory_tracker(&parent->memory_tracker, VariableContext::Scope, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
 }
@@ -212,7 +212,7 @@ ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
+ThreadGroupPtr ThreadGroup::createForScope(ContextPtr context)
 {
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
@@ -224,15 +224,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
         const Int32 os_threads_nice_value = context->getSettingsRef()[Setting::os_threads_nice_value_materialized_view];
         res_group = create(context, os_threads_nice_value);
     }
-    res_group->memory_tracker.setDescription("MaterializeView");
-    return res_group;
-}
-
-ThreadGroupPtr ThreadGroup::createForWritePart()
-{
-    assert(currentThreadHasGroup());
-    ThreadGroupPtr res_group = std::make_shared<ThreadGroup>(CurrentThread::getGroup());
-    res_group->memory_tracker.setDescription("WritePart");
+    res_group->memory_tracker.setDescription("ThreadGroupScope");
     return res_group;
 }
 

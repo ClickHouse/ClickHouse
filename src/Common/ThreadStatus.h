@@ -124,9 +124,8 @@ public:
     /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
-    static ThreadGroupPtr createForMaterializedView(ContextPtr context);
+    static ThreadGroupPtr createForScope(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
-    static ThreadGroupPtr createForWritePart();
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;

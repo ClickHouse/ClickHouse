@@ -2853,7 +2853,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
 bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 {
-    auto thread_group = ThreadGroup::createForWritePart();
+    auto thread_group = ThreadGroup::createForScope(getContext());
     ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     auto & entry_replace = *entry.replace_range_entry;
@@ -8792,7 +8792,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     const ContextPtr & query_context)
 {
 
-    auto thread_group = ThreadGroup::createForWritePart();
+    auto thread_group = ThreadGroup::createForScope(query_context);
     ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     DataPartsVector src_all_parts;
@@ -9091,7 +9091,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    auto thread_group = ThreadGroup::createForWritePart();
+    auto thread_group = ThreadGroup::createForScope(query_context);
     ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
