@@ -325,9 +325,7 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or info.is_local_run or is_bugfix_validation:
-        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
-        # regular test failures are assumed to be sufficient to validate the test
+    if is_coverage or info.is_local_run:
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -603,50 +601,43 @@ def main():
                         test_result.set_failed()
                     break
 
-        # Run additional build types for bugfix validation
+        # Run additional build types for bugfix validation.
+        # Exit early on first failure to avoid duplicate test names,
+        # workspace pollution, and to preserve logs for CHECK_ERRORS.
         if is_bugfix_validation:
             for r in test_result.results:
                 r.set_label(BUGFIX_BUILD_TYPES[0])
-            all_bugfix_sub_results = list(test_result.results)
-            # Save server logs from the first build type before they get mixed with the next
-            Shell.run(
-                f"cp -r {CH.log_dir} {CH.log_dir}_{BUGFIX_BUILD_TYPES[0]}",
-                verbose=True,
-            )
 
-            for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
-                print(f"\n=== Bugfix validation with {bugfix_bt} ===")
-                Shell.run(
-                    f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
-                    verbose=True,
-                )
-                Shell.run(f"chmod +x {ch_path}/clickhouse", verbose=True)
-                CH.terminate()
-                CH.clean_logs()
-                CH.start()
-                CH.wait_ready()
+            if test_result.is_ok():
+                for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
+                    print(f"\n=== Bugfix validation with {bugfix_bt} ===")
+                    Shell.run(
+                        f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
+                        verbose=True,
+                    )
+                    Shell.run(f"chmod +x {ch_path}/clickhouse", verbose=True)
+                    CH.terminate()
+                    CH.clean_logs()
+                    CH.start()
+                    CH.wait_ready()
 
-                ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
-                run_tests(
-                    batch_num=0,
-                    batch_total=0,
-                    tests=tests,
-                    extra_args=runner_options,
-                    random_order=True,
-                    rerun_count=1,
-                )
-                bt_result = ft_res_processor_bt.run()
-                for r in bt_result.results:
-                    r.set_label(bugfix_bt)
-                all_bugfix_sub_results.extend(bt_result.results)
-                debug_files += ft_res_processor_bt.debug_files
-                # Save server logs for this build type
-                Shell.run(
-                    f"cp -r {CH.log_dir} {CH.log_dir}_{bugfix_bt}",
-                    verbose=True,
-                )
+                    ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
+                    run_tests(
+                        batch_num=0,
+                        batch_total=0,
+                        tests=tests,
+                        extra_args=runner_options,
+                        random_order=True,
+                        rerun_count=1,
+                    )
+                    bt_result = ft_res_processor_bt.run()
+                    for r in bt_result.results:
+                        r.set_label(bugfix_bt)
+                    test_result.results = bt_result.results
+                    debug_files += ft_res_processor_bt.debug_files
 
-            test_result.results = all_bugfix_sub_results
+                    if not bt_result.is_ok():
+                        break
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -744,7 +735,6 @@ def main():
             reset_success = True
 
     if test_result and JobStages.CHECK_ERRORS in stages:
-        # must not be performed for a test validation - test must fail and log errors are not respected
         print("Check fatal errors")
         sw_ = Utils.Stopwatch()
         results.append(
