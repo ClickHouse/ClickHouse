@@ -324,18 +324,29 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::findOrClaimBucket
         }
     }
 
-    /// If partitionis  not found, claim next available bucket
+    /// If partition is not found, claim next available bucket
     for (Bucket bucket_id = 0; bucket_id < buckets_num; ++bucket_id)
     {
         const auto processed_path = zookeeper_path / "buckets" / toString(bucket_id) / "processed";
 
         /// Check if this bucket is free (no partitions assigned yet)
+        /// If the processed path doesn't exist, the bucket is definitely free
+        if (!zk->exists(processed_path))
+        {
+            LOG_INFO(log, "Claiming free bucket {} (no processed dir) for new partition '{}'", bucket_id, partition_key);
+
+            std::lock_guard lock(partition_bucket_cache_mutex);
+            partition_bucket_cache[partition_key] = bucket_id;
+            return bucket_id;
+        }
+
+        /// If processed path exists, check if it has any children (partitions)
         Coordination::Stat stat;
         auto children = zk->getChildren(processed_path, &stat);
 
         if (children.empty())
         {
-            LOG_INFO(log, "Claiming free bucket {} for new partition '{}'", bucket_id, partition_key);
+            LOG_INFO(log, "Claiming empty bucket {} for new partition '{}'", bucket_id, partition_key);
 
             std::lock_guard lock(partition_bucket_cache_mutex);
             partition_bucket_cache[partition_key] = bucket_id;

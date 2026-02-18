@@ -843,7 +843,7 @@ def test_optimal_bucket_assignment_with_regex_partitioning(started_cluster, engi
     num_buckets = 16
     processing_threads_num = num_buckets
 
-    # Each of these hostnames will get a unique bucket via hybrid assignment which are selected in a way that
+    # Each of these hostnames will get a unique bucket via optimal assignment which are selected in a way that
     # they will collide if we used hash-based assignment.
     hostnames = [
         'c-cluster-01-server-xscp10r-0',
@@ -950,4 +950,4 @@ def test_optimal_bucket_assignment_with_regex_partitioning(started_cluster, engi
     assert len(buckets_with_data) == len(hostnames), \
         f"Expected {len(hostnames)} unique buckets (one per hostname with optimal distribution), " \
         f"but got {len(buckets_with_data)} buckets: {buckets_with_data}. " \
-        f"This indicates the hybrid bucket assignment is not working correctly."
+        f"This indicates the optimal bucket assignment is not working correctly."
