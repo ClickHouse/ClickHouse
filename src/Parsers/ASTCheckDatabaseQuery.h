@@ -45,12 +45,13 @@ protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        ostr << indent_str << "CHECK DATABASE " << getDatabase() << '\n';
+        ostr << indent_str << "CHECK DATABASE ";
 
         if (database)
         {
             database->format(ostr, settings, state, frame);
         }
+        ostr << '\n';
     }
 };
 

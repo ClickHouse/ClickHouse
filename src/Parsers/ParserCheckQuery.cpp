@@ -74,9 +74,9 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
 
 bool ParserCheckQuery::parseCheckDatabase(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_check_table(Keyword::CHECK_DATABASE);
+    ParserKeyword s_check_database(Keyword::CHECK_DATABASE);
 
-    if (!s_check_table.ignore(pos, expected))
+    if (!s_check_database.ignore(pos, expected))
         return false;
 
     auto query = make_intrusive<ASTCheckDatabaseQuery>();

@@ -13,7 +13,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Databases/DataLake/Common.h>
-#include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {

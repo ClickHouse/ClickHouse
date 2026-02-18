@@ -435,8 +435,10 @@ BlockIO InterpreterCheckQuery::execute()
     else if (const auto * check_database_query = query_ptr->as<ASTCheckDatabaseQuery>())
     {
         /// Check specific database
-        LOG_DEBUG(log, "Checking database name = {} ", check_database_query->getDatabase());
-        auto database = DatabaseCatalog::instance().getDatabase(check_database_query->getDatabase());
+        const auto & database_name = check_database_query->getDatabase();
+        LOG_DEBUG(log, "Checking database name = {} ", database_name);
+        context->checkAccess(AccessType::CHECK, database_name);
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
         database->checkDatabase();
         BlockIO res;
         return res;

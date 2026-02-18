@@ -91,7 +91,6 @@ DB::Names UnityCatalog::getTables() const
 
 void UnityCatalog::checkDatabase(std::string database_name) const
 {
-    auto all_schemas = getSchemas("");
     getTablesForSchema(database_name, /* limit */ 1);
 }
 
