@@ -91,6 +91,7 @@ struct FormatSettings
 
     UInt64 schema_inference_make_columns_nullable = 1;
     bool schema_inference_make_json_columns_nullable = false;
+    bool schema_inference_allow_nullable_tuple_type = false;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
