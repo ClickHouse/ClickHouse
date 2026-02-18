@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <optional>
+#include <vector>
 
 #include <IO/S3/Credentials.h>
 #include "config.h"
@@ -137,7 +138,10 @@ struct ClientFake : DB::S3::Client
     }
 
     std::optional<GetObjectFn> getObjectImpl;
+    using ListObjectsV2Fn = std::function<Aws::S3::Model::ListObjectsV2Outcome(const Aws::S3::Model::ListObjectsV2Request &)>;
+    std::optional<ListObjectsV2Fn> listObjectsV2Impl;
     mutable std::optional<std::string> last_start_after;
+    mutable std::vector<std::pair<std::string, std::string>> list_requests;
 
     void setGetObjectSuccess(const std::shared_ptr<CountedSession> & session, std::streambuf * sb)
     {
@@ -162,6 +166,10 @@ struct ClientFake : DB::S3::Client
     Aws::S3::Model::ListObjectsV2Outcome ListObjectsV2(const Aws::S3::Model::ListObjectsV2Request & request) const override
     {
         last_start_after = request.GetStartAfter().c_str();
+        list_requests.emplace_back(request.GetStartAfter().c_str(), request.GetContinuationToken().c_str());
+
+        if (listObjectsV2Impl)
+            return (*listObjectsV2Impl)(request);
 
         Aws::S3::Model::ListObjectsV2Result result;
         result.SetIsTruncated(false);
@@ -258,6 +266,47 @@ TEST_F(ReadBufferFromS3Test, IterateUsesStartAfter)
     ASSERT_TRUE(fake);
     ASSERT_TRUE(fake->last_start_after.has_value());
     ASSERT_EQ(*fake->last_start_after, "prefix/file_010");
+}
+
+TEST_F(ReadBufferFromS3Test, IterateUsesStartAfterOnlyForFirstPage)
+{
+    auto client = std::make_unique<ClientFake>();
+    auto * fake = client.get();
+    fake->listObjectsV2Impl = [call = 0](const Aws::S3::Model::ListObjectsV2Request &) mutable
+    {
+        Aws::S3::Model::ListObjectsV2Result result;
+        if (call == 0)
+        {
+            result.SetIsTruncated(true);
+            result.SetNextContinuationToken("next-page-token");
+        }
+        else
+        {
+            result.SetIsTruncated(false);
+        }
+        ++call;
+        return Aws::S3::Model::ListObjectsV2Outcome(std::move(result));
+    };
+
+    DB::S3::URI uri;
+    uri.bucket = "test_bucket";
+    DB::S3Capabilities cap;
+    String disk_name = "s3";
+    DB::ObjectStorageKeyGeneratorPtr gen;
+    auto object_storage = std::make_shared<DB::S3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), cap, gen, disk_name);
+
+    const std::optional<std::string> start_after = "prefix/file_010";
+    auto iterator = object_storage->iterate("prefix/", /*max_keys=*/1, /*with_tags=*/false, start_after);
+    while (iterator->getCurrentBatchAndScheduleNext())
+    {
+    }
+
+    ASSERT_EQ(fake->list_requests.size(), 2);
+    ASSERT_EQ(fake->list_requests[0].first, "prefix/file_010");
+    ASSERT_TRUE(fake->list_requests[0].second.empty());
+    ASSERT_TRUE(fake->list_requests[1].first.empty());
+    ASSERT_EQ(fake->list_requests[1].second, "next-page-token");
 }
 
 TEST_F(ReadBufferFromS3Test, HavingZeroBytes)

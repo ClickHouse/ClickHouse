@@ -152,11 +152,22 @@ private:
         /// Outcome failure will be handled on the caller side.
         if (outcome.IsSuccess())
         {
-            request->SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+            const auto next_continuation_token = outcome.GetResult().GetNextContinuationToken();
             if (start_after_set)
             {
-                request->SetStartAfter("");
+                /// StartAfter should only be sent on the first request. AWS SDK doesn't provide
+                /// a way to clear "has been set" flag, so we rebuild request for pagination.
+                auto paginated_request = std::make_unique<S3::ListObjectsV2Request>();
+                paginated_request->SetBucket(request->GetBucket());
+                paginated_request->SetPrefix(request->GetPrefix());
+                paginated_request->SetMaxKeys(request->GetMaxKeys());
+                paginated_request->SetContinuationToken(next_continuation_token);
+                request = std::move(paginated_request);
                 start_after_set = false;
+            }
+            else
+            {
+                request->SetContinuationToken(next_continuation_token);
             }
 
             auto objects = outcome.GetResult().GetContents();
