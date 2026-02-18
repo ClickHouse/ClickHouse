@@ -6,7 +6,6 @@
 #include <base/scope_guard.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
-#include <mutex>
 
 namespace DB
 {
@@ -14,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+    extern const int LOGICAL_ERROR;
 }
 
 FutureConnection::FutureConnection()
@@ -60,7 +60,7 @@ void FutureConnection::setSocket(Poco::Net::Socket socket)
 {
     LOG_TRACE(log, "Setting socket for FutureConnection");
 
-    /// Set the promise value
+    /// Set the promise value, promise can be set only once.
     promise.set_value(std::move(socket));
 
     uint64_t value = 1;

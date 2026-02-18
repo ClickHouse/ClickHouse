@@ -1,12 +1,10 @@
 #pragma once
 
-#include <shared_mutex>
 #ifdef OS_LINUX
 
 #include <Poco/Net/StreamSocket.h>
 #include <Common/Logger.h>
 #include <future>
-#include <memory>
 
 namespace DB
 {
