@@ -194,7 +194,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     bool has_globs = use_glob_ast ? glob_string->hasGlobs() : reading_path.hasGlobs();
 
     bool can_expand = use_glob_ast
-        && glob_string->isFullyExpandable()
+        && glob_string->hasEnums()
+        && !glob_string->hasRanges()
+        && !glob_string->hasQuestionOrAsterisk()
         && glob_string->cardinality() <= max_expansion;
 
     if (!can_expand && !use_glob_ast && has_globs)
@@ -204,7 +206,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     {
         Strings paths;
         if (use_glob_ast)
-            paths = glob_string->expand(max_expansion, /*expand_ranges=*/true);
+            paths = glob_string->expand(max_expansion, /*expand_ranges=*/false);
         else
             paths = expandSelectionGlob(reading_path.path);
 

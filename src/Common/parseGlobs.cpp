@@ -176,7 +176,7 @@ std::string Expression::rangeAsRegex() const
         ? std::max(range.start_digit_count, range.end_digit_count)
         : 0;
 
-    for (size_t i = 0; i <= cardinality(); ++i)
+    for (size_t i = 0; i < cardinality(); ++i)
     {
         result += fmt::format(
             "{:0>{}}",
@@ -235,7 +235,7 @@ size_t Expression::cardinality() const
             const size_t range_len = (range.start > range.end)
                 ? range.start - range.end
                 : range.end - range.start;
-            return range_len;
+            return range_len + 1;
         }
     }
 
@@ -437,7 +437,7 @@ std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ra
 
     for (const auto & expression : expressions)
     {
-        if (expression.type() == ExpressionType::ENUM && expression.cardinality() > 1)
+        if (expression.type() == ExpressionType::ENUM)
         {
             const auto & enum_values = std::get<std::vector<std::string_view>>(expression.getData());
 
@@ -461,10 +461,9 @@ std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ra
         {
             const auto & range = std::get<Range>(expression.getData());
             const size_t lo = std::min(range.start, range.end);
-            const size_t hi = std::max(range.start, range.end);
-            const size_t range_size = hi - lo + 1;
+            const size_t range_size = expression.cardinality();
 
-            if (result.size() * range_size > max_expansion)
+            if (range_size == 0 || result.size() > max_expansion / range_size)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Glob expansion would produce too many paths ({} * {} > {}). "
@@ -483,8 +482,9 @@ std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ra
 
             for (const auto & prefix : result)
             {
-                for (size_t value = lo; value <= hi; ++value)
+                for (size_t i = 0; i < range_size; ++i)
                 {
+                    const size_t value = lo + i;
                     if (pad_width > 0)
                         expanded.push_back(prefix + fmt::format("{:0>{}}", value, pad_width));
                     else
@@ -496,8 +496,7 @@ std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ra
         }
         else
         {
-            /// For non-enum expressions (and single-element enums, which are effectively
-            /// literals like bash's {test}), append their textual representation.
+            /// For non-enum expressions, append their textual representation.
             std::string text = expression.dump();
             for (auto & path : result)
                 path += text;
@@ -600,6 +599,10 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
                         if (candidate[pos + i] < '0' || candidate[pos + i] > '9')
                             return false;
 
+                    /// Overflow guard: size_t can hold at most 19 decimal digits (10^19 < 2^64).
+                    if (pad_width > 19)
+                        return false;
+
                     size_t value = 0;
                     for (size_t i = 0; i < pad_width; ++i)
                         value = value * 10 + static_cast<size_t>(candidate[pos + i] - '0');
@@ -629,6 +632,10 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
                         /// Leading zeros not allowed (except for single-digit "0").
                         if (digit_count > 1 && candidate[pos] == '0')
                             break; /// all longer counts would also have a leading zero
+
+                        /// Overflow guard: size_t can hold at most 19 decimal digits.
+                        if (digit_count > 19)
+                            break;
 
                         size_t value = 0;
                         for (size_t i = 0; i < digit_count; ++i)

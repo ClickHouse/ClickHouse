@@ -305,17 +305,6 @@ TEST(Common, GlobASTExpand)
     // Cardinality guard.
     EXPECT_THROW(GlobAST::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(100), DB::Exception);
     EXPECT_NO_THROW(GlobAST::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(1000));
-
-    // isFullyExpandable tests.
-    EXPECT_TRUE(GlobAST::GlobString("{a,b,c}").isFullyExpandable());
-    EXPECT_TRUE(GlobAST::GlobString("{a,b}{1,2}").isFullyExpandable());
-    EXPECT_TRUE(GlobAST::GlobString("prefix{a,b}suffix").isFullyExpandable());
-    EXPECT_TRUE(GlobAST::GlobString("f{1..9}.csv").isFullyExpandable());
-    EXPECT_TRUE(GlobAST::GlobString("{a,b}{1..3}.csv").isFullyExpandable());
-    EXPECT_FALSE(GlobAST::GlobString("file.csv").isFullyExpandable());       // no globs at all
-    EXPECT_FALSE(GlobAST::GlobString("*.csv").isFullyExpandable());          // wildcard
-    EXPECT_FALSE(GlobAST::GlobString("{a,b}/*.csv").isFullyExpandable());    // wildcard
-    EXPECT_FALSE(GlobAST::GlobString("file?.csv").isFullyExpandable());      // ? wildcard
 }
 
 /// Test suite for GlobString::matches() — direct AST-based matching without regex.

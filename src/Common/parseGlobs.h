@@ -136,10 +136,6 @@ public:
 
     bool hasExactlyOneEnum() const;
 
-    /// Returns true if the glob can be fully expanded into concrete paths
-    /// (all expressions are CONSTANT, ENUM, or RANGE — no wildcards).
-    bool isFullyExpandable() const { return (has_enums || has_ranges) && !has_question_or_asterisk; }
-
 private:
     std::string_view consumeConstantExpression(const std::string_view & input) const;
     std::string_view consumeMatcher(const std::string_view & input) const;
