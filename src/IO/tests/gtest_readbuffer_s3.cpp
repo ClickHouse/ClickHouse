@@ -141,7 +141,13 @@ struct ClientFake : DB::S3::Client
     using ListObjectsV2Fn = std::function<Aws::S3::Model::ListObjectsV2Outcome(const Aws::S3::Model::ListObjectsV2Request &)>;
     std::optional<ListObjectsV2Fn> listObjectsV2Impl;
     mutable std::optional<std::string> last_start_after;
-    mutable std::vector<std::pair<std::string, std::string>> list_requests;
+    struct ListRequest
+    {
+        std::string start_after;
+        std::string continuation_token;
+        bool start_after_has_been_set{false};
+    };
+    mutable std::vector<ListRequest> list_requests;
 
     void setGetObjectSuccess(const std::shared_ptr<CountedSession> & session, std::streambuf * sb)
     {
@@ -166,7 +172,10 @@ struct ClientFake : DB::S3::Client
     Aws::S3::Model::ListObjectsV2Outcome ListObjectsV2(const Aws::S3::Model::ListObjectsV2Request & request) const override
     {
         last_start_after = request.GetStartAfter().c_str();
-        list_requests.emplace_back(request.GetStartAfter().c_str(), request.GetContinuationToken().c_str());
+        list_requests.emplace_back(ListRequest{
+            .start_after = request.GetStartAfter().c_str(),
+            .continuation_token = request.GetContinuationToken().c_str(),
+            .start_after_has_been_set = request.StartAfterHasBeenSet()});
 
         if (listObjectsV2Impl)
             return (*listObjectsV2Impl)(request);
@@ -309,10 +318,12 @@ TEST_F(ReadBufferFromS3Test, IterateUsesStartAfterOnlyForFirstPage)
     }
 
     ASSERT_EQ(fake->list_requests.size(), 2);
-    ASSERT_EQ(fake->list_requests[0].first, "prefix/file_010");
-    ASSERT_TRUE(fake->list_requests[0].second.empty());
-    ASSERT_TRUE(fake->list_requests[1].first.empty());
-    ASSERT_EQ(fake->list_requests[1].second, "next-page-token");
+    ASSERT_EQ(fake->list_requests[0].start_after, "prefix/file_010");
+    ASSERT_TRUE(fake->list_requests[0].start_after_has_been_set);
+    ASSERT_TRUE(fake->list_requests[0].continuation_token.empty());
+    ASSERT_TRUE(fake->list_requests[1].start_after.empty());
+    ASSERT_FALSE(fake->list_requests[1].start_after_has_been_set);
+    ASSERT_EQ(fake->list_requests[1].continuation_token, "next-page-token");
 }
 
 TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
