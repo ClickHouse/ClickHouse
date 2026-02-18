@@ -31,9 +31,8 @@ class AggregatingStep;
 class CostEstimator
 {
 public:
-    CostEstimator(const Memo & memo_, const IOptimizerStatistics & statistics_lookup_)
+    explicit CostEstimator(Memo & memo_)
         : memo(memo_)
-        , statistics_lookup(statistics_lookup_)
     {}
 
     ExpressionCost estimateCost(GroupExpressionPtr expression);
@@ -52,15 +51,7 @@ private:
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & input_statistics);
 
-    void fillStatistics(GroupExpressionPtr expression);
-    ExpressionStatistics fillJoinStatistics(const JoinStepLogical & join_step, const ExpressionStatistics & left_statistics, const ExpressionStatistics &right_statistics);
-    ExpressionStatistics fillReadStatistics(const ReadFromMergeTree & read_step);
-    ExpressionStatistics fillFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics);
-    ExpressionStatistics fillExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics);
-    ExpressionStatistics fillAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
-
-    const Memo & memo;
-    const IOptimizerStatistics & statistics_lookup;
+    Memo & memo;
     LoggerPtr log = getLogger("CostEstimator");
 };
 

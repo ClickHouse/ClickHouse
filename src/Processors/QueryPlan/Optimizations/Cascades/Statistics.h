@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <base/types.h>
 #include <limits>
 #include <memory>
@@ -40,5 +41,8 @@ using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
 
 OptimizerStatisticsPtr createEmptyStatistics();
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
+
+std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
+
 
 }

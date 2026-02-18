@@ -3,6 +3,9 @@
 #include <IO/Operators.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/split.hpp>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -100,6 +103,32 @@ public:
 OptimizerStatisticsPtr createEmptyStatistics()
 {
     return std::make_unique<EmptyStatistics>();
+}
+
+
+namespace QueryPlanOptimizations
+{
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter);
+}
+
+std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
+{
+    std::optional<ExpressionStatistics> stats;
+
+    /// Only for ReadFromMergeTree of Filter->ReadFromMergeTree
+    if (typeid_cast<ReadFromMergeTree *>(node.step.get()) ||
+        (typeid_cast<FilterStep *>(node.step.get()) && node.children.size() == 1 && typeid_cast<ReadFromMergeTree *>(node.children[0]->step.get())))
+    {
+        auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node, nullptr);
+        if (relation_stats.estimated_rows)
+        {
+            stats.emplace();
+            stats->estimated_row_count = Float64(*relation_stats.estimated_rows);
+            stats->column_statistics = relation_stats.column_stats;
+        }
+    }
+
+    return stats;
 }
 
 }

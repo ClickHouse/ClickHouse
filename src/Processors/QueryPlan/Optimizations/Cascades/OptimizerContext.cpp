@@ -5,8 +5,11 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <memory>
+#include <optional>
+#include <utility>
 
 namespace DB
 {
@@ -17,7 +20,8 @@ namespace ErrorCodes
 }
 
 OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
-    : cost_estimator(memo, statistics)
+    : cost_estimator(memo)
+    , statistics_derivation(memo, statistics)
 {
 //    addRule(std::make_shared<JoinAssociativity>());
     addRule(std::make_shared<JoinCommutativity>());
@@ -53,6 +57,8 @@ GroupId OptimizerContext::addGroup(QueryPlan::Node & node)
     if (subplan_reference)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");
 
+    std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);
+
     auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
     auto group_id = memo.addGroup(group_expression);
     for (auto * child_node : node.children)
@@ -60,6 +66,10 @@ GroupId OptimizerContext::addGroup(QueryPlan::Node & node)
         auto input_group_id = addGroup(*child_node);
         group_expression->inputs.push_back({input_group_id, {}});
     }
+
+    /// Set statistics on the group (shared by all expressions in the group)
+    auto group = memo.getGroup(group_id);
+    group->statistics = std::move(prepopulated_statistics);
 
     return group_id;
 }
@@ -83,6 +93,11 @@ void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
     LOG_TEST(log, "group #{} expression '{}' cost {}",
         group_id, expression->getDescription(), cost.subtree_cost);
     group->updateBestImplementation(expression);
+}
+
+void OptimizerContext::deriveStatistics(GroupId group_id)
+{
+    statistics_derivation.deriveStatistics(group_id);
 }
 
 }

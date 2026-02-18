@@ -59,8 +59,6 @@ void GroupExpression::dump(WriteBuffer & out) const
     out << "'" << getDescription() << "' inputs:";
     for (const auto & input : inputs)
         out << " #" << input.group_id;
-    if (statistics.has_value())
-        out << " rows: " << statistics->estimated_row_count;
     if (cost.has_value())
         out << " cost: " << cost->subtree_cost;
 }

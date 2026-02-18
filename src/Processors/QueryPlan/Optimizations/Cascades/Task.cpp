@@ -128,6 +128,9 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
     LOG_TEST(optimizer_context.log, "ApplyRuleTask rule: '{}', group #{} expression: {}, required properties {}",
         rule->getName(), expression->group_id, expression->getName(), required_properties.dump());
 
+    /// Ensure statistics are derived before applying rules (rules may need them for decisions)
+    optimizer_context.deriveStatistics(expression->group_id);
+
     auto new_expressions = rule->apply(expression, required_properties, optimizer_context.getMemo());
 
     for (const auto & new_expression : new_expressions)
@@ -152,6 +155,8 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
     /// All inputs were processed?
     if (input_index_to_optimize == expression->inputs.size())
     {
+        /// Ensure statistics are derived before cost estimation
+        optimizer_context.deriveStatistics(expression->group_id);
         optimizer_context.updateBestPlan(expression);
         return;
     }
