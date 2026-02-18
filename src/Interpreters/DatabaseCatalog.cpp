@@ -2156,6 +2156,9 @@ std::pair<String, String> TableNameHints::getHintForTable(const String & table_n
 {
     auto results = this->getHints(table_name, getAllRegisteredNames());
     /// Skip exact match from the same database - suggesting the same name is not helpful.
+    /// This can happen when a table name appears in `getAllRegisteredNames` but the table
+    /// itself cannot be retrieved (e.g., during server startup when a table has not yet been loaded,
+    /// or when the table is looked up by a stale UUID and a new table with the same name exists).
     /// Fall through to extended search which may find the table in another database.
     if (results.empty() || results[0] == table_name)
         return getExtendedHintForTable(table_name);
