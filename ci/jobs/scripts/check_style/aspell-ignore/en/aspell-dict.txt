@@ -1,7 +1,7 @@
-personal_ws-1.1 en 3452
-aarch
+personal_ws-1.1 en 3534 
 AArch
 ACLs
+ADLS
 ALTERs
 AMPLab
 AMQP
@@ -166,6 +166,7 @@ CertificateHandler
 Chadmin
 ChannelID
 ChartDB
+CHouse
 Cidr
 Ciphertext
 CityHash
@@ -179,6 +180,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickLens
 ClickPipes
 ClickVisual
 ClickableSquare
@@ -259,6 +261,7 @@ DataLakeCatalog
 DataLens
 DataPacket
 DataPup
+DataStoria
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -292,6 +295,7 @@ DestroyAggregatesThreadsActive
 DictCacheRequests
 DictionaryMaxUpdateDelay
 DictionaryTotalFailedUpdates
+differentiators
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -347,6 +351,8 @@ FIPS
 FOSDEM
 FQDN
 Failover
+FailPoint
+Failpoints
 FarmHash
 FastFormats
 FileCluster
@@ -377,6 +383,8 @@ ForEach
 FreeBSD
 Fuzzer
 Fuzzers
+failpoint
+failpoints
 GHCN
 GTID
 GTest
@@ -665,6 +673,7 @@ LogQL
 LogQueriesType
 LogsLevel
 Logstash
+LongestRunningMerge
 LookML
 LoongArch
 LowCardinality
@@ -732,6 +741,7 @@ MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
 MergerMutator
+Mersenne
 MessagePack
 Metastore
 MetroHash
@@ -741,6 +751,7 @@ Milovidov
 MinHash
 MinIO
 MinMax
+MinMaxIndexPruned
 MindsDB
 Mongo
 Mongodb
@@ -795,6 +806,7 @@ NewSetting
 Noaa
 NodeJs
 NonMonotonic
+NotPruned
 NonZeroUInt
 NuRaft
 NumHexagons
@@ -907,6 +919,7 @@ ParquetMetadata
 ParquetVersion
 Parsers
 PartMutation
+PartitionPruned
 Partitioner
 PartsActive
 PartsCommitted
@@ -1200,6 +1213,7 @@ TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Tauri
+TcpExtListenOverflows
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -2811,6 +2825,7 @@ pushdown
 pwrite
 py
 qbit
+qrencode
 qryn
 quantile
 quantileBFloat
@@ -3376,6 +3391,7 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+totp
 tpcds
 tpch
 transactio
@@ -3579,3 +3595,6 @@ readWKT
 readWKB
 WKT
 WKB
+lifecycle
+unsampled
+queueing

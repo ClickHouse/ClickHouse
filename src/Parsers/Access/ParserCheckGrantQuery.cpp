@@ -20,7 +20,7 @@ bool ParserCheckGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     elements.throwIfNotGrantable();
 
-    auto query = std::make_shared<ASTCheckGrantQuery>();
+    auto query = make_intrusive<ASTCheckGrantQuery>();
     node = query;
 
     query->access_rights_elements = std::move(elements);

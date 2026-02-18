@@ -60,8 +60,8 @@ void test(size_t n, const char * name, F && kernel)
         << std::fixed << std::setprecision(2)
         << n << " ops in "
         << watch.elapsedSeconds() << " sec., "
-        << n / watch.elapsedSeconds() << " ops/sec., "
-        << "avg latency: " << watch.elapsedSeconds() / n * 1000000 << " μs, "
+        << static_cast<double>(n) / watch.elapsedSeconds() << " ops/sec., "
+        << "avg latency: " << watch.elapsedSeconds() / static_cast<double>(n) * 1000000 << " μs, "
         << "max latency: " << max_seconds * 1000000 << " μs "
         << "(res = " << value << ")"
         << std::endl;

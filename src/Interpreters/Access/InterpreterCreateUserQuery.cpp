@@ -41,7 +41,7 @@ namespace
         User & user,
         const ASTCreateUserQuery & query,
         const std::vector<AuthenticationData> authentication_methods,
-        const std::shared_ptr<ASTUserNameWithHost> & override_name,
+        const boost::intrusive_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<AlterSettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
@@ -280,7 +280,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            const auto & name_with_host = typeid_cast<std::shared_ptr<ASTUserNameWithHost>>(name);
+            const auto & name_with_host = boost::static_pointer_cast<ASTUserNameWithHost>(name);
             updateUserFromQueryImpl(
                 *new_user, query, authentication_methods, name_with_host, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,

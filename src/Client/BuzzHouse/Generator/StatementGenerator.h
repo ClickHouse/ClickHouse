@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#include <Client/BuzzHouse/Generator/ProbabilityGenerator.h>
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
@@ -128,8 +129,6 @@ enum class TableRequirement
 class StatementGenerator
 {
 public:
-    static const std::vector<std::vector<OutFormat>> outFormats;
-    static const std::unordered_map<OutFormat, InFormat> outIn;
     static const std::unordered_map<JoinType, std::vector<JoinConst>> joinMappings;
 
     FuzzConfig & fc;
@@ -190,6 +189,120 @@ private:
     void generatingPeerQuery(const PeerQuery value) { peer_query = value; }
     void setAllowEngineUDF(const bool value) { allow_engine_udf = value; }
     void resetAliasCounter() { aliases_counter = 0; }
+
+    enum class SQLOp
+    {
+        CreateTable = 0,
+        CreateView,
+        Drop,
+        Insert,
+        LightDelete,
+        Truncate,
+        OptimizeTable,
+        CheckTable,
+        DescTable,
+        Exchange,
+        Alter,
+        SetValues,
+        Attach,
+        Detach,
+        CreateDatabase,
+        CreateFunction,
+        SystemStmt,
+        BackupOrRestore,
+        CreateDictionary,
+        Rename,
+        LightUpdate,
+        SelectQuery,
+        Kill,
+        ShowStatement
+    };
+
+    enum class LitOp
+    {
+        LitHugeInt = 0,
+        LitUHugeInt,
+        LitInt,
+        LitUInt,
+        LitTime,
+        LitDate,
+        LitDateTime,
+        LitDecimal,
+        LitRandStr,
+        LitUUID,
+        LitIPv4,
+        LitIPv6,
+        LitGeo,
+        LitStr,
+        LitSpecial,
+        LitJSON,
+        LitNULLVal,
+        LitFraction
+    };
+
+    enum class ExpOp
+    {
+        Literal = 0,
+        ColumnRef,
+        Predicate,
+        CastExpr,
+        UnaryExpr,
+        IntervalExpr,
+        ColumnsExpr,
+        CondExpr,
+        CaseExpr,
+        SubqueryExpr,
+        BinaryExpr,
+        ArrayTupleExpr,
+        FuncExpr,
+        WindowFuncExpr,
+        TableStarExpr,
+        LambdaExpr,
+        ProjectionExpr,
+        DictExpr,
+        JoinExpr,
+        StarExpr
+    };
+
+    enum class PredOp
+    {
+        UnaryExpr = 0,
+        BinaryExpr,
+        BetweenExpr,
+        InExpr,
+        AnyExpr,
+        IsNullExpr,
+        ExistsExpr,
+        LikeExpr,
+        SearchExpr,
+        OtherExpr
+    };
+
+    enum class QueryOp
+    {
+        DerivatedTable = 0,
+        CTE,
+        Table,
+        View,
+        RemoteUDF,
+        NumbersUDF,
+        SystemTable,
+        MergeUDF,
+        ClusterUDF,
+        MergeIndexUDF,
+        LoopUDF,
+        ValuesUDF,
+        RandomDataUDF,
+        Dictionary,
+        URLEncodedTable,
+        TableEngineUDF,
+        MergeProjectionUDF,
+        RandomTableUDF,
+        MergeIndexAnalyzeUDF
+    };
+
+    ProbabilityGenerator SQLGen, litGen, expGen, predGen, queryGen;
+    std::vector<bool> SQLMask, litMask, expMask, predMask, queryMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
@@ -337,7 +450,7 @@ private:
         ColumnDef * cd);
     void addTableColumn(
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
-    void addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, IndexDef * idef);
+    void addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, bool projection, IndexDef * idef);
     void addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
@@ -472,7 +585,8 @@ private:
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
     void dropDatabase(uint32_t dname, bool all);
 
-    void generateNextTablePartition(RandomGenerator & rg, bool allow_parts, const SQLTable & t, PartitionExpr * pexpr);
+    void generateNextTablePartition(
+        RandomGenerator & rg, bool allow_parts, bool detached, bool supports_all, const SQLTable & t, PartitionExpr * pexpr);
 
     void generateNextBackup(RandomGenerator & rg, BackupRestore * br);
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
@@ -556,7 +670,7 @@ private:
                 const InOutFormat next_format
                     = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
                     ? b.file_format.value()
-                    : static_cast<InOutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+                    : rg.pickRandomly(rg.pickRandomly(inOutFormats));
 
                 next->set_key("format");
                 next->set_value(InOutFormat_Name(next_format).substr(6));
@@ -678,7 +792,7 @@ public:
     template <TableRequirement req>
     auto getQueryTableLambda();
 
-    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
+    StatementGenerator(RandomGenerator & rg, FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
 
     void setBackupDestination(RandomGenerator & rg, BackupRestore * br);
     std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, SQLObject obj, const SQLBase & b);

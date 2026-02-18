@@ -205,7 +205,7 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Int8:
         {
             auto result = value.safeGet<Int8>();
-            return ffi::visit_expression_literal_byte(state, result); /// Accepts int8
+            return ffi::visit_expression_literal_byte(state, static_cast<int8_t>(result));
         }
         case DB::TypeIndex::UInt8:
         {
@@ -217,23 +217,23 @@ static uintptr_t visitLiteralValue(
             else
             {
                 auto result = value.safeGet<Int16>();
-                return ffi::visit_expression_literal_short(state, result); /// Accepts int16
+                return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
             }
         }
         case DB::TypeIndex::Int16:
         {
             auto result = value.safeGet<Int16>();
-            return ffi::visit_expression_literal_short(state, result); /// Accepts int16
+            return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
         }
         case DB::TypeIndex::UInt16:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::Int32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::UInt32:
         {
@@ -248,12 +248,12 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Date:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::Date32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, result); /// Accepts int32
+            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
         }
         default:
         {

@@ -1,9 +1,10 @@
 #include "config.h"
 
+#include <gtest/gtest.h>
+
 #if USE_DELTA_KERNEL_RS
 
 #include <base/scope_guard.h>
-#include <gtest/gtest.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/logger_useful.h>
@@ -67,6 +68,22 @@ TEST_F(DeltaKernelTest, ExpressionVisitor)
         ASSERT_TRUE(false);
     }
     ASSERT_TRUE(false);
+}
+
+#endif
+
+#if USE_PARQUET
+
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <Core/Field.h>
+
+/// Regression test for segfault
+TEST(DeltaLakeMetadata, GetFieldValueNullableDateTime64)
+{
+    auto nullable_datetime64_type = std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeDateTime64>(6, "UTC"));
+    ASSERT_NO_THROW(DB::DeltaLakeMetadata::getFieldValue("2024-01-15 10:30:45.123456", nullable_datetime64_type));
 }
 
 #endif

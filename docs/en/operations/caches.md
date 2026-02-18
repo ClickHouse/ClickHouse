@@ -35,5 +35,5 @@ There are also a host of additional cache types:
 - [Query condition cache](query-condition-cache.md).
 - Format schema cache.
 
-Should you wish to drop one of the caches, for performance tuning, troubleshooting, or data consistency reasons,
-you can use the [`SYSTEM DROP ... CACHE`](../sql-reference/statements/system.md) statement.
+Should you wish to clear one of the caches, for performance tuning, troubleshooting, or data consistency reasons,
+you can use the [`SYSTEM CLEAR ... CACHE`](../sql-reference/statements/system.md) statement.

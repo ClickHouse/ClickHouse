@@ -1,6 +1,5 @@
 #include <Daemon/CrashWriter.h>
 
-#include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Environment.h>
 

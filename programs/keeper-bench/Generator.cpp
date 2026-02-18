@@ -173,7 +173,7 @@ void PathGetter::initialize(Coordination::ZooKeeper & zookeeper)
             else
                 list_promise->set_value(response);
         };
-        zookeeper.list(parent_path, ListRequestType::ALL, std::move(callback), {});
+        zookeeper.list(parent_path, ListRequestType::ALL, std::move(callback), {}, false, false);
         auto list_response = list_future.get();
 
         for (const auto & child : list_response.names)

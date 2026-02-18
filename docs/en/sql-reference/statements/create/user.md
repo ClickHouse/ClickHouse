@@ -138,7 +138,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
    consider alternative authentication methods due to
    bcrypt's computational overhead at higher work factors.
    :::
-6. 
+
 6. The type of the password can also be omitted:
 
     ```sql

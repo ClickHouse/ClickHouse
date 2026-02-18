@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -308,7 +309,7 @@ class Shell:
         command,
         log_file=None,
         strict=False,
-        verbose=False,
+        verbose=True,
         dry_run=False,
         stdin_str=None,
         timeout=None,
@@ -327,7 +328,8 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            print(f"Run command: [{command}]")
+            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
+            print(wrapped)
 
         log_file = log_file or "/dev/null"
         proc = None
@@ -391,8 +393,8 @@ class Shell:
                             print(
                                 f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
                             )
+                        should_retry = not retry_errors
                         if retry_errors:
-                            should_retry = False
                             for err in retry_errors:
                                 if any(err in err_line for err_line in err_output):
                                     print(
@@ -405,6 +407,10 @@ class Shell:
                                     f"No retryable errors found, stopping retry attempts"
                                 )
                                 break
+                        if should_retry and retry < retries - 1:
+                            delay = min(2 ** (retry + 1), 60)
+                            print(f"Retrying in {delay}s...")
+                            time.sleep(delay)
             except Exception as e:
                 if verbose:
                     print(
@@ -541,6 +547,11 @@ class Utils:
     @staticmethod
     def cpu_count():
         return multiprocessing.cpu_count()
+
+    @staticmethod
+    def exit_with_error(error_message: str) -> None:
+        print(f"ERROR: {error_message}")
+        sys.exit(1)
 
     # deprecated: unnecessary lines in traceback + ide linting issues
     # switch to regular raise Ex() inplace

@@ -484,6 +484,7 @@ def main():
                 "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
+                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
             }
             cmds = []
             for dataset_path in dataset_paths.values():
@@ -525,6 +526,8 @@ def main():
             f"rm -vf {perf_right_config}/config.d/keeper_max_request_size.xml",
             # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
             f"rm {perf_right_config}/config.d/backups.xml ||:",
+            # SSH config tries to bind a port not overridden per-server and may be unsupported by the reference binary
+            f"rm {perf_right_config}/config.d/ssh.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
             restart_ch,
             # Make copies of the original db for both servers. Use hardlinks instead
@@ -598,11 +601,14 @@ def main():
         assert test_files
 
         def run_tests():
+            # Run 10 random queries per test by default, but all queries for benchmarks
+            benchmarks = {"clickbench.xml", "tpch.xml"}
             for test in test_files:
+                max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     runs=7,
-                    max_queries=10,
+                    max_queries=max_queries,
                     results_path=perf_wd,
                 )
             return True

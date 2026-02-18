@@ -5,7 +5,6 @@
 #include <variant>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
@@ -47,14 +46,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -101,7 +100,6 @@ private:
 
     struct Attribute final
     {
-        AttributeUnderlyingType type;
         std::variant<
             UInt8,
             UInt16,
@@ -155,6 +153,7 @@ private:
             ContainerType<Array>>
             maps;
         std::unique_ptr<Arena> string_arena;
+        AttributeUnderlyingType type;
     };
 
     void createAttributes();

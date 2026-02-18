@@ -9,6 +9,7 @@ namespace DB
 class IBackup;
 class AccessRightsElements;
 class DDLRenamingMap;
+struct StorageID;
 struct QualifiedTableName;
 
 namespace BackupUtils
@@ -28,6 +29,10 @@ bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, con
 bool isInnerTable(const QualifiedTableName & table_name);
 bool isInnerTable(const String & database_name, const String & table_name);
 
+/// Returns true if the table is a target of a refreshable materialized view
+/// using the REPLACE refresh strategy.
+/// Targets with the APPEND strategy are excluded.
+bool isTargetForReplaceRefreshableMaterializedView(const StorageID & storage_id, const ContextPtr & context);
 }
 
 }

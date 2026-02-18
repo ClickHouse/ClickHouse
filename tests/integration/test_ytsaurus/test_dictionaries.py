@@ -374,3 +374,41 @@ def test_yt_dictionary_with_query(started_cluster):
 
     instance.query("DROP DICTIONARY yt_dict")
     yt.remove_table(path)
+
+
+def test_yt_dictionary_with_named_collection(started_cluster):
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1,"value":"ffff"}{"id":2,"value":"abc"}{"id":3,"value":"aa"}',
+        schema={"id": "uint64", "value": "string"},
+        dynamic=True,
+    )
+    instance.query(
+        f"""
+        CREATE NAMED COLLECTION ytsaurus_nc AS
+            http_proxy_urls = '{yt_uri_helper.uri}',
+            cypress_path = '{path}',
+            oauth_token = '{yt_uri_helper.token}',
+            check_table_schema = 0,
+            ytsaurus_columns_description = 'id, length(value) as len'
+        """
+    )
+
+    instance.query(
+        f"""
+        CREATE DICTIONARY yt_dict(id UInt64, len Int32) PRIMARY KEY id SOURCE(YTSAURUS(NAME ytsaurus_nc)) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)
+        """
+    )
+    assert (
+        instance.query("SELECT dictGet('yt_dict', 'len', number + 1) FROM numbers(3)")
+        == "4\n3\n2\n"
+    )
+
+    assert instance.query("SELECT dictGet('yt_dict', 'len', 2)") == "3\n"
+
+    instance.query("DROP DICTIONARY yt_dict")
+    instance.query("DROP NAMED COLLECTION ytsaurus_nc")
+    yt.remove_table(path)
