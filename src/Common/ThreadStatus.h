@@ -126,10 +126,12 @@ public:
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+    static ThreadGroupPtr createForWritePart();
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
     UInt64 getGroupElapsedMs() const;
+    UInt64 getGroupElapsedNs() const;
 
     void linkThread(UInt64 thread_id);
     void unlinkThread();

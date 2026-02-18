@@ -159,6 +159,7 @@ namespace DB
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
+    M(MERGETREE_WRITE_PART, "MTSinkWrite") \
 
 
 enum class ThreadName : uint8_t

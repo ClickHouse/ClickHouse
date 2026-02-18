@@ -1,5 +1,6 @@
 #include <memory>
 #include <mutex>
+#include <Common/CurrentThreadHelpers.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
@@ -150,6 +151,11 @@ UInt64 ThreadGroup::getGroupElapsedMs() const
     return elapsed_group_ms;
 }
 
+UInt64 ThreadGroup::getGroupElapsedNs() const
+{
+    return getGroupElapsedMs() * 1000;
+}
+
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
     std::lock_guard lock(mutex);
@@ -219,6 +225,14 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
         res_group = create(context, os_threads_nice_value);
     }
     res_group->memory_tracker.setDescription("MaterializeView");
+    return res_group;
+}
+
+ThreadGroupPtr ThreadGroup::createForWritePart()
+{
+    assert(currentThreadHasGroup());
+    ThreadGroupPtr res_group = std::make_shared<ThreadGroup>(CurrentThread::getGroup());
+    res_group->memory_tracker.setDescription("WritePart");
     return res_group;
 }
 
