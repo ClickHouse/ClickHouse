@@ -47,6 +47,7 @@ from helpers.s3_tools import (
     upload_directory,
     LocalDownloader,
 )
+from helpers.spark_tools import ResilientSparkSession
 
 
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
@@ -104,6 +105,11 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["instance1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )
@@ -118,7 +124,7 @@ def started_cluster():
         # extend this if testing on other nodes becomes necessary
         cluster.local_uploader = LocalUploader(cluster.instances["instance1"])
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(get_spark)
 
         for file in S3_DATA:
             print(f"Copying object {file}")

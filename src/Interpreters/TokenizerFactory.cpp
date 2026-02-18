@@ -1,11 +1,10 @@
 #include <Interpreters/TokenizerFactory.h>
-#include <Interpreters/ITokenExtractor.h>
 
+#include <Common/Exception.h>
+#include <Interpreters/ITokenizer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-
-#include <Common/Exception.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IndicesDescription.h>
@@ -49,6 +48,14 @@ void assertParamsCount(size_t params_count, size_t max_count, std::string_view t
 
 }
 
+std::unordered_map<String, ITokenizer::Type> TokenizerFactory::getAllTokenizers() const
+{
+    std::unordered_map<String, ITokenizer::Type> result;
+    for (const auto & tokenizer : tokenizers)
+        result[tokenizer.first] = tokenizer.second.type;
+    return result;
+}
+
 static void registerTokenizers(TokenizerFactory & factory);
 
 static constexpr UInt64 MIN_NGRAM_SIZE = 1;
@@ -67,13 +74,13 @@ TokenizerFactory::TokenizerFactory()
     registerTokenizers(*this);
 }
 
-void TokenizerFactory::registerTokenizer(const String & name, ITokenExtractor::Type type, Creator creator)
+void TokenizerFactory::registerTokenizer(const String & name, ITokenizer::Type type, Creator creator)
 {
     if (!tokenizers.emplace(name, Entry{type, creator}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TokenizerFactory: tokenizer '{}' is already registered", name);
 }
 
-std::unique_ptr<ITokenExtractor> TokenizerFactory::get(std::string_view full_name) const
+std::unique_ptr<ITokenizer> TokenizerFactory::get(std::string_view full_name) const
 {
     auto try_parse = [&](auto & parser) -> ASTPtr
     {
@@ -104,7 +111,7 @@ std::unique_ptr<ITokenExtractor> TokenizerFactory::get(std::string_view full_nam
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid tokenizer definition: '{}'", full_name);
 }
 
-std::unique_ptr<ITokenExtractor> TokenizerFactory::get(const ASTPtr & ast) const
+std::unique_ptr<ITokenizer> TokenizerFactory::get(const ASTPtr & ast) const
 {
     FieldVector args;
     if (const auto * identifier = ast->as<ASTIdentifier>())
@@ -129,10 +136,10 @@ std::unique_ptr<ITokenExtractor> TokenizerFactory::get(const ASTPtr & ast) const
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create tokenizer from AST: '{}'", ast->formatForErrorMessage());
 }
 
-std::unique_ptr<ITokenExtractor> TokenizerFactory::get(
+std::unique_ptr<ITokenizer> TokenizerFactory::get(
     std::string_view name,
     const FieldVector & args,
-    const std::set<ITokenExtractor::Type> & allowed) const
+    const std::set<ITokenizer::Type> & allowed) const
 {
     auto it = tokenizers.find(String(name));
     if (it == tokenizers.end())
@@ -146,39 +153,39 @@ std::unique_ptr<ITokenExtractor> TokenizerFactory::get(
 
 static void registerTokenizers(TokenizerFactory & factory)
 {
-    auto ngrams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenExtractor>
+    auto ngrams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        assertParamsCount(args.size(), 1, NgramsTokenExtractor::getExternalName());
+        assertParamsCount(args.size(), 1, NgramsTokenizer::getExternalName());
         auto ngram_size = args.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(args[0], "ngram_size");
 
         if (ngram_size < MIN_NGRAM_SIZE)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Incorrect param of tokenizer '{}': ngram length must be at least {}, but got {}",
-                NgramsTokenExtractor::getExternalName(),
+                "Incorrect parameter of tokenizer '{}': ngram length must be at least {}, but got {}",
+                NgramsTokenizer::getExternalName(),
                 MIN_NGRAM_SIZE,
                 ngram_size);
 
-        return std::make_unique<NgramsTokenExtractor>(ngram_size);
+        return std::make_unique<NgramsTokenizer>(ngram_size);
     };
 
-    factory.registerTokenizer(NgramsTokenExtractor::getName(), ITokenExtractor::Type::Ngrams, ngrams_creator);
-    factory.registerTokenizer(NgramsTokenExtractor::getExternalName(), ITokenExtractor::Type::Ngrams, ngrams_creator);
+    factory.registerTokenizer(NgramsTokenizer::getName(), ITokenizer::Type::Ngrams, ngrams_creator);
+    factory.registerTokenizer(NgramsTokenizer::getExternalName(), ITokenizer::Type::Ngrams, ngrams_creator);
 
-    auto split_by_non_alpha_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenExtractor>
+    auto split_by_non_alpha_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        assertParamsCount(args.size(), 0, SplitByNonAlphaTokenExtractor::getExternalName());
-        return std::make_unique<SplitByNonAlphaTokenExtractor>();
+        assertParamsCount(args.size(), 0, SplitByNonAlphaTokenizer::getExternalName());
+        return std::make_unique<SplitByNonAlphaTokenizer>();
     };
 
-    factory.registerTokenizer(SplitByNonAlphaTokenExtractor::getName(), ITokenExtractor::Type::SplitByNonAlpha, split_by_non_alpha_creator);
-    factory.registerTokenizer(SplitByNonAlphaTokenExtractor::getExternalName(), ITokenExtractor::Type::SplitByNonAlpha, split_by_non_alpha_creator);
+    factory.registerTokenizer(SplitByNonAlphaTokenizer::getName(), ITokenizer::Type::SplitByNonAlpha, split_by_non_alpha_creator);
+    factory.registerTokenizer(SplitByNonAlphaTokenizer::getExternalName(), ITokenizer::Type::SplitByNonAlpha, split_by_non_alpha_creator);
 
-    auto split_by_string_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenExtractor>
+    auto split_by_string_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        assertParamsCount(args.size(), 1, SplitByStringTokenExtractor::getExternalName());
+        assertParamsCount(args.size(), 1, SplitByStringTokenizer::getExternalName());
         if (args.empty())
-            return std::make_unique<SplitByStringTokenExtractor>(std::vector<String>{" "});
+            return std::make_unique<SplitByStringTokenizer>(std::vector<String>{" "});
 
         auto array = castAs<Array>(args[0], "separators");
         std::vector<String> values;
@@ -188,25 +195,25 @@ static void registerTokenizers(TokenizerFactory & factory)
         if (values.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Incorrect params of tokenizer '{}': separators cannot be empty",
-                SplitByStringTokenExtractor::getExternalName());
+                "Incorrect parameter of tokenizer '{}': separators cannot be empty",
+                SplitByStringTokenizer::getExternalName());
 
-        return std::make_unique<SplitByStringTokenExtractor>(values);
+        return std::make_unique<SplitByStringTokenizer>(values);
     };
 
-    factory.registerTokenizer(SplitByStringTokenExtractor::getName(), ITokenExtractor::Type::SplitByString, split_by_string_creator);
+    factory.registerTokenizer(SplitByStringTokenizer::getName(), ITokenizer::Type::SplitByString, split_by_string_creator);
 
-    auto array_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenExtractor>
+    auto array_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        assertParamsCount(args.size(), 0, ArrayTokenExtractor::getExternalName());
-        return std::make_unique<ArrayTokenExtractor>();
+        assertParamsCount(args.size(), 0, ArrayTokenizer::getExternalName());
+        return std::make_unique<ArrayTokenizer>();
     };
 
-    factory.registerTokenizer(ArrayTokenExtractor::getName(), ITokenExtractor::Type::Array, array_creator);
+    factory.registerTokenizer(ArrayTokenizer::getName(), ITokenizer::Type::Array, array_creator);
 
-    auto sparse_grams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenExtractor>
+    auto sparse_grams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        const auto * tokenizer_name = SparseGramsTokenExtractor::getExternalName();
+        const auto * tokenizer_name = SparseGramsTokenizer::getExternalName();
         assertParamsCount(args.size(), 3, tokenizer_name);
 
         UInt64 min_length = DEFAULT_SPARSE_GRAMS_MIN_LENGTH;
@@ -252,11 +259,11 @@ static void registerTokenizers(TokenizerFactory & factory)
                 "Unexpected parameter of tokenizer '{}': minimal cutoff length {} cannot be larger than maximal length {}",
                 tokenizer_name, min_cutoff_length.value(), max_length);
 
-        return std::make_unique<SparseGramsTokenExtractor>(min_length, max_length, min_cutoff_length);
+        return std::make_unique<SparseGramsTokenizer>(min_length, max_length, min_cutoff_length);
     };
 
-    factory.registerTokenizer(SparseGramsTokenExtractor::getName(), ITokenExtractor::Type::SparseGrams, sparse_grams_creator);
-    factory.registerTokenizer(SparseGramsTokenExtractor::getBloomFilterIndexName(), ITokenExtractor::Type::SparseGrams, sparse_grams_creator);
+    factory.registerTokenizer(SparseGramsTokenizer::getName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
+    factory.registerTokenizer(SparseGramsTokenizer::getBloomFilterIndexName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
 }
 
 }

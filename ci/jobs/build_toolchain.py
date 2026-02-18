@@ -31,6 +31,22 @@ BOLT_PROFILE_PARALLELISM = 4
 # All LLVM projects for the final toolchain (note: "all" doesn't work with cmake)
 STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
 
+# Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
+# (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
+# self-contained for all ClickHouse cross-compilation targets.
+# Must match triples in cmake/build_clang_builtin.cmake.
+CROSS_BUILTIN_TARGETS = [
+    ("x86_64-unknown-linux-gnu", "Linux"),
+    ("aarch64-unknown-linux-gnu", "Linux"),
+    ("s390x-unknown-linux-gnu", "Linux"),
+    ("powerpc64le-unknown-linux-gnu", "Linux"),
+    ("riscv64-unknown-linux-gnu", "Linux"),
+    ("loongarch64-unknown-linux-gnu", "Linux"),
+    ("x86_64-pc-freebsd13", "FreeBSD"),
+    ("aarch64-unknown-freebsd13", "FreeBSD"),
+    ("powerpc64le-unknown-freebsd13", "FreeBSD"),
+]
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     CLONE_LLVM = "clone_llvm"
@@ -157,10 +173,36 @@ def main():
                     command=(
                         f"ninja -C {STAGE1_BUILD_DIR}"
                         f" install-clang install-clang-resource-headers install-lld"
+                        f" install-compiler-rt-headers"
                     ),
                 )
             )
             res = results[-1].is_ok()
+
+        # Install compiler-rt headers (xray, sanitizer, etc.) into the clang resource
+        # directory so that ClickHouse can find <xray/xray_interface.h> when compiled
+        # with this toolchain.
+        if res:
+            resource_dirs = glob.glob(
+                f"{STAGE1_INSTALL_DIR}/lib/clang/*/include"
+            )
+            if resource_dirs:
+                resource_include = resource_dirs[0]
+                results.append(
+                    Result.from_commands_run(
+                        name="Install compiler-rt headers",
+                        command=(
+                            f"cp -r {LLVM_SOURCE_DIR}/compiler-rt/include/xray"
+                            f" {resource_include}/xray"
+                        ),
+                    )
+                )
+                res = results[-1].is_ok()
+            else:
+                print(
+                    f"WARNING: No clang resource directory found in"
+                    f" {STAGE1_INSTALL_DIR}/lib/clang/*/include"
+                )
 
     # Stage 2: Profile collection - build ClickHouse with instrumented clang
     if res and JobStages.PROFILE_COLLECTION in stages:
@@ -209,13 +251,15 @@ def main():
                 name="Profile collection build (ClickHouse)",
                 command=f"ninja -C {CH_PROFILE_BUILD_DIR} clickhouse",
             )
-            results.append(build_result)
             if not build_result.is_ok():
                 print(
                     "ClickHouse build finished with errors"
                     " (link failures with instrumented compiler are expected)."
                     " Profraw files from compilation steps should still be available."
                 )
+                build_result.status = Result.Status.SUCCESS
+                build_result.info = "Build failed at link step (expected); profraw files collected"
+            results.append(build_result)
 
         # Merge profraw files using system llvm-profdata (stage 1 build lacks zlib
         # support, but the profraw files may contain zlib-compressed sections)
@@ -245,6 +289,12 @@ def main():
         clean_dirs(STAGE2_BUILD_DIR, STAGE2_INSTALL_DIR)
         os.makedirs(STAGE2_BUILD_DIR, exist_ok=True)
 
+        builtin_targets = ";".join(t for t, _ in CROSS_BUILTIN_TARGETS)
+        builtin_cmake_args = " ".join(
+            f"-DBUILTINS_{triple}_CMAKE_SYSTEM_NAME={system}"
+            for triple, system in CROSS_BUILTIN_TARGETS
+        )
+
         cmake_cmd = (
             f"cmake -G Ninja"
             f' -DLLVM_ENABLE_PROJECTS="{STAGE2_LLVM_PROJECTS}"'
@@ -261,6 +311,9 @@ def main():
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=OFF"
             f" -DLLVM_ENABLE_ZSTD=OFF"
+            f" -DLLVM_BINUTILS_INCDIR=/usr/include"
+            f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
+            f" {builtin_cmake_args}"
             f" -DCMAKE_INSTALL_PREFIX={STAGE2_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
             f" -B {STAGE2_BUILD_DIR}"
@@ -302,6 +355,7 @@ def main():
     # toolchain which provides ~23% compilation speedup.
     if res and JobStages.BOLT_OPTIMIZATION in stages:
         bolt_ok = True
+        bolt_results = []
         clang_binary = f"{STAGE2_INSTALL_DIR}/bin/clang-21"
 
         # Find the actual clang binary (it may be clang-21, clang-20, etc.)
@@ -337,7 +391,7 @@ def main():
                 f" --instrumentation-file={BOLT_PROFILES_DIR}/prof"
             ),
         )
-        results.append(result)
+        bolt_results.append(result)
         if not result.is_ok():
             bolt_ok = False
             print(
@@ -379,7 +433,7 @@ def main():
                 name="BOLT profile collection CMake",
                 command=cmake_cmd,
             )
-            results.append(result)
+            bolt_results.append(result)
             if not result.is_ok():
                 bolt_ok = False
                 print("BOLT profile collection cmake failed. Continuing with PGO-only.")
@@ -399,7 +453,7 @@ def main():
                     f" ; exit 0'"
                 ),
             )
-            results.append(result)
+            bolt_results.append(result)
 
             # Check if we collected any profiles
             fdata_files = glob.glob(f"{BOLT_PROFILES_DIR}/prof.*")
@@ -418,7 +472,7 @@ def main():
                     f" {BOLT_PROFILES_DIR}/prof.*"
                 ),
             )
-            results.append(result)
+            bolt_results.append(result)
             if not result.is_ok():
                 bolt_ok = False
                 print("BOLT profile merge failed. Continuing with PGO-only.")
@@ -441,7 +495,7 @@ def main():
                     f" -use-gnu-stack"
                 ),
             )
-            results.append(result)
+            bolt_results.append(result)
             if not result.is_ok():
                 bolt_ok = False
                 print("BOLT optimization failed. Continuing with PGO-only.")
@@ -452,14 +506,19 @@ def main():
                 name="Install BOLTed clang",
                 command=f"mv {clang_bolted} {clang_binary}",
             )
-            results.append(result)
+            bolt_results.append(result)
             if not result.is_ok():
                 bolt_ok = False
 
         if bolt_ok:
             print("BOLT optimization applied successfully")
+            results.extend(bolt_results)
         else:
             print("Packaging PGO-only toolchain (BOLT was skipped or failed)")
+            # Mark all BOLT results as skipped so they don't fail the overall job
+            for r in bolt_results:
+                r.status = Result.Status.SKIPPED
+            results.extend(bolt_results)
 
         # Clean up BOLT intermediates
         print("Cleaning BOLT intermediate files")
@@ -473,17 +532,34 @@ def main():
 
     # Stage 5: Package
     if res and JobStages.PACKAGE in stages:
-        output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"
+        # Strip ELF executables and shared libraries to reduce archive size
+        # (relocations from --emit-relocs and LTO symbols are no longer needed).
+        # Use "file" to skip scripts (Python, Perl, shell) that strip cannot handle.
         results.append(
             Result.from_commands_run(
-                name="Package toolchain",
+                name="Strip binaries",
                 command=(
-                    f"tar -C {STAGE2_INSTALL_DIR} -cf - ."
-                    f" | zstd -T0 -19 -o {output_path}"
+                    f"find {STAGE2_INSTALL_DIR}/bin -type f -executable"
+                    f" -exec sh -c 'file \"$1\" | grep -q ELF && strip --strip-unneeded \"$1\"' _ {{}} \\;"
+                    f" && find {STAGE2_INSTALL_DIR}/lib -name '*.so*' -type f"
+                    f" -exec strip --strip-unneeded {{}} +"
                 ),
             )
         )
         res = results[-1].is_ok()
+
+        if res:
+            output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"
+            results.append(
+                Result.from_commands_run(
+                    name="Package toolchain",
+                    command=(
+                        f"tar -C {STAGE2_INSTALL_DIR} -cf - ."
+                        f" | zstd -T0 -19 -o {output_path}"
+                    ),
+                )
+            )
+            res = results[-1].is_ok()
 
         if res:
             file_size_mb = os.path.getsize(output_path) / (1024 * 1024)

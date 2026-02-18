@@ -13,6 +13,7 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
+from helpers.spark_tools import ResilientSparkSession
 
 def check_spark(spark):
     p = subprocess.run(["echo", "hello world!"], capture_output=True, text=True)
@@ -96,7 +97,7 @@ def started_cluster_iceberg():
 
         prepare_s3_bucket(cluster)
 
-        cluster.spark_session = get_spark(cluster)
+        cluster.spark_session = ResilientSparkSession(lambda: get_spark(cluster))
 
         # check_spark(cluster.spark_session)
 

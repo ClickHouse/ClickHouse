@@ -109,7 +109,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 }
 
 
-void BaseDaemon::reloadConfiguration()
+void BaseDaemon::loadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
       *  then we use config from 'config.xml' file in current directory,
@@ -121,11 +121,7 @@ void BaseDaemon::reloadConfiguration()
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
-
-    if (last_configuration != nullptr)
-        config().removeConfiguration(last_configuration);
-    last_configuration = loaded_config.configuration.duplicate();
-    config().add(last_configuration, PRIO_DEFAULT, false);
+    config().add(loaded_config.configuration.duplicate(), "default", PRIO_DEFAULT, false);
 }
 
 
@@ -248,7 +244,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to " + path);
     }
 
-    reloadConfiguration();
+    loadConfiguration();
 
     /// This must be done before creation of any files (including logs).
     mode_t umask_num = 0027;

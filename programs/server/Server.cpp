@@ -1645,14 +1645,11 @@ try
     Coordination::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
-        auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
             main_config_zk_node_cache.get(), main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
         config_processor.savePreprocessedConfig(loaded_config, path_str);
-        config().removeConfiguration(old_configuration.get());
-        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-        global_context->setConfig(loaded_config.configuration);
+        config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
@@ -2139,12 +2136,14 @@ try
         server_settings[ServerSetting::path],
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading)
+        [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
-            Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
+            config().replace("default", loaded_config, PRIO_DEFAULT, true);
+
+            Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
             ServerSettings new_server_settings;
-            new_server_settings.loadSettingsFromConfig(*config);
+            new_server_settings.loadSettingsFromConfig(config());
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
@@ -2211,23 +2210,23 @@ try
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
-            updateLevels(*config, logger());
-            global_context->setClustersConfig(config, has_zookeeper);
-            global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
-            global_context->setExternalAuthenticatorsConfig(*config);
+            updateLevels(config(), logger());
+            global_context->setClustersConfig(loaded_config, has_zookeeper);
+            global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+            global_context->setExternalAuthenticatorsConfig(config());
 
-            global_context->setDashboardsConfig(config);
+            global_context->setDashboardsConfig(config());
 
             if (global_context->isServerCompletelyStarted())
             {
                 /// It does not make sense to reload anything before server has started.
                 /// Moreover, it may break initialization order.
-                global_context->loadOrReloadDictionaries(*config);
-                global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+                global_context->loadOrReloadDictionaries(config());
+                global_context->loadOrReloadUserDefinedExecutableFunctions(config());
             }
 
-            global_context->setRemoteHostFilter(*config);
-            global_context->setHTTPHeaderFilter(*config);
+            global_context->setRemoteHostFilter(config());
+            global_context->setHTTPHeaderFilter(config());
 
             global_context->setMaxTableSizeToDrop(new_server_settings[ServerSetting::max_table_size_to_drop]);
             global_context->setMaxPartitionSizeToDrop(new_server_settings[ServerSetting::max_partition_size_to_drop]);
@@ -2275,8 +2274,8 @@ try
             global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings[ServerSetting::max_concurrent_select_queries]);
             global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
 
-            if (config->has("keeper_server"))
-                global_context->updateKeeperConfiguration(*config);
+            if (config().has("keeper_server"))
+                global_context->updateKeeperConfiguration(config());
 
             /// Reload the number of threads for global pools.
             /// Note: If you specified it in the top level config (not it config of default profile)
@@ -2370,51 +2369,50 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            if (config->has("resources"))
+            if (config().has("resources"))
             {
-                global_context->getResourceManager()->updateConfiguration(*config);
+                global_context->getResourceManager()->updateConfiguration(config());
             }
 
             /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStorage().loadEntities(*config);
+            global_context->getWorkloadEntityStorage().loadEntities(config());
 
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(*config))
-                    global_context->reloadZooKeeperIfChanged(config);
+                if (zkutil::hasZooKeeperConfig(config()))
+                    global_context->reloadZooKeeperIfChanged(loaded_config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
-
-                global_context->reloadQueryMaskingRulesIfChanged(config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);
+                global_context->reloadQueryMaskingRulesIfChanged(loaded_config);
 
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
-                    updateServers(*config, new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
+                    updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
             }
 
-            global_context->updateStorageConfiguration(*config);
-            global_context->updateInterserverCredentials(*config);
+            global_context->updateStorageConfiguration(config());
+            global_context->updateInterserverCredentials(config());
 
-            global_context->updateUncompressedCacheConfiguration(*config);
-            global_context->updateMarkCacheConfiguration(*config);
-            global_context->updatePrimaryIndexCacheConfiguration(*config);
-            global_context->updateIndexUncompressedCacheConfiguration(*config);
-            global_context->updateIndexMarkCacheConfiguration(*config);
-            global_context->updateVectorSimilarityIndexCacheConfiguration(*config);
-            global_context->updateMMappedFileCacheConfiguration(*config);
-            global_context->updateQueryResultCacheConfiguration(*config);
-            global_context->updateQueryConditionCacheConfiguration(*config);
+            global_context->updateUncompressedCacheConfiguration(config());
+            global_context->updateMarkCacheConfiguration(config());
+            global_context->updatePrimaryIndexCacheConfiguration(config());
+            global_context->updateIndexUncompressedCacheConfiguration(config());
+            global_context->updateIndexMarkCacheConfiguration(config());
+            global_context->updateVectorSimilarityIndexCacheConfiguration(config());
+            global_context->updateMMappedFileCacheConfiguration(config());
+            global_context->updateQueryResultCacheConfiguration(config());
+            global_context->updateQueryConditionCacheConfiguration(config());
 
 #if USE_SSL
-            CertificateReloader::instance().tryReloadAll(*config);
+            CertificateReloader::instance().tryReloadAll(config());
 #endif
-            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
-            NamedCollectionFactory::instance().reloadFromConfig(*config);
-            FileCacheFactory::instance().updateSettingsFromConfig(*config);
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
+            NamedCollectionFactory::instance().reloadFromConfig(config());
+            FileCacheFactory::instance().updateSettingsFromConfig(config());
 
             HTTPConnectionPools::instance().setLimits(
                 HTTPConnectionPools::Limits{
@@ -2446,7 +2444,7 @@ try
                 rlimit rlim;
                 if (getrlimit(RLIMIT_CORE, &rlim) == 0)
                 {
-                    rlim.rlim_cur = config->getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+                    rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
                     if (setrlimit(RLIMIT_CORE, &rlim))
                         LOG_WARNING(log, "Cannot set max size of core file to {}", rlim.rlim_cur);
                 }
@@ -2455,7 +2453,7 @@ try
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
-            latest_config = config;
+            latest_config = loaded_config;
         });
 
     const auto listen_hosts = getListenHosts(config());
@@ -2970,13 +2968,12 @@ try
 
         {
             std::lock_guard lock(servers_lock);
-            for (auto & server : servers)
-            {
-                server.start();
-                LOG_INFO(log, "Listening for {}", server.getDescription());
-            }
 
-            // Restore the root logger level to the default level after the server is fully initialized.
+            /// Restore the startup log level overrides before accepting connections,
+            /// so that no requests are served with an elevated (startup) log level.
+            /// This must happen before server.start() because the config reload callback
+            /// (ConfigReloader) reads from config() which includes the writable layer
+            /// where startup level overrides are stored.
             if (should_restore_default_logger_level)
             {
                 config().setString("logger.level", default_logger_level_config);
@@ -2984,12 +2981,17 @@ try
                 LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
             }
 
-            // Restore the root logger level to the default level after the server is fully initialized.
             if (should_restore_console_log_level)
             {
                 config().setString("logger.console_log_level", original_console_log_level_config);
                 Loggers::updateLevels(config(), logger());
                 LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+            }
+
+            for (auto & server : servers)
+            {
+                server.start();
+                LOG_INFO(log, "Listening for {}", server.getDescription());
             }
 
             global_context->setServerCompletelyStarted();
@@ -3724,7 +3726,7 @@ void Server::updateServers(
 
     std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
 
-    Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : this->config();
+    Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : config;
 
     std::vector<ProtocolServerAdapter *> all_servers;
     all_servers.reserve(servers.size() + servers_to_start_before_tables.size());
