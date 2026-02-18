@@ -1101,12 +1101,8 @@ void NO_INLINE Aggregator::executeImpl(
     }
 }
 
-/** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
-  * (Probably because after the inline of this function, more internal functions no longer be inlined.)
-  * Inline does not make sense, since the inner loop is entirely inside this function.
-  */
 template <typename Method, typename State>
-void NO_INLINE Aggregator::executeImpl(
+void Aggregator::executeImpl(
     Method & method,
     State & state,
     Arena * aggregates_pool,
