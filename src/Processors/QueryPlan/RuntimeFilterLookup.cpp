@@ -105,14 +105,53 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 
-void ApproximateNumericRuntimeFilter::finishInsertImpl()
+template <typename T>
+static T getColumnValue(const IColumn & column, size_t row)
+{
+    if constexpr (std::is_same_v<T, UInt64>)
+        return column.getUInt(row);
+    else if constexpr (std::is_same_v<T, Int64>)
+        return column.getInt(row);
+    else if constexpr (std::is_same_v<T, Float32>)
+        return column.getFloat32(row);
+    else
+        return column.getFloat64(row);
+}
+
+template <typename T>
+ApproximateNumericRuntimeFilter<T>::ApproximateNumericRuntimeFilter(
+    size_t filters_to_merge_,
+    const DataTypePtr & filter_column_target_type_,
+    Float64 pass_ratio_threshold_for_disabling_,
+    UInt64 blocks_to_skip_before_reenabling_,
+    UInt64 bytes_limit_,
+    UInt64 exact_values_limit_,
+    UInt64 bloom_filter_hash_functions_,
+    Float64 max_ratio_of_set_bits_in_bloom_filter_)
+    : ApproximateGenericRuntimeFilter(
+        filters_to_merge_,
+        filter_column_target_type_,
+        pass_ratio_threshold_for_disabling_,
+        blocks_to_skip_before_reenabling_,
+        bytes_limit_,
+        exact_values_limit_,
+        bloom_filter_hash_functions_,
+        max_ratio_of_set_bits_in_bloom_filter_)
+    , min_value(std::numeric_limits<T>::lowest())
+    , max_value(std::numeric_limits<T>::max())
+{
+}
+
+template <typename T>
+void ApproximateNumericRuntimeFilter<T>::finishInsertImpl()
 {
     /// TODO: Build ExpressionActions with "value < min OR value > max" condition to be used in findImpl instead of building a column with results of this condition for each row
 
     Base::finishInsertImpl();
 }
 
-ColumnPtr ApproximateNumericRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+template <typename T>
+ColumnPtr ApproximateNumericRuntimeFilter<T>::findImpl(const ColumnWithTypeAndName & values) const
 {
     chassert(inserts_are_finished);
 
@@ -125,8 +164,7 @@ ColumnPtr ApproximateNumericRuntimeFilter::findImpl(const ColumnWithTypeAndName 
         size_t found_count = 0;
         for (size_t row = 0; row < values.column->size(); ++row)
         {
-            Field value;
-            values.column->get(row, value);
+            T value = getColumnValue<T>(*values.column, row);
             /// The following condition is an optimization to avoid unnecessary bloom filter lookups for values outside of the observed min/max range.
             /// It can be beneficial for low cardinality columns with small number of distinct values,
             /// but it can cause false positives for high cardinality columns where min and max are far apart.
@@ -144,16 +182,17 @@ ColumnPtr ApproximateNumericRuntimeFilter::findImpl(const ColumnWithTypeAndName 
     }
 }
 
-void ApproximateNumericRuntimeFilter::merge(const IRuntimeFilter * source)
+template <typename T>
+void ApproximateNumericRuntimeFilter<T>::merge(const IRuntimeFilter * source)
 {
     if (inserts_are_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
 
-    const auto * source_typed = typeid_cast<const ApproximateNumericRuntimeFilter *>(source);
+    const auto * source_typed = typeid_cast<const ApproximateNumericRuntimeFilter<T> *>(source);
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    auto merge_approximate_filters = [this](const ApproximateNumericRuntimeFilter * other)
+    auto merge_approximate_filters = [this](const ApproximateNumericRuntimeFilter<T> * other)
     {
         /// Merge ranges
         if (other->min_value < min_value)
@@ -197,15 +236,10 @@ void ApproximateNumericRuntimeFilter::merge(const IRuntimeFilter * source)
     --filters_to_merge;
 }
 
-bool ApproximateNumericRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
+template <typename T>
+void ApproximateNumericRuntimeFilter<T>::insertIntoApproximateSet(ColumnPtr values, size_t row)
 {
-    return isNativeNumber(data_type);
-}
-
-void ApproximateNumericRuntimeFilter::insertIntoApproximateSet(ColumnPtr values, size_t row)
-{
-    Field value;
-    values->get(row, value);
+    T value = getColumnValue<T>(*values, row);
     if (value < min_value)
         min_value = value;
     if (value > max_value)
@@ -505,6 +539,94 @@ private:
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
 {
     return std::make_shared<RuntimeFilterLookup>();
+}
+
+template class ApproximateNumericRuntimeFilter<UInt64>;
+template class ApproximateNumericRuntimeFilter<Int64>;
+template class ApproximateNumericRuntimeFilter<Float32>;
+template class ApproximateNumericRuntimeFilter<Float64>;
+
+namespace
+{
+
+template <typename T>
+UniqueRuntimeFilterPtr createApproximateNumericRuntimeFilterImpl(
+    size_t filters_to_merge,
+    const DataTypePtr & filter_column_target_type,
+    Float64 pass_ratio_threshold_for_disabling,
+    UInt64 blocks_to_skip_before_reenabling,
+    UInt64 bytes_limit,
+    UInt64 exact_values_limit,
+    UInt64 bloom_filter_hash_functions,
+    Float64 max_ratio_of_set_bits_in_bloom_filter
+)
+{
+    return std::make_unique<ApproximateNumericRuntimeFilter<T>>(
+        filters_to_merge,
+        filter_column_target_type,
+        pass_ratio_threshold_for_disabling,
+        blocks_to_skip_before_reenabling,
+        bytes_limit,
+        exact_values_limit,
+        bloom_filter_hash_functions,
+        max_ratio_of_set_bits_in_bloom_filter);
+}
+
+}
+
+UniqueRuntimeFilterPtr createApproximateNumericRuntimeFilter(
+    size_t filters_to_merge,
+    const DataTypePtr & filter_column_target_type,
+    Float64 pass_ratio_threshold_for_disabling,
+    UInt64 blocks_to_skip_before_reenabling,
+    UInt64 bytes_limit,
+    UInt64 exact_values_limit,
+    UInt64 bloom_filter_hash_functions,
+    Float64 max_ratio_of_set_bits_in_bloom_filter)
+{
+    WhichDataType which(filter_column_target_type);
+    if (which.isNativeUInt())
+        return createApproximateNumericRuntimeFilterImpl<UInt64>(
+            filters_to_merge,
+            filter_column_target_type,
+            pass_ratio_threshold_for_disabling,
+            blocks_to_skip_before_reenabling,
+            bytes_limit,
+            exact_values_limit,
+            bloom_filter_hash_functions,
+            max_ratio_of_set_bits_in_bloom_filter);
+    if (which.isNativeInt())
+        return createApproximateNumericRuntimeFilterImpl<Int64>(
+            filters_to_merge,
+            filter_column_target_type,
+            pass_ratio_threshold_for_disabling,
+            blocks_to_skip_before_reenabling,
+            bytes_limit,
+            exact_values_limit,
+            bloom_filter_hash_functions,
+            max_ratio_of_set_bits_in_bloom_filter);
+    if (which.isFloat32())
+        return createApproximateNumericRuntimeFilterImpl<Float32>(
+            filters_to_merge,
+            filter_column_target_type,
+            pass_ratio_threshold_for_disabling,
+            blocks_to_skip_before_reenabling,
+            bytes_limit,
+            exact_values_limit,
+            bloom_filter_hash_functions,
+            max_ratio_of_set_bits_in_bloom_filter);
+    if (which.isFloat64())
+        return createApproximateNumericRuntimeFilterImpl<Float64>(
+            filters_to_merge,
+            filter_column_target_type,
+            pass_ratio_threshold_for_disabling,
+            blocks_to_skip_before_reenabling,
+            bytes_limit,
+            exact_values_limit,
+            bloom_filter_hash_functions,
+            max_ratio_of_set_bits_in_bloom_filter);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type for ApproximateNumericRuntimeFilter");
 }
 
 }

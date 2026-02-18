@@ -290,6 +290,7 @@ private:
 /// It is used for numeric columns only.
 /// The minmax range allows to quickly filter out values that are outside of the observed min and max values,
 /// which can be beneficial for avoiding unnecessary bloom filter lookups.
+template <typename T>
 class ApproximateNumericRuntimeFilter : public ApproximateGenericRuntimeFilter
 {
     using Base = ApproximateGenericRuntimeFilter;
@@ -303,20 +304,7 @@ public:
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_hash_functions_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_
-    )
-        : ApproximateGenericRuntimeFilter(
-            filters_to_merge_,
-            filter_column_target_type_,
-            pass_ratio_threshold_for_disabling_,
-            blocks_to_skip_before_reenabling_,
-            bytes_limit_,
-            exact_values_limit_,
-            bloom_filter_hash_functions_,
-            max_ratio_of_set_bits_in_bloom_filter_)
-        , min_value(filter_column_target_type->getMinValue())
-        , max_value(filter_column_target_type->getMaxValue())
-    {}
+        Float64 max_ratio_of_set_bits_in_bloom_filter_);
 
     void finishInsertImpl() override;
 
@@ -324,14 +312,23 @@ public:
 
     void merge(const IRuntimeFilter * source) override;
 
-    static bool isDataTypeSupported(const DataTypePtr & data_type);
-
 private:
     void insertIntoApproximateSet(ColumnPtr values, size_t row) override;
 
-    Field min_value;
-    Field max_value;
+    T min_value;
+    T max_value;
 };
+
+/// Factory function that dispatches on the data type to create the correct `ApproximateNumericRuntimeFilter` instantiation
+UniqueRuntimeFilterPtr createApproximateNumericRuntimeFilter(
+    size_t filters_to_merge,
+    const DataTypePtr & filter_column_target_type,
+    Float64 pass_ratio_threshold_for_disabling,
+    UInt64 blocks_to_skip_before_reenabling,
+    UInt64 bytes_limit,
+    UInt64 exact_values_limit,
+    UInt64 bloom_filter_hash_functions,
+    Float64 max_ratio_of_set_bits_in_bloom_filter);
 
 /// Store and find per-query runtime filters that are used for optimizing some kinds of JOINs
 /// by early pre-filtering of the left side of the JOIN.
