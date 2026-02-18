@@ -1222,6 +1222,229 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
     }
 }
 
+/// Separate NO_INLINE implementation of executeImplBatch for the top-N GROUP BY limit pushdown case.
+/// By keeping this in a separate function, the common aggregation path (top_n_keys == 0) stays lean
+/// and does not suffer from instruction cache pressure caused by the heap management code.
+template <bool prefetch, typename Method, typename State>
+void NO_INLINE Aggregator::executeImplBatchTopN(
+    Method & method,
+    State & state,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    bool use_compiled_functions [[maybe_unused]],
+    AggregateDataPtr overflow_row) const
+{
+    using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
+    auto * heap_queue = &method.pqueue;
+    const auto * key_col = state.getKeyColumn();
+
+    /// is_simple_count path with top-N
+    if (is_simple_count)
+    {
+        if (all_keys_are_const)
+        {
+            if (!no_more_keys)
+            {
+                auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
+                if (emplace_result.isInserted())
+                    getInlineCountState(emplace_result.getMapped()) = row_end - row_begin;
+                else
+                    getInlineCountState(emplace_result.getMapped()) += row_end - row_begin;
+            }
+            else
+            {
+                auto find_result = state.findKey(method.data, 0, *aggregates_pool);
+                if (find_result.isFound())
+                    getInlineCountState(find_result.getMapped()) = row_end - row_begin;
+                else if (overflow_row)
+                    getCountState(overflow_row) += row_end - row_begin;
+            }
+        }
+        else if (!no_more_keys)
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+                {
+                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
+                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                    if (i + prefetch_look_ahead < row_end)
+                    {
+                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                        method.data.prefetch(std::move(key_holder));
+                    }
+                }
+
+                if (heap_queue->size() >= params.top_n_keys)
+                {
+                    if (heap_queue->shouldSkip(*key_col, i))
+                        continue;
+                }
+
+                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+                if (emplace_result.isInserted())
+                    heap_queue->push(*key_col, i);
+
+                if (emplace_result.isInserted())
+                    getInlineCountState(emplace_result.getMapped()) = 1;
+                else
+                    ++getInlineCountState(emplace_result.getMapped());
+
+                if (heap_queue->needsTrim())
+                    trimHeapAndPruneHashTable(method, false);
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                auto find_result = state.findKey(method.data, i, *aggregates_pool);
+                if (find_result.isFound())
+                    ++getInlineCountState(find_result.getMapped());
+                else if (overflow_row)
+                    ++getCountState(overflow_row);
+            }
+        }
+
+        return;
+    }
+
+    /// General (non-simple_count) path with top-N
+    size_t places_size = all_keys_are_const ? 1 : row_end;
+    AllocatorWithMemoryTracking<AggregateDataPtr> allocator;
+    auto places_deleter = [&allocator, &places_size](auto * ptr)
+    {
+        if (ptr) [[likely]]
+            allocator.deallocate(ptr, places_size);
+    };
+    std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
+
+    size_t key_start;
+    size_t key_end;
+    if (all_keys_are_const)
+    {
+        key_start = 0;
+        key_end = 1;
+    }
+    else
+    {
+        key_start = row_begin;
+        key_end = row_end;
+    }
+
+    state.resetCache();
+
+    /// Throwaway aggregate state for skipped rows.
+    AggregateDataPtr temp = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+    createAggregateStates(temp);
+
+    if (!no_more_keys)
+    {
+        for (size_t i = key_start; i < key_end; ++i)
+        {
+            AggregateDataPtr aggregate_data = nullptr;
+
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            {
+                if (i == key_start + PrefetchingHelper::iterationsToMeasure())
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                if (i + prefetch_look_ahead < row_end)
+                {
+                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                    method.data.prefetch(std::move(key_holder));
+                }
+            }
+
+            if (heap_queue->size() >= params.top_n_keys)
+            {
+                if (heap_queue->shouldSkip(*key_col, i))
+                {
+                    places[i] = temp;
+                    continue;
+                }
+            }
+
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+            if (emplace_result.isInserted())
+                heap_queue->push(*key_col, i);
+
+            /// If a new key is inserted, initialize the states of the aggregate functions.
+            if (emplace_result.isInserted())
+            {
+                emplace_result.setMapped(nullptr);
+
+                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+
+#if USE_EMBEDDED_COMPILER
+                if (use_compiled_functions)
+                {
+                    const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                    compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+                    if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+                    {
+                        static constexpr bool skip_compiled_aggregate_functions = true;
+                        createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+                    }
+                }
+                else
+#endif
+                {
+                    createAggregateStates(aggregate_data);
+                }
+
+                emplace_result.setMapped(aggregate_data);
+            }
+            else
+                aggregate_data = emplace_result.getMapped();
+
+            /// Batch trim after emplace_result is no longer used.
+            /// erase() may move cells via memcpy, invalidating emplace_result.
+            if (heap_queue->needsTrim())
+                trimHeapAndPruneHashTable(method, !is_simple_count);
+
+            assert(aggregate_data != nullptr);
+            places[i] = aggregate_data;
+        }
+    }
+    else
+    {
+        for (size_t i = key_start; i < key_end; ++i)
+        {
+            AggregateDataPtr aggregate_data = nullptr;
+            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+            if (find_result.isFound())
+                aggregate_data = find_result.getMapped();
+            else
+                aggregate_data = overflow_row;
+            places[i] = aggregate_data;
+        }
+    }
+
+    /// Disable the "equal keys range" optimization (addBatchSinglePlace) because
+    /// skipped rows have been redirected to the throwaway `temp` state.
+    executeAggregateInstructions(
+        aggregates_pool,
+        row_begin,
+        row_end,
+        aggregate_instructions,
+        places.get(),
+        key_start,
+        false, /* has_only_one_value_since_last_reset */
+        all_keys_are_const,
+        use_compiled_functions);
+}
+
 template <bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -1279,6 +1502,17 @@ void NO_INLINE Aggregator::executeImplBatch(
     auto * heap_queue = &method.pqueue;
     if (params.top_n_keys > 0 && !heap_queue->heap_column)
         heap_queue->init(*state.getKeyColumn(), params.top_n_keys_sort_direction, params.top_n_keys, params.top_n_keys_collator);
+
+    /// When the top-N GROUP BY limit pushdown optimization is active, delegate to a separate
+    /// NO_INLINE function. This keeps the common path (top_n_keys == 0) lean and avoids
+    /// code size bloat that causes instruction cache pressure for all aggregation queries.
+    if (params.top_n_keys > 0)
+    {
+        executeImplBatchTopN<prefetch>(
+            method, state, aggregates_pool, row_begin, row_end, aggregate_instructions,
+            no_more_keys, all_keys_are_const, use_compiled_functions, overflow_row);
+        return;
+    }
 
     /// Optimization for special case when aggregating by 8bit key.
     if (!no_more_keys)
@@ -1356,7 +1590,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         else if (!no_more_keys)
         {
-            const auto * key_col = state.getKeyColumn();
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
@@ -1371,24 +1604,12 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                if (params.top_n_keys > 0 && heap_queue->size() >= params.top_n_keys)
-                {
-                    if (heap_queue->shouldSkip(*key_col, i))
-                        continue;
-                }
-
                 auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
-                if (params.top_n_keys > 0 && emplace_result.isInserted())
-                    heap_queue->push(*key_col, i);
 
                 if (emplace_result.isInserted())
                     getInlineCountState(emplace_result.getMapped()) = 1;
                 else
                     ++getInlineCountState(emplace_result.getMapped());
-
-                /// Batch trim after emplace_result is no longer used.
-                if (params.top_n_keys > 0 && heap_queue->needsTrim())
-                    trimHeapAndPruneHashTable(method, false);
             }
         }
         else
@@ -1435,13 +1656,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
-    AggregateDataPtr temp = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-    createAggregateStates(temp);
-
     /// For all rows.
     if (!no_more_keys)
     {
-        const auto * key_col = state.getKeyColumn();
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;
@@ -1458,19 +1675,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
 
-            if (params.top_n_keys > 0 && heap_queue->size() >= params.top_n_keys)
-            {
-                if (heap_queue->shouldSkip(*key_col, i))
-                {
-                    places[i] = temp;
-                    continue;
-                }
-            }
-
             auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
-
-            if (params.top_n_keys > 0 && emplace_result.isInserted())
-                heap_queue->push(*key_col, i);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
@@ -1502,11 +1707,6 @@ void NO_INLINE Aggregator::executeImplBatch(
             else
                 aggregate_data = emplace_result.getMapped();
 
-            /// Batch trim after emplace_result is no longer used.
-            /// erase() may move cells via memcpy, invalidating emplace_result.
-            if (params.top_n_keys > 0 && heap_queue->needsTrim())
-                trimHeapAndPruneHashTable(method, !is_simple_count);
-
             assert(aggregate_data != nullptr);
             places[i] = aggregate_data;
         }
@@ -1526,12 +1726,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    /// When the top-N keys optimization is active, some rows may have been redirected
-    /// to a throwaway aggregate state (temp). The "equal keys range" optimization
-    /// (addBatchSinglePlace) must be disabled in this case, because it assumes all rows
-    /// belong to the single key — but skipped rows belong to no real group.
-    bool has_only_one_value = state.hasOnlyOneValueSinceLastReset() && params.top_n_keys == 0;
-
     executeAggregateInstructions(
         aggregates_pool,
         row_begin,
@@ -1539,7 +1733,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         aggregate_instructions,
         places.get(),
         key_start,
-        has_only_one_value,
+        state.hasOnlyOneValueSinceLastReset(),
         all_keys_are_const,
         use_compiled_functions);
 }

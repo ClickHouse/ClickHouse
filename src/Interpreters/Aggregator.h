@@ -427,6 +427,21 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
+    /// Separate NO_INLINE path for the top-N GROUP BY limit pushdown optimization.
+    /// Kept out of executeImplBatch to avoid inflating the code of the common (top_n_keys == 0) path.
+    template <bool prefetch, typename Method, typename State>
+    void NO_INLINE executeImplBatchTopN(
+        Method & method,
+        State & state,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        AggregateFunctionInstruction * aggregate_instructions,
+        bool no_more_keys,
+        bool all_keys_are_const,
+        bool use_compiled_functions,
+        AggregateDataPtr overflow_row) const;
+
     /// Trim the bounded heap back to capacity by batch-popping excess entries,
     /// erasing evicted keys from the hash table and destroying their aggregate states.
     /// Kept in a separate NO_INLINE method to avoid code bloat in executeImplBatch
