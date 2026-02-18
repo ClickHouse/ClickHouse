@@ -1,5 +1,4 @@
 #include <Server/MySQLHandler.h>
-#include <Server/TCPServer.h>
 
 #include <optional>
 #include <Core/MySQL/Authentication.h>

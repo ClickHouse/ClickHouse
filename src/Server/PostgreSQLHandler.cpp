@@ -1,6 +1,5 @@
 #include <memory>
 #include <Server/PostgreSQLHandler.h>
-#include <Server/TCPServer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>

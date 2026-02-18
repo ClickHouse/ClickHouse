@@ -42,13 +42,13 @@ TCPServer::TCPServer(
 void TCPServer::registerConnection(const Poco::Net::StreamSocket & sock)
 {
     std::lock_guard lock(connections_mutex);
-    registered_fds.insert(static_cast<int>(sock.impl()->sockfd()));
+    registered_fds.insert(sock.impl()->sockfd());
 }
 
 void TCPServer::unregisterConnection(const Poco::Net::StreamSocket & sock)
 {
     std::lock_guard lock(connections_mutex);
-    registered_fds.erase(static_cast<int>(sock.impl()->sockfd()));
+    registered_fds.erase(sock.impl()->sockfd());
 }
 
 void TCPServer::closeConnections()
