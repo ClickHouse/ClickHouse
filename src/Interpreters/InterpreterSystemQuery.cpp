@@ -72,6 +72,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <base/sleep.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -86,6 +87,14 @@
 #endif
 
 #include "config.h"
+
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#include <delta_kernel_ffi.hpp>
+namespace DB
+{
+    void tracingCallback(struct ffi::Event event);
+}
+#endif
 
 namespace CurrentMetrics
 {
@@ -130,6 +139,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
+    extern const int DELTA_KERNEL_ERROR;
 }
 
 namespace ActionLocks
@@ -704,6 +714,38 @@ BlockIO InterpreterSystemQuery::execute()
                 asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
             break;
         }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+            const auto & level_str = query.delta_kernel_tracing_level;
+            ffi::Level level;
+
+            if (level_str == "ERROR")
+                level = ffi::Level::ERROR;
+            else if (level_str == "WARN")
+                level = ffi::Level::WARN;
+            else if (level_str == "INFO")
+                level = ffi::Level::INFO;
+            else if (level_str == "DEBUG")
+                level = ffi::Level::DEBUG;
+            else if (level_str == "TRACE")
+                level = ffi::Level::TRACE;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
+
+            /// Reload tracing with the new level (can be called multiple times)
+            bool success = ffi::enable_event_tracing(tracingCallback, level);
+
+            if (success)
+                LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
+            else
+                throw Exception(ErrorCodes::DELTA_KERNEL_ERROR, "Failed to reload delta kernel tracing level to {}", level_str);
+
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Delta Kernel support is not enabled");
+#endif
+        }
         case Type::RECONNECT_ZOOKEEPER:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
@@ -1056,7 +1098,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
     }
 
-    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
+    replicated_db->restoreDatabaseInKeeper(getContext());
 
     LOG_TRACE(log, "Replicated database {} was restored.", database_name);
 }
@@ -1097,6 +1139,14 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     });
     table->is_being_restarted = true;
     table->flushAndShutdown();
+
+    /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
+    /// The table is removed from the in-memory tables map between detach and attach, making it
+    /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
+    std::optional<DatabaseReplicated::RestartReplicaGuard> restart_guard;
+    if (auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get()))
+        restart_guard.emplace(*replicated_db);
+
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -1131,15 +1181,26 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
             break;
         }
-        catch (...)
+        catch (const Coordination::Exception & e)
         {
+            /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
                 fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+
+            /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
         }
     }
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
+    restart_guard.reset();
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
 
@@ -2047,6 +2108,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            /// No access check required
             break;
         }
         case Type::RECONNECT_ZOOKEEPER:

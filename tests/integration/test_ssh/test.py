@@ -117,7 +117,7 @@ def test_create_table(started_cluster):
     execute_command_and_get_output("TRUNCATE test;")
     result = execute_command_and_get_output("SELECT * FROM test;")
     # Output should be empty
-    assert result.replace("\x00", "\n") == "\n"
+    assert result.replace("\x00", "") == ""
     execute_command_and_get_output("DROP TABLE IF EXISTS test;")
 
 

@@ -25,7 +25,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 
@@ -186,6 +185,7 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool update_sequential_consistency;
 }
+
 
 namespace MergeTreeSetting
 {
@@ -422,7 +422,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
     , cleanup_thread(*this)
-    , async_block_ids_cache(*this)
+    , deduplication_hashes_cache(*this, "deduplication_hashes")
+    , async_block_ids_cache(*this, "async_blocks")
     , part_check_thread(*this)
     , restarting_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
@@ -920,6 +921,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/alter_partition_version", String(), zkutil::CreateMode::Persistent));
     /// For deduplication of async inserts
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/async_blocks", String(), zkutil::CreateMode::Persistent));
+    /// For deduplication inserts
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/deduplication_hashes", String(), zkutil::CreateMode::Persistent));
     /// To track "lost forever" parts count, just for `system.replicas` table
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lost_part_count", String(), zkutil::CreateMode::Persistent));
 
@@ -1026,6 +1029,8 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/blocks", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/async_blocks", "",
+            zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/deduplication_hashes", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
             zkutil::CreateMode::Persistent));
@@ -1571,7 +1576,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 
     /// NOTE /block_numbers/ actually is not flat, because /block_numbers/<partition_id>/ may have ephemeral children,
     /// but we assume that all ephemeral block locks are already removed when table is being dropped.
-    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "async_blocks", "leader_election", "log", "mutations", "pinned_part_uuids"};
+    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "async_blocks", "deduplication_hashes", "leader_election", "log", "mutations", "pinned_part_uuids"};
 
     /// First try to remove paths that are known to be flat
     for (const auto * node : flat_nodes)
@@ -1716,6 +1721,12 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, local_context, old_metadata);
     new_metadata.setMetadataVersion(new_metadata_version);
 
+    /// Implicit statistics (auto_statistics_types) are not serialized to ZooKeeper,
+    /// so we need to re-add them after loading metadata from ZK.
+    auto settings = getSettings();
+    auto [auto_stats_types, _] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings);
+    addImplicitStatistics(new_metadata.columns, auto_stats_types);
+
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
@@ -1849,7 +1860,13 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         if (!getActiveContainingPart(missing_name))
             parts_to_fetch.push_back(missing_name);
 
-    paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
+    /// The paranoid check looks for parts that exist in ZooKeeper and are covered by another ZK part,
+    /// but don't exist in the in-memory data_parts set. When outdated parts are still being loaded
+    /// asynchronously, a covered part may exist on disk but not yet be in the data_parts set,
+    /// causing a false positive. Skip the check on the first (optimistic) call; it will run on the
+    /// second call after `waitForOutdatedPartsToBeLoaded` in `checkParts`.
+    if (!incomplete_list_of_outdated_parts)
+        paranoidCheckForCoveredPartsInZooKeeperOnStart(expected_parts_vec, parts_to_fetch);
 
     waitForUnexpectedPartsToBeLoaded();
 
@@ -2548,8 +2565,15 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                             zkutil::CreateMode::Persistent));
 
                         /// Deleting from `blocks`.
-                        if (!entry.block_id.empty() && zookeeper->exists(fs::path(zookeeper_path) / "blocks" / entry.block_id))
-                            ops.emplace_back(zkutil::makeRemoveRequest(fs::path(zookeeper_path) / "blocks" / entry.block_id, -1));
+                        for (const auto & block_hash : entry.deduplication_block_ids)
+                        {
+                            if (zookeeper->exists(fs::path(zookeeper_path) / "blocks" / block_hash))
+                                ops.emplace_back(zkutil::makeRemoveRequest(fs::path(zookeeper_path) / "blocks" / block_hash, -1));
+                            if (zookeeper->exists(fs::path(zookeeper_path) / "async_blocks" / block_hash))
+                                ops.emplace_back(zkutil::makeRemoveRequest(fs::path(zookeeper_path) / "async_blocks" / block_hash, -1));
+                            if (zookeeper->exists(fs::path(zookeeper_path) / "deduplication_hashes" / block_hash))
+                                ops.emplace_back(zkutil::makeRemoveRequest(fs::path(zookeeper_path) / "deduplication_hashes" / block_hash, -1));
+                        }
 
                         Coordination::Responses responses;
                         auto code = zookeeper->tryMulti(ops, responses);
@@ -5832,6 +5856,7 @@ void StorageReplicatedMergeTree::partialShutdown()
     mutations_finalizing_task->deactivate();
 
     cleanup_thread.stop();
+    deduplication_hashes_cache.stop();
     async_block_ids_cache.stop();
     part_check_thread.stop();
 
@@ -5991,7 +6016,7 @@ void StorageReplicatedMergeTree::read(
         readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
         return;
     }
-    /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
+    /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
     if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
     {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
@@ -7943,11 +7968,13 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         missing_parts.clear();
 
+        std::mutex missing_parts_mutex; /// Must be created before runner, so it outlives it
         ThreadPoolCallbackRunnerLocal<void> fetch_partition_runner(getFetchPartitionThreadPool().get(), ThreadName::MERGETREE_FETCH_PARTITION);
-        std::mutex missing_parts_mutex;
+
         for (const String & part : parts_to_fetch)
         {
-            fetch_partition_runner.enqueueAndKeepTrack([&]()
+            /// Passing by reference here is ok. All passed variables are created before the runner, so they will outlive it
+            fetch_partition_runner.enqueueAndKeepTrack([this, &part, &metadata_snapshot, &from_zookeeper_name, &best_replica_path, &zookeeper, &missing_parts_mutex, &missing_parts]()
             {
                 bool fetched = false;
 
@@ -8619,6 +8646,7 @@ void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
 {
     getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "blocks");
     getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "async_blocks");
+    getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "deduplication_hashes");
 }
 
 void StorageReplicatedMergeTree::getClearBlocksInPartitionOpsImpl(
@@ -8677,6 +8705,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     }
 
     async_block_ids_cache.truncate();
+    deduplication_hashes_cache.truncate();
 
     LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
               delete_requests.size(), partition_id, min_block_num, max_block_num);

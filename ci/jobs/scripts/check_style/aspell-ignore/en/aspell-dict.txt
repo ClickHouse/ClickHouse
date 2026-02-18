@@ -260,6 +260,7 @@ DataLakeCatalog
 DataLens
 DataPacket
 DataPup
+DataStoria
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -348,6 +349,8 @@ FIPS
 FOSDEM
 FQDN
 Failover
+FailPoint
+Failpoints
 FarmHash
 FastFormats
 FileCluster
@@ -378,6 +381,8 @@ ForEach
 FreeBSD
 Fuzzer
 Fuzzers
+failpoint
+failpoints
 GHCN
 GTID
 GTest
@@ -3588,3 +3593,6 @@ readWKT
 readWKB
 WKT
 WKB
+lifecycle
+unsampled
+queueing

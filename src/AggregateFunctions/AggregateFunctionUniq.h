@@ -25,6 +25,7 @@
 #include <AggregateFunctions/UniqExactSet.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace ErrorCodes
 {

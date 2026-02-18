@@ -31,7 +31,7 @@ def bootstrap():
         engine=ReplicatedMergeTree()
         order by (k1, k2, k3, k4)
         partition by (p)
-        settings index_granularity=1, primary_key_lazy_load=0, distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_size_to_activate=0
+        settings index_granularity=1, primary_key_lazy_load=0, distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate=0
         """)
 
     for node in cluster.instances.values():
