@@ -30,6 +30,7 @@ BASE_CASES = [
     "03913_tuple_inside_nullable_subcolumns",
     "03915_tuple_inside_nullable_variant_dynamic_element",
     "03916_tuple_inside_nullable_json_subcolumns",
+    "03917_tuple_inside_nullable_tuple_subcolumns",
 ]
 
 # When the setting is disabled, some queries throw errors; when it is enabled, they do not.
