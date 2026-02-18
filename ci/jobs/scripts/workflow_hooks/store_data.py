@@ -51,14 +51,14 @@ if __name__ == "__main__":
 
         # Get 10 previous commits from master after the base commit
         master_commits = Shell.get_output(
-            "git rev-list origin/master --max-count=100", verbose=True
+            "git rev-list --reverse origin/master --max-count=100", verbose=True
         ).splitlines()
         if merge_base_commit_sha in master_commits:
             idx = master_commits.index(merge_base_commit_sha)
-            prev_10_commits = master_commits[idx:idx+10]
+            prev_30_commits = master_commits[idx:idx+31]
         else:
-            prev_10_commits = master_commits[:10]
-        info.store_kv_data("master_commits_after_merge_base", prev_10_commits)
+            prev_30_commits = master_commits[:31]
+        info.store_kv_data("master_commits_after_merge_base", prev_30_commits)
     except Exception as e:
         print(f"Failed to get merge base or previous master commits via git: {e}")
 

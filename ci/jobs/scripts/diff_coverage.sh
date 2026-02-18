@@ -45,12 +45,12 @@ mv llvm_coverage.info current_llvm_coverage.info
 CURRENT_COMMIT=${CURRENT_COMMIT}
 BASE_COMMIT=${BASE_COMMIT}
 
-# Try to find .info file from S3, checking up to 10 ancestor commits
+# Try to find .info file from S3, checking up to 30 ancestor commits
 FOUND=0
 ATTEMPT=0
-MAX_ATTEMPTS=10
+MAX_ATTEMPTS=30
 
-IFS=',' read -ra COMMITS <<< "${PREV_10_COMMITS}"
+IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
 
 FOUND=0
 for TEST_COMMIT in "${COMMITS[@]}"; do
@@ -67,7 +67,7 @@ done
 
 
 if [ $FOUND -eq 0 ]; then
-echo "Warning: Could not find coverage file after checking ${ATTEMPT} commits"
+echo "Warning: Could not find coverage file after checking ${MAX_ATTEMPTS} commits"
 echo "Skipping differential coverage analysis"
 exit 0
 fi
@@ -90,16 +90,16 @@ done
 patterns=()
 while IFS= read -r f; do
   [ -n "$f" ] && patterns+=("*$f")
-done < changed_files.txt
+done < changed_files
 
 
 lcov --extract current_llvm_coverage.info  "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt \
-  -o current.changed.info
+  -o current.changed.info 2>/dev/null
 
 lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt \
-  -o baseline.changed.info
+  -o baseline.changed.info 2>/dev/null
 
 echo Workspace path: $WORKSPACE_PATH
 
