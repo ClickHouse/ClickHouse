@@ -37,10 +37,9 @@ public:
 private:
     static int createEventFd();
 
-    mutable std::mutex mutex;
     std::promise<Poco::Net::Socket> promise;
     std::shared_future<Poco::Net::Socket> future;
-    int event_fd = -1;
+    int event_fd;
     LoggerPtr log = getLogger("FutureConnection");
 };
 

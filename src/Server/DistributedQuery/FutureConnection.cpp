@@ -20,7 +20,7 @@ FutureConnection::FutureConnection()
     : future(promise.get_future())
     , event_fd(createEventFd())
 {
-    LOG_TRACE(log, "Created FutureConnection (eventfd will be created lazily if needed)");
+    LOG_TRACE(log, "Created FutureConnection");
 }
 
 FutureConnection::~FutureConnection()
