@@ -31,7 +31,6 @@ SerializationTime64::SerializationTime64(UInt32 scale_, const DataTypeTime64 & /
 {
 }
 
-SerializationTime64::~SerializationTime64() = default;
 
 UInt128 SerializationTime64::getHash() const
 {

@@ -23,7 +23,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-SerializationSparse::~SerializationSparse() = default;
 
 UInt128 SerializationSparse::getHash() const
 {
@@ -33,7 +32,6 @@ UInt128 SerializationSparse::getHash() const
     return hash.get128();
 }
 
-SerializationSparseNullMap::~SerializationSparseNullMap() = default;
 
 UInt128 SerializationSparseNullMap::getHash() const
 {

@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-SerializationAggregateFunction::~SerializationAggregateFunction() = default;
 
 UInt128 SerializationAggregateFunction::getHash() const
 {

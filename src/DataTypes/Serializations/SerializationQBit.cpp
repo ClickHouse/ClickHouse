@@ -32,7 +32,6 @@ extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-SerializationQBit::~SerializationQBit() = default;
 
 UInt128 SerializationQBit::getHash() const
 {

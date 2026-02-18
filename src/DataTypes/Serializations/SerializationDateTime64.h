@@ -19,7 +19,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationDateTime64() override;
 
     UInt128 getHash() const override;
 

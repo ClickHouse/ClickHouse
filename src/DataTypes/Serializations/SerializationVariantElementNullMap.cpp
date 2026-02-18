@@ -36,7 +36,6 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
     }
 };
 
-SerializationVariantElementNullMap::~SerializationVariantElementNullMap() = default;
 
 UInt128 SerializationVariantElementNullMap::getHash() const
 {

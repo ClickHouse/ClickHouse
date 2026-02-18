@@ -381,9 +381,6 @@ UInt128 SerializationJSON<Parser>::getHash() const
     return hash.get128();
 }
 
-template <typename Parser>
-SerializationJSON<Parser>::~SerializationJSON() = default;
-
 #if USE_SIMDJSON
 template class SerializationJSON<SimdJSONParser>;
 #endif

@@ -36,7 +36,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationVariantElement() override;
 
     UInt128 getHash() const override
     {

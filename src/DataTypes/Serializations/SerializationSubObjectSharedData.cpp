@@ -38,7 +38,6 @@ SerializationPtr SerializationSubObjectSharedData::create(
     return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
 }
 
-SerializationSubObjectSharedData::~SerializationSubObjectSharedData() = default;
 
 UInt128 SerializationSubObjectSharedData::getHash() const
 {

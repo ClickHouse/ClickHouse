@@ -24,7 +24,6 @@ UInt128 SerializationObjectTypedPath::getHash() const
     return hash.get128();
 }
 
-SerializationObjectTypedPath::~SerializationObjectTypedPath() = default;
 
 void SerializationObjectTypedPath::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,

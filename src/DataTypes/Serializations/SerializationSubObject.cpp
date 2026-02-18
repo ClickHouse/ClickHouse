@@ -23,7 +23,6 @@ SerializationSubObject::SerializationSubObject(
 {
 }
 
-SerializationSubObject::~SerializationSubObject() = default;
 
 UInt128 SerializationSubObject::getHash() const
 {

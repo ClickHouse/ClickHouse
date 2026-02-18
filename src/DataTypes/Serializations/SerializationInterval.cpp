@@ -42,7 +42,6 @@ SerializationInterval::SerializationInterval(IntervalKind interval_kind_) : inte
 {
 }
 
-SerializationInterval::~SerializationInterval() = default;
 
 UInt128 SerializationInterval::getHash() const
 {

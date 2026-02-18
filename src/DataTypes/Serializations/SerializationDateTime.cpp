@@ -28,7 +28,6 @@ UInt128 SerializationDateTime::getHash() const
     return hash.get128();
 }
 
-SerializationDateTime::~SerializationDateTime() = default;
 
 UInt128 SerializationTime::getHash() const
 {
@@ -37,7 +36,6 @@ UInt128 SerializationTime::getHash() const
     return hash.get128();
 }
 
-SerializationTime::~SerializationTime() = default;
 
 namespace
 {

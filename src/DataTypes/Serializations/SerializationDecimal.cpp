@@ -141,9 +141,6 @@ UInt128 SerializationDecimal<T>::getHash() const
     return hash.get128();
 }
 
-template <typename T>
-SerializationDecimal<T>::~SerializationDecimal() = default;
-
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;
 template class SerializationDecimal<Decimal128>;

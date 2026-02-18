@@ -13,7 +13,6 @@ SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVer
 {
 }
 
-SerializationStringSize::~SerializationStringSize() = default;
 
 UInt128 SerializationStringSize::getHash() const
 {

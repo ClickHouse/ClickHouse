@@ -36,7 +36,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationSparse() override;
 
     UInt128 getHash() const override;
 
@@ -157,7 +156,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationSparseNullMap() override;
 
     UInt128 getHash() const override;
 

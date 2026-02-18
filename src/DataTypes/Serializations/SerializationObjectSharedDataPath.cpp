@@ -51,7 +51,6 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
     }
 };
 
-SerializationObjectSharedDataPath::~SerializationObjectSharedDataPath() = default;
 
 void SerializationObjectSharedDataPath::enumerateStreams(
     ISerialization::EnumerateStreamsSettings & settings,

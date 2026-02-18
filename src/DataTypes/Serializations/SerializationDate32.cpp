@@ -17,7 +17,6 @@ UInt128 SerializationDate32::getHash() const
     return hash.get128();
 }
 
-SerializationDate32::~SerializationDate32() = default;
 
 void SerializationDate32::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {

@@ -34,7 +34,6 @@ UInt128 SerializationNullable::getHash() const
     return hash.get128();
 }
 
-SerializationNullable::~SerializationNullable() = default;
 
 void SerializationNullable::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const

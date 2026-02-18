@@ -47,7 +47,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationEnum() override;
 
     UInt128 getHash() const override
     {

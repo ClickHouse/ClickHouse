@@ -28,7 +28,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationAggregateFunction() override;
     UInt128 getHash() const override;
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.

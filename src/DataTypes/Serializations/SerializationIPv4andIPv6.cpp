@@ -184,9 +184,6 @@ void SerializationIP<IPv>::deserializeBinaryBulk(DB::IColumn & column, DB::ReadB
     x.resize(initial_size + size / sizeof(IPv));
 }
 
-template <typename IPv>
-SerializationIP<IPv>::~SerializationIP() = default;
-
 template class SerializationIP<IPv4>;
 template class SerializationIP<IPv6>;
 

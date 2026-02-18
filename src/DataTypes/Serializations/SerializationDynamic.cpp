@@ -33,7 +33,6 @@ UInt128 SerializationDynamic::getHash() const
     return hash.get128();
 }
 
-SerializationDynamic::~SerializationDynamic() = default;
 
 struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryBulkState
 {

@@ -61,7 +61,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationQBit() override;
 
     UInt128 getHash() const override;
 

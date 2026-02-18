@@ -5,7 +5,6 @@
 namespace DB
 {
 
-SerializationArrayOffsets::~SerializationArrayOffsets() = default;
 
 UInt128 SerializationArrayOffsets::getHash() const
 {

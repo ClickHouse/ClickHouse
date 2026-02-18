@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-SerializationVariant::~SerializationVariant() = default;
 
 UInt128 SerializationVariant::getHash() const
 {

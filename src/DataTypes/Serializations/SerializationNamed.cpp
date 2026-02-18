@@ -20,7 +20,6 @@ SerializationNamed::SerializationNamed(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SerializationNamed doesn't support substream type {}", substream_type);
 }
 
-SerializationNamed::~SerializationNamed() = default;
 
 void SerializationNamed::enumerateStreams(
     EnumerateStreamsSettings & settings,

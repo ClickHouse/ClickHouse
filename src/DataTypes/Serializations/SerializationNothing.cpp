@@ -20,7 +20,6 @@ UInt128 SerializationNothing::getHash() const
     return hash.get128();
 }
 
-SerializationNothing::~SerializationNothing() = default;
 
 void SerializationNothing::throwNoSerialization()
 {

@@ -19,7 +19,6 @@ SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::ve
     shared_data_paths_serialization = shared_data_type->getSubcolumnSerialization("paths", shared_data_type->getDefaultSerialization());
 }
 
-SerializationObjectDistinctPaths::~SerializationObjectDistinctPaths() = default;
 
 UInt128 SerializationObjectDistinctPaths::getHash() const
 {

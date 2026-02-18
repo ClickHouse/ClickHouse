@@ -220,9 +220,6 @@ void SerializationEnum<Type>::serializeTextMarkdown(
         serializeTextEscaped(column, row_num, ostr, settings);
 }
 
-template <typename Type>
-SerializationEnum<Type>::~SerializationEnum() = default;
-
 template class SerializationEnum<Int8>;
 template class SerializationEnum<Int16>;
 

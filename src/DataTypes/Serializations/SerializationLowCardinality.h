@@ -20,7 +20,6 @@ private:
 public:
     static SerializationPtr create(const DataTypePtr & dictionary_type);
 
-    ~SerializationLowCardinality() override;
 
     UInt128 getHash() const override;
 

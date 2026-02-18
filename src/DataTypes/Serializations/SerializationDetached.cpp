@@ -20,7 +20,6 @@ SerializationDetached::SerializationDetached(const SerializationPtr & nested_) :
 {
 }
 
-SerializationDetached::~SerializationDetached() = default;
 
 UInt128 SerializationDetached::getHash() const
 {

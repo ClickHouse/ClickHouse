@@ -44,7 +44,6 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     }
 };
 
-SerializationObjectDynamicPath::~SerializationObjectDynamicPath() = default;
 
 UInt128 SerializationObjectDynamicPath::getHash() const
 {

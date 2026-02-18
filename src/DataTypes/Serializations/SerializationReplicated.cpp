@@ -22,7 +22,6 @@ SerializationReplicated::SerializationReplicated(const SerializationPtr & nested
 {
 }
 
-SerializationReplicated::~SerializationReplicated() = default;
 
 UInt128 SerializationReplicated::getHash() const
 {

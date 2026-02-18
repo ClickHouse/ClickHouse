@@ -18,7 +18,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationDate32() override;
 
     UInt128 getHash() const override;
 

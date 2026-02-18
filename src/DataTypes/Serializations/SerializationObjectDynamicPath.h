@@ -23,7 +23,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-    ~SerializationObjectDynamicPath() override;
     UInt128 getHash() const override;
 
     void enumerateStreams(

@@ -33,7 +33,6 @@ public:
         return ptr;
     }
 
-    ~SerializationJSON() override;
 
     UInt128 getHash() const override;
 

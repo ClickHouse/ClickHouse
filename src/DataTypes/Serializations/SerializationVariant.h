@@ -79,7 +79,6 @@ private:
 public:
     static SerializationPtr create(const DataTypes & variant_types_, const String & variant_name_);
 
-    ~SerializationVariant() override;
 
     UInt128 getHash() const override;
 

@@ -38,7 +38,6 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     }
 };
 
-SerializationDynamicElement::~SerializationDynamicElement() = default;
 
 void SerializationDynamicElement::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
