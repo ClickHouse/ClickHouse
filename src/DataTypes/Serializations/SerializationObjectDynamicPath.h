@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 
 namespace DB
@@ -11,8 +12,22 @@ namespace DB
 /// Typed paths 'a.b' and 'b.c' are serialized in SerializationObjectTypedPath.
 class SerializationObjectDynamicPath final : public SerializationWrapper
 {
-public:
+private:
     SerializationObjectDynamicPath(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_);
+
+public:
+    static SerializationPtr create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_)
+    {
+        auto ptr = SerializationPtr(new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationObjectDynamicPath() override;
+
+    String getName() const override
+    {
+        return "ObjectDynamicPath(" + nested_serialization->getName() + ", " + path + ", " + path_subcolumn + ")";
+    }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -12,10 +13,22 @@ public:
     using ElementSerializationPtr = std::shared_ptr<const SerializationNamed>;
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
+private:
     SerializationTuple(const ElementSerializations & elems_, bool has_explicit_names_)
         : elems(elems_), has_explicit_names(has_explicit_names_)
     {
     }
+
+public:
+    static SerializationPtr create(const ElementSerializations & elems_, bool has_explicit_names_)
+    {
+        auto ptr = SerializationPtr(new SerializationTuple(elems_, has_explicit_names_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationTuple() override;
+
+    String getName() const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

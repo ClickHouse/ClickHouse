@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <Formats/JSONExtractTree.h>
 #include <Common/ObjectPool.h>
@@ -11,13 +12,27 @@ namespace DB
 template <typename Parser>
 class SerializationJSON : public SerializationObject
 {
-public:
+private:
     SerializationJSON(
         const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
         std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_);
+
+public:
+    static SerializationPtr create(
+        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const std::unordered_set<String> & paths_to_skip_,
+        const std::vector<String> & path_regexps_to_skip_,
+        const DataTypePtr & dynamic_type_,
+        std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
+    {
+        auto ptr = SerializationPtr(new SerializationJSON(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, std::move(json_extract_tree_)));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationJSON() override;
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

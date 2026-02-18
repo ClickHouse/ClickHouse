@@ -29,6 +29,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+String SerializationArray::getName() const
+{
+    return "Array(" + nested->getName() + ")";
+}
+
+SerializationArray::~SerializationArray()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
@@ -246,7 +256,7 @@ DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & pre
 
 SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationArray>(prev);
+    return SerializationArray::create(prev);
 }
 
 ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -264,8 +274,8 @@ void SerializationArray::enumerateStreams(
     auto offsets = column_array ? column_array->getOffsetsPtr() : nullptr;
 
     auto subcolumn_name = "size" + std::to_string(settings.array_level);
-    auto offsets_serialization = std::make_shared<SerializationNamed>(
-        std::make_shared<SerializationArrayOffsets>(),
+    auto offsets_serialization = SerializationNamed::create(
+        SerializationArrayOffsets::create(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
@@ -339,7 +349,7 @@ void SerializationArray::serializeOffsetsBinaryBulk(
         if (settings.position_independent_encoding)
             serializeArraySizesPositionIndependent(offsets_column, *stream, offset, limit);
         else
-            SerializationNumber<ColumnArray::Offset>().serializeBinaryBulk(offsets_column, *stream, offset, limit);
+            SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, *stream, offset, limit);
     }
 }
 
@@ -419,7 +429,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(*offsets_column->assumeMutable(), *stream, limit);
         else
-            SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
+            SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
 
         /// Verify offsets if the data comes over the network
         if (settings.native_format)

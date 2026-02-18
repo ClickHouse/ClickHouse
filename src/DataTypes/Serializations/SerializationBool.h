@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -9,8 +10,19 @@ class IColumn;
 
 class SerializationBool final : public SerializationWrapper
 {
-public:
+private:
     explicit SerializationBool(const SerializationPtr & nested_);
+
+public:
+    static SerializationPtr create(const SerializationPtr & nested_)
+    {
+        auto ptr = SerializationPtr(new SerializationBool(nested_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationBool() override;
+
+    String getName() const override;
 
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 

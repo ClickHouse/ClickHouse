@@ -314,8 +314,8 @@ protected:
                 /// serialization_hint
                 if (columns_mask[src_index++])
                 {
-                    if (auto it = serialization_hints.find(column.name); it != serialization_hints.end())
-                        res_columns[res_index++]->insert(ISerialization::kindStackToString(it->second->getKindStack()));
+                    if (auto ptr = serialization_hints.tryGet(column.name); ptr)
+                        res_columns[res_index++]->insert(ISerialization::kindStackToString(ptr->getKindStack()));
                     else
                         res_columns[res_index++]->insertDefault();
                 }

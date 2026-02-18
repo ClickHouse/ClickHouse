@@ -76,7 +76,7 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
 {
     if (prev_type && !prev_type->canBeInsideNullable())
         return prev_serialization;
-    return std::make_shared<SerializationNullable>(prev_serialization);
+    return SerializationNullable::create(prev_serialization);
 }
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const

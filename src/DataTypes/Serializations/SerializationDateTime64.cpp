@@ -25,6 +25,16 @@ SerializationDateTime64::SerializationDateTime64(
 {
 }
 
+String SerializationDateTime64::getName() const
+{
+    return "DateTime64(" + std::to_string(scale) + ")";
+}
+
+SerializationDateTime64::~SerializationDateTime64()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 void SerializationDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto value = assert_cast<const ColumnType &>(column).getData()[row_num];

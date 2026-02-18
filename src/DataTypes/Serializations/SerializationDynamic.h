@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnDynamic.h>
 
@@ -11,10 +12,21 @@ class SerializationDynamicElement;
 
 class SerializationDynamic : public ISerialization
 {
-public:
+private:
     explicit SerializationDynamic(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES) : max_dynamic_types(max_dynamic_types_)
     {
     }
+
+public:
+    static SerializationPtr create(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
+    {
+        auto ptr = SerializationPtr(new SerializationDynamic(max_dynamic_types_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationDynamic() override;
+
+    String getName() const override;
 
     struct SerializationVersion
     {

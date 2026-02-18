@@ -5,6 +5,7 @@
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -29,6 +30,8 @@ namespace ErrorCodes
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int LOGICAL_ERROR;
 }
+
+ISerialization::~ISerialization() = default;
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
 {

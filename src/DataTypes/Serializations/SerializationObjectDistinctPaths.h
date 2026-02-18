@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 
@@ -16,8 +17,19 @@ namespace ErrorCodes
 /// It reads only streams that contain path names.
 class SerializationObjectDistinctPaths final : public SimpleTextSerialization
 {
-public:
+private:
     explicit SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_);
+
+public:
+    static SerializationPtr create(const std::vector<String> & typed_paths_)
+    {
+        auto ptr = SerializationPtr(new SerializationObjectDistinctPaths(typed_paths_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationObjectDistinctPaths() override;
+
+    String getName() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

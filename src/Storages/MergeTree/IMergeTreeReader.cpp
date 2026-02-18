@@ -353,8 +353,8 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     }
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return IDataType::getSerialization(*column_in_part, *it->second);
+    if (auto ptr = infos.tryGet(column_in_part->getNameInStorage()); ptr)
+        return IDataType::getSerialization(*column_in_part, *ptr);
 
     return IDataType::getSerialization(*column_in_part, infos.getSettings());
 }

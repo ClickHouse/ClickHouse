@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 
@@ -17,8 +18,19 @@ namespace ErrorCodes
 /// this class will be responsible for reading sub-object a.b and will read JSON column with data {"c" : 43, "d" : "Hello"}.
 class SerializationSubObject final : public SimpleTextSerialization
 {
-public:
+private:
     SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type);
+
+public:
+    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type)
+    {
+        auto ptr = SerializationPtr(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationSubObject() override;
+
+    String getName() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

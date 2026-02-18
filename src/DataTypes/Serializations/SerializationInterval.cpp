@@ -42,6 +42,15 @@ SerializationInterval::SerializationInterval(IntervalKind interval_kind_) : inte
 {
 }
 
+SerializationInterval::~SerializationInterval()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationInterval::getName() const
+{
+    return "Interval" + std::string(interval_kind.toString());
+}
 
 void SerializationInterval::serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
 {

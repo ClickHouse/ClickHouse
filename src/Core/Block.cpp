@@ -952,11 +952,11 @@ Serializations Block::getSerializations(const SerializationInfoByName & hints) c
 
     for (const auto & column : data)
     {
-        auto it = hints.find(column.name);
-        if (it == hints.end())
+        auto ptr = hints.tryGet(column.name);
+        if (!ptr)
             res.push_back(column.type->getSerialization(hints.getSettings()));
         else
-            res.push_back(column.type->getSerialization(*it->second));
+            res.push_back(column.type->getSerialization(*ptr));
     }
 
     return res;

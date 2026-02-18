@@ -20,6 +20,11 @@ SerializationNamed::SerializationNamed(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SerializationNamed doesn't support substream type {}", substream_type);
 }
 
+SerializationNamed::~SerializationNamed()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 void SerializationNamed::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,

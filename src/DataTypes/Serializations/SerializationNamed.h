@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 
 namespace DB
@@ -15,8 +16,21 @@ private:
     String name;
     SubstreamType substream_type;
 
-public:
     SerializationNamed(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
+
+public:
+    static SerializationPtr create(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_)
+    {
+        auto ptr = SerializationPtr(new SerializationNamed(nested_, name_, substream_type_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationNamed() override;
+
+    String getName() const override
+    {
+        return "Named(" + nested_serialization->getName() + ", " + name + ", " + std::to_string(static_cast<int>(substream_type)) + ")";
+    }
 
     const String & getElementName() const { return name; }
 
@@ -69,7 +83,7 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
         SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override
         {
-            return std::make_shared<SerializationNamed>(prev, name, substream_type);
+            return SerializationNamed::create(prev, name, substream_type);
         }
     };
 

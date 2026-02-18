@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 
@@ -72,7 +73,15 @@ public:
 
     using VariantSerializations = std::vector<SerializationPtr>;
 
+private:
     explicit SerializationVariant(const DataTypes & variant_types_, const String & variant_name_);
+
+public:
+    static SerializationPtr create(const DataTypes & variant_types_, const String & variant_name_);
+
+    ~SerializationVariant() override;
+
+    String getName() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

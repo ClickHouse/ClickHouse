@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
@@ -46,13 +47,23 @@ private:
     void dispatchByElementSize(Func && func) const;
 
 
-public:
     SerializationQBit(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
         : nested(nested_)
         , element_size(element_size_)
         , dimension(dimension_)
     {
     }
+
+public:
+    static SerializationPtr create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
+    {
+        auto ptr = SerializationPtr(new SerializationQBit(nested_, element_size_, dimension_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationQBit() override;
+
+    String getName() const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 

@@ -649,7 +649,7 @@ getColumnsForNewDataPart(
         if (!updated_header.has(new_name))
         {
             if (isWidePart(source_part))
-                new_serialization_infos.emplace(new_name, old_info);
+                new_serialization_infos.add(new_name, old_info);
             continue;
         }
 
@@ -662,12 +662,12 @@ getColumnsForNewDataPart(
         auto new_info = new_type->createSerializationInfo(settings);
         if (!old_info->structureEquals(*new_info))
         {
-            new_serialization_infos.emplace(new_name, std::move(new_info));
+            new_serialization_infos.add(new_name, new_info);
             continue;
         }
 
         new_info = old_info->createWithType(*old_type, *new_type, settings);
-        new_serialization_infos.emplace(new_name, std::move(new_info));
+        new_serialization_infos.add(new_name, new_info);
     }
 
     /// In compact parts we read all columns, because they all stored in a single file

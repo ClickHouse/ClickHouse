@@ -95,7 +95,7 @@ using SerializationInfos = std::vector<SerializationInfoPtr>;
 using MutableSerializationInfos = std::vector<MutableSerializationInfoPtr>;
 
 /// The order is important because info is serialized to part metadata.
-class SerializationInfoByName : public std::map<String, MutableSerializationInfoPtr>
+class SerializationInfoByName
 {
 public:
     using Settings = SerializationInfoSettings;
@@ -106,9 +106,12 @@ public:
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
     void add(const String & name, const SerializationInfo & info);
+    void add(const String & name, const MutableSerializationInfoPtr & info);
 
     void remove(const SerializationInfoByName & other);
     void remove(const String & name, const SerializationInfo & info);
+
+    void erase(const String & name) { storage.erase(name); }
 
     SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);
@@ -130,8 +133,12 @@ public:
     bool needsPersistence() const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
-
     static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
+
+    auto begin() const { return storage.begin(); }
+    auto end() const { return storage.end(); }
+    auto begin() { return storage.begin(); }
+    auto end() { return storage.end(); }
 
 private:
     /// This field stores all configuration options that are not tied to a
@@ -154,6 +161,7 @@ private:
     ///   or other engines, the correct settings must always be provided for
     ///   consistent serialization behavior.
     Settings settings;
+    std::map<String, MutableSerializationInfoPtr> storage;
 };
 
 }

@@ -4,6 +4,11 @@
 namespace DB
 {
 
+String SerializationWrapper::getName() const
+{
+    return nested_serialization->getName();
+}
+
 void SerializationWrapper::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,

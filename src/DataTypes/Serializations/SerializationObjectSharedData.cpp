@@ -31,6 +31,22 @@ SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersio
 {
 }
 
+SerializationPtr SerializationObjectSharedData::create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
+{
+    auto ptr = SerializationPtr(new SerializationObjectSharedData(serialization_version_, dynamic_type_, buckets_));
+    return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+}
+
+SerializationObjectSharedData::~SerializationObjectSharedData()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationObjectSharedData::getName() const
+{
+    return "ObjectSharedData(" + std::to_string(static_cast<int>(serialization_version.value)) + ", " + dynamic_type->getName() + ", " + std::to_string(buckets) + ")";
+}
+
 SerializationObjectSharedData::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))
 {
     checkVersion(version);
@@ -478,7 +494,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 
         const auto & values_column = shared_data_tuple_column.getColumn(1);
         if (nested_limit)
-            SerializationString().serializeBinaryBulk(values_column, *copy_values_stream, nested_offset, nested_limit);
+            SerializationString::create()->serializeBinaryBulk(values_column, *copy_values_stream, nested_offset, nested_limit);
         settings.path.pop_back();
 
         settings.path.pop_back();
@@ -1256,7 +1272,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
-            SerializationString().deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
+            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, skipped_nested_rows, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1378,7 +1394,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
-            SerializationString().deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
+            SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_offset, nested_limit, 0);
             settings.path.pop_back();
 
             settings.path.pop_back();

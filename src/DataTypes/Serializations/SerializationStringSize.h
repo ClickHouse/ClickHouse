@@ -10,8 +10,19 @@ namespace DB
 /// Enables the `.size` subcolumn for string columns.
 class SerializationStringSize final : public SerializationNumber<UInt64>
 {
-public:
+private:
     explicit SerializationStringSize(MergeTreeStringSerializationVersion version_);
+
+public:
+    static SerializationPtr create(MergeTreeStringSerializationVersion version_)
+    {
+        auto ptr = SerializationPtr(new SerializationStringSize(version_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationStringSize() override;
+
+    String getName() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -35,7 +46,7 @@ private:
     MergeTreeStringSerializationVersion version;
 
     /// Helper to access base string serialization logic.
-    SerializationString serialization_string;
+    SerializationPtr serialization_string;
 
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
     void deserializeBinaryBulkWithSizeStream(

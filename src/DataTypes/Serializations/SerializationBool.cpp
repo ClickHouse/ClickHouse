@@ -19,6 +19,16 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BOOL;
 }
 
+String SerializationBool::getName() const
+{
+    return "Bool";
+}
+
+SerializationBool::~SerializationBool()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 namespace
 {
 

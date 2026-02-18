@@ -372,6 +372,12 @@ void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer
     deserializeObject(column, object_view, settings);
 }
 
+template <typename Parser>
+SerializationJSON<Parser>::~SerializationJSON()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 #if USE_SIMDJSON
 template class SerializationJSON<SimdJSONParser>;
 #endif

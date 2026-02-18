@@ -29,6 +29,16 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+String SerializationString::getName() const
+{
+    return "String(" + std::to_string(static_cast<int>(version)) + ")";
+}
+
+SerializationString::~SerializationString()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();
@@ -326,7 +336,7 @@ void SerializationString::enumerateStreamsWithoutSize(
             sizes_column = column_string->createSizeSubcolumn();
         }
 
-        auto sizes_serialization = std::make_shared<SerializationStringSize>(version);
+        auto sizes_serialization = SerializationStringSize::create(version);
 
         /// Inlined size stream
         settings.path.push_back(Substream::InlinedStringSizes);
@@ -663,7 +673,7 @@ void SerializationString::enumerateStreamsWithSize(
         sizes_column = column_string->createSizeSubcolumn();
     }
 
-    auto sizes_serialization= std::make_shared<SerializationStringSize>(version);
+    auto sizes_serialization = SerializationStringSize::create(version);
 
     /// Size stream
     settings.path.push_back(Substream::StringSizes);
@@ -794,7 +804,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
             string_state->size_column = ColumnUInt64::create();
 
         size_t prev_size = string_state->size_column->size();
-        SerializationNumber<UInt64>().deserializeBinaryBulk(
+        SerializationNumber<UInt64>::create()->deserializeBinaryBulk(
             *string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
         num_read_rows = string_state->size_column->size() - prev_size;
         /// We are not going to apply rows_offsets to sizes column here, so we can put it as is in the cache.

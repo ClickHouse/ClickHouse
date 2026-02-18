@@ -63,7 +63,7 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationDateTime64>(scale, *this);
+    return SerializationDateTime64::create(scale, *this);
 }
 
 std::string getDateTimeTimezone(const IDataType & data_type)

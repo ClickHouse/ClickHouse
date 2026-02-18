@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -25,8 +26,19 @@ namespace DB
 /// null map is not written but can be restored from offsets.
 class SerializationSparse final : public ISerialization
 {
-public:
+private:
     explicit SerializationSparse(const SerializationPtr & nested_);
+
+public:
+    static SerializationPtr create(const SerializationPtr & nested_)
+    {
+        auto ptr = SerializationPtr(new SerializationSparse(nested_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationSparse() override;
+
+    String getName() const override;
 
     KindStack getKindStack() const override;
 
@@ -133,8 +145,21 @@ private:
 /// methods and builds a null map in full serialization from offset of Sparse column.
 class SerializationSparseNullMap final : public SerializationNumber<UInt8>
 {
+private:
+    SerializationSparseNullMap() = default;
+
 public:
     using Base = SerializationNumber<UInt8>;
+
+    static SerializationPtr create()
+    {
+        auto ptr = SerializationPtr(new SerializationSparseNullMap());
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationSparseNullMap() override;
+
+    String getName() const override;
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,

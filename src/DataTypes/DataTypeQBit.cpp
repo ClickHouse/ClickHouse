@@ -81,7 +81,7 @@ DataTypePtr DataTypeQBit::getNestedTupleElementType() const
 
 SerializationPtr DataTypeQBit::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationQBit>(getNestedType()->getDefaultSerialization(), getElementSize(), dimension);
+    return SerializationQBit::create(getNestedType()->getDefaultSerialization(), getElementSize(), dimension);
 }
 
 Field DataTypeQBit::getDefault() const

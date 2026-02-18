@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/TimezoneMixin.h>
 
@@ -9,8 +10,19 @@ namespace DB
 
 class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
 {
-public:
+private:
     explicit SerializationDateTime(const TimezoneMixin & time_zone_);
+
+public:
+    static SerializationPtr create(const TimezoneMixin & time_zone_)
+    {
+        auto ptr = SerializationPtr(new SerializationDateTime(time_zone_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationDateTime() override;
+
+    String getName() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -31,8 +43,19 @@ public:
 
 class SerializationTime final : public SerializationNumber<Int32>
 {
-public:
+private:
     explicit SerializationTime(const DataTypeTime & /*time_type*/);
+
+public:
+    static SerializationPtr create(const DataTypeTime & time_type)
+    {
+        auto ptr = SerializationPtr(new SerializationTime(time_type));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationTime() override;
+
+    String getName() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -52,4 +75,3 @@ public:
 };
 
 }
-

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -10,8 +11,19 @@ namespace DB
 /// `deserialize` method will return a `ColumnBLOB` with the same BLOB as input. Deserialization and decompression of the BLOB will be done later by `UnmarshallBlocksTransform`.
 class SerializationDetached final : public ISerialization
 {
-public:
+private:
     explicit SerializationDetached(const SerializationPtr & nested_);
+
+public:
+    static SerializationPtr create(const SerializationPtr & nested_)
+    {
+        auto ptr = SerializationPtr(new SerializationDetached(nested_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationDetached() override;
+
+    String getName() const override;
 
     KindStack getKindStack() const override;
 

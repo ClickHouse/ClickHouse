@@ -31,6 +31,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+SerializationVariant::~SerializationVariant()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationVariant::getName() const
+{
+    return variant_name;
+}
+
 struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
 {
     explicit SerializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)
@@ -57,6 +67,12 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
     }
 };
 
+SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, const String & variant_name_)
+{
+    auto ptr = SerializationPtr(new SerializationVariant(variant_types_, variant_name_));
+    return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+}
+
 SerializationVariant::SerializationVariant(const DataTypes & variant_types_, const String & variant_name_) : variant_types(variant_types_), deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_)), variant_name(variant_name_)
 {
     variant_serializations.reserve(variant_serializations.size());
@@ -79,7 +95,7 @@ void SerializationVariant::enumerateStreams(
     const auto * column_variant = data.column ? &assert_cast<const ColumnVariant &>(*data.column) : nullptr;
     const auto * variant_deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariant>(data.deserialize_state) : nullptr;
 
-    auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
+    auto discriminators_serialization = SerializationNamed::create(SerializationNumber<ColumnVariant::Discriminator>::create(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
 
     if (settings.use_specialized_prefixes_and_suffixes_substreams)
@@ -129,7 +145,7 @@ void SerializationVariant::enumerateStreams(
     /// Nullable column is created during deserialization of a variant subcolumn according to the discriminators, so we don't have actual Nullable
     /// serialization with null map subcolumn. To be able to read null map subcolumn from the variant subcolumn we use special serialization
     /// SerializationVariantElementNullMap.
-    auto null_map_data = SubstreamData(std::make_shared<SerializationNumber<UInt8>>())
+    auto null_map_data = SubstreamData(SerializationNumber<UInt8>::create())
                              .withType(type_variant ? std::make_shared<DataTypeUInt8>() : nullptr)
                              .withColumn(column_variant ? ColumnUInt8::create() : nullptr);
 
@@ -369,7 +385,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         /// If local and global discriminators are the same, just serialize the column as is.
         if (col.hasGlobalVariantsOrder())
         {
-            SerializationNumber<ColumnVariant::Discriminator>().serializeBinaryBulk(col.getLocalDiscriminatorsColumn(), *discriminators_stream, offset, limit);
+            SerializationNumber<ColumnVariant::Discriminator>::create()->serializeBinaryBulk(col.getLocalDiscriminatorsColumn(), *discriminators_stream, offset, limit);
         }
         /// If local and global discriminators are different, we should convert local to global before serializing (because we don't serialize the mapping).
         else
@@ -524,7 +540,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         /// We will apply rows_offset on discriminators later.
         if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
         {
-            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
+            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
                 *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
         }
         else
@@ -743,7 +759,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
+            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
             size_t start = discriminators_data.size() - limit_in_granule;
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 

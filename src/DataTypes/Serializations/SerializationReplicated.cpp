@@ -21,6 +21,16 @@ SerializationReplicated::SerializationReplicated(const SerializationPtr & nested
 {
 }
 
+SerializationReplicated::~SerializationReplicated()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationReplicated::getName() const
+{
+    return "Replicated(" + nested->getName() + ")";
+}
+
 ISerialization::KindStack SerializationReplicated::getKindStack() const
 {
     auto kind_stack = nested->getKindStack();
@@ -30,7 +40,7 @@ ISerialization::KindStack SerializationReplicated::getKindStack() const
 
 SerializationPtr SerializationReplicated::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationReplicated>(prev);
+    return SerializationReplicated::create(prev);
 }
 
 ColumnPtr SerializationReplicated::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -113,16 +123,16 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     switch (size_of_indexes_type)
     {
         case sizeof(UInt8):
-            SerializationNumber<UInt8>().serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt8>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt16):
-            SerializationNumber<UInt16>().serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt16>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt32):
-            SerializationNumber<UInt32>().serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt32>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt64):
-            SerializationNumber<UInt64>().serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt64>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", size_of_indexes_type);
@@ -206,19 +216,19 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     {
         case sizeof(UInt8):
             indexes = ColumnUInt8::create();
-            SerializationNumber<UInt8>().deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         case sizeof(UInt16):
             indexes = ColumnUInt16::create();
-            SerializationNumber<UInt16>().deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt16>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         case sizeof(UInt32):
             indexes = ColumnUInt32::create();
-            SerializationNumber<UInt32>().deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt32>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         case sizeof(UInt64):
             indexes = ColumnUInt64::create();
-            SerializationNumber<UInt64>().deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", UInt32(size_of_indexes_type));

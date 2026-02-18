@@ -41,6 +41,22 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
+SerializationPtr SerializationLowCardinality::create(const DataTypePtr & dictionary_type_)
+{
+    auto ptr = SerializationPtr(new SerializationLowCardinality(dictionary_type_));
+    return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+}
+
+SerializationLowCardinality::~SerializationLowCardinality()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationLowCardinality::getName() const
+{
+    return "LowCardinality(" + dictionary_type->getName() + ", " + dict_inner_serialization->getName() + ")";
+}
+
 void SerializationLowCardinality::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,

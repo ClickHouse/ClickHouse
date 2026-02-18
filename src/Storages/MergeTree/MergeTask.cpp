@@ -298,7 +298,7 @@ static void addMissedColumnsToSerializationInfos(
 
         auto new_info = column.type->createSerializationInfo(info_settings);
         new_info->addDefaults(num_rows_in_parts);
-        new_infos.emplace(column.name, std::move(new_info));
+        new_infos.add(column.name, new_info);
     }
 }
 

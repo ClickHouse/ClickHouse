@@ -14,6 +14,11 @@ namespace ErrorCodes
 }
 
 
+SerializationObjectTypedPath::~SerializationObjectTypedPath()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 void SerializationObjectTypedPath::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
     const DB::ISerialization::StreamCallback & callback,

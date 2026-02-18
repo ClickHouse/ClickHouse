@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 
@@ -16,8 +17,15 @@ namespace ErrorCodes
 /// Serialization of shared data for a sub-object Object subcolumns.
 class SerializationSubObjectSharedData final : public SimpleTextSerialization
 {
-public:
+private:
     SerializationSubObjectSharedData(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_);
+
+public:
+    static SerializationPtr create(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_);
+
+    ~SerializationSubObjectSharedData() override;
+
+    String getName() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

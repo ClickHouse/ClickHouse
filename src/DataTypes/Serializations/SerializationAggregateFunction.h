@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 
 namespace DB
@@ -15,11 +16,21 @@ private:
     String type_name;
     size_t version;
 
+    SerializationAggregateFunction(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
+        : function(function_), type_name(std::move(type_name_)), version(version_) {}
+
 public:
     static constexpr bool is_parametric = true;
 
-    SerializationAggregateFunction(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
-        : function(function_), type_name(std::move(type_name_)), version(version_) {}
+    static SerializationPtr create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
+    {
+        auto ptr = SerializationPtr(new SerializationAggregateFunction(function_, type_name_, version_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationAggregateFunction() override;
+
+    String getName() const override;
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;

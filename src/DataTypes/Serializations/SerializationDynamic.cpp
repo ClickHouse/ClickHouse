@@ -24,6 +24,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+String SerializationDynamic::getName() const
+{
+    return "Dynamic(" + std::to_string(max_dynamic_types) + ")";
+}
+
+SerializationDynamic::~SerializationDynamic()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryBulkState
 {
     SerializationDynamic::SerializationVersion structure_version;

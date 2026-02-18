@@ -25,6 +25,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+String SerializationNullable::getName() const
+{
+    return "Nullable(" + nested->getName() + ", " + std::to_string(use_default_null_map) + ")";
+}
+
+SerializationNullable::~SerializationNullable()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 void SerializationNullable::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
@@ -35,7 +45,7 @@ void SerializationNullable::enumerateStreams(
     if (!use_default_null_map)
     {
         auto null_map_serialization
-            = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", SubstreamType::NamedNullMap);
+            = SerializationNamed::create(SerializationNumber<UInt8>::create(), "null", SubstreamType::NamedNullMap);
 
         settings.path.push_back(Substream::NullMap);
         auto null_map_data = SubstreamData(null_map_serialization)
@@ -110,7 +120,7 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
         /// First serialize null map.
         settings.path.push_back(Substream::NullMap);
         if (auto * stream = settings.getter(settings.path))
-            SerializationNumber<UInt8>().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
+            SerializationNumber<UInt8>::create()->serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
         settings.path.pop_back();
     }
 
@@ -142,7 +152,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
         else if (auto * stream = settings.getter(settings.path))
         {
             size_t prev_size = col.getNullMapColumnPtr()->size();
-            SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
+            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
             addColumnWithNumReadRowsToSubstreamsCache(
                 cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
         }

@@ -317,10 +317,10 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     auto storage_hints = storage_ptr->getSerializationHints();
     SerializationInfoByName res({});
 
-    for (const auto & hint : storage_hints)
+    for (const auto & [name, info] : storage_hints)
     {
-        if (our_columns.tryGetPhysical(hint.first) == storage_columns.tryGetPhysical(hint.first))
-            res.insert(hint);
+        if (our_columns.tryGetPhysical(name) == storage_columns.tryGetPhysical(name))
+            res.add(name, info);
     }
 
     return res;

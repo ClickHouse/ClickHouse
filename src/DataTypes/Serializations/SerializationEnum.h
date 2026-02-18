@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <typeinfo>
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/EnumValues.h>
 #include <DataTypes/DataTypeEnum.h>
 
@@ -11,10 +13,10 @@ namespace DB
 template <typename Type>
 class SerializationEnum : public SerializationNumber<Type>
 {
-public:
+private:
     using typename SerializationNumber<Type>::FieldType;
     using typename SerializationNumber<Type>::ColumnType;
-    using Values = EnumValues<Type>::Values;
+    using Values = typename EnumValues<Type>::Values;
 
     // SerializationEnum can be constructed in two ways:
     /// - Make a copy of the Enum name-to-type mapping.
@@ -30,6 +32,23 @@ public:
         : own_enum_type(enum_type), ref_enum_values(*enum_type)
     {
     }
+
+public:
+    static SerializationPtr create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
+    {
+        auto ptr = SerializationPtr(new SerializationEnum(enum_type));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    static SerializationPtr create(const Values & values_)
+    {
+        auto ptr = SerializationPtr(new SerializationEnum(values_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationEnum() override;
+
+    String getName() const override { return String(typeid(Type).name()) + "_Enum"; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

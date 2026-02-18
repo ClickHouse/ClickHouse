@@ -27,6 +27,26 @@ SerializationSubObjectSharedData::SerializationSubObjectSharedData(
 {
 }
 
+SerializationPtr SerializationSubObjectSharedData::create(
+    SerializationObjectSharedData::SerializationVersion serialization_version_,
+    size_t buckets_,
+    const String & paths_prefix_,
+    const DataTypePtr & dynamic_type_)
+{
+    auto ptr = SerializationPtr(new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_));
+    return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+}
+
+SerializationSubObjectSharedData::~SerializationSubObjectSharedData()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationSubObjectSharedData::getName() const
+{
+    return "SubObjectSharedData(" + std::to_string(static_cast<int>(serialization_version.value)) + ", " + std::to_string(buckets) + ", " + paths_prefix + ")";
+}
+
 struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::DeserializeBinaryBulkState
 {
     ISerialization::DeserializeBinaryBulkStatePtr map_state;

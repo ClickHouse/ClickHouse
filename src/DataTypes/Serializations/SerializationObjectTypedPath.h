@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 
 namespace DB
@@ -10,12 +11,21 @@ namespace DB
 /// will be used to read paths 'a.b' and 'b.c' as subcolumns.
 class SerializationObjectTypedPath final : public SerializationWrapper
 {
-public:
+private:
     SerializationObjectTypedPath(const SerializationPtr & nested_, const String & path_)
         : SerializationWrapper(nested_)
         , path(path_)
     {
     }
+
+public:
+    static SerializationPtr create(const SerializationPtr & nested_, const String & path_)
+    {
+        auto ptr = SerializationPtr(new SerializationObjectTypedPath(nested_, path_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationObjectTypedPath() override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

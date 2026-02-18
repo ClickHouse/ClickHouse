@@ -38,6 +38,11 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     }
 };
 
+SerializationDynamicElement::~SerializationDynamicElement()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 void SerializationDynamicElement::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
     const DB::ISerialization::StreamCallback & callback,
@@ -96,9 +101,9 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
     {
         settings.path.push_back(Substream::DynamicData);
         if (is_null_map_subcolumn)
-            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElementNullMap>(dynamic_element_name, *global_discr);
+            dynamic_element_state->variant_serialization = SerializationVariantElementNullMap::create(dynamic_element_name, *global_discr);
         else
-            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(nested_serialization, dynamic_element_name, *global_discr);
+            dynamic_element_state->variant_serialization = SerializationVariantElement::create(nested_serialization, dynamic_element_name, *global_discr);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = false;
         settings.path.pop_back();
@@ -109,7 +114,7 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
         auto shared_variant_global_discr = variant_type.tryGetVariantDiscriminator(ColumnDynamic::getSharedVariantTypeName());
         chassert(shared_variant_global_discr.has_value());
         settings.path.push_back(Substream::DynamicData);
-        dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(
+        dynamic_element_state->variant_serialization = SerializationVariantElement::create(
             ColumnDynamic::getSharedVariantDataType()->getDefaultSerialization(),
             ColumnDynamic::getSharedVariantTypeName(),
             *shared_variant_global_discr);

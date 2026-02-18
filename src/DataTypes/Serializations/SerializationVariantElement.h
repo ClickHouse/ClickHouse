@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
@@ -20,12 +21,25 @@ private:
     String variant_element_name;
     ColumnVariant::Discriminator variant_discriminator;
 
-public:
     SerializationVariantElement(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
         : SerializationWrapper(nested_)
         , variant_element_name(variant_element_name_)
         , variant_discriminator(variant_discriminator_)
     {
+    }
+
+public:
+    static SerializationPtr create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+    {
+        auto ptr = SerializationPtr(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationVariantElement() override;
+
+    String getName() const override
+    {
+        return "VariantElement(" + nested_serialization->getName() + ", " + variant_element_name + ", " + std::to_string(variant_discriminator) + ")";
     }
 
     void enumerateStreams(

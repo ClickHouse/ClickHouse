@@ -2,6 +2,7 @@
 
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -19,8 +20,19 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
 
 class SerializationString final : public ISerialization
 {
-public:
+private:
     explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
+
+public:
+    static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM)
+    {
+        auto ptr = SerializationPtr(new SerializationString(version_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationString() override;
+
+    String getName() const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

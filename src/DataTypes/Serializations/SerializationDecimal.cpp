@@ -129,6 +129,12 @@ bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
 }
 
 
+template <typename T>
+SerializationDecimal<T>::~SerializationDecimal()
+{
+    SerializationObjectPool::instance().remove(this->getName());
+}
+
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;
 template class SerializationDecimal<Decimal128>;

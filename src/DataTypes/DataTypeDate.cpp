@@ -12,7 +12,7 @@ bool DataTypeDate::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeDate::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationDate>();
+    return SerializationDate::create();
 }
 
 void registerDataTypeDate(DataTypeFactory & factory)

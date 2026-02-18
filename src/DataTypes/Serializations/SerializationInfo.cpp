@@ -292,7 +292,7 @@ SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & colum
     for (const auto & column : columns)
     {
         if (settings.canUseSparseSerialization(*column.type))
-            emplace(column.name, column.type->createSerializationInfo(settings));
+            storage.emplace(column.name, column.type->createSerializationInfo(settings));
     }
 }
 
@@ -300,7 +300,7 @@ void SerializationInfoByName::add(const Block & block)
 {
     for (const auto & column : block)
     {
-        auto it = find(column.name);
+        auto it = storage.find(column.name);
         if (it == end())
             continue;
 
@@ -316,8 +316,13 @@ void SerializationInfoByName::add(const SerializationInfoByName & other)
 
 void SerializationInfoByName::add(const String & name, const SerializationInfo & info)
 {
-    if (auto it = find(name); it != end())
+    if (auto it = storage.find(name); it != storage.end())
         it->second->add(info);
+}
+
+void SerializationInfoByName::add(const String & name, const MutableSerializationInfoPtr & info)
+{
+    storage.emplace(name, info);
 }
 
 void SerializationInfoByName::remove(const SerializationInfoByName & other)
@@ -328,27 +333,27 @@ void SerializationInfoByName::remove(const SerializationInfoByName & other)
 
 void SerializationInfoByName::remove(const String & name, const SerializationInfo & info)
 {
-    if (auto it = find(name); it != end())
+    if (auto it = storage.find(name); it != storage.end())
         it->second->remove(info);
 }
 
 SerializationInfoPtr SerializationInfoByName::tryGet(const String & name) const
 {
-    auto it = find(name);
+    auto it = storage.find(name);
     return it == end() ? nullptr : it->second;
 }
 
 MutableSerializationInfoPtr SerializationInfoByName::tryGet(const String & name)
 {
-    auto it = find(name);
-    return it == end() ? nullptr : it->second;
+    auto it = storage.find(name);
+    return it == storage.end() ? nullptr : it->second;
 }
 
 void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
 {
     for (const auto & [name, new_info] : other)
     {
-        auto & old_info = (*this)[name];
+        auto & old_info = this->storage[name];
 
         if (old_info)
             old_info->replaceData(*new_info);
@@ -359,7 +364,7 @@ void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
 
 ISerialization::KindStack SerializationInfoByName::getKindStack(const String & column_name) const
 {
-    auto it = find(column_name);
+    auto it = storage.find(column_name);
     return it != end() ? it->second->getKindStack() : ISerialization::KindStack{ISerialization::Kind::DEFAULT};
 }
 
@@ -370,7 +375,7 @@ MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+    return !storage.empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
@@ -410,7 +415,7 @@ SerializationInfoByName SerializationInfoByName::clone() const
 {
     SerializationInfoByName res(settings);
     for (const auto & [name, info] : *this)
-        res.emplace(name, info->clone());
+        res.storage.emplace(name, info->clone());
     return res;
 }
 
@@ -520,7 +525,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
             auto info = it->second->createSerializationInfo(infos.settings);
             info->fromJSON(*elem_object);
-            infos.emplace(name, std::move(info));
+            infos.storage.emplace(name, std::move(info));
         }
     }
 

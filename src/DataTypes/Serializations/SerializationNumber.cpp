@@ -227,6 +227,12 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
 }
 
+template <typename T>
+SerializationNumber<T>::~SerializationNumber()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 template class SerializationNumber<UInt8>;
 template class SerializationNumber<UInt16>;
 template class SerializationNumber<UInt32>;

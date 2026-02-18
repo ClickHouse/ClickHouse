@@ -1,13 +1,27 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
 
 class SerializationUUID : public SimpleTextSerialization
 {
+private:
+    SerializationUUID() = default;
+
 public:
+    static SerializationPtr create()
+    {
+        auto ptr = SerializationPtr(new SerializationUUID());
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationUUID() override;
+
+    String getName() const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
     bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;

@@ -220,6 +220,12 @@ void SerializationEnum<Type>::serializeTextMarkdown(
         serializeTextEscaped(column, row_num, ostr, settings);
 }
 
+template <typename Type>
+SerializationEnum<Type>::~SerializationEnum()
+{
+    SerializationObjectPool::instance().remove(this->getName());
+}
+
 template class SerializationEnum<Int8>;
 template class SerializationEnum<Int16>;
 

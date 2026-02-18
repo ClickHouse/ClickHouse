@@ -33,6 +33,26 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
     return assert_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
+String SerializationTuple::getName() const
+{
+    String result = "Tuple(";
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        if (i > 0)
+            result += ", ";
+        if (has_explicit_names)
+            result += elems[i]->getElementName() + " ";
+        result += elems[i]->getNested()->getName();
+    }
+    result += ")";
+    return result;
+}
+
+SerializationTuple::~SerializationTuple()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & tuple = field.safeGet<Tuple>();

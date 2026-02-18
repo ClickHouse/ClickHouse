@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -8,11 +9,20 @@ namespace DB
 template <typename T>
 class SerializationDecimal final : public SerializationDecimalBase<T>
 {
+private:
+    SerializationDecimal(UInt32 precision_, UInt32 scale_)
+        : SerializationDecimalBase<T>(precision_, scale_) {}
+
 public:
     using typename SerializationDecimalBase<T>::ColumnType;
 
-    SerializationDecimal(UInt32 precision_, UInt32 scale_)
-        : SerializationDecimalBase<T>(precision_, scale_) {}
+    static SerializationPtr create(UInt32 precision_, UInt32 scale_)
+    {
+        auto ptr = SerializationPtr(new SerializationDecimal(precision_, scale_));
+        return SerializationObjectPool::instance().getOrCreate(ptr->getName(), std::move(ptr));
+    }
+
+    ~SerializationDecimal() override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;

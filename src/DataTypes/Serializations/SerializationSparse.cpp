@@ -22,6 +22,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+SerializationSparse::~SerializationSparse()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationSparse::getName() const
+{
+    return "Sparse(" + nested->getName() + ")";
+}
+
+SerializationSparseNullMap::~SerializationSparseNullMap()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationSparseNullMap::getName() const
+{
+    return "SparseNullMap";
+}
+
 namespace
 {
 
@@ -223,8 +243,8 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
     if (const auto * nested_nullable = typeid_cast<const SerializationNullable *>(nested.get()))
     {
-        nested = std::make_shared<SerializationNullable>(nested_nullable->getNested(), true /* use_default_null_map */);
-        sparse_null_map = std::make_shared<SerializationSparseNullMap>();
+        nested = SerializationNullable::create(nested_nullable->getNested(), true /* use_default_null_map */);
+        sparse_null_map = SerializationSparseNullMap::create();
     }
 }
 
@@ -237,7 +257,7 @@ ISerialization::KindStack SerializationSparse::getKindStack() const
 
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationSparse>(prev);
+    return SerializationSparse::create(prev);
 }
 
 ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -263,7 +283,7 @@ void SerializationSparse::enumerateStreams(
     size_t column_size = column_sparse ? column_sparse->size() : 0;
 
     settings.path.push_back(Substream::SparseOffsets);
-    auto offsets_data = SubstreamData(std::make_shared<SerializationNumber<UInt64>>())
+    auto offsets_data = SubstreamData(SerializationNumber<UInt64>::create())
                             .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
                             .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
                             .withSerializationInfo(data.serialization_info);

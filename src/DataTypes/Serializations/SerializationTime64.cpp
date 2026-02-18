@@ -30,6 +30,16 @@ SerializationTime64::SerializationTime64(UInt32 scale_, const DataTypeTime64 & /
 {
 }
 
+SerializationTime64::~SerializationTime64()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
+String SerializationTime64::getName() const
+{
+    return "Time64(" + std::to_string(scale) + ")";
+}
+
 void SerializationTime64::serializeText(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & /*settings*/) const
 {

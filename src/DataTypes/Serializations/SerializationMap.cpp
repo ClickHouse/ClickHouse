@@ -25,6 +25,16 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+String SerializationMap::getName() const
+{
+    return "Map(" + key->getName() + ", " + value->getName() + ", " + nested->getName() + ")";
+}
+
+SerializationMap::~SerializationMap()
+{
+    SerializationObjectPool::instance().remove(getName());
+}
+
 SerializationMap::SerializationMap(const SerializationPtr & key_, const SerializationPtr & value_, const SerializationPtr & nested_)
     : key(key_), value(value_), nested(nested_)
 {
