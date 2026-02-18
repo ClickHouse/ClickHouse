@@ -427,6 +427,13 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
+    /// Trim the bounded heap back to capacity by batch-popping excess entries,
+    /// erasing evicted keys from the hash table and destroying their aggregate states.
+    /// Kept in a separate NO_INLINE method to avoid code bloat in executeImplBatch
+    /// when top_n_keys == 0 (the common case).
+    template <typename Method>
+    void NO_INLINE trimHeapAndPruneHashTable(Method & method, bool destroy_states) const;
+
     void executeAggregateInstructions(
         Arena * aggregates_pool,
         size_t row_begin,

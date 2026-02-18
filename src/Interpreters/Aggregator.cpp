@@ -1150,6 +1150,82 @@ void NO_INLINE Aggregator::executeImpl(
     }
 }
 
+/// Trim the bounded heap and prune evicted keys from the hash table.
+/// This is NO_INLINE to avoid inflating the code size of executeImplBatch
+/// for the common case when top_n_keys == 0.
+template <typename Method>
+void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destroy_states) const
+{
+    using DataType = typename Method::Data;
+    using KeyType = typename Method::Key;
+    auto * heap_queue = &method.pqueue;
+
+    if constexpr (requires(DataType d, KeyType k) { { d.erase(k) } -> std::same_as<bool>; })
+    {
+        heap_queue->trimAndCompact([&](size_t evicted)
+        {
+            /// Check if evicted key is NULL (for nullable columns).
+            if (heap_queue->heap_column->isNullAt(evicted))
+            {
+                if constexpr (requires { method.data.hasNullKeyData(); })
+                {
+                    if (method.data.hasNullKeyData())
+                    {
+                        if (destroy_states)
+                        {
+                            AggregateDataPtr null_mapped = method.data.getNullKeyData();
+                            if (null_mapped)
+                            {
+                                for (size_t j = 0; j < aggregate_functions.size(); ++j)
+                                    aggregate_functions[j]->destroy(null_mapped + offsets_of_aggregate_states[j]);
+                            }
+                        }
+                        method.data.hasNullKeyData() = false;
+                        method.data.getNullKeyData() = nullptr;
+                    }
+                }
+                return;
+            }
+
+            /// Extract typed key from heap_column.
+            KeyType evicted_key;
+            if constexpr (std::is_same_v<KeyType, std::string_view>)
+            {
+                auto ref = heap_queue->heap_column->getDataAt(evicted);
+                evicted_key = std::string_view(ref.data(), ref.size());
+            }
+            else
+            {
+                auto ref = heap_queue->heap_column->getDataAt(evicted);
+                evicted_key = unalignedLoad<KeyType>(ref.data());
+            }
+
+            /// Destroy aggregate states if needed.
+            if (destroy_states)
+            {
+                auto it = method.data.find(evicted_key);
+                if (it != nullptr)
+                {
+                    AggregateDataPtr mapped = it->getMapped();
+                    if (mapped)
+                    {
+                        for (size_t j = 0; j < aggregate_functions.size(); ++j)
+                            aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
+                    }
+                }
+            }
+
+            method.data.erase(evicted_key);
+        });
+    }
+    else
+    {
+        /// FixedHashTable (key8/key16) has no erase() — just trim without pruning.
+        /// With at most 256/65536 possible keys, the hash table stays small regardless.
+        heap_queue->trimAndCompact([](size_t) {});
+    }
+}
+
 template <bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -1206,7 +1282,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     auto * heap_queue = &method.pqueue;
     if (params.top_n_keys > 0 && !heap_queue->heap_column)
-        heap_queue->init(*state.getKeyColumn(), params.top_n_keys_sort_direction, params.top_n_keys_collator);
+        heap_queue->init(*state.getKeyColumn(), params.top_n_keys_sort_direction, params.top_n_keys, params.top_n_keys_collator);
 
     /// Optimization for special case when aggregating by 8bit key.
     if (!no_more_keys)
@@ -1307,16 +1383,16 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
                 if (params.top_n_keys > 0 && emplace_result.isInserted())
-                {
                     heap_queue->push(*key_col, i);
-                    if (heap_queue->size() > params.top_n_keys)
-                        heap_queue->pop();
-                }
 
                 if (emplace_result.isInserted())
                     getInlineCountState(emplace_result.getMapped()) = 1;
                 else
                     ++getInlineCountState(emplace_result.getMapped());
+
+                /// Batch trim after emplace_result is no longer used.
+                if (params.top_n_keys > 0 && heap_queue->needsTrim())
+                    trimHeapAndPruneHashTable(method, false);
             }
         }
         else
@@ -1398,11 +1474,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
 
             if (params.top_n_keys > 0 && emplace_result.isInserted())
-            {
                 heap_queue->push(*key_col, i);
-                if (heap_queue->size() > params.top_n_keys)
-                    heap_queue->pop();
-            }
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
@@ -1433,6 +1505,11 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
             else
                 aggregate_data = emplace_result.getMapped();
+
+            /// Batch trim after emplace_result is no longer used.
+            /// erase() may move cells via memcpy, invalidating emplace_result.
+            if (params.top_n_keys > 0 && heap_queue->needsTrim())
+                trimHeapAndPruneHashTable(method, !is_simple_count);
 
             assert(aggregate_data != nullptr);
             places[i] = aggregate_data;
