@@ -8,6 +8,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 
 namespace DB
 {
@@ -21,22 +22,27 @@ MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition
     const SelectQueryInfo & query, const ConstraintsDescription & constraints, size_t granularity_)
     : IMergeTreeIndexMergedCondition(granularity_)
 {
-    /// analyzer produces AST with full column identifiers ("table_name.column")
-    /// while hypothesis index expressions use short column names ("column"), so we shorten them
     const auto select_ptr = query.query_tree->toAST({
         .fully_qualified_identifiers = false,
     });
-    const auto & select = select_ptr->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery &>();
 
-    if (select.where() && select.prewhere())
+    auto select = select_ptr;
+    if (const auto * subquery = select->as<ASTSubquery>())
+        select = subquery->children.at(0);
+    if (const auto * union_query = select->as<ASTSelectWithUnionQuery>())
+        select = union_query->list_of_selects->children.at(0);
+
+    const auto * select_query = select->as<ASTSelectQuery>();
+
+    if (select_query->where() && select_query->prewhere())
         expression_ast = makeASTOperator(
             "and",
-            select.where()->clone(),
-            select.prewhere()->clone());
-    else if (select.where())
-        expression_ast = select.where()->clone();
-    else if (select.prewhere())
-        expression_ast = select.prewhere()->clone();
+            select_query->where()->clone(),
+            select_query->prewhere()->clone());
+    else if (select_query->where())
+        expression_ast = select_query->where()->clone();
+    else if (select_query->prewhere())
+        expression_ast = select_query->prewhere()->clone();
 
     expression_cnf = std::make_unique<CNFQuery>(
         expression_ast ? TreeCNFConverter::toCNF(expression_ast.get()) : CNFQuery::AndGroup{});
