@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 
 namespace DB
@@ -14,6 +15,30 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// analyzer produces AST with full column identifiers ("table_name.column")
+/// while hypothesis index expressions use short column names ("column")
+void stripTableQualifiers(ASTPtr & ast)
+{
+    if (!ast)
+        return;
+
+    /// strip table prefix so ComparisonGraph can match them
+    if (auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->compound())
+            identifier->setShortName(identifier->shortName());
+        return;
+    }
+
+    for (auto & child : ast->children)
+        stripTableQualifiers(child);
+}
+
 }
 
 MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition(
@@ -31,6 +56,8 @@ MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition
         expression_ast = select.where()->clone();
     else if (select.prewhere())
         expression_ast = select.prewhere()->clone();
+
+    stripTableQualifiers(expression_ast);
 
     expression_cnf = std::make_unique<CNFQuery>(
         expression_ast ? TreeCNFConverter::toCNF(expression_ast.get()) : CNFQuery::AndGroup{});
