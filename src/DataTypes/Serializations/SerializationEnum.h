@@ -54,6 +54,11 @@ public:
         SipHash hash;
         hash.update("Enum");
         hash.update(typeid(Type).name(), strlen(typeid(Type).name()));
+        for (const auto & [name, value] : ref_enum_values.getValues())
+        {
+            hash.update(name);
+            hash.update(value);
+        }
         return hash.get128();
     }
 
