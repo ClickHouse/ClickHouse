@@ -14,15 +14,15 @@ public:
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
 private:
-    SerializationTuple(const ElementSerializations & elems_, bool has_explicit_names_)
-        : elems(elems_), has_explicit_names(has_explicit_names_)
+    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
+        : elems(std::move(elems_)), has_explicit_names(has_explicit_names_)
     {
     }
 
 public:
-    static SerializationPtr create(const ElementSerializations & elems_, bool has_explicit_names_)
+    static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_)
     {
-        auto ptr = SerializationPtr(new SerializationTuple(elems_, has_explicit_names_));
+        auto ptr = SerializationPtr(new SerializationTuple(std::move(elems_), has_explicit_names_));
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
