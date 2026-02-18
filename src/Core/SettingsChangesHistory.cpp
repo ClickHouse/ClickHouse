@@ -1059,6 +1059,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
+            {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
@@ -1066,7 +1067,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"merge_max_dynamic_subcolumns_in_compact_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Compact part after merge regardless the parameters specified in the data type"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
             {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
-            {"table_is_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
