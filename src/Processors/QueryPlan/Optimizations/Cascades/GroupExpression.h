@@ -56,7 +56,6 @@ public:
 
     std::unordered_set<String> applied_rules;   /// TODO: implement more efficiently
 
-    std::optional<ExpressionStatistics> statistics;
     std::optional<ExpressionCost> cost;
 };
 

@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/Logger.h>
 #include <stack>
@@ -27,6 +28,7 @@ public:
     GroupPtr getGroup(GroupId group_id);
 
     void updateBestPlan(GroupExpressionPtr expression);
+    void deriveStatistics(GroupId group_id);
 
     LoggerPtr log = getLogger("CascadesOptimizer");
 
@@ -48,6 +50,7 @@ private:
     Memo memo{log};
     std::stack<OptimizationTaskPtr> tasks;
     CostEstimator cost_estimator;
+    StatisticsDerivation statistics_derivation;
 };
 
 }

@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <IO/Operators.h>
 
 //#include <iostream>
@@ -73,6 +74,11 @@ ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & req
 
 void Group::dump(WriteBuffer & out, String indent) const
 {
+    if (statistics.has_value())
+    {
+        out << indent << "Statistics: rows: " << statistics->estimated_row_count << "\n";
+    }
+
     out << indent << "Logical:\n";
     for (const auto & expression : logical_expressions)
     {

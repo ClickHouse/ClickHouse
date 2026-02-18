@@ -55,6 +55,11 @@ bool collectJoins(QueryPlan::Node * node, JoinGraphBuilder & join_graph_builder)
     if (!node)
         return false;
 
+    /// FIXME: just to try out with disabled join reordering
+    if (node)
+        return false;
+
+
     auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
     if (join_step && join_step->getJoinOperator().kind == JoinKind::Inner)
     {
@@ -490,7 +495,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
     plan_for_group->getRootNode()->cost_estimation = CostEstimationInfo
         {
             .cost = group_best_expression->cost->subtree_cost,
-            .rows = group_best_expression->statistics->estimated_row_count
+            .rows = group->statistics->estimated_row_count
         };
 
     LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", subtree_root_group_id, dumpQueryPlanShort(*plan_for_group));

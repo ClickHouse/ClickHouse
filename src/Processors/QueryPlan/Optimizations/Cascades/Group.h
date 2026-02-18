@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -15,6 +16,8 @@ constexpr GroupId INVALID_GROUP_ID = -1;
 
 class GroupExpression;
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
+
+struct ExpressionStatistics;
 
 struct ExpressionWithCost
 {
@@ -46,6 +49,10 @@ public:
 
     /// Best implementation for various required properties
     std::set<GroupExpressionPtr> best_implementations;
+
+    /// Statistics for this group - shared by all expressions in the group
+    /// since they all represent the same logical result
+    std::optional<ExpressionStatistics> statistics;
 
 private:
     const GroupId group_id;
