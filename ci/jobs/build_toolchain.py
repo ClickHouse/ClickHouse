@@ -173,6 +173,7 @@ def main():
                     command=(
                         f"ninja -C {STAGE1_BUILD_DIR}"
                         f" install-clang install-clang-resource-headers install-lld"
+                        f" install-compiler-rt-headers"
                     ),
                 )
             )
@@ -288,53 +289,42 @@ def main():
         clean_dirs(STAGE2_BUILD_DIR, STAGE2_INSTALL_DIR)
         os.makedirs(STAGE2_BUILD_DIR, exist_ok=True)
 
-        # Install binutils-dev for the plugin-api.h header needed to build
-        # LLVMgold.so (required by mold when clang passes --plugin for LTO)
+        builtin_targets = ";".join(t for t, _ in CROSS_BUILTIN_TARGETS)
+        builtin_cmake_args = " ".join(
+            f"-DBUILTINS_{triple}_CMAKE_SYSTEM_NAME={system}"
+            for triple, system in CROSS_BUILTIN_TARGETS
+        )
+
+        cmake_cmd = (
+            f"cmake -G Ninja"
+            f' -DLLVM_ENABLE_PROJECTS="{STAGE2_LLVM_PROJECTS}"'
+            f' -DLLVM_ENABLE_RUNTIMES="compiler-rt"'
+            f" -DLLVM_TARGETS_TO_BUILD=all"
+            f" -DCMAKE_BUILD_TYPE=Release"
+            f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
+            f" -DCMAKE_C_COMPILER=clang-21"
+            f" -DCMAKE_CXX_COMPILER=clang++-21"
+            f" -DLLVM_ENABLE_LLD=ON"
+            f" -DLLVM_ENABLE_LTO=Thin"
+            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
+            f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
+            f" -DLLVM_ENABLE_TERMINFO=OFF"
+            f" -DLLVM_ENABLE_ZLIB=OFF"
+            f" -DLLVM_ENABLE_ZSTD=OFF"
+            f" -DLLVM_BINUTILS_INCDIR=/usr/include"
+            f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
+            f" {builtin_cmake_args}"
+            f" -DCMAKE_INSTALL_PREFIX={STAGE2_INSTALL_DIR}"
+            f" -S {LLVM_SOURCE_DIR}/llvm"
+            f" -B {STAGE2_BUILD_DIR}"
+        )
         results.append(
             Result.from_commands_run(
-                name="Install binutils-dev",
-                command="apt-get update && apt-get install -y --no-install-recommends binutils-dev",
+                name="Stage 2 CMake (PGO-optimized clang)",
+                command=cmake_cmd,
             )
         )
         res = results[-1].is_ok()
-
-        if res:
-            builtin_targets = ";".join(t for t, _ in CROSS_BUILTIN_TARGETS)
-            builtin_cmake_args = " ".join(
-                f"-DBUILTINS_{triple}_CMAKE_SYSTEM_NAME={system}"
-                for triple, system in CROSS_BUILTIN_TARGETS
-            )
-
-            cmake_cmd = (
-                f"cmake -G Ninja"
-                f' -DLLVM_ENABLE_PROJECTS="{STAGE2_LLVM_PROJECTS}"'
-                f' -DLLVM_ENABLE_RUNTIMES="compiler-rt"'
-                f" -DLLVM_TARGETS_TO_BUILD=all"
-                f" -DCMAKE_BUILD_TYPE=Release"
-                f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
-                f" -DCMAKE_C_COMPILER=clang-21"
-                f" -DCMAKE_CXX_COMPILER=clang++-21"
-                f" -DLLVM_ENABLE_LLD=ON"
-                f" -DLLVM_ENABLE_LTO=Thin"
-                f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
-                f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
-                f" -DLLVM_ENABLE_TERMINFO=OFF"
-                f" -DLLVM_ENABLE_ZLIB=OFF"
-                f" -DLLVM_ENABLE_ZSTD=OFF"
-                f" -DLLVM_BINUTILS_INCDIR=/usr/include"
-                f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
-                f" {builtin_cmake_args}"
-                f" -DCMAKE_INSTALL_PREFIX={STAGE2_INSTALL_DIR}"
-                f" -S {LLVM_SOURCE_DIR}/llvm"
-                f" -B {STAGE2_BUILD_DIR}"
-            )
-            results.append(
-                Result.from_commands_run(
-                    name="Stage 2 CMake (PGO-optimized clang)",
-                    command=cmake_cmd,
-                )
-            )
-            res = results[-1].is_ok()
 
         if res:
             results.append(

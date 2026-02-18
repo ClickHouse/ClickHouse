@@ -1603,6 +1603,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     const Names & column_names,
     std::optional<ActionsDAG> & out_projection)
 {
+    const size_t total_marks_to_read = parts_with_ranges.getMarksCountAllParts();
+    if (total_marks_to_read == 0)
+        return {};
+
     const auto & settings = context->getSettingsRef();
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
@@ -1676,6 +1680,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         Pipes pipes;
         {
             RangesInDataParts new_parts;
+            size_t current_ranges_marks = 0;
 
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
             {
@@ -1685,12 +1690,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     part_it->part_index_in_query,
                     part_it->part_starting_offset_in_query,
                     part_it->ranges);
+                current_ranges_marks += part_it->getMarksCount();
             }
 
             if (new_parts.empty())
                 continue;
 
-            if (num_streams > 1 && storage_snapshot->metadata->hasPrimaryKey())
+            /// Maximal number of streams could be very small compared to the number of parts. It gets even worse when we split those parts further.
+            /// To not produce too many layers, i.e., to wide pipeline, let's limit the number of streams proportionally to the total number of marks in parts.
+            const size_t max_layers = std::max<size_t>((num_streams * current_ranges_marks) / total_marks_to_read, 1);
+
+            if (storage_snapshot->metadata->hasPrimaryKey())
             {
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
                 auto in_order_reading_step_getter = [this, &index_build_context, &column_names, &info](auto parts)
@@ -1717,7 +1727,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     storage_snapshot->metadata->getSortingKey(),
                     sorting_expr,
                     std::move(new_parts),
-                    num_streams,
+                    max_layers,
                     context,
                     std::move(in_order_reading_step_getter),
                     split_parts_ranges_into_intersecting_and_non_intersecting_final,
@@ -1736,7 +1746,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     index_build_context,
                     column_names,
                     ReadType::InOrder,
-                    num_streams,
+                    max_layers,
                     0,
                     info.use_uncompressed_cache));
 

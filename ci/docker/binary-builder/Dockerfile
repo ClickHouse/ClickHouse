@@ -24,6 +24,7 @@ RUN apt-get update \
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
+        binutils-dev \
         build-essential \
         python3-boto3 \
         yasm \
