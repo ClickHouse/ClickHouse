@@ -248,7 +248,7 @@ def main():
     if res and JobStages.CONFIG in stages:
         commands = [
             f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --fast-test",
+            f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --fast-test --distributed-plan",
             # f"cp -a {current_directory}/programs/server/config.d/log_to_console.xml {temp_dir}/etc/clickhouse-server/config.d/",
             f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
