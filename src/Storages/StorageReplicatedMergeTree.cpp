@@ -2853,8 +2853,8 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
 bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 {
-    Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto thread_group = ThreadGroup::createForWritePart();
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     auto & entry_replace = *entry.replace_range_entry;
     LOG_DEBUG(log, "Executing log entry {} to replace parts range {} with {} parts from {}.{}",
@@ -3291,11 +3291,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             }
         }
 
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(res_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(res_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
     }
     catch (...)
     {
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(res_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(res_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
 
         for (const auto & res_part : res_parts)
             unlockSharedData(*res_part);
@@ -8749,8 +8751,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     if (partitions.empty())
         return;
 
-    const Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
     const auto zookeeper = getZooKeeper();
 
     const bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
@@ -8761,8 +8761,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     size_t idx = 0;
     for (const auto & partition_id : partitions)
     {
-        entries[idx] = replacePartitionFromImpl(watch,
-                profile_events_scope,
+        entries[idx] = replacePartitionFromImpl(
                 metadata_snapshot,
                 src_data,
                 partition_id,
@@ -8783,8 +8782,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 }
 
 std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::replacePartitionFromImpl(
-    const Stopwatch & watch,
-    ProfileEventsScope & profile_events_scope,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & src_data,
     const String & partition_id,
@@ -8794,6 +8791,10 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     const bool & always_use_copy_instead_of_hardlinks,
     const ContextPtr & query_context)
 {
+
+    auto thread_group = ThreadGroup::createForWritePart();
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
+
     DataPartsVector src_all_parts;
     DataPartsVector src_patch_parts;
 
@@ -9031,11 +9032,13 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 }
             }
 
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
         }
         catch (...)
         {
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
+            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
             for (const auto & dst_part : dst_parts)
                 unlockSharedData(*dst_part);
 
@@ -9088,8 +9091,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto thread_group = ThreadGroup::createForWritePart();
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     auto src_data_id = src_data.getStorageID();
@@ -9295,11 +9298,13 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 transaction.commit(src_data_parts_lock);
             }
 
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
         }
         catch (...)
         {
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
+            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
 
             for (const auto & dst_part : dst_parts)
                 dest_table_storage->unlockSharedData(*dst_part);
