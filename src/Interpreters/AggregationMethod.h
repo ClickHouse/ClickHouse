@@ -29,15 +29,78 @@ struct ColumnBoundedHeap
     int nan_direction_hint = 1;  /// NULLs/NaNs go last by default
     const Collator * collator = nullptr;
 
-    void init(const IColumn & source_column, int dir, const Collator * col = nullptr)
+    ColumnBoundedHeap() = default;
+    ColumnBoundedHeap(const ColumnBoundedHeap &) = delete;
+    ColumnBoundedHeap & operator=(const ColumnBoundedHeap &) = delete;
+
+    /// Custom move constructor: fixes up the HeapComparator's owner pointer
+    /// which would otherwise dangle after std::move.
+    ColumnBoundedHeap(ColumnBoundedHeap && other) noexcept
+        : heap_column(std::move(other.heap_column))
+        , direction(other.direction)
+        , nan_direction_hint(other.nan_direction_hint)
+        , collator(other.collator)
+        , capacity(other.capacity)
+        , compaction_threshold(other.compaction_threshold)
+    {
+        if (direction != 0)  /// initialized
+        {
+            /// Reconstruct the priority queue with the correct 'this' pointer in the comparator.
+            /// Extract the underlying container from the old priority_queue via a helper struct
+            /// that inherits from it and exposes the protected member `c`.
+            struct HeapAccess : std::priority_queue<size_t, std::vector<size_t>, HeapComparator>
+            {
+                using PQ = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>;
+                explicit HeapAccess(PQ && pq) : PQ(std::move(pq)) {}
+                std::vector<size_t> && takeContainer() { return std::move(this->c); }
+            };
+            HeapAccess other_access(std::move(other.heap));
+            heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(
+                HeapComparator{this}, other_access.takeContainer());
+        }
+    }
+
+    ColumnBoundedHeap & operator=(ColumnBoundedHeap && other) noexcept
+    {
+        if (this != &other)
+        {
+            heap_column = std::move(other.heap_column);
+            direction = other.direction;
+            nan_direction_hint = other.nan_direction_hint;
+            collator = other.collator;
+            capacity = other.capacity;
+            compaction_threshold = other.compaction_threshold;
+            if (direction != 0)  /// initialized
+            {
+                struct HeapAccess : std::priority_queue<size_t, std::vector<size_t>, HeapComparator>
+                {
+                    using PQ = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>;
+                    explicit HeapAccess(PQ && pq) : PQ(std::move(pq)) {}
+                    std::vector<size_t> && takeContainer() { return std::move(this->c); }
+                };
+                HeapAccess other_access(std::move(other.heap));
+                heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(
+                    HeapComparator{this}, other_access.takeContainer());
+            }
+            else
+            {
+                heap = {};
+            }
+        }
+        return *this;
+    }
+
+    void init(const IColumn & source_column, int dir, size_t cap, const Collator * col = nullptr)
     {
         direction = dir;
         collator = col;
+        capacity = cap;
         /// For ascending sort, NaN/NULL should be greater (direction_hint=1) so they get evicted first.
         /// For descending sort, NaN/NULL should be less (direction_hint=-1) so they get evicted first.
         nan_direction_hint = dir;
         heap_column = source_column.cloneEmpty();
         heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(HeapComparator{this});
+        compaction_threshold = capacity + capacity / 2;  /// 1.5x capacity
     }
 
     size_t size() const { return heap.size(); }
@@ -58,10 +121,74 @@ struct ColumnBoundedHeap
         heap.push(new_idx);
     }
 
-    /// Remove the boundary element (heap root).
-    void pop()
+    /// Returns true when the heap has grown past the compaction threshold (1.5x capacity)
+    /// and needs to be trimmed back down to `capacity`.
+    bool needsTrim() const
     {
-        heap.pop();
+        return compaction_threshold > 0 && heap.size() > compaction_threshold;
+    }
+
+    /// Trim the heap back to `capacity` by popping excess elements, calling `on_evict`
+    /// for each evicted element's index in heap_column, then compact the column to
+    /// reclaim dead slots. This batches O(0.5 * capacity) pops and one column filter
+    /// instead of doing a pop+erase per row.
+    ///
+    /// `on_evict` receives the heap_column index of each evicted key and is responsible
+    /// for erasing it from the hash table and destroying aggregate states if needed.
+    template <typename EvictCallback>
+    void trimAndCompact(EvictCallback && on_evict)
+    {
+        /// Pop excess entries from the heap, calling the callback for each.
+        while (heap.size() > capacity)
+        {
+            size_t evicted = heap.top();
+            heap.pop();
+            on_evict(evicted);
+        }
+
+        /// Now compact the heap_column: filter out dead slots and remap indices.
+        size_t col_size = heap_column->size();
+        size_t heap_size = heap.size();
+        if (col_size <= heap_size)
+            return;
+
+        /// Extract the underlying container from the priority queue.
+        struct HeapAccess : std::priority_queue<size_t, std::vector<size_t>, HeapComparator>
+        {
+            using PQ = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>;
+            explicit HeapAccess(PQ && pq) : PQ(std::move(pq)) {}
+            std::vector<size_t> & getContainer() { return this->c; }
+        };
+
+        HeapAccess access(std::move(heap));
+        auto & indices = access.getContainer();
+
+        /// Build filter: mark live slots as 1, dead as 0.
+        IColumn::Filter filter(col_size, 0);
+        /// old_to_new[old_idx] = new_idx after filtering.
+        std::vector<size_t> old_to_new(col_size);
+        for (size_t idx : indices)
+            filter[idx] = 1;
+
+        /// Compute prefix sum for index remapping.
+        size_t new_idx = 0;
+        for (size_t i = 0; i < col_size; ++i)
+        {
+            if (filter[i])
+                old_to_new[i] = new_idx++;
+        }
+
+        /// Filter heap_column in-place, keeping only live rows.
+        heap_column->filter(filter);
+
+        /// Remap all indices in the priority queue container.
+        for (auto & idx : indices)
+            idx = old_to_new[idx];
+
+        /// Rebuild the priority queue with the updated indices and correct comparator.
+        /// The constructor calls std::make_heap on the container.
+        heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(
+            HeapComparator{this}, std::move(indices));
     }
 
 private:
@@ -101,6 +228,8 @@ private:
     };
 
     std::priority_queue<size_t, std::vector<size_t>, HeapComparator> heap;
+    size_t capacity = 0;              /// target heap size (= top_n_keys)
+    size_t compaction_threshold = 0;  /// heap size at which to trigger trim+compact (1.5x capacity)
 };
 
 /// For the case where there is one numeric key.
