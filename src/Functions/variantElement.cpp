@@ -79,7 +79,7 @@ public:
         std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, arguments.size());
         if (variant_global_discr.has_value())
         {
-            DataTypePtr return_type = makeNullableOrLowCardinalityNullableSafeBySettings(variant_type->getVariant(variant_global_discr.value()));
+            DataTypePtr return_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
 
             for (; count_arrays; --count_arrays)
                 return_type = std::make_shared<DataTypeArray>(return_type);

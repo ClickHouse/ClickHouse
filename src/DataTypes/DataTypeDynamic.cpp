@@ -217,7 +217,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     bool is_null_map_subcolumn = subcolumn_nested_name == "null";
     if (is_null_map_subcolumn)
     {
-        if (!canBeInsideNullableBySettings(subcolumn_type))
+        if (!canExtractedSubcolumnsBeInsideNullable(subcolumn_type))
         {
             if (throw_if_null)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Dynamic type doesn't have subcolumn '{}'", subcolumn_name);
@@ -241,7 +241,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
 
     res->serialization = std::make_shared<SerializationDynamicElement>(res->serialization, subcolumn_type->getName(), String(subcolumn_nested_name), is_null_map_subcolumn);
     /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
-    bool make_subcolumn_nullable = canBeInsideNullableOrLowCardinalityNullableBySettings(subcolumn_type);
+    bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
     if (!is_null_map_subcolumn && make_subcolumn_nullable)
         res->type = makeNullableOrLowCardinalityNullableSafe(res->type);
 

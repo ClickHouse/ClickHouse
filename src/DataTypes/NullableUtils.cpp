@@ -17,36 +17,36 @@ namespace ServerSetting
 extern const ServerSettingsBool allow_nullable_tuple_in_extracted_subcolumns;
 }
 
-static bool isNullableTupleEnabledByServerSetting()
+static bool isNullableTupleInExtractedSubcolumnsEnabledByServerSetting()
 {
     auto context = Context::getGlobalContextInstance();
     return context && context->getServerSettings()[ServerSetting::allow_nullable_tuple_in_extracted_subcolumns];
 }
 
-static bool canBeInsideNullableBySettings(const ColumnPtr & column)
+static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
 {
     if (checkAndGetColumn<ColumnTuple>(column.get()))
-        return isNullableTupleEnabledByServerSetting();
+        return isNullableTupleInExtractedSubcolumnsEnabledByServerSetting();
 
     return column->canBeInsideNullable();
 }
 
-bool canBeInsideNullableBySettings(const DataTypePtr & type)
+bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type)
 {
     if (isTuple(type))
-        return isNullableTupleEnabledByServerSetting();
+        return isNullableTupleInExtractedSubcolumnsEnabledByServerSetting();
 
     return type->canBeInsideNullable();
 }
 
-bool canBeInsideNullableOrLowCardinalityNullableBySettings(const DataTypePtr & type)
+bool canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(const DataTypePtr & type)
 {
-    return canBeInsideNullableBySettings(removeLowCardinality(type));
+    return canExtractedSubcolumnsBeInsideNullable(removeLowCardinality(type));
 }
 
-DataTypePtr makeNullableOrLowCardinalityNullableSafeBySettings(const DataTypePtr & type)
+DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const DataTypePtr & type)
 {
-    if (!canBeInsideNullableOrLowCardinalityNullableBySettings(type))
+    if (!canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type))
         return type;
 
     return makeNullableOrLowCardinalityNullableSafe(type);
@@ -112,21 +112,21 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
-    if (!canBeInsideNullableBySettings(prev))
+    if (!canExtractedSubcolumnsBeInsideNullable(prev))
         return prev;
     return makeNullableSafe(prev);
 }
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
-    if (prev_type && !canBeInsideNullableBySettings(prev_type))
+    if (prev_type && !canExtractedSubcolumnsBeInsideNullable(prev_type))
         return prev_serialization;
     return std::make_shared<SerializationNullable>(prev_serialization);
 }
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
-    if (canBeInsideNullableBySettings(prev))
+    if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
     return prev;
 }

@@ -19,14 +19,14 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
   * This setting can only be updated with a server restart.
   * For non-tuple types this matches `IDataType::canBeInsideNullable()`.
   */
-bool canBeInsideNullableBySettings(const DataTypePtr & type);
+bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type);
 
-/** Same check as `canBeInsideNullableBySettings()`, but for
+/** Same check as `canExtractedSubcolumnsBeInsideNullable()`, but for
   * `LowCardinality(T)` checks whether nested `T` can be nullable by
   * settings, i.e. whether wrapping into `LowCardinality(Nullable(T))` is
   * possible.
   */
-bool canBeInsideNullableOrLowCardinalityNullableBySettings(const DataTypePtr & type);
+bool canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(const DataTypePtr & type);
 
 /** Wraps `type` into `Nullable(...)` or `LowCardinality(Nullable(...))` when
   * allowed by type capabilities and current
@@ -34,7 +34,7 @@ bool canBeInsideNullableOrLowCardinalityNullableBySettings(const DataTypePtr & t
   * This setting can only be updated with a server restart.
   * Returns `type` unchanged when wrapping is not allowed.
   */
-DataTypePtr makeNullableOrLowCardinalityNullableSafeBySettings(const DataTypePtr & type);
+DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 
 struct NullableSubcolumnCreator : public ISerialization::ISubcolumnCreator
 {

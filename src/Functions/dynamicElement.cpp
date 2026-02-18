@@ -67,7 +67,7 @@ public:
                             getName(),
                             arguments[0].type->getName());
 
-        auto return_type = makeNullableOrLowCardinalityNullableSafeBySettings(getRequestedType(arguments[1].column));
+        auto return_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(getRequestedType(arguments[1].column));
 
         for (; count_arrays; --count_arrays)
             return_type = std::make_shared<DataTypeArray>(return_type);
