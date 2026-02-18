@@ -41,7 +41,7 @@ public:
     bool empty() const { return tasks.empty(); }
 
     /// Add new task to queue.
-    void addTask(size_t thread_number, void * data, int fd);
+    void addTask(size_t thread_number, void * data, int fd, uint32_t events = EPOLLIN | EPOLLERR);
 
     /// Wait for any descriptor. If no descriptors in queue, blocks.
     /// Returns ptr which was inserted into queue or nullptr if finished was called.

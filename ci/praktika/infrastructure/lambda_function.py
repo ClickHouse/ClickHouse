@@ -30,17 +30,6 @@ class Lambda:
         memory_size_mb: int = 128
         ext: Dict[str, Any] = field(default_factory=dict)
 
-        def dump(self):
-            """
-            Dump lambda config as json into /tmp/lambda_{name}.json
-            """
-            output_path = f"/tmp/lambda_{self.name}.json"
-
-            with open(output_path, "w") as f:
-                json.dump(asdict(self), f, indent=2, default=str)
-
-            print(f"Lambda config dumped to: {output_path}")
-
         def fetch(self):
             """
             Fetch Lambda function configuration from AWS and store in ext dictionary.

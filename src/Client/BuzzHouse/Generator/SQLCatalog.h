@@ -78,6 +78,10 @@ enum class LakeCatalog
     Unity = 4
 };
 
+extern const std::vector<std::vector<OutFormat>> outFormats;
+extern const std::unordered_map<OutFormat, InFormat> outIn;
+extern const std::vector<std::vector<InOutFormat>> inOutFormats;
+
 struct SQLColumn
 {
 public:

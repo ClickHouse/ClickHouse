@@ -1730,7 +1730,8 @@
         if (result.info) {
             const textDiv = document.createElement('div');
             textDiv.id = 'info-content';
-            textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+            const info = (result.info || '').replace(/\n/g, '<br>');
+            textDiv.innerHTML = info.replace('ERROR: ', '<span class="status-error">ERROR:</span> ');
             resultsDiv.appendChild(textDiv);
         }
 

@@ -43,7 +43,6 @@ public:
         CLEAR_QUERY_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
-        CLEAR_PARQUET_METADATA_CACHE,
         CLEAR_FILESYSTEM_CACHE,
         CLEAR_DISTRIBUTED_CACHE,
         CLEAR_DISK_METADATA_CACHE,
@@ -81,6 +80,7 @@ public:
         RELOAD_CONFIG,
         RELOAD_USERS,
         RELOAD_ASYNCHRONOUS_METRICS,
+        RELOAD_DELTA_KERNEL_TRACING,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -190,6 +190,8 @@ public:
         RESUME
     };
     FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
+
+    String delta_kernel_tracing_level;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 

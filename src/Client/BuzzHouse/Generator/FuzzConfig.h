@@ -251,8 +251,8 @@ private:
 public:
     LoggerPtr log;
     std::ofstream outf;
-    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, remote_servers, remote_secure_servers,
-        http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings, hot_table_settings;
+    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, failpoints, remote_servers,
+        remote_secure_servers, http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings, hot_table_settings;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server, http_server, azurite_server, kafka_server, dolor_server;
     std::unordered_map<String, PerformanceMetric> metrics;
