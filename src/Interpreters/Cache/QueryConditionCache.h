@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CacheBase.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
@@ -28,26 +29,30 @@ public:
     using MatchingMarks = std::vector<bool>;
 
 private:
-    /// Key + entry represent a mark range result.
-    struct Key
-    {
-        const UUID table_id;
-        const String part_name;
-        const UInt64 condition_hash;
-
-        /// -- Additional members, conceptually not part of the key. Only included for pretty-printing
-        ///    in system.query_condition_cache:
-        const String condition;
-
-        bool operator==(const Key & other) const;
-    };
+    /// A hash of the table id, part name and condition id.
+    /// CityHash128 is enough to use for practical applications as the probability of collisions is very low.
+    /// https://github.com/ClickHouse/ClickHouse/issues/9506
+    using Key = UInt128;
 
     struct Entry
     {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Store extended information only in Debug builds.
+        /// Having them in release builds is too costly.
+        const UUID table_id;
+        const String part_name;
+        const UInt64 condition_hash = 42;
+        const String condition;
+#endif
+
         MatchingMarks matching_marks;
         SharedMutex mutex; /// (*)
 
         explicit Entry(size_t mark_count); /// (**)
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, UInt64 condition_hash_, const String & condition_);
+#endif
 
         /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already. The reason is that
         ///     ClickHouse scans ranges within the same part in parallel. The first scan creates and inserts a new Key + Entry into the cache,
@@ -59,11 +64,6 @@ private:
         ///     initialize all marks of each entry as non-matching. In case of an exception, future scans will then not skip them.
     };
 
-    struct KeyHasher
-    {
-        size_t operator()(const Key & key) const;
-    };
-
     struct EntryWeight
     {
         size_t operator()(const Entry & entry) const;
@@ -71,7 +71,10 @@ private:
 
 
 public:
-    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
+    using Cache = CacheBase<Key, Entry, UInt128TrivialHash, EntryWeight>;
+
+    /// Compute cache key from table UUID, part name and condition hash
+    static Key makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash);
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 

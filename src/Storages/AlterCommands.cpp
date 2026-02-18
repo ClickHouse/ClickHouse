@@ -41,6 +41,9 @@
 
 #include <ranges>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -105,33 +108,33 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
 
         command.column_name = ast_col_decl.name;
-        if (ast_col_decl.type)
+        if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            command.data_type = data_type_factory.get(ast_col_decl.getType());
         }
-        if (ast_col_decl.default_expression)
+        if (ast_col_decl.getDefaultExpression())
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.default_expression;
+            command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
+            command.default_expression = ast_col_decl.getDefaultExpression();
         }
 
-        if (ast_col_decl.comment)
+        if (ast_col_decl.getComment())
         {
-            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
+            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.getComment());
             command.comment = ast_comment.value.safeGet<String>();
         }
 
-        if (ast_col_decl.codec)
+        if (ast_col_decl.getCodec())
         {
-            if (ast_col_decl.default_specifier == "ALIAS")
+            if (ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            command.codec = ast_col_decl.codec;
+            command.codec = ast_col_decl.getCodec();
         }
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
 
-        if (ast_col_decl.ttl)
-            command.ttl = ast_col_decl.ttl;
+        if (ast_col_decl.getTTL())
+            command.ttl = ast_col_decl.getTTL();
 
         command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
@@ -162,31 +165,31 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);
 
-        if (ast_col_decl.type)
+        if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            command.data_type = data_type_factory.get(ast_col_decl.getType());
         }
 
-        if (ast_col_decl.default_expression)
+        if (ast_col_decl.getDefaultExpression())
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.default_expression;
+            command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
+            command.default_expression = ast_col_decl.getDefaultExpression();
         }
 
-        if (ast_col_decl.comment)
+        if (ast_col_decl.getComment())
         {
-            const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
+            const auto & ast_comment = ast_col_decl.getComment()->as<ASTLiteral &>();
             command.comment.emplace(ast_comment.value.safeGet<String>());
         }
 
-        if (ast_col_decl.ttl)
-            command.ttl = ast_col_decl.ttl;
+        if (ast_col_decl.getTTL())
+            command.ttl = ast_col_decl.getTTL();
 
-        if (ast_col_decl.codec)
-            command.codec = ast_col_decl.codec;
+        if (ast_col_decl.getCodec())
+            command.codec = ast_col_decl.getCodec();
 
-        if (ast_col_decl.settings)
-            command.settings_changes = ast_col_decl.settings->as<ASTSetQuery &>().changes;
+        if (ast_col_decl.getSettings())
+            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
 
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
@@ -602,6 +605,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 if (data_type)
                 {
                     column.type = data_type;
+                    /// Update statistics data type to match the new column type
+                    if (!column.statistics.empty())
+                        column.statistics.data_type = data_type;
                     /// The type changed, so assume that implicit indices may change too
                     metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
@@ -687,8 +693,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add index {}: index with this name already exists", index_name);
         }
 
-        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)
-            && (metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns))
+
+        auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
+            || metadata.add_minmax_index_for_temporal_columns;
+        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX) && using_auto_minmax_index)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);
         }
@@ -862,6 +870,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
+
+#if CLICKHOUSE_CLOUD
+        /// For Shared Catalog on secondary replicas very likely we don't have the settings used to run the SELECT on the initiator.
+        /// Because of that we can fail, or the resulting columns can be different from the original ones.
+        /// So we return early and set the columns ourselves, if they differ.
+        if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+            return;
+#endif
+
         SharedHeader as_select_sample;
 
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -870,10 +887,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
         else
         {
+            /// For refreshable materialized views, allow parameterized views in the query.
+            /// This prevents the old analyzer from trying to execute table functions during analysis.
             as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
                 context,
                 false /* is_subquery */,
-                false);
+                metadata.refresh != nullptr /* is_create_parameterized_view */);
         }
 
         metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());

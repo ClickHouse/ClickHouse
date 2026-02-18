@@ -21,6 +21,7 @@ DB::DataTypePtr SystemTablesDataTypes::errorCodeEnum()
             {"ZOPERATIONTIMEOUT",           static_cast<Int8>(Error::ZOPERATIONTIMEOUT)},
             {"ZBADARGUMENTS",               static_cast<Int8>(Error::ZBADARGUMENTS)},
             {"ZINVALIDSTATE",               static_cast<Int8>(Error::ZINVALIDSTATE)},
+            {"ZOUTOFMEMORY",                static_cast<Int8>(Error::ZOUTOFMEMORY)},
             {"ZAPIERROR",                   static_cast<Int8>(Error::ZAPIERROR)},
             {"ZNONODE",                     static_cast<Int8>(Error::ZNONODE)},
             {"ZNOAUTH",                     static_cast<Int8>(Error::ZNOAUTH)},
@@ -36,6 +37,7 @@ DB::DataTypePtr SystemTablesDataTypes::errorCodeEnum()
             {"ZNOTHING",                    static_cast<Int8>(Error::ZNOTHING)},
             {"ZSESSIONMOVED",               static_cast<Int8>(Error::ZSESSIONMOVED)},
             {"ZNOTREADONLY",                static_cast<Int8>(Error::ZNOTREADONLY)},
+            {"ZNOWATCHER",                  static_cast<Int8>(Error::ZNOWATCHER)},
         });
     return result;
 }
@@ -63,15 +65,21 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"List",                static_cast<Int16>(OpNum::List)},
             {"Check",               static_cast<Int16>(OpNum::Check)},
             {"Multi",               static_cast<Int16>(OpNum::Multi)},
+            {"Create2",             static_cast<Int16>(OpNum::Create2)},
+            {"CheckWatch",          static_cast<Int16>(OpNum::CheckWatch)},
+            {"RemoveWatch",         static_cast<Int16>(OpNum::RemoveWatch)},
             {"MultiRead",           static_cast<Int16>(OpNum::MultiRead)},
             {"Auth",                static_cast<Int16>(OpNum::Auth)},
+            {"SetWatch",            static_cast<Int16>(OpNum::SetWatch)},
+            {"SetWatch2",           static_cast<Int16>(OpNum::SetWatch2)},
+            {"AddWatch",            static_cast<Int16>(OpNum::AddWatch)},
             {"SessionID",           static_cast<Int16>(OpNum::SessionID)},
             {"FilteredList",        static_cast<Int16>(OpNum::FilteredList)},
             {"CheckNotExists",      static_cast<Int16>(OpNum::CheckNotExists)},
             {"CreateIfNotExists",   static_cast<Int16>(OpNum::CreateIfNotExists)},
             {"RemoveRecursive",     static_cast<Int16>(OpNum::RemoveRecursive)},
             {"CheckStat",           static_cast<Int16>(OpNum::CheckStat)},
-            {"Create2",             static_cast<Int16>(OpNum::Create2)},
+            {"FilteredListWithStatsAndData", static_cast<Int16>(OpNum::FilteredListWithStatsAndData)},
         });
     return result;
 }

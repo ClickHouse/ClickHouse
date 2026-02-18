@@ -460,7 +460,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
         ostr << "MODIFY TTL ";
-        ttl->format(ostr, settings, state, frame);
+        auto nested_frame = frame;
+        nested_frame.expression_list_prepend_whitespace = false;
+        ttl->format(ostr, settings, state, nested_frame);
     }
     else if (type == ASTAlterCommand::REMOVE_TTL)
     {

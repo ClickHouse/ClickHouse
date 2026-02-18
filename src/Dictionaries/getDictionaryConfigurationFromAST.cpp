@@ -7,6 +7,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>

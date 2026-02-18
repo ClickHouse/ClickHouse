@@ -186,6 +186,7 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.05}, /// LambdaExpr
               {0.01, 0.05}, /// ProjectionExpr
               {0.01, 0.05}, /// DictExpr
+              {0.01, 0.05}, /// JoinExpr
               {0.01, 0.02} /// StarExpr
           }}))
     , predGen(ProbabilityGenerator(
@@ -212,7 +213,7 @@ StatementGenerator::StatementGenerator(
               {0.15, 0.80}, /// Table
               {0.10, 0.40}, /// View
               {0.05, 0.15}, /// RemoteUDF
-              {0.02, 0.20}, /// GenerateSeriesUDF
+              {0.02, 0.20}, /// NumbersUDF
               {0.02, 0.05}, /// SystemTable
               {0.01, 0.05}, /// MergeUDF
               {0.05, 0.15}, /// ClusterUDF
@@ -1364,14 +1365,14 @@ void StatementGenerator::generateInsertToTable(
             bool first = true;
             bool has_aggr = false;
             SelectStatementCore * ssc = sel->mutable_select_core();
-            GenerateSeriesFunc * gsf = ssc->mutable_from()
-                                           ->mutable_tos()
-                                           ->mutable_join_clause()
-                                           ->mutable_tos()
-                                           ->mutable_joined_table()
-                                           ->mutable_tof()
-                                           ->mutable_tfunc()
-                                           ->mutable_gseries();
+            NumbersFunc * gsf = ssc->mutable_from()
+                                    ->mutable_tos()
+                                    ->mutable_join_clause()
+                                    ->mutable_tos()
+                                    ->mutable_joined_table()
+                                    ->mutable_tof()
+                                    ->mutable_tfunc()
+                                    ->mutable_numbers();
             const uint32_t nested_nrows = static_cast<uint32_t>(nested_rows_dist(rg.generator));
 
             for (const auto & entry : this->entries)
@@ -1389,7 +1390,7 @@ void StatementGenerator::generateInsertToTable(
                 has_aggr |= entry.getBottomType()->getTypeClass() == SQLTypeClass::AGGREGATEFUNCTION;
             }
             ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_lit_val()->set_no_quote_str(std::move(buf));
-            gsf->set_fname(GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers);
+            gsf->set_fname(NumbersFunc_NumbersName::NumbersFunc_NumbersName_numbers);
             gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
             if (has_aggr || rg.nextMediumNumber() < 21)
             {
@@ -2059,7 +2060,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
         {
             AddIndex * add_index = ati->mutable_add_index();
 
-            addTableIndex(rg, t, true, add_index->mutable_new_idx());
+            addTableIndex(rg, t, true, false, add_index->mutable_new_idx());
             if (!t.idxs.empty())
             {
                 const uint32_t next_option = rg.nextSmallNumber();
@@ -2958,6 +2959,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t drop_text_index_postings_cache = 3;
     const uint32_t drop_text_index_caches = 3;
     const uint32_t iceberg_metadata_cache = 3;
+    const uint32_t reset_ddl_worker = 3;
+    const uint32_t drop_parquet_metadata_cache = 3;
     const uint32_t prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
         + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
         + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
@@ -2970,7 +2973,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         + drop_schema_cache + drop_s3_client_cache + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache
         + reload_dictionary + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache
         + enable_failpoint + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
-        + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache;
+        + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + drop_parquet_metadata_cache;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::optional<String> cluster;
@@ -3940,6 +3943,47 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + 1))
     {
         sc->set_iceberg_metadata_cache(true);
+    }
+    else if (
+        reset_ddl_worker
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + 1))
+    {
+        sc->set_reset_ddl_worker(true);
+    }
+    else if (
+        drop_parquet_metadata_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker
+               + drop_parquet_metadata_cache + 1))
+    {
+        sc->set_drop_parquet_metadata_cache(true);
     }
     else
     {

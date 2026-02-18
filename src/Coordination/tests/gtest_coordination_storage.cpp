@@ -851,6 +851,208 @@ TYPED_TEST(CoordinationTest, TestListRequestTypes)
     }
 }
 
+TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+
+    int32_t zxid = 0;
+
+    static constexpr std::string_view test_path = "/list_with_stats_and_data";
+
+    const auto create_path = [&](const auto & path, const std::string & data = "")
+    {
+        int new_zxid = ++zxid;
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        create_request->path = path;
+        create_request->data = data;
+        storage.preprocessRequest(create_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(create_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    };
+
+    const auto modify_path = [&](const auto & path, const auto & data)
+    {
+        int new_zxid = ++zxid;
+        const auto set_request = std::make_shared<ZooKeeperSetRequest>();
+        set_request->path = path;
+        set_request->data = data;
+        storage.preprocessRequest(set_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(set_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    };
+
+    const auto get_children_with_options = [&](const auto & path, bool with_stat, bool with_data)
+    {
+        int new_zxid = ++zxid;
+        const auto list_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        list_request->path = path;
+        list_request->list_request_type = ListRequestType::ALL;
+        list_request->with_stat = with_stat;
+        list_request->with_data = with_data;
+        storage.preprocessRequest(list_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(list_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        const auto & list_response = dynamic_cast<const ListResponse &>(*responses[0].response);
+        return list_response;
+    };
+
+    create_path(std::string{test_path});
+
+    {
+        SCOPED_TRACE("Empty directory - no stats or data");
+        const auto response = get_children_with_options(std::string{test_path}, false, false);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names.size(), 0);
+        EXPECT_EQ(response.stats.size(), 0);
+        EXPECT_EQ(response.data.size(), 0);
+    }
+
+    // Create children
+    create_path(std::string{test_path} + "/child1", "data1");
+    create_path(std::string{test_path} + "/child2", "data2");
+    create_path(std::string{test_path} + "/child3", "data3");
+
+    {
+        SCOPED_TRACE("Directory with children - only names");
+        const auto response = get_children_with_options(std::string{test_path}, false, false);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names.size(), 3);
+        EXPECT_EQ(response.stats.size(), 0);
+        EXPECT_EQ(response.data.size(), 0);
+
+        std::unordered_set<std::string> children_set(response.names.begin(), response.names.end());
+        EXPECT_TRUE(children_set.contains("child1"));
+        EXPECT_TRUE(children_set.contains("child2"));
+        EXPECT_TRUE(children_set.contains("child3"));
+    }
+
+    {
+        SCOPED_TRACE("Directory with children - with stats only");
+        const auto response = get_children_with_options(std::string{test_path}, true, false);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names.size(), 3);
+        EXPECT_EQ(response.stats.size(), 3);
+        EXPECT_EQ(response.data.size(), 0);
+
+        std::unordered_map<std::string, Stat> children_map;
+        for (size_t i = 0; i < response.names.size(); ++i)
+        {
+            children_map[response.names[i]] = response.stats[i];
+            EXPECT_EQ(response.stats[i].version, 0);  // Initial version
+            EXPECT_GT(response.stats[i].mzxid, 0);     // mzxid should be set
+            EXPECT_EQ(response.stats[i].dataLength, 5); // "data1", "data2", "data3" are all 5 chars
+        }
+
+        EXPECT_TRUE(children_map.contains("child1"));
+        EXPECT_TRUE(children_map.contains("child2"));
+        EXPECT_TRUE(children_map.contains("child3"));
+    }
+
+    {
+        SCOPED_TRACE("Directory with children - with data only");
+        const auto response = get_children_with_options(std::string{test_path}, false, true);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names.size(), 3);
+        EXPECT_EQ(response.stats.size(), 0);
+        EXPECT_EQ(response.data.size(), 3);
+
+        std::unordered_map<std::string, std::string> children_map;
+        for (size_t i = 0; i < response.names.size(); ++i)
+        {
+            children_map[response.names[i]] = response.data[i];
+        }
+
+        EXPECT_EQ(children_map["child1"], "data1");
+        EXPECT_EQ(children_map["child2"], "data2");
+        EXPECT_EQ(children_map["child3"], "data3");
+    }
+
+    {
+        SCOPED_TRACE("Directory with children - with both stats and data");
+        const auto response = get_children_with_options(std::string{test_path}, true, true);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names.size(), 3);
+        EXPECT_EQ(response.stats.size(), 3);
+        EXPECT_EQ(response.data.size(), 3);
+
+        for (size_t i = 0; i < response.names.size(); ++i)
+        {
+            EXPECT_EQ(response.stats[i].version, 0);
+            EXPECT_GT(response.stats[i].mzxid, 0);
+            // Data should correspond to the child name
+            if (response.names[i] == "child1")
+                EXPECT_EQ(response.data[i], "data1");
+            else if (response.names[i] == "child2")
+                EXPECT_EQ(response.data[i], "data2");
+            else if (response.names[i] == "child3")
+                EXPECT_EQ(response.data[i], "data3");
+        }
+    }
+
+    // Modify child2 to change its version and mzxid
+    const auto response_before = get_children_with_options(std::string{test_path}, true, true);
+    std::unordered_map<std::string, Stat> stats_before;
+    for (size_t i = 0; i < response_before.names.size(); ++i)
+    {
+        stats_before[response_before.names[i]] = response_before.stats[i];
+    }
+
+    modify_path(std::string{test_path} + "/child2", "modified_data");
+
+    {
+        SCOPED_TRACE("Check version and mzxid after modification");
+        const auto response = get_children_with_options(std::string{test_path}, true, true);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names.size(), 3);
+        EXPECT_EQ(response.stats.size(), 3);
+        EXPECT_EQ(response.data.size(), 3);
+
+        for (size_t i = 0; i < response.names.size(); ++i)
+        {
+            if (response.names[i] == "child2")
+            {
+                // Modified child should have incremented version and mzxid
+                EXPECT_EQ(response.stats[i].version, stats_before["child2"].version + 1);
+                EXPECT_GT(response.stats[i].mzxid, stats_before["child2"].mzxid);
+                EXPECT_EQ(response.data[i], "modified_data");
+                EXPECT_EQ(response.stats[i].dataLength, 13); // "modified_data" length
+            }
+            else
+            {
+                // Other children should remain unchanged
+                const auto & name = response.names[i];
+                EXPECT_EQ(response.stats[i].version, stats_before[name].version);
+                EXPECT_EQ(response.stats[i].mzxid, stats_before[name].mzxid);
+            }
+        }
+    }
+
+    {
+        SCOPED_TRACE("Non-existent path");
+        int new_zxid = ++zxid;
+        const auto list_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        list_request->path = "/nonexistent";
+        list_request->list_request_type = ListRequestType::ALL;
+        list_request->with_stat = true;
+        list_request->with_data = false;
+        storage.preprocessRequest(list_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(list_request, 1, new_zxid);
+        EXPECT_GE(responses.size(), 1);
+        const auto & list_response = dynamic_cast<const ListResponse &>(*responses[0].response);
+        EXPECT_EQ(list_response.error, Error::ZNONODE);
+    }
+}
+
 TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
 {
     using namespace DB;

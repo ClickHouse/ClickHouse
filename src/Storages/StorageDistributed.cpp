@@ -929,8 +929,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
-    replase_alias_columns_visitor.visit(query_tree_to_modify);
+    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
+    replace_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 
@@ -1431,6 +1431,9 @@ void StorageDistributed::initializeFromDisk()
 
     const auto & disks = data_volume->getDisks();
 
+    const auto & paths = getDataPaths();
+    std::vector<UInt64> last_increment(paths.size());
+
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_INIT);
@@ -1444,10 +1447,9 @@ void StorageDistributed::initializeFromDisk()
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    const auto & paths = getDataPaths();
-    std::vector<UInt64> last_increment(paths.size());
     for (size_t i = 0; i < paths.size(); ++i)
     {
+        /// Passing paths and last_increment are reference is fine since they are created before runner and will outlive it
         runner.enqueueAndKeepTrack([&paths, &last_increment, i]
         {
             last_increment[i] = getMaximumFileNumber(paths[i]);
@@ -1903,6 +1905,7 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
         for (const auto & node : directory_queues)
         {
+            /// Passing settings_changes as reference is fine since it will outlive the runner
             runner.enqueueAndKeepTrack([node_to_flush = node, &settings_changes]
             {
                 node_to_flush->flushAllData(settings_changes);
@@ -1989,7 +1992,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
             "Too many bytes pending for async INSERT: {} (bytes_to_throw_insert={})",
             formatReadableSizeWithBinarySuffix(total_bytes),
-            formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_throw_insert]));
+            formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_throw_insert].value));
     }
 
     if ((*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
@@ -2019,7 +2022,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
             throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
                 "Too many bytes pending for async INSERT: {} (bytes_to_delay_insert={})",
                 formatReadableSizeWithBinarySuffix(new_total_bytes),
-                formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_delay_insert]));
+                formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_delay_insert].value));
         }
     }
 }

@@ -36,10 +36,10 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
 
-[[maybe_unused]] static void tracingCallback(struct ffi::Event event)
+void tracingCallback(struct ffi::Event event)
 {
-    /// Do not pollute logs.
-    if (event.message.len > 100)
+    /// Do not pollute logs with very long messages
+    if (event.message.len > 200)
         return;
 
     const auto message = fmt::format(
@@ -89,9 +89,6 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     , format_name(configuration_.lock()->format)
 {
     object_storage_common = object_storage;
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    //ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
-#endif
 }
 
 bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadata) const

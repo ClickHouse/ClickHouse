@@ -5,7 +5,7 @@
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
-#include <Interpreters/Cache/UserInfo.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>
@@ -61,6 +61,8 @@ struct ReadSettings
 
     bool use_page_cache_for_disks_without_file_cache = false;
     [[maybe_unused]] bool use_page_cache_with_distributed_cache = false;
+    bool use_page_cache_for_local_disks = false;
+    bool use_page_cache_for_object_storage = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
     bool page_cache_inject_eviction = false;
     size_t page_cache_block_size = 1 << 20;
@@ -89,7 +91,7 @@ struct ReadSettings
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
-    std::optional<FileCacheUserInfo> filecache_user_info;
+    std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;

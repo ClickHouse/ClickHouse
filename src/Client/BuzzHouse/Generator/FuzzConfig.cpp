@@ -664,6 +664,23 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
     return res.empty() ? "-1" : res;
 }
 
+String FuzzConfig::getRandomFileSystemCacheValue()
+{
+    String res;
+
+    /// Can't use sampling here either
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res;
+}
+
 String FuzzConfig::tableGetRandomPartitionOrPart(
     const uint64_t rand_val, const bool detached, const bool partition, const String & database, const String & table)
 {
@@ -770,8 +787,8 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, Performan
             if (val.enabled)
             {
                 if (val.minimum < server.metrics.at(key)
-                    && server.metrics.at(key)
-                        > static_cast<uint64_t>(peer.metrics.at(key) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
+                    && server.metrics.at(key) > static_cast<uint64_t>(
+                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::BUZZHOUSE,

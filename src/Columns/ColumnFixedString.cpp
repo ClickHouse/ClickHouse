@@ -3,6 +3,7 @@
 #include <Columns/ColumnCompressed.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -47,6 +48,14 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 
     return new_col_holder;
 }
+
+DataTypePtr ColumnFixedString::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const
+{
+    if (options.notFull(name_buf))
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
+    return std::make_shared<DataTypeString>();
+}
+
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
@@ -438,7 +447,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 
     auto res = ColumnFixedString::create(n);
 
-    if (0 == col_size)
+    if (col_size == 0 || offsets.back() == 0)
         return res;
 
     Chars & res_chars = res->chars;

@@ -166,6 +166,8 @@ def buildx_args(
     action_url: str,
 ) -> List[str]:
     args = [
+        "--provenance=true",
+        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
@@ -299,6 +301,22 @@ def test_docker_library(test_results) -> None:
         )
 
 
+def check_server_readme(image_path: str) -> Result:
+    name = "Check README"
+    script = Path(f"{image_path}/README.sh")
+    if not script.is_file():
+        return Result(
+            name=name,
+            status=Result.Status.SKIPPED,
+            info="README.sh file is missing in the docker context",
+        )
+    # Regenerate README
+    Shell.check(script.as_posix())
+    return Result.from_commands_run(
+        name=name, command=f"git diff --exit-code {image_path}/README.md"
+    )
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     sw = Utils.Stopwatch()
@@ -406,6 +424,8 @@ def main():
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
         test_docker_library(test_results)
+
+    test_results.append(check_server_readme(image.path))
 
     Result.create_from(results=test_results, stopwatch=sw).complete_job()
 

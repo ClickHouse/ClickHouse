@@ -1,3 +1,5 @@
+-- Tags: no-async-insert
+
 DROP TABLE IF EXISTS t_leading_zeroes;
 DROP TABLE IF EXISTS t_leading_zeroes_f;
 

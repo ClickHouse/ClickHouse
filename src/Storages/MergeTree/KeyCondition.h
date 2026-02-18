@@ -199,6 +199,35 @@ public:
     /// TODO handle the cases when generate RPN.
     bool extractPlainRanges(Ranges & ranges) const;
 
+    /// Extract a conservative union of ranges implied by this condition for the only key column.
+    ///
+    /// This method tries to extract plain ranges from each top-level conjunct (AND component) independently
+    /// and intersects all successfully extracted conjunct ranges, ignoring the rest.
+    ///
+    /// Return value semantics:
+    ///  - empty vector means the condition is always false;
+    ///  - a single universe range `(-Inf, +Inf)` means no bounds could be inferred;
+    ///  - otherwise, the result may contain 1+ (possibly disjoint) ranges.
+    ///
+    /// If the key condition is not 1-dimensional (key_columns.size() != 1), the result is always `(-Inf, +Inf)`.
+    ///
+    /// Examples (single key column `x`):
+    ///  - `x % 2 = 0 AND x < 100`                    -> { "(-Inf, 99]" }  (the `%` conjunct is ignored)
+    ///  - `x > 10 AND x < 20 AND x % 2 = 0`          -> { "[11, 19]" }
+    ///  - `(x BETWEEN 0 AND 3) OR (x BETWEEN 10 AND 13)` -> { "[0, 3]", "[10, 13]" }
+    ///  - `x IN (8, 0, 6)`                           -> { "[0, 0]", "[6, 6]", "[8, 8]" }
+    ///  - `x NOT IN (2, 4)`                          -> { "(-Inf, 1]", "[3, 3]", "[5, +Inf)" }
+    ///  - `NOT (x BETWEEN 2 AND 6) AND x < 10`       -> { "(-Inf, 1]", "[7, 9]" }
+    ///  - `isNull(x)`                                -> {}               (for non-nullable keys)
+    ///  - `x < 5 AND x > 10`                         -> {}               (always false / contradictory)
+    ///  - `x % 2 = 0`                                -> { "(-Inf, +Inf)" } (no bounds inferred)
+    ///
+    /// Non-examples (currently NOT extracted; result is `{ "(-Inf, +Inf)" }` unless another conjunct provides bounds):
+    ///  - `x + 1 < 100`                               -> { "(-Inf, +Inf)" } (simple arithmetic on the key is not inverted to avoid potential overflow)
+    ///  - `intDiv(x, 3) < 10`                         -> { "(-Inf, +Inf)" } (functions on the key are not analyzed here)
+    ///  - `(x < 10 AND x % 2 = 0) OR (x < 20 AND x % 3 = 0)` -> { "(-Inf, +Inf)" } (no partial extraction across OR branches)
+    Ranges extractBounds() const;
+
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
