@@ -6,7 +6,6 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -21,6 +20,8 @@
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/SipHash.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
@@ -400,7 +401,6 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
-    extern const int TYPE_MISMATCH;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -2785,20 +2785,44 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     return res;
 }
 
-StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
+StoragePtr Context::executeTableFunction(
+    const ASTPtr & table_expression,
+    const TableFunctionPtr & table_function_ptr,
+    const ContextPtr & execution_context)
 {
     const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
-    const auto key = toString(hash);
+    const auto bare_key = toString(hash);
+    auto key = bare_key;
+
+    /// Incorporate a hash of the execution context's changed settings into the cache key.
+    /// This ensures that:
+    /// - identical table functions with the same effective settings are still reused from cache,
+    /// - table functions with different settings get separate cache entries.
+    {
+        SipHash settings_hash;
+        for (const auto & change : execution_context->getSettingsRef().changes())
+        {
+            settings_hash.update(change.name);
+            applyVisitor(FieldVisitorHash(settings_hash), change.value);
+        }
+        key += '/' + toString(settings_hash.get128());
+    }
 
     StoragePtr res;
     {
         std::lock_guard lock(table_function_results_mutex);
         res = table_function_results[key];
+        /// Also check the bare key (without settings suffix) for compatibility with
+        /// the other overload of executeTableFunction. That overload is used in
+        /// executeQuery.cpp to pre-create StorageInput for INSERT...SELECT with
+        /// inline data, and it caches the result under the bare AST hash key.
+        if (!res && key != bare_key)
+            res = table_function_results[bare_key];
     }
 
     if (!res)
     {
-        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+        res = table_function_ptr->execute(table_expression, execution_context, table_function_ptr->getName());
         std::lock_guard lock(table_function_results_mutex);
         /// In case of race, another thread might have inserted a result already.
         /// We just overwrite it since both should be equivalent.
@@ -2836,32 +2860,9 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
-
-    /* Check that the actual schema matches the defined one (if any) */
-    auto actual_names_and_types = sample_block->getNamesAndTypesList();
-    const auto original_defined_columns = original_view_metadata->getColumns();
-    if (!original_defined_columns.empty())
-    {
-        auto throw_schema_mismatch = [table_name]()
-        {
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
-                backQuote(table_name));
-        };
-        if (original_defined_columns.size() != actual_names_and_types.size())
-            throw_schema_mismatch();
-
-        for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
-        {
-            if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
-                throw_schema_mismatch();
-        }
-    }
-
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
-                                                ColumnsDescription(actual_names_and_types),
+                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
             /* comment */ "",
             /* is_parameterized_view */ true);
     res->startup();
@@ -5773,19 +5774,19 @@ String trim(const String & text)
 
 }
 
-void Context::setDashboardsConfig(const ConfigurationPtr & config)
+void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("dashboards", keys);
+    config.keys("dashboards", keys);
 
     Dashboards dashboards;
     for (const auto & key : keys)
     {
         const auto & prefix = "dashboards." + key + ".";
         dashboards.push_back({
-            { "dashboard", config->getString(prefix + "dashboard") },
-            { "title",     config->getString(prefix + "title") },
-            { "query",     trim(config->getString(prefix + "query")) },
+            { "dashboard", config.getString(prefix + "dashboard") },
+            { "title",     config.getString(prefix + "title") },
+            { "query",     trim(config.getString(prefix + "query")) },
         });
     }
 

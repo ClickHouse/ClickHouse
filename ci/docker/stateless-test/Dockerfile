@@ -31,6 +31,7 @@ RUN apt-get update -y \
         mysql-client=8.0* \
         ncdu \
         netcat-openbsd \
+        openssh-client \
         odbcinst \
         openjdk-11-jre-headless \
         openssl \
@@ -106,6 +107,14 @@ RUN arch=${TARGETARCH:-amd64} \
     && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
     && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \
     && chmod +x /usr/local/bin/azurite-rs
+
+ARG KAFKA_VERSION=3.9.0
+ARG SCALA_VERSION=2.13
+RUN curl -fsSL "https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz" \
+    | tar -xz -C /opt/ \
+    && ln -s /opt/kafka_${SCALA_VERSION}-${KAFKA_VERSION} /opt/kafka
+ENV KAFKA_HOME=/opt/kafka
+ENV PATH="${KAFKA_HOME}/bin:${PATH}"
 
 ENV PYTHONPATH=".:./ci"
 
