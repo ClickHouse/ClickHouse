@@ -4,7 +4,7 @@
 
 // Basic snappy uncompression, used for testing snappy compression requests
 //
-int mainEntryClickHouseSimpleSnappy(int , char ** )
+int mainEntryClickHouseSimpleSnappy(int, char **)
 {
     std::string line;
     std::getline(std::cin, line);
@@ -16,9 +16,7 @@ int mainEntryClickHouseSimpleSnappy(int , char ** )
     char * out_data = output.data();
     for (size_t i = 0 ; i < output.size(); ++i)
     {
-        // break when we reached the end of the uncompressed buffer, which is marked by the a 0 char
-        // TODO: throw exception if "i != outpout.size()-1"
-        //
+        /// Break when we reached the end of the uncompressed buffer, which is marked by the a 0 char
         if (out_data[i] == '\0')
         {
             std::cout << std::endl;
