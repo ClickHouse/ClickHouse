@@ -1,5 +1,6 @@
 #pragma once
 
+#include <shared_mutex>
 #ifdef OS_LINUX
 
 #include <Poco/Net/StreamSocket.h>
@@ -19,32 +20,27 @@ public:
     ~FutureConnection();
 
     /// Get the eventfd file descriptor for epoll (creates it lazily if needed)
-    int getEventFd();
+    int getEventFd() const;
 
     /// Check if the connection is ready (non-blocking)
     bool isReady() const;
 
-    /// Try to get the socket if ready, otherwise return nullptr (non-blocking)
-    std::unique_ptr<Poco::Net::StreamSocket> tryGetSocket();
+    /// Try to get the socket
+    /// Should only be called once the connection is ready, otherwise it will throw an exception.
+    /// Could be called multiple times after connection is ready and will return the same socket.
+    Poco::Net::Socket getSocket();
 
     /// Set the socket value (called when connection is established)
-    void setSocket(Poco::Net::StreamSocket socket);
-
-    /// Check if this FutureConnection has been retrieved (getConnection was called)
-    bool wasRetrieved() const { return retrieved.load(std::memory_order_acquire); }
-
-    /// Mark as retrieved (called by getConnection)
-    void markRetrieved() { retrieved.store(true, std::memory_order_release); }
+    /// Should be called only once, subsequent calls will throw an exception.
+    void setSocket(Poco::Net::Socket socket);
 
 private:
-    void ensureEventFd();
+    static int createEventFd();
 
-    std::mutex event_fd_mutex;
+    mutable std::mutex mutex;
+    std::promise<Poco::Net::Socket> promise;
+    std::shared_future<Poco::Net::Socket> future;
     int event_fd = -1;
-    std::promise<Poco::Net::StreamSocket> promise;
-    std::shared_future<Poco::Net::StreamSocket> future;
-    std::atomic<bool> ready{false};
-    std::atomic<bool> retrieved{false};
     LoggerPtr log = getLogger("FutureConnection");
 };
 

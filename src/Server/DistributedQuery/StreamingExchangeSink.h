@@ -27,7 +27,6 @@ public:
     String getName() const override { return "StreamingExchangeSink(" + stream_name + ")"; }
 
 private:
-    void onStart() override;
     void consume(Chunk chunk) override;
     void onFinish() override;
     void work() override;
@@ -44,8 +43,8 @@ private:
     /// Otherwise, need to wait on socket and then call this method again.
     void tryToSwitchSendBuffer();
 
-    /// Try to extract socket from future connection if ready
-    void tryExtractSocket();
+    /// Extract socket from future connection
+    void extractSocket();
 
     FutureConnectionPtr future_connection;
     std::unique_ptr<Poco::Net::StreamSocket> socket;

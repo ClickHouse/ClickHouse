@@ -5,8 +5,12 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Server/DistributedQuery/FutureConnection.h>
 
+#include <boost/container_hash/hash.hpp>
+
 #include <future>
 #include <memory>
+#include <utility>
+
 
 namespace DB
 {
@@ -33,7 +37,9 @@ public:
 
 private:
     std::mutex mutex;
-    std::unordered_map<String, std::unordered_map<String, FutureConnectionPtr>> connections;
+    using ConnectionKey = std::pair<String, String>; /// query_id, exchange_stream_id
+    using ConnectionsMap = std::unordered_map<ConnectionKey, FutureConnectionPtr, boost::hash<ConnectionKey>>;
+    ConnectionsMap pending_connections;
     LoggerPtr log = getLogger("ExchangeConnections");
 };
 

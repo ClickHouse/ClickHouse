@@ -1,3 +1,5 @@
+#include <memory>
+#include <base/defines.h>
 #ifdef OS_LINUX
 
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
@@ -30,46 +32,30 @@ StreamingExchangeSink::~StreamingExchangeSink()
         out->cancel();
 }
 
-void StreamingExchangeSink::onStart()
+void StreamingExchangeSink::extractSocket()
 {
-    /// Try to extract socket from future connection
-    tryExtractSocket();
-}
-
-void StreamingExchangeSink::tryExtractSocket()
-{
-    if (!socket && future_connection && future_connection->isReady())
-    {
-        LOG_TRACE(log, "Extracting socket from future connection for exchange stream {}", stream_name);
-        socket = future_connection->tryGetSocket();
-        if (!socket)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract socket from future connection");
-        }
-
-        /// Clear the eventfd by reading from it
-        int event_fd = future_connection->getEventFd();
-        uint64_t value;
-        ssize_t bytes_read = read(event_fd, &value, sizeof(value));
-        if (bytes_read != sizeof(value))
-        {
-            LOG_TEST(log, "Failed to clear eventfd, error {}", errno);
-        }
-
-        /// Clear the future connection as we no longer need it
-        future_connection.reset();
-    }
-
     if (socket)
-    {
-        /// Set socket to non-blocking mode after handshake is finished.
-        socket->setBlocking(false);
-        socket->setSendBufferSize(1 * 1024 * 1024);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Socket has already been extracted for exchange stream {}", stream_name);
 
-        /// Prepare initial in-memory buffer for serializing chunks
-        out = std::make_shared<WriteBufferFromOwnString>();
-        in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-    }
+    if (!future_connection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is not set for exchange stream {}", stream_name);
+
+    if (!future_connection->isReady())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is expected be ready at this point. Wrong sequence of prepare/schedule/work calls for exchange stream {}", stream_name);
+
+    LOG_TRACE(log, "Extracting socket from future connection for exchange stream {}", stream_name);
+    socket = std::make_unique<Poco::Net::StreamSocket>(future_connection->getSocket());
+    future_connection.reset();
+    chassert(socket);
+
+    /// Set socket to non-blocking mode after handshake is finished.
+    socket->setBlocking(false);
+    socket->setSendBufferSize(1 * 1024 * 1024);
+
+    /// Prepare initial in-memory buffer for serializing chunks
+    out = std::make_shared<WriteBufferFromOwnString>();
+    in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+
 }
 
 /// Send data to socket until the buffer is empty or until socket would block.
@@ -146,9 +132,6 @@ void StreamingExchangeSink::tryToSwitchSendBuffer()
 
 ISink::Status StreamingExchangeSink::prepare()
 {
-    if (!was_on_start_called)
-        return Status::Ready;
-
     /// If socket is not ready yet, wait for it
     if (!socket)
         return Status::Async;
@@ -188,17 +171,10 @@ ISink::Status StreamingExchangeSink::prepare()
 
 void StreamingExchangeSink::work()
 {
-    if (!was_on_start_called)
-    {
-        was_on_start_called = true;
-        onStart();
-        return;
-    }
-
     /// Try to extract socket if not done yet
     if (!socket)
     {
-        tryExtractSocket();
+        extractSocket();
         return;
     }
 
@@ -243,23 +219,25 @@ void StreamingExchangeSink::work()
 std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
 {
     /// If socket is not ready yet, wait on the eventfd
-    if (!socket && future_connection)
+    if (!socket)
     {
-        int fd = future_connection->getEventFd();
-        if (fd == -1)
-        {
-            tryExtractSocket();
-        }
-        else
-        {
-            LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
-            return {fd, EPOLL_EVENTS::EPOLLIN | EPOLL_EVENTS::EPOLLERR};
-        }
+        if (!future_connection)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is not set for exchange stream {}", stream_name);
+
+        if (future_connection->isReady())
+            extractSocket();
     }
 
-    LOG_TEST(log, "Schedule exchange stream sink {}, fd: {}", stream_name, socket->sockfd());
+    if (socket)
+    {
+        LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
+        return {socket->sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
+    }
 
-    return {socket->sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
+    int fd = future_connection->getEventFd();
+
+    LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
+    return {fd, EPOLL_EVENTS::EPOLLIN | EPOLL_EVENTS::EPOLLERR};
 }
 
 void StreamingExchangeSink::consume(Chunk chunk)

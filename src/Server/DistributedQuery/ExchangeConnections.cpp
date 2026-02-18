@@ -9,32 +9,26 @@ void ExchangeConnections::addConnection(const String & query_id, const String & 
 {
     LOG_TRACE(log, "Adding connection for query id {} exchange stream {}", query_id, exchange_stream_id);
 
-    bool should_remove = false;
+    const auto connection_key = std::make_pair(query_id, exchange_stream_id);
+
+    std::lock_guard lock(mutex);
+
+    /// Check if a FutureConnection already exists (getConnection was called first)
+    if (auto it = pending_connections.find(connection_key); it != pending_connections.end())
     {
-        std::lock_guard lock(mutex);
+        /// getConnection was called first, set the socket on the existing FutureConnection
+        it->second->setSocket(socket);
+        pending_connections.erase(it);
 
-        /// Check if a FutureConnection already exists (getConnection was called first)
-        auto & element = connections[query_id][exchange_stream_id];
-        if (!element)
-        {
-            /// getConnection hasn't been called yet, create a new FutureConnection
-            /// and keep it in the map until getConnection is called
-            element = std::make_shared<FutureConnection>();
-        }
-
-        /// Set the socket on the future connection
-        element->setSocket(socket);
-
-        /// If getConnection was already called, we can remove the entry now
-        should_remove = element->wasRetrieved();
     }
-
-    if (should_remove)
+    else
     {
-        std::lock_guard lock(mutex);
-        connections[query_id].erase(exchange_stream_id);
-        if (connections[query_id].empty())
-            connections.erase(query_id);
+        /// getConnection hasn't been called yet, create a new FutureConnection
+        /// and keep it in the map until getConnection is called
+        auto & element = pending_connections[connection_key];
+        chassert(!element);
+        element = std::make_shared<FutureConnection>();
+        element->setSocket(socket);
     }
 }
 
@@ -42,39 +36,26 @@ FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, 
 {
     LOG_TRACE(log, "Getting connection for query id {} exchange stream {}", query_id, exchange_stream_id);
 
-    FutureConnectionPtr result;
-    bool should_remove = false;
+    const auto connection_key = std::make_pair(query_id, exchange_stream_id);
+
+    std::lock_guard lock(mutex);
+
+    if (auto it = pending_connections.find(connection_key); it != pending_connections.end())
     {
-        std::lock_guard lock(mutex);
-
-        /// Check if a FutureConnection already exists (addConnection was called first)
-        auto & element = connections[query_id][exchange_stream_id];
-        if (!element)
-        {
-            /// addConnection hasn't been called yet, create a new FutureConnection
-            /// It will be populated by addConnection later
-            element = std::make_shared<FutureConnection>();
-        }
-
-        /// Mark as retrieved
-        element->markRetrieved();
-
-        /// Get the FutureConnection to return
-        result = element;
-
-        /// If socket was already set (addConnection was called first), we can remove the entry now
-        should_remove = element->isReady();
+        /// addConnection was called first, get the existing FutureConnection
+        auto result = it->second;
+        pending_connections.erase(it);
+        return result;
     }
-
-    if (should_remove)
+    else
     {
-        std::lock_guard lock(mutex);
-        connections[query_id].erase(exchange_stream_id);
-        if (connections[query_id].empty())
-            connections.erase(query_id);
+        /// addConnection hasn't been called yet, create a new FutureConnection
+        /// It will be populated by addConnection later
+        auto & element = pending_connections[connection_key];
+        chassert(!element);
+        element = std::make_shared<FutureConnection>();
+        return element;
     }
-
-    return result;
 }
 
 }
