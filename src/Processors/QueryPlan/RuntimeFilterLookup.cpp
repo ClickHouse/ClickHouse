@@ -105,8 +105,11 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 
+namespace
+{
+
 template <typename T>
-static T getColumnValue(const IColumn & column, size_t row)
+T getColumnValue(const IColumn & column, size_t row)
 {
     if constexpr (std::is_same_v<T, UInt64>)
         return column.getUInt(row);
@@ -116,6 +119,8 @@ static T getColumnValue(const IColumn & column, size_t row)
         return column.getFloat32(row);
     else
         return column.getFloat64(row);
+}
+
 }
 
 template <typename T>
@@ -137,15 +142,17 @@ ApproximateNumericRuntimeFilter<T>::ApproximateNumericRuntimeFilter(
         exact_values_limit_,
         bloom_filter_hash_functions_,
         max_ratio_of_set_bits_in_bloom_filter_)
-    , min_value(std::numeric_limits<T>::lowest())
-    , max_value(std::numeric_limits<T>::max())
+    , min_value(std::numeric_limits<T>::max())
+    , max_value(std::numeric_limits<T>::lowest())
 {
 }
 
 template <typename T>
 void ApproximateNumericRuntimeFilter<T>::finishInsertImpl()
 {
-    /// TODO: Build ExpressionActions with "value < min OR value > max" condition to be used in findImpl instead of building a column with results of this condition for each row
+    /// If the filter is approximate, there should be at least one value inserted.
+    /// This check ensures that a valid range [min_value, max_value] is built for the filter.
+    chassert(!isApproximate() || min_value <= max_value);
 
     Base::finishInsertImpl();
 }
