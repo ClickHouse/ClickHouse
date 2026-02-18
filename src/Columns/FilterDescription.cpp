@@ -17,7 +17,7 @@ namespace ErrorCodes
 extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
-MULTITARGET_FUNCTION_AVX512BW_AVX2(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), convertColumnToBoolImpl, MULTITARGET_FUNCTION_BODY((const typename ColumnVector<T>::Container & data, IColumnFilter & res)
@@ -37,14 +37,14 @@ ALWAYS_INLINE bool tryConvertColumnToBool(const IColumn & column, IColumnFilter 
 
     auto & data = column_typed->getData();
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
+    if (isArchSupported(TargetArch::x86_64_v4))
     {
-        convertColumnToBoolImplAVX512BW<T>(data, res);
+        convertColumnToBoolImpl_x86_64_v4<T>(data, res);
         return true;
     }
-    if (isArchSupported(TargetArch::AVX2))
+    if (isArchSupported(TargetArch::x86_64_v3))
     {
-        convertColumnToBoolImplAVX2<T>(data, res);
+        convertColumnToBoolImpl_x86_64_v3<T>(data, res);
         return true;
     }
 #endif

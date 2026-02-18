@@ -153,6 +153,20 @@ public:
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
+    virtual bool supportParallelNonJoinedBlocksProcessing() const { return false; }
+
+    /// Get non-joined blocks for a specific stream partition
+    /// stream_idx is in [0, num_streams), each stream must produce a disjoint subset of rows
+    /// Default: stream 0 returns everything, others return nothing
+    virtual IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+        size_t stream_idx, size_t /*num_streams*/) const
+    {
+        if (stream_idx != 0)
+            return {};
+        return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+    }
+
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
 

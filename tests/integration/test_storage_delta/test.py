@@ -58,7 +58,7 @@ from helpers.s3_tools import (
     LocalUploader,
 )
 from helpers.test_tools import TSV
-from helpers.spark_tools import ResilientSparkSession
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
@@ -71,7 +71,7 @@ S3_DATA = [
 ]
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("test_storage_delta")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -87,6 +87,13 @@ def get_spark():
         .config("spark.executor.memory", "8g")
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
 
     return builder.master("local").getOrCreate()
 
@@ -221,7 +228,9 @@ def started_cluster():
         # extend this if testing on other nodes becomes necessary
         cluster.local_uploader = LocalUploader(cluster.instances["node1"])
 
-        cluster.spark_session = ResilientSparkSession(get_spark)
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
 
         for file in S3_DATA:
             print(f"Copying object {file}")
@@ -4138,3 +4147,117 @@ def test_network_activity_with_system_tables(started_cluster):
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%Initialized scan state%'"
         )
     )
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1"])
+def test_system_reload_delta_kernel_tracing(started_cluster, use_delta_kernel):
+    """Test SYSTEM RELOAD DELTA KERNEL TRACING command with different log levels."""
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_tracing")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # First query WITHOUT tracing enabled
+    query_id_before = f"{TABLE_NAME}_before_tracing"
+    result = instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id_before)
+    assert int(result) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify that NO DeltaKernelTracing logs appear before enabling tracing
+    logs_before_count = int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE logger_name = 'DeltaKernelTracing' AND query_id = '{query_id_before}'"
+    ).strip())
+    assert logs_before_count == 0, f"Expected 0 DeltaKernelTracing logs before enabling tracing, got {logs_before_count}"
+
+    # Now enable TRACE level tracing
+    instance.query("SYSTEM RELOAD DELTA KERNEL TRACING TRACE")
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify the reload was successful
+    reload_success = instance.query(
+        "SELECT count() FROM system.text_log WHERE message LIKE '%Delta kernel tracing level reloaded to TRACE%'"
+    )
+    assert int(reload_success), "Expected successful reload to TRACE level to be logged"
+
+    # Query the same table WITH tracing enabled at TRACE level
+    query_id_trace = f"{TABLE_NAME}_trace_query"
+    result = instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id_trace)
+    assert int(result) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Now delta kernel logs should appear
+    logs_at_trace = int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE logger_name = 'DeltaKernelTracing' AND query_id = '{query_id_trace}'"
+    ).strip())
+    assert logs_at_trace > 0, f"Expected DeltaKernelTracing logs at TRACE level, got {logs_at_trace}"
+
+    # For this query, we expect DEBUG level logs (not necessarily TRACE)
+    # At TRACE level, we should see DEBUG logs
+    debug_level_count = int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE logger_name = 'DeltaKernelTracing' AND query_id = '{query_id_trace}' AND level = 'Debug'"
+    ).strip())
+    assert debug_level_count > 0, f"Expected Debug level logs at TRACE level, got {debug_level_count}"
+
+    # Now test switching to INFO level - should filter out DEBUG logs
+    instance.query("SYSTEM RELOAD DELTA KERNEL TRACING INFO")
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify the reload to INFO was successful
+    reload_info_success = instance.query(
+        "SELECT count() FROM system.text_log WHERE message LIKE '%Delta kernel tracing level reloaded to INFO%'"
+    )
+    assert int(reload_info_success), "Expected successful reload to INFO level to be logged"
+
+    query_id_info = f"{TABLE_NAME}_info_query"
+    result = instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id_info)
+    assert int(result) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify that DEBUG level logs don't appear at INFO level (they should be filtered out)
+    debug_count = int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE logger_name = 'DeltaKernelTracing' AND query_id = '{query_id_info}' AND level = 'Debug'"
+    ).strip())
+
+    assert debug_count == 0, f"Expected 0 Debug logs at INFO level, got {debug_count}"
+
+    # Test ERROR level - should not see any WARN, INFO, or DEBUG logs
+    instance.query("SYSTEM RELOAD DELTA KERNEL TRACING ERROR")
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify the reload to ERROR was successful
+    reload_error_success = instance.query(
+        "SELECT count() FROM system.text_log WHERE message LIKE '%Delta kernel tracing level reloaded to ERROR%'"
+    )
+    assert int(reload_error_success), "Expected successful reload to ERROR level to be logged"
+
+    query_id_error = f"{TABLE_NAME}_error_query"
+    result = instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id_error)
+    assert int(result) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # At ERROR level, should not see any higher level logs (WARN/INFO/DEBUG)
+    higher_count = int(instance.query(
+        f"""
+        SELECT count()
+        FROM system.text_log
+        WHERE logger_name = 'DeltaKernelTracing'
+        AND query_id = '{query_id_error}'
+        AND level IN ('Warning', 'Information', 'Debug')
+        """
+    ).strip())
+    assert higher_count == 0, f"Expected 0 higher-level logs at ERROR level, got {higher_count}"
+
+    # Test invalid level
+    error = instance.query_and_get_error("SYSTEM RELOAD DELTA KERNEL TRACING INVALID")
+    assert "BAD_ARGUMENTS" in error or "Invalid delta kernel tracing level" in error

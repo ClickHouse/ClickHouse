@@ -348,6 +348,17 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return aggregation_stats;
     }
 
+    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        if (sorting_step->getLimit())
+        {
+            if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
+                stats.estimated_rows = sorting_step->getLimit();
+        }
+        return stats;
+    }
+
     return {};
 }
 

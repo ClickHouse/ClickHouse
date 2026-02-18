@@ -207,7 +207,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             f"query_plan_optimize_join_order_limit={random.randint(0, 64)}"
         )
 
-    if random.random() < 0.2:
+    if random.random() < 0.2 and not upgrade_check:
         client_options.append(
             f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'"
         )
