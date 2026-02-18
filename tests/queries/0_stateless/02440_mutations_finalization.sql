@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
 
 create table mut (n int) engine=ReplicatedMergeTree('/test/02440/{database}/mut', '1') order by tuple();
 set insert_keeper_fault_injection_probability=0;

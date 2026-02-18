@@ -1,4 +1,5 @@
 -- Tags: no-random-detach
+-- no-random-detach: test checks deduplication
 
 select 'Different materialized view insert into one underlayed table equal data.';
 

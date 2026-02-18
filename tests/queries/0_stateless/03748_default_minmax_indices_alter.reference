@@ -1,5 +1,4 @@
 -- { echoOn }
--- Tags: no-random-detach
 DROP TABLE IF EXISTS t_implicit;
 CREATE TABLE t_implicit (a UInt64, s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;
 SHOW CREATE TABLE t_implicit;
