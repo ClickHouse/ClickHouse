@@ -277,11 +277,17 @@ TEST_F(ReadBufferFromS3Test, IterateUsesStartAfterOnlyForFirstPage)
         Aws::S3::Model::ListObjectsV2Result result;
         if (call == 0)
         {
+            Aws::S3::Model::Object object;
+            object.SetKey("prefix/file_011");
+            result.AddContents(object);
             result.SetIsTruncated(true);
             result.SetNextContinuationToken("next-page-token");
         }
         else
         {
+            Aws::S3::Model::Object object;
+            object.SetKey("prefix/file_012");
+            result.AddContents(object);
             result.SetIsTruncated(false);
         }
         ++call;
