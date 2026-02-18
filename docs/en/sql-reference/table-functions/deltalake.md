@@ -8,13 +8,13 @@ title: 'deltaLake'
 doc_type: 'reference'
 ---
 
-# deltaLake Table Function
+# deltaLake table function
 
-Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system.
+Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (from v25.10)
 
 ## Syntax {#syntax}
 
-`deltaLake` is an alias of `deltaLakeS3`, its supported for compatibility.
+`deltaLake` is an alias of `deltaLakeS3` which is supported for compatibility.
 
 ```sql
 deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
@@ -28,18 +28,21 @@ deltaLakeLocal(path, [,format])
 
 ## Arguments {#arguments}
 
-Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
-`format` stands for the format of data files in the Delta lake table.
+The arguments for this table function are the same as for the `s3`, `azureBlobStorage`, `HDFS` and `file` table functions respectively.
+The `format` argument stands for the format of data files in the Delta lake table.
 
 ## Returned value {#returned_value}
 
-A table with the specified structure for reading data in the specified Delta Lake table.
+Returns a table with the specified structure for reading or writing data from/to the specified Delta Lake table.
 
 ## Examples {#examples}
 
-Selecting rows from the table in S3 `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`:
+### Reading data {#reading-data}
 
-```sql
+Consider a table in S3 storage at `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`.
+To read data from the table in ClickHouse, run:
+
+```sql title="Query"
 SELECT
     URL,
     UserAgent
@@ -48,11 +51,50 @@ WHERE URL IS NOT NULL
 LIMIT 2
 ```
 
-```response
+```response title="Response"
 ┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
 │ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
 │ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │
 └───────────────────────────────────────────────────────────────────────┴───────────┘
+```
+
+### Inserting data {#inserting-data}
+
+Consider a table in S3 storage at `s3://ch-docs-s3-bucket/people_10k/`.
+To insert data into the table, first enable the experimental feature:
+
+```sql
+SET allow_experimental_delta_lake_writes=1
+```
+
+Then write:
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>') VALUES (10001, 'John', 'Smith', 'Male', 30)
+```
+
+```response title="Response"
+Query id: 09069b47-89fa-4660-9e42-3d8b1dde9b17
+
+Ok.
+
+1 row in set. Elapsed: 3.426 sec.
+```
+
+You can confirm the insert worked by reading the table again:
+
+```sql title="Query"
+SELECT *
+FROM deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>')
+WHERE (firstname = 'John') AND (lastname = 'Smith')
+```
+
+```response title="Response"
+Query id: 65032944-bed6-4d45-86b3-a71205a2b659
+
+   ┌────id─┬─firstname─┬─lastname─┬─gender─┬─age─┐
+1. │ 10001 │ John      │ Smith    │ Male   │  30 │
+   └───────┴───────────┴──────────┴────────┴─────┘
 ```
 
 ## Virtual Columns {#virtual-columns}

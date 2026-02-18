@@ -82,7 +82,9 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
+    static constexpr bool supportsTotalRows() { return true; }
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    static constexpr bool supportsTotalBytes() { return true; }
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
@@ -116,7 +118,7 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
 

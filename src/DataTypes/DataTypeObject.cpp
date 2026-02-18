@@ -158,6 +158,11 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     }
 }
 
+String DataTypeObject::getSchemaFormatString() const
+{
+    return String{magic_enum::enum_name(schema_format)};
+}
+
 String DataTypeObject::doGetName() const
 {
     WriteBufferFromOwnString out;
@@ -311,7 +316,7 @@ std::optional<String> tryGetSubObjectSubcolumn(std::string_view subcolumn_name)
 
 }
 
-std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const
+std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     /// Check if it's a special subcolumn used for distinct paths calculation.
     if (subcolumn_name == SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
@@ -465,7 +470,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// Get subcolumn for Dynamic type if needed.
     if (!path_subcolumn.empty())
     {
-        res = DB::IDataType::getSubcolumnData(path_subcolumn, *res, throw_if_null);
+        res = DB::IDataType::getSubcolumnData(path_subcolumn, *res, initial_array_level, throw_if_null);
         if (!res)
             return nullptr;
     }
@@ -524,12 +529,6 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
             auto data_type = DataTypeFactory::instance().get(path_with_type->type);
             if (typed_paths.contains(path_with_type->path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->path);
-
-            for (const auto & [path, _] : typed_paths)
-            {
-                if (path.starts_with(path_with_type->path + ".") || path_with_type->path.starts_with(path + "."))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found incompatible typed paths: {} and {}. One of them is a prefix of the other", path, path_with_type->path);
-            }
 
             if (typed_paths.size() >= DataTypeObject::MAX_TYPED_PATHS)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many typed paths. The maximum is: {}", DataTypeObject::MAX_TYPED_PATHS);

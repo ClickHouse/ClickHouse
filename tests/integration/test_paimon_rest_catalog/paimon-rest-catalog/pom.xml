@@ -43,7 +43,7 @@
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
-            <version>2.8.5</version>
+            <version>3.4.0</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-hdfs -->
         <dependency>
@@ -84,6 +84,15 @@
                                     <excludes>
                                         <exclude>META-INF/services/org.apache.paimon.format.FileFormatFactory</exclude>
                                         <exclude>META-INF/services/org.apache.paimon.factories.Factory</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/*.EC</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

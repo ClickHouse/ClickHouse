@@ -57,7 +57,7 @@ void FractionalOffsetStep::serialize(Serialization & ctx) const
     writeFloatBinary(fractional_offset, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> FractionalOffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
 {
     Float64 offset;
     readFloatBinary(offset, ctx.in);

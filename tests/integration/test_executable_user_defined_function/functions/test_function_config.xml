@@ -397,6 +397,18 @@
         <!-- <check_exit_code>1</check_exit_code> -->
     </function>
 
+    <function>
+        <type>executable</type>
+        <name>test_function_python_exception_default</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_python_exception.py</command>
+        <!-- Using default stderr_reaction (now 'throw' after the change) -->
+    </function>
+
     <!-- The next two UDFs have an explicit 'deterministic' tag defined -->
     <function>
         <type>executable</type>

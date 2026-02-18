@@ -15,7 +15,7 @@ constexpr T abs(T value) noexcept
     {
         if (value >= 0 || value == std::numeric_limits<T>::min())
             return value;
-        return -value;
+        return static_cast<T>(-value);
     }
     else
         return value;

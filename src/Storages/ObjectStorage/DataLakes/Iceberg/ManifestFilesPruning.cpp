@@ -37,7 +37,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 
     std::string transform_name = Poco::toLower(transform_name_src);
     if (transform_name == "identity")
-        return std::make_shared<ASTIdentifier>(column_name);
+        return make_intrusive<ASTIdentifier>(column_name);
 
     if (transform_name == "void")
         return makeASTOperator("tuple");
@@ -45,9 +45,9 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     if (transform_and_argument->argument.has_value())
     {
         return makeASTFunction(
-                transform_and_argument->transform_name, std::make_shared<DB::ASTLiteral>(*transform_and_argument->argument), std::make_shared<DB::ASTIdentifier>(column_name));
+                transform_and_argument->transform_name, make_intrusive<ASTLiteral>(*transform_and_argument->argument), make_intrusive<ASTIdentifier>(column_name));
     }
-    return makeASTFunction(transform_and_argument->transform_name, std::make_shared<DB::ASTIdentifier>(column_name));
+    return makeASTFunction(transform_and_argument->transform_name, make_intrusive<ASTIdentifier>(column_name));
 }
 
 std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const

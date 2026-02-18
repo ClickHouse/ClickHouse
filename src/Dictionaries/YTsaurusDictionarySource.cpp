@@ -1,6 +1,7 @@
 #include "config.h"
 
 #if USE_YTSAURUS
+#include <memory>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/YTsaurusDictionarySource.h>
 #include <Interpreters/Context.h>
@@ -60,28 +61,33 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
                 "Set `allow_experimental_ytsaurus_dictionary_source` setting to enable it");
 
         const auto config_prefix = root_config_prefix + ".ytsaurus";
-        auto configuration = std::make_shared<YTsaurusStorageConfiguration>();
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(config_prefix, keys);
-        for (const auto & key : keys)
-        {
-            if (!YTsaurusSettings::hasBuiltin(key))
-            {
-                continue;
-            }
-            configuration->settings.set(key, config.getString(config_prefix + "." + key));
-        }
+        std::shared_ptr<YTsaurusStorageConfiguration> configuration = nullptr;
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, config_prefix, context) : nullptr;
         if (named_collection)
         {
-            configuration->settings.loadFromNamedCollection(*named_collection);
-        }
 
-        boost::split(configuration->http_proxy_urls, config.getString(config_prefix + ".http_proxy_urls"), [](char c) { return c == '|'; });
-        configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
-        configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
-        if (config.has(config_prefix + ".ytsaurus_columns_description"))
-            configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
+            YTsaurusSettings settings;
+            configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::processNamedCollectionResult(*named_collection, settings, true));
+        }
+        else
+        {
+            configuration = std::make_shared<YTsaurusStorageConfiguration>();
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(config_prefix, keys);
+            for (const auto & key : keys)
+            {
+                if (!YTsaurusSettings::hasBuiltin(key))
+                {
+                    continue;
+                }
+                configuration->settings.set(key, config.getString(config_prefix + "." + key));
+            }
+            boost::split(configuration->http_proxy_urls, config.getString(config_prefix + ".http_proxy_urls"), [](char c) { return c == '|'; });
+            configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
+            configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
+            if (config.has(config_prefix + ".ytsaurus_columns_description"))
+                configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
+        }
 
         return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
     };

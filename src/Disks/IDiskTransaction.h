@@ -33,18 +33,14 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 struct IDiskTransaction : private boost::noncopyable
 {
 public:
-
-    /// Tries to commit all accumulated operations simultaneously.
-    /// If something fails rollback and throw exception.
-    virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
-    virtual void commit() { commit(NoCommitOptions{}); }
-
-    virtual void undo() noexcept = 0;
+    virtual void commit() = 0;
 
     virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Commit with ZK connection not implemented");
     }
+
+    virtual void undo() noexcept = 0;
 
     virtual ~IDiskTransaction() = default;
 

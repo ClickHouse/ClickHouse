@@ -114,19 +114,19 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserKeyword s_append(Keyword::APPEND);
         if (s_append.ignore(pos, expected))
         {
-            query_with_output.is_outfile_append = true;
+            query_with_output.setIsOutfileAppend(true);
         }
 
         ParserKeyword s_truncate(Keyword::TRUNCATE);
         if (s_truncate.ignore(pos, expected))
         {
-            query_with_output.is_outfile_truncate = true;
+            query_with_output.setIsOutfileTruncate(true);
         }
 
         ParserKeyword s_stdout(Keyword::AND_STDOUT);
         if (s_stdout.ignore(pos, expected))
         {
-            query_with_output.is_into_outfile_with_stdout = true;
+            query_with_output.setIsIntoOutfileWithStdout(true);
         }
 
         ParserKeyword s_compression_method(Keyword::COMPRESSION);

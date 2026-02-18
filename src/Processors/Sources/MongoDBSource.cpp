@@ -85,7 +85,7 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
 
-            assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000)));
             break;
         }
         case TypeIndex::Date32:
@@ -224,7 +224,7 @@ Chunk MongoDBSource::generate()
                     const auto & type_nullable = assert_cast<const DataTypeNullable &>(*sample_column.type);
 
                     insertValue(column_nullable.getNestedColumn(), idx, type_nullable.getNestedType(), sample_column.name, value);
-                    column_nullable.getNullMapData().emplace_back(0);
+                    column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                     insertValue(*columns[idx], idx, sample_column.type, sample_column.name, value);

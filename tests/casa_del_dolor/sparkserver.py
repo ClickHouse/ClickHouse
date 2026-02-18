@@ -9,7 +9,6 @@ import time
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-sys.path.append("..")
 from integration.helpers.cluster import is_port_free
 from utils.httpserver import DolorHTTPServer
 from catalogs.datalakes import SparkHandler
@@ -88,6 +87,7 @@ if __name__ == "__main__":
         "azure_container_name": "cont",
         "instances_dir": "/var/lib/clickhouse/user_files",
         "client_bin_path": sys.argv[1],
+        "with_kafka": False,
     }
     cluster = SimpleNamespace(**cluster_settings)
     os.makedirs(cluster.instances_dir, exist_ok=True)

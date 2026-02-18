@@ -74,13 +74,15 @@ struct ManifestFileEntry : public boost::noncopyable
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
     String file_format;
-    std::optional<String> reference_data_file_path; // For position delete files only.
+    std::optional<String> lower_reference_data_file_path; // For position delete files only.
+    std::optional<String> upper_reference_data_file_path; // For position delete files only.
     std::optional<std::vector<Int32>> equality_ids;
 
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
 
-    // Constructor
+    String dumpDeletesMatchingInfo() const;
+
     ManifestFileEntry(
         const String& file_path_key_,
         const String& file_path_,
@@ -88,12 +90,13 @@ struct ManifestFileEntry : public boost::noncopyable
         ManifestEntryStatus status_,
         Int64 added_sequence_number_,
         Int64 snapshot_id_,
-        Int64 schema_id_,
+        Int32 schema_id_,
         DB::Row& partition_key_value_,
         PartitionSpecification& common_partition_specification_,
         std::unordered_map<Int32, ColumnInfo>& columns_infos_,
         const String& file_format_,
-        std::optional<String> reference_data_file_path_,
+        std::optional<String> lower_reference_data_file_path_,
+        std::optional<String> upper_reference_data_file_path_,
         std::optional<std::vector<Int32>> equality_ids_,
         std::optional<Int32> sort_order_id_)
         : file_path_key(file_path_key_)
@@ -107,7 +110,8 @@ struct ManifestFileEntry : public boost::noncopyable
         , common_partition_specification(common_partition_specification_)
         , columns_infos(std::move(columns_infos_))
         , file_format(file_format_)
-        , reference_data_file_path(reference_data_file_path_)
+        , lower_reference_data_file_path(lower_reference_data_file_path_)
+        , upper_reference_data_file_path(upper_reference_data_file_path_)
         , equality_ids(std::move(equality_ids_))
         , sort_order_id(sort_order_id_)
     {

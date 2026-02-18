@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 
+#include <base/EnumReflection.h>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 
@@ -105,6 +106,18 @@ enum class GeometryColumnType
     Null = 255
 };
 
+}
+
+/// GeometryColumnType has Null = 255, which is outside the default magic_enum range [-128, 127].
+template <> struct magic_enum::customize::enum_range<DB::GeometryColumnType>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 255;
+};
+
+namespace DB
+{
+
 template <typename Point, typename FunctionToCalculate>
 class FunctionGeometry : public IFunction
 {
@@ -149,6 +162,10 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Geometry functions work with the Geometry type directly which is a Variant with custom name,
+    /// and not with individual variant alternatives. So, don't use default implementation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {

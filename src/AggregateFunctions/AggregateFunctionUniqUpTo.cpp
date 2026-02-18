@@ -306,7 +306,7 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large parameter for aggregate function {}. Maximum: {}",
                 name, toString(uniq_upto_max_threshold));
 
-        threshold = threshold_param;
+        threshold = static_cast<UInt8>(threshold_param);
     }
 
     if (argument_types.empty())

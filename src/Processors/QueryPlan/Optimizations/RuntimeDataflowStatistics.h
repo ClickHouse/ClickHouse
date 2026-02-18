@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ColumnSize.h>
@@ -15,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 class Aggregator;
 struct AggregatedDataVariants;
 
@@ -22,6 +28,7 @@ struct RuntimeDataflowStatistics
 {
     size_t input_bytes = 0;
     size_t output_bytes = 0;
+    size_t total_rows_to_read = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -67,11 +74,18 @@ class RuntimeDataflowStatisticsCacheUpdater
     };
 
 public:
-    RuntimeDataflowStatisticsCacheUpdater() = default;
+    RuntimeDataflowStatisticsCacheUpdater(size_t cache_key_, size_t total_rows_to_read_)
+        : cache_key(cache_key_)
+        , total_rows_to_read(total_rows_to_read_)
+    {
+        if (cache_key == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsCacheUpdater cannot be zero");
+
+        if (total_rows_to_read == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Total rows from storage cannot be zero");
+    }
 
     ~RuntimeDataflowStatisticsCacheUpdater();
-
-    void setCacheKey(size_t key) { cache_key = key; }
 
     void recordOutputChunk(const Chunk & chunk, const Block & header);
 
@@ -79,12 +93,19 @@ public:
 
     void recordAggregationKeySizes(const Aggregator & aggregator, const Block & block);
 
-    void recordInputColumns(const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes = 0);
+    void recordInputColumns(
+        const ColumnsWithTypeAndName & input_columns,
+        const NamesAndTypesList & part_columns,
+        const ColumnSizeByName & column_sizes,
+        size_t read_bytes = 0);
 
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
 private:
-    std::optional<size_t> cache_key;
+    bool shouldSampleBlock(Statistics & statistics, size_t block_rows) const;
+
+    const size_t cache_key = 0;
+    const size_t total_rows_to_read = 0;
 
     std::atomic_bool unsupported_case{false};
 

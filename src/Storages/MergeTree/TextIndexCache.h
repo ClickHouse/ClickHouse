@@ -58,7 +58,7 @@ public:
 
         const auto tokens_byte_size = token_infos.size() * sizeof(String) * token_length;
         /// We estimate 30% of postings lists are embedded
-        const auto embedded_posting_lists = static_cast<size_t>(std::ceil(token_infos.size() * 0.3));
+        const auto embedded_posting_lists = static_cast<size_t>(std::ceil(static_cast<double>(token_infos.size()) * 0.3));
         const auto posting_lists_byte_size
             = (token_infos.size() * sizeof(TokenPostingsInfo)) + (embedded_posting_lists * embedded_posting_lists_size);
         return tokens_byte_size + posting_lists_byte_size;

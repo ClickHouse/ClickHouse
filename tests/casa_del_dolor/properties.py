@@ -132,10 +132,11 @@ possible_properties = {
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
     "concurrent_threads_scheduler": lambda: random.choice(
-        ["round_robin", "fair_round_robin"]
+        ["round_robin", "fair_round_robin", "max_min_fair"]
     ),
     "concurrent_threads_soft_limit_num": threads_lambda,
     "concurrent_threads_soft_limit_ratio_to_cores": threads_lambda,
+    "cpu_slot_preemption": true_false_lambda,
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
@@ -384,6 +385,7 @@ cache_storage_properties = {
     "background_download_threads": threads_lambda,
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
     "cache_on_write_operations": true_false_lambda,
+    "check_cache_probability": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "enable_bypass_cache_with_threshold": true_false_lambda,
     "enable_filesystem_query_cache_limit": true_false_lambda,
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -1447,10 +1449,14 @@ keeper_settings = {
     "enable_reconfiguration": true_false_lambda,
     "feature_flags": {
         "check_not_exists": true_false_lambda,
+        "check_stat": true_false_lambda,
         "create_if_not_exists": true_false_lambda,
         "filtered_list": true_false_lambda,
+        "list_with_stat_and_data": true_false_lambda,
         "multi_read": true_false_lambda,
         "multi_watches": true_false_lambda,
+        "persistent_watches": true_false_lambda,
+        "try_remove": true_false_lambda,
         "remove_recursive": true_false_lambda,
     },
     "force_recovery": true_false_lambda,

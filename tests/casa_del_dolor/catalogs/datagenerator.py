@@ -437,20 +437,20 @@ class LakeDataGenerator:
         match_options = [
             "DELETE",
             "UPDATE SET *",
-            f"UPDATE SET {",".join([f"t.{cname} = s.{cname}" for cname in to_update])}",
+            f"UPDATE SET {','.join([f't.{cname} = s.{cname}' for cname in to_update])}",
         ]
 
         self.logger.info(f"Merging {nrows} row(s) into {table.get_table_full_path()}")
         self.run_query(
             spark,
             f"MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
- WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET THEN INSERT *" if random.randint(1, 4) == 1 else ""}\
-{f" WHEN NOT MATCHED BY SOURCE THEN DELETE" if random.randint(1, 4) == 1 else ""};",
+ WHEN MATCHED THEN {random.choice(match_options)}{' WHEN NOT MATCHED BY TARGET THEN INSERT *' if random.randint(1, 4) == 1 else ''}\
+{f' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
         delete_key = random.choice(list(table.flat_columns().keys()))
-        predicate = f"{delete_key} IS{random.choice([""," NOT"])} NULL"
+        predicate = f"{delete_key} IS{random.choice(['',' NOT'])} NULL"
 
         self.logger.info(f"Delete from table {table.get_table_full_path()}")
         self.run_query(

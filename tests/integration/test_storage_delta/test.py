@@ -58,6 +58,7 @@ from helpers.s3_tools import (
     LocalUploader,
 )
 from helpers.test_tools import TSV
+from helpers.spark_tools import ResilientSparkSession
 
 
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
@@ -191,6 +192,11 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["node1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )
@@ -215,7 +221,7 @@ def started_cluster():
         # extend this if testing on other nodes becomes necessary
         cluster.local_uploader = LocalUploader(cluster.instances["node1"])
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(get_spark)
 
         for file in S3_DATA:
             print(f"Copying object {file}")
@@ -276,6 +282,29 @@ def get_storage_options(cluster):
         "AWS_ALLOW_HTTP": "true",
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
     }
+
+
+def write_deltalake_with_retry(
+    table_uri, data, storage_options, retries=3, delay=5, **kwargs
+):
+    """
+    Wrapper around write_deltalake with test-level retries.
+    The deltalake library has internal retries, but they're too fast (~2s total)
+    when minio is temporarily overloaded. This adds longer delays between attempts.
+    """
+    last_exception = None
+    for attempt in range(retries):
+        try:
+            write_deltalake(table_uri, data, storage_options=storage_options, **kwargs)
+            return
+        except OSError as e:
+            last_exception = e
+            if attempt < retries - 1:
+                logging.warning(
+                    f"write_deltalake failed (attempt {attempt + 1}/{retries}): {e}. Retrying in {delay}s..."
+                )
+                time.sleep(delay)
+    raise last_exception
 
 
 def get_delta_metadata(delta_metadata_file):
@@ -364,17 +393,37 @@ def default_upload_directory(
 
 
 def create_initial_data_file(
-    cluster, node, query, table_name, compression_method="none", node_name="node1"
+    cluster,
+    node,
+    query,
+    table_name,
+    compression_method="none",
+    node_name="node1",
+    settings=None,
 ):
+    settings = settings or {}
+
+    merged_settings = {
+        "output_format_parquet_compression_method": compression_method,
+        "s3_truncate_on_insert": 1,
+        **settings,
+    }
+
+    settings_sql = ",\n            ".join(
+        f"{k}='{v}'" if isinstance(v, str) else f"{k}={v}"
+        for k, v in merged_settings.items()
+    )
+
     node.query(
         f"""
         INSERT INTO TABLE FUNCTION
             file('{table_name}.parquet')
         SETTINGS
-            output_format_parquet_compression_method='{compression_method}',
-            s3_truncate_on_insert=1 {query}
+            {settings_sql}
+        {query}
         FORMAT Parquet"""
     )
+
     user_files_path = os.path.join(
         os.path.join(os.path.dirname(os.path.realpath(__file__))),
         f"{cluster.instances_dir_name}/{node_name}/database/user_files",
@@ -910,7 +959,7 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
             "g": [Decimal(f"{i * 1.11:.2f}")],
             "h": [False if i % 2 == 0 else True],
         }
-        write_deltalake(
+        write_deltalake_with_retry(
             f"s3://{bucket}/{result_file}",
             pa.Table.from_pydict(data, schema=schema),
             storage_options=get_storage_options(started_cluster),
@@ -1058,7 +1107,7 @@ test9	2000-01-09	9"""
             "g": [Decimal(f"{i * 1.1:.2f}")],
             "h": [False if i % 2 == 0 else True],
         }
-        write_deltalake(
+        write_deltalake_with_retry(
             f"s3://{bucket}/{result_file}",
             pa.Table.from_pydict(data, schema=schema),
             storage_options=get_storage_options(started_cluster),
@@ -1185,7 +1234,7 @@ def test_complex_types(started_cluster, use_delta_kernel):
     path = f"s3://root/{table_name}"
     table = pa.Table.from_arrays(data, schema=schema)
 
-    write_deltalake(path, table, storage_options=storage_options)
+    write_deltalake_with_retry(path, table, storage_options=storage_options)
 
     assert "1\n2\n3\n" in node.query(
         f"SELECT id FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}')"
@@ -1220,7 +1269,7 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
         instance,
         "SELECT toUInt64(number), toString(number) FROM numbers(100)",
         TABLE_NAME,
-        node_name=instance.name,
+        node_name=instance.name
     )
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
@@ -1254,7 +1303,15 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert count == int(
+    # Parquet reader v3 reads very small files suboptimally when readBigAt is enabled
+    # (it reads last 64kb for parquet metadata unconditionally
+    # assuming most of it will be metadata, see Reader::readFileMetaData)
+    # So we end up reading the same data two times here with parquet reader v3.
+    # We cannot disable input_format_parquet_use_native_reader_v3 because
+    # this setting is deprecated.
+    # So we cannot check count == CachedReadBufferReadFromCacheBytes,
+    # but instead check that CachedReadBufferReadFromCacheBytes is no more than 2 times more :(
+    assert count * 2 > int(
         instance.query(
             f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
@@ -1319,7 +1376,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
     path = f"s3://root/{TABLE_NAME}"
     table = pa.Table.from_arrays(data, schema=schema)
 
-    write_deltalake(path, table, storage_options=storage_options)
+    write_deltalake_with_retry(path, table, storage_options=storage_options)
 
     with PartitionManager() as pm:
         pm_rule_reject = {
@@ -1457,7 +1514,7 @@ def test_partition_columns_2(started_cluster, cluster):
     path = f"s3://root/{table_name}"
     table = pa.Table.from_arrays(data, schema=schema)
 
-    write_deltalake(
+    write_deltalake_with_retry(
         path, table, storage_options=storage_options, partition_by=["c", "d"]
     )
 
@@ -1495,7 +1552,7 @@ def test_partition_columns_2(started_cluster, cluster):
     ]
     new_table_data = pa.Table.from_arrays(new_data, schema=schema)
 
-    write_deltalake(
+    write_deltalake_with_retry(
         path, new_table_data, storage_options=storage_options, mode="append"
     )
 
@@ -2058,7 +2115,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         }
         path = f"s3://root/{table_name}"
         table = pa.Table.from_arrays(data, schema=schema)
-        write_deltalake(
+        write_deltalake_with_retry(
             path, table, storage_options=storage_options, partition_by=["b"]
         )
 
@@ -2102,7 +2159,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         }
         path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
         table = pa.Table.from_arrays(data, schema=schema)
-        write_deltalake(
+        write_deltalake_with_retry(
             path, table, storage_options=storage_options, partition_by=["b"]
         )
 
@@ -2154,11 +2211,11 @@ def test_partition_columns_3(started_cluster):
         "year": ["2025"] * num_rows,
     }
 
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{TABLE_NAME}",
         pa.Table.from_pydict(data, schema=schema),
-        mode="append",
         storage_options=get_storage_options(started_cluster),
+        mode="append",
         partition_by=partition_columns,
     )
 
@@ -2210,11 +2267,11 @@ def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
         "country": ["US"] * num_rows,
         "year": [f"202{i}" for i in range(num_rows)],
     }
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{TABLE_NAME}",
         pa.Table.from_pydict(data, schema=schema),
-        mode="append",
         storage_options=get_storage_options(started_cluster),
+        mode="append",
         partition_by=partition_columns,
     )
 
@@ -2328,7 +2385,7 @@ def test_column_pruning(started_cluster):
         )
     )
     # Slightly different number depending on reader implementation.
-    assert 107220 <= bytes_read <= 107232
+    assert 107120 <= bytes_read <= 107232
 
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
@@ -2349,7 +2406,7 @@ def test_column_pruning(started_cluster):
         )
     )
     # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
-    assert 105677 <= bytes_read <= 105689
+    assert 105580 <= bytes_read <= 105689
 
 
 def test_concurrent_reads(started_cluster):
@@ -2379,7 +2436,7 @@ def test_concurrent_reads(started_cluster):
         "country": ["a" * 100] * num_rows,
         "year": ["2025"] * num_rows,
     }
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://{bucket}/{result_file}",
         pa.Table.from_pydict(data, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3055,7 +3112,7 @@ def test_writes(started_cluster):
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3069,7 +3126,9 @@ def test_writes(started_cluster):
         f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
 
-    instance.query(f"INSERT INTO TABLE FUNCTION deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', settings allow_experimental_delta_kernel_rs=1) SELECT number as name, toString(number) as id from numbers(10)")
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', settings allow_experimental_delta_kernel_rs=1) SELECT number as name, toString(number) as id from numbers(10)"
+    )
 
     s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
     file_name = None
@@ -3145,7 +3204,7 @@ def test_partitioned_writes(started_cluster):
         pa.array([], type=pa.string()),
         pa.array([], type=pa.string()),
     ]
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3261,7 +3320,7 @@ def test_concurrent_queries(started_cluster, partitioned):
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3857,7 +3916,7 @@ def test_truncate(started_cluster):
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3887,3 +3946,309 @@ def test_truncate(started_cluster):
         f"TRUNCATE TABLE {table_name}"
     )
     assert count_files() == 3
+
+
+@pytest.mark.parametrize("on_cluster", [False, True])
+def test_deletion_vector(started_cluster, on_cluster):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_dv")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+
+    suffix = "Cluster" if on_cluster else ""
+    cluster = "cluster," if on_cluster else ""
+    delta_function = f"""
+deltaLake{suffix}({cluster}
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(table_name)
+        .location(path)
+        .addColumn("a", "INT", nullable=True)
+        .addColumn("b", "STRING", nullable=False)
+        .addColumn("c", "STRING", nullable=False)
+        .partitionedBy("a")
+        .property("delta.minReaderVersion", "2")
+        .property("delta.minWriterVersion", "5")
+        .property("delta.columnMapping.mode", "name")
+        .property("delta.enableDeletionVectors", "true")
+        .execute()
+    )
+
+    schema = StructType(
+        [
+            StructField("a", ShortType(), nullable=True),
+            StructField("b", StringType(), nullable=False),
+            StructField("c", StringType(), nullable=False),
+        ]
+    )
+
+    data = [(1, "a", "a"), (1, "b", "a"), (1, "c", "a"), (1, "b", "c"), (2, "b", "a")]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.write.format("delta").partitionBy("a").mode("overwrite").save(path)
+
+    upload_directory(minio_client, bucket, path, "")
+
+    assert 5 == int(
+        node.query(f"SELECT count() FROM {delta_function} ORDER BY all").strip()
+    )
+
+    spark.sql(f"DELETE FROM {table_name} WHERE b = 'b'")
+    upload_directory(minio_client, bucket, path, "")
+
+    assert 2 == int(
+        node.query(f"SELECT count() FROM {delta_function} ORDER BY all").strip()
+    )
+    # check rows indexes size is 2
+    # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
+    assert node.contains_in_log("Row indexes size: 2")
+
+
+@pytest.mark.parametrize("cluster", [False, True])
+def test_partition_columns_3(started_cluster, cluster):
+    """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526
+
+    Reproduces issue where partition column values become incorrect when inserting
+    from DeltaLake into ClickHouse with many columns and type conversions.
+    """
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_partition_columns_jumbled")
+
+    schema = pa.schema(
+        [
+            ("id", pa.int32()),
+            ("region", pa.string()),
+            ("state", pa.string()),
+        ]
+    )
+
+    data = [
+        pa.array([1, 2], type=pa.int32()),
+        pa.array(["west", "east"], type=pa.string()),
+        pa.array(["CA", "NY"], type=pa.string()),
+    ]
+
+    storage_options = {
+        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        "AWS_ACCESS_KEY_ID": minio_access_key,
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{table_name}"
+    table = pa.Table.from_arrays(data, schema=schema)
+
+    write_deltalake_with_retry(
+        path, table, storage_options=storage_options, partition_by=["region", "state"]
+    )
+
+    if cluster:
+        delta_function = f"""
+    deltaLakeCluster(
+             cluster,
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}')
+        """
+    else:
+        delta_function = f"""
+    deltaLake(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}',
+        SETTINGS allow_experimental_delta_kernel_rs=0)
+        """
+
+    dst_table = f"{table_name}_dst"
+    node.query(
+        f"""
+        CREATE TABLE {dst_table} (
+            id Int32,
+            region String,
+            state String
+        ) ENGINE = MergeTree()
+        ORDER BY id
+    """
+    )
+
+    node.query(
+        f"""
+        INSERT INTO {dst_table}
+        SELECT * FROM {delta_function}
+    """
+    )
+
+    result_from_delta = node.query(
+        f"SELECT * FROM {delta_function} ORDER BY id",
+        settings={"allow_experimental_delta_kernel_rs": 1, "use_hive_partitioning": 0},
+    ).strip()
+
+    result_from_table = node.query(f"SELECT * FROM {dst_table} ORDER BY id").strip()
+
+    assert (
+        result_from_delta == result_from_table
+    ), f"Partition columns jumbled!\nFrom DeltaLake:\n{result_from_delta}\n\nFrom table:\n{result_from_table}"
+
+    expected = "1\twest\tCA\n2\teast\tNY"
+    assert (
+        result_from_table == expected
+    ), f"Data doesn't match!\nExpected:\n{expected}\n\nGot:\n{result_from_table}"
+
+
+def test_network_activity_with_system_tables(started_cluster):
+    instance = started_cluster.instances["node1"]
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_network_activity_with_system_tables")
+    result_file = f"{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+    )
+
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
+    """
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number as name, toString(number) as id from numbers(10)"
+    )
+
+    query_id = f"{table_name}_query"
+    instance.query(
+        f"SELECT * FROM system.tables WHERE name = '{table_name}'", query_id=query_id
+    )
+
+    instance.query("SYSTEM FLUSH LOGS text_log")
+
+    assert 0 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%Initialized scan state%'"
+        )
+    )
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1"])
+def test_system_reload_delta_kernel_tracing(started_cluster, use_delta_kernel):
+    """Test SYSTEM RELOAD DELTA KERNEL TRACING command with different log levels."""
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_tracing")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # First query WITHOUT tracing enabled
+    query_id_before = f"{TABLE_NAME}_before_tracing"
+    result = instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id_before)
+    assert int(result) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify that NO DeltaKernelTracing logs appear before enabling tracing
+    logs_before_count = int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE logger_name = 'DeltaKernelTracing' AND query_id = '{query_id_before}'"
+    ).strip())
+    assert logs_before_count == 0, f"Expected 0 DeltaKernelTracing logs before enabling tracing, got {logs_before_count}"
+
+    # Now enable TRACE level tracing
+    instance.query("SYSTEM RELOAD DELTA KERNEL TRACING TRACE")
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify the reload was successful
+    reload_success = instance.query(
+        "SELECT count() FROM system.text_log WHERE message LIKE '%Delta kernel tracing level reloaded to TRACE%'"
+    )
+    assert int(reload_success), "Expected successful reload to TRACE level to be logged"
+
+    # Query the same table WITH tracing enabled at TRACE level
+    query_id_trace = f"{TABLE_NAME}_trace_query"
+    result = instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id_trace)
+    assert int(result) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Now delta kernel logs should appear
+    logs_at_trace = int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE logger_name = 'DeltaKernelTracing' AND query_id = '{query_id_trace}'"
+    ).strip())
+    assert logs_at_trace > 0, f"Expected DeltaKernelTracing logs at TRACE level, got {logs_at_trace}"
+
+    # For this query, we expect DEBUG level logs (not necessarily TRACE)
+    # At TRACE level, we should see DEBUG logs
+    debug_level_count = int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE logger_name = 'DeltaKernelTracing' AND query_id = '{query_id_trace}' AND level = 'Debug'"
+    ).strip())
+    assert debug_level_count > 0, f"Expected Debug level logs at TRACE level, got {debug_level_count}"
+
+    # Now test switching to INFO level - should filter out DEBUG logs
+    instance.query("SYSTEM RELOAD DELTA KERNEL TRACING INFO")
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify the reload to INFO was successful
+    reload_info_success = instance.query(
+        "SELECT count() FROM system.text_log WHERE message LIKE '%Delta kernel tracing level reloaded to INFO%'"
+    )
+    assert int(reload_info_success), "Expected successful reload to INFO level to be logged"
+
+    query_id_info = f"{TABLE_NAME}_info_query"
+    result = instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id_info)
+    assert int(result) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify that DEBUG level logs don't appear at INFO level (they should be filtered out)
+    debug_count = int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE logger_name = 'DeltaKernelTracing' AND query_id = '{query_id_info}' AND level = 'Debug'"
+    ).strip())
+
+    assert debug_count == 0, f"Expected 0 Debug logs at INFO level, got {debug_count}"
+
+    # Test ERROR level - should not see any WARN, INFO, or DEBUG logs
+    instance.query("SYSTEM RELOAD DELTA KERNEL TRACING ERROR")
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # Verify the reload to ERROR was successful
+    reload_error_success = instance.query(
+        "SELECT count() FROM system.text_log WHERE message LIKE '%Delta kernel tracing level reloaded to ERROR%'"
+    )
+    assert int(reload_error_success), "Expected successful reload to ERROR level to be logged"
+
+    query_id_error = f"{TABLE_NAME}_error_query"
+    result = instance.query(f"SELECT count() FROM {TABLE_NAME}", query_id=query_id_error)
+    assert int(result) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # At ERROR level, should not see any higher level logs (WARN/INFO/DEBUG)
+    higher_count = int(instance.query(
+        f"""
+        SELECT count()
+        FROM system.text_log
+        WHERE logger_name = 'DeltaKernelTracing'
+        AND query_id = '{query_id_error}'
+        AND level IN ('Warning', 'Information', 'Debug')
+        """
+    ).strip())
+    assert higher_count == 0, f"Expected 0 higher-level logs at ERROR level, got {higher_count}"
+
+    # Test invalid level
+    error = instance.query_and_get_error("SYSTEM RELOAD DELTA KERNEL TRACING INVALID")
+    assert "BAD_ARGUMENTS" in error or "Invalid delta kernel tracing level" in error

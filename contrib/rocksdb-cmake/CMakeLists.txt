@@ -5,69 +5,12 @@ if (NOT ENABLE_ROCKSDB OR NO_SSE3_OR_HIGHER) # assumes SSE4.2 and PCLMUL
   return()
 endif()
 
-# ClickHouse cannot be compiled without snappy, lz4, zlib, zstd
-option(WITH_SNAPPY "build with SNAPPY" ON)
-option(WITH_LZ4 "build with lz4" ON)
-option(WITH_ZLIB "build with zlib" ON)
-option(WITH_ZSTD "build with zstd" ON)
-
-if (ENABLE_JEMALLOC AND OS_LINUX) # gives compile errors with jemalloc enabled for rocksdb on non-Linux
-  add_definitions(-DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
-  list (APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
-endif ()
-
-if (ENABLE_LIBURING)
-  add_definitions(-DROCKSDB_IOURING_PRESENT)
-  list (APPEND THIRDPARTY_LIBS ch_contrib::liburing)
-endif ()
-
-if (WITH_SNAPPY)
-  add_definitions(-DSNAPPY)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
-endif()
-
-if (WITH_ZLIB)
-  add_definitions(-DZLIB)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
-endif()
-
-if (WITH_LZ4)
-  add_definitions(-DLZ4)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
-endif()
-
-if (WITH_ZSTD)
-  add_definitions(-DZSTD)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
-endif()
-
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
   set (HAS_ARMV8_CRC 1)
   # the original build descriptions set specific flags for ARM. These flags are already subsumed by ClickHouse's general
   # ARM flags, see cmake/cpu_features.cmake
   # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
   # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
-endif()
-
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-  add_definitions(-DOS_MACOSX)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  add_definitions(-DOS_LINUX)
-elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
-  add_definitions(-DOS_FREEBSD)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
-  add_definitions(-DOS_ANDROID)
-endif()
-
-add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
-
-if ((OS_LINUX OR OS_FREEBSD) AND NOT USE_MUSL)
-  add_definitions(-DROCKSDB_PTHREAD_ADAPTIVE_MUTEX)
-endif()
-
-if (OS_LINUX)
-  add_definitions(-DROCKSDB_SCHED_GETCPU_PRESENT)
-  add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
 endif()
 
 set(ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
@@ -406,11 +349,69 @@ list(APPEND SOURCES
 
 add_library(_rocksdb ${SOURCES})
 add_library(ch_contrib::rocksdb ALIAS _rocksdb)
-target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
-
-# Not in the native build system but useful anyways:
-# Make all functions in xxHash.h inline. Beneficial for performance: https://github.com/Cyan4973/xxHash/tree/v0.8.2#build-modifiers
-target_compile_definitions (_rocksdb PRIVATE XXH_INLINE_ALL)
 
 # SYSTEM is required to overcome some issues
 target_include_directories(_rocksdb SYSTEM BEFORE INTERFACE "${ROCKSDB_SOURCE_DIR}/include")
+
+# Not in the native build system but useful anyways:
+# Make all functions in xxHash.h inline. Beneficial for performance: https://github.com/Cyan4973/xxHash/tree/v0.8.2#build-modifiers
+target_compile_definitions(_rocksdb PRIVATE XXH_INLINE_ALL)
+
+# ClickHouse cannot be compiled without snappy, lz4, zlib, zstd
+option(WITH_SNAPPY "build with SNAPPY" ON)
+option(WITH_LZ4 "build with lz4" ON)
+option(WITH_ZLIB "build with zlib" ON)
+option(WITH_ZSTD "build with zstd" ON)
+
+if (ENABLE_JEMALLOC AND OS_LINUX) # gives compile errors with jemalloc enabled for rocksdb on non-Linux
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
+  list (APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
+endif ()
+
+if (ENABLE_LIBURING)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_IOURING_PRESENT)
+  list (APPEND THIRDPARTY_LIBS ch_contrib::liburing)
+endif ()
+
+if (WITH_SNAPPY)
+  target_compile_definitions(_rocksdb PRIVATE -DSNAPPY)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
+endif()
+
+if (WITH_ZLIB)
+  target_compile_definitions(_rocksdb PRIVATE -DZLIB)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
+endif()
+
+if (WITH_LZ4)
+  target_compile_definitions(_rocksdb PRIVATE -DLZ4)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
+endif()
+
+if (WITH_ZSTD)
+  target_compile_definitions(_rocksdb PRIVATE -DZSTD)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_MACOSX)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_LINUX)
+elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_FREEBSD)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_ANDROID)
+endif()
+
+target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
+
+if ((OS_LINUX OR OS_FREEBSD) AND NOT USE_MUSL)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_PTHREAD_ADAPTIVE_MUTEX)
+endif()
+
+if (OS_LINUX)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_SCHED_GETCPU_PRESENT)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_AUXV_GETAUXVAL_PRESENT)
+endif()
+
+target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})

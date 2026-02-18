@@ -1,4 +1,3 @@
-#include <Analyzer/Utils.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,6 +15,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Analyzer/Utils.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -26,8 +26,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNKNOWN_QUERY_PARAMETER;
-extern const int BAD_QUERY_PARAMETER;
+    extern const int UNKNOWN_QUERY_PARAMETER;
+    extern const int BAD_QUERY_PARAMETER;
 }
 
 /// It is important to keep in mind that in the case of ASTIdentifier, we are changing the shared object itself,
@@ -50,8 +50,12 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             visitChildren(describe_query->table_expression);
         else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
         {
-            ASTPtr names = create_user_query->names;
-            visitChildren(names);
+            if (create_user_query->names)
+            {
+                ASTPtr names = create_user_query->names;
+                visitChildren(names);
+            }
+            visitChildren(ast);
         }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
                  create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
@@ -75,14 +79,13 @@ void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
 {
     for (auto & child : ast->children)
     {
-        void * old_ptr = child.get();
+        IAST * old_ptr = child.get();
         visit(child);
-        void * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
         /// We have to replace them if the child was replaced.
-        if (new_ptr != old_ptr)
-            ast->updatePointerToChild(old_ptr, new_ptr);
+        if (child.get() != old_ptr)
+            ast->updatePointerToChild(old_ptr, child);
     }
 }
 
@@ -106,11 +109,24 @@ bool needCastFromString(const DataTypePtr & type)
         return true;
 
     bool result = false;
-    auto check = [&](const IDataType & t) { result |= isVariant(t) || isDynamic(t) || isObject(t); };
+    auto check = [&](const IDataType & t)
+    {
+        result |= isVariant(t) || isDynamic(t) || isObject(t);
+    };
 
     check(*type);
     type->forEachChild(check);
     return result;
+}
+
+/// Build an AST literal for a query parameter, optionally wrapping it in a CAST.
+/// String literals don't need CAST to support substitutions in simple queries
+/// that don't support expressions (such as CREATE USER).
+ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name, const DataTypePtr & data_type)
+{
+    if (typeid_cast<const DataTypeString *>(data_type.get()))
+        return make_intrusive<ASTLiteral>(literal);
+    return addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
 }
 
 }
@@ -123,29 +139,21 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
 
     const auto data_type = DataTypeFactory::instance().get(type_name);
 
-    // Determine the value to substitute
     auto it = query_parameters.find(ast_param.name);
     if (it == query_parameters.end())
     {
-        // Parameter not provided: use default value if nullable, otherwise throw
+        /// If a parameter has Nullable type and is not specified, assume its value is NULL.
         if (!data_type->isNullable())
             throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(ast_param.name));
-        Field literal = data_type->getDefault();
 
-        // String literals don't need CAST to support simple queries like CREATE USER
-        if (typeid_cast<const DataTypeString *>(data_type.get()))
-            ast = std::make_shared<ASTLiteral>(literal);
-        else
-            ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
-
+        ast = makeASTForQueryParameter(Field(), type_name, data_type);
         ast->setAlias(alias);
         ++num_replaced_parameters;
         return;
     }
 
-    // Parameter provided: parse and substitute the value
     const String & value = it->second;
-    ++num_replaced_parameters;
+
     auto temp_column_ptr = data_type->createColumn();
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
@@ -166,16 +174,10 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     }
 
     if (!read_buffer.eof())
-        throw Exception(
-            ErrorCodes::BAD_QUERY_PARAMETER,
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
             "Value {} cannot be parsed as {} for query parameter '{}'"
             " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
-            value,
-            type_name,
-            ast_param.name,
-            read_buffer.count(),
-            value.size(),
-            value.substr(0, read_buffer.count()));
+            value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
     Field literal;
 
@@ -192,15 +194,11 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
         literal = temp_column[0];
     }
 
-    /// If it's a String, substitute it in the form of a string literal without CAST
-    /// to enable substitutions in simple queries that don't support expressions
-    /// (such as CREATE USER).
-    if (typeid_cast<const DataTypeString *>(data_type.get()))
-        ast = std::make_shared<ASTLiteral>(literal);
-    else
-        ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
+    ast = makeASTForQueryParameter(literal, type_name, data_type);
+
     /// Keep the original alias.
     ast->setAlias(alias);
+    ++num_replaced_parameters;
 }
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
@@ -235,11 +233,11 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
 
 void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
 {
-    auto ast_with_alias = std::dynamic_pointer_cast<ASTWithAlias>(ast);
+    auto ast_with_alias = boost::dynamic_pointer_cast<ASTWithAlias>(ast);
     if (!ast_with_alias)
         return;
 
     if (ast_with_alias->parametrised_alias)
-        setAlias(ast, getParamValue((*ast_with_alias->parametrised_alias)->name));
+        setAlias(ast, getParamValue(ast_with_alias->parametrised_alias->name));
 }
 }

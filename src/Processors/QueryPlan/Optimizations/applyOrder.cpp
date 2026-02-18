@@ -10,9 +10,9 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 
 #include <Functions/IFunction.h>
+
 
 namespace DB
 {
@@ -42,9 +42,6 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
-
-    if (const auto * custom_metric_log_step = typeid_cast<CustomMetricLogViewStep *>(parent->step.get()))
-        return {custom_metric_log_step->getSortDescription(), SortingProperty::SortScope::Global};
 
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
     {

@@ -1,0 +1,29 @@
+timeSeriesTagsToGroup:
+[('__name__','http_requests_count'),('env','dev'),('region','eu')]	[('__name__','http_failures')]	1	[]	0
+
+timeSeriesStoreTags:
+1	1	1	1	1	1	1	1	1	1	[('__name__','http_requests'),('env','dev'),('region','eu')]	[('__name__','http_request_by_region'),('region','us')]	[('__name__','http_request_by_region'),('region','us')]	[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[('__name__','http_requests_total')]	[]	1	1	1	1	1	1	1	1	1	1
+
+timeSeriesExtractTag:
+1	http_requests_count	dev	\N
+
+timeSeriesCopyTag:
+[('__name__','http_codes'),('env','dev'),('region','eu')]	[('__name__','http_codes'),('code','404'),('env','dev'),('region','eu')]	1	1	[('__name__','http_codes'),('code','404'),('region','eu')]
+
+timeSeriesCopyTags:
+[('__name__','http_codes'),('env','dev'),('region','eu')]	[('__name__','http_codes'),('code','404'),('env','dev'),('region','eu')]	1	1	[('__name__','http_codes'),('code','404'),('region','eu')]	1	1	1
+
+timeSeriesRemoveTag:
+[('env','dev'),('region','eu')]	[('region','eu')]	1	[]	1
+
+timeSeriesRemoveTags:
+[('env','dev'),('region','eu')]	[('region','eu')]	1	1	[]	1	1
+
+timeSeriesRemoveAllTagsExcept:
+[('env','dev'),('region','eu')]	[('region','eu')]	1	1	[]	1	1
+
+timeSeriesJoinTags:
+[('__name__','up'),('foo','a,b,c'),('job','api-server'),('src1','a'),('src2','b'),('src3','c')]	[('__name__','up'),('foo','abc'),('job','api-server'),('src1','a'),('src2','b'),('src3','c')]	[('__name__','up'),('foo','a sep b sep c'),('job','api-server'),('src1','a'),('src2','b'),('src3','c')]	[('__name__','up'),('job','api-server'),('src1','a'),('src2','b'),('src3','c')]	[('__name__','up'),('foo','a'),('job','api-server'),('src1','a'),('src2','b'),('src3','c')]	[('__name__','up'),('foo','a,b,a,'),('job','api-server'),('src1','a'),('src2','b'),('src3','c')]	[('__name__','up'),('job','a,b,c'),('src1','a'),('src2','b'),('src3','c')]	[('__name__','up'),('src1','a'),('src2','b'),('src3','c')]
+
+timeSeriesReplaceTag:
+[('__name__','up'),('foo','a'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','a:c'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','a'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','begin a sep c end'),('job','api-server'),('service','a:c')]	[('__name__','up'),('job','api-server'),('service','c:a')]	[('__name__','up'),('job','api-server')]	1	1	1

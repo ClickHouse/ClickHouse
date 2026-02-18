@@ -90,15 +90,15 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     BlockIO io = loadKeys(requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
-    PullingPipelineExecutor executor(pipeline);
-
     Stopwatch watch;
     size_t block_num = 0;
     size_t rows_num = 0;
 
     io.executeWithCallbacks([&]()
     {
+        QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
+        PullingPipelineExecutor executor(pipeline);
+
         Block block;
         while (executor.pull(block))
         {
@@ -262,13 +262,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
 
     BlockIO io = loadKeys(requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
-    PullingPipelineExecutor executor(pipeline);
-
     size_t keys_found = 0;
 
     io.executeWithCallbacks([&]()
     {
+        QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
+        PullingPipelineExecutor executor(pipeline);
+
         Block block;
         while (executor.pull(block))
         {

@@ -1,0 +1,101 @@
+name: Retry Infrastructure Failures
+
+on:
+  schedule:
+    - cron: '43 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  retry-failed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retry PR runs failed due to infrastructure errors
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          MAX_RERUNS=10
+          rerun_count=0
+          cutoff=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Looking for failed PR workflow runs since $cutoff..."
+          echo ""
+
+          # Get recent failed runs for the PR workflow that have not been retried yet
+          run_ids=$(gh run list \
+            --repo "$GH_REPO" \
+            --workflow pull_request.yml \
+            --status failure \
+            --limit 50 \
+            --json databaseId,attempt,createdAt \
+            --jq ".[] | select(.attempt == 1 and .createdAt >= \"$cutoff\") | .databaseId")
+
+          if [ -z "$run_ids" ]; then
+            echo "No recent failed runs found."
+            exit 0
+          fi
+
+          for run_id in $run_ids; do
+            if [ "$rerun_count" -ge "$MAX_RERUNS" ]; then
+              echo "Reached maximum of $MAX_RERUNS reruns, stopping."
+              break
+            fi
+
+            run_url="https://github.com/$GH_REPO/actions/runs/$run_id"
+            echo "Checking run $run_url ..."
+
+            # Collect per-job verdicts across all pages (runs can have >100 jobs).
+            # Each failed job emits "true" (infrastructure) or "false" (real failure).
+            # A job is considered an infrastructure failure if:
+            # - it is the "Config Workflow" job (pipeline configuration, not actual tests), or
+            # - it never reached its main "Run" step (failed during checkout/setup), or
+            # - the "Run" step was skipped, or
+            # - the "Run" step failed almost immediately (under 2 minutes), indicating
+            #   a setup/download issue (e.g. missing S3 credentials) rather than a real
+            #   test failure
+            verdicts=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
+              --paginate --jq '
+                .jobs[] | select(.conclusion == "failure") |
+                if .name == "Config Workflow" then true
+                else
+                  [.steps[] | select(.name == "Run")] |
+                  if length == 0 then true
+                  elif .[0].conclusion == "skipped" then true
+                  elif .[0].conclusion == "failure" then
+                    ((.[0].completed_at | fromdateiso8601) -
+                     (.[0].started_at | fromdateiso8601)) < 120
+                  else false
+                  end
+                end
+              ')
+
+            # Infrastructure failure = at least one failed job, and all of them are infra
+            if [ -z "$verdicts" ]; then
+              is_infra=false
+            elif echo "$verdicts" | grep -q "false"; then
+              is_infra=false
+            else
+              is_infra=true
+            fi
+
+            if [ "$is_infra" = "true" ]; then
+              echo "  Infrastructure failure detected, rerunning..."
+              if gh run rerun "$run_id" --repo "$GH_REPO"; then
+                rerun_count=$((rerun_count + 1))
+                echo "  Triggered rerun: $run_url/attempts/2"
+              else
+                echo "  Failed to trigger rerun (may already be rerunning)"
+              fi
+            else
+              echo "  Not an infrastructure failure, skipping."
+            fi
+
+            echo ""
+          done
+
+          echo "Done. Triggered $rerun_count rerun(s)."

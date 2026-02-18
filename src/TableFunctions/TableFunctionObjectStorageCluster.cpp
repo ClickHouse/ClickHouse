@@ -70,7 +70,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             columns,
             ConstraintsDescription{},
             Base::partition_by,
-            context);
+            context,
+            /* is_table_function */true);
     }
 
     storage->startup();
@@ -130,6 +131,13 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
 void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
 {
     UNUSED(factory);
+
+    factory.registerFunction<TableFunctionIcebergLocalCluster>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Iceberg table stored on shared storage in parallel for many nodes in a specified cluster.)",
+            .examples{{IcebergLocalClusterDefinition::name, "SELECT * FROM icebergLocalCluster(cluster, filename, format, [,compression])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
 
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionIcebergCluster>(
@@ -226,10 +234,10 @@ void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
          .allow_readonly = false});
 #endif
 
-#if USE_AZURE_BLOB_STORAGE
+#if USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
     factory.registerFunction<TableFunctionDeltaLakeAzureCluster>(
         {.documentation
-         = {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster.)",
+         = {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store in parallel for many nodes in a specified cluster.)",
             .examples{{DeltaLakeAzureClusterDefinition::name, "SELECT * FROM deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
