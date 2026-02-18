@@ -23,6 +23,14 @@ static bool isNullableTupleEnabled()
     return context && context->getServerSettings()[ServerSetting::allow_nullable_tuple_in_variant_and_dynamic_subcolumn];
 }
 
+static bool canBeInsideNullableBySettings(const ColumnPtr & column)
+{
+    if (checkAndGetColumn<ColumnTuple>(column.get()))
+        return isNullableTupleEnabled();
+
+    return column->canBeInsideNullable();
+}
+
 bool canBeInsideNullableBySettings(const DataTypePtr & type)
 {
     if (isTuple(type))
@@ -104,19 +112,21 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
+    if (!canBeInsideNullableBySettings(prev))
+        return prev;
     return makeNullableSafe(prev);
 }
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
-    if (prev_type && !prev_type->canBeInsideNullable())
+    if (prev_type && !canBeInsideNullableBySettings(prev_type))
         return prev_serialization;
     return std::make_shared<SerializationNullable>(prev_serialization);
 }
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
-    if (prev->canBeInsideNullable())
+    if (canBeInsideNullableBySettings(prev))
         return ColumnNullable::create(prev, null_map);
     return prev;
 }

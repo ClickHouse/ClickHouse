@@ -49,7 +49,7 @@ void SerializationNullable::enumerateStreams(
     }
 
     settings.path.push_back(Substream::NullableElements);
-    if (type_nullable && type_nullable->getNestedType()->canBeInsideNullable())
+    if (type_nullable && canBeInsideNullableBySettings(type_nullable->getNestedType()))
         settings.path.back().creator = std::make_shared<NullableSubcolumnCreator>(column_null_map);
     settings.path.back().data = data;
 
