@@ -240,6 +240,11 @@ void RemoteSource::onCancel() noexcept
     try
     {
         query_executor->cancel();
+        /// After sending cancel, drain remaining packets to collect progress.
+        /// This is important for parallel replicas with LIMIT where the remote
+        /// replicas send Progress packets after data blocks, and without draining
+        /// these progress packets would be lost.
+        query_executor->finish();
     }
     catch (...)
     {
