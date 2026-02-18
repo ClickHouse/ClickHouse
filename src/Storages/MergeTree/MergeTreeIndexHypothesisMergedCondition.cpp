@@ -6,7 +6,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 
 namespace DB
@@ -17,35 +16,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-/// analyzer produces AST with full column identifiers ("table_name.column")
-/// while hypothesis index expressions use short column names ("column")
-void stripTableQualifiers(ASTPtr & ast)
-{
-    if (!ast)
-        return;
-
-    /// strip table prefix so ComparisonGraph can match them
-    if (auto * identifier = ast->as<ASTIdentifier>())
-    {
-        if (identifier->compound())
-            identifier->setShortName(identifier->shortName());
-        return;
-    }
-
-    for (auto & child : ast->children)
-        stripTableQualifiers(child);
-}
-
-}
 
 MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition(
     const SelectQueryInfo & query, const ConstraintsDescription & constraints, size_t granularity_)
     : IMergeTreeIndexMergedCondition(granularity_)
 {
-    const auto & select = query.query->as<ASTSelectQuery &>();
+    /// analyzer produces AST with full column identifiers ("table_name.column")
+    /// while hypothesis index expressions use short column names ("column"), so we shorten them
+    const auto select_ptr = query.query_tree->toAST({
+        .fully_qualified_identifiers = false,
+    });
+    const auto & select = select_ptr->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery &>();
 
     if (select.where() && select.prewhere())
         expression_ast = makeASTOperator(
@@ -56,8 +37,6 @@ MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition
         expression_ast = select.where()->clone();
     else if (select.prewhere())
         expression_ast = select.prewhere()->clone();
-
-    stripTableQualifiers(expression_ast);
 
     expression_cnf = std::make_unique<CNFQuery>(
         expression_ast ? TreeCNFConverter::toCNF(expression_ast.get()) : CNFQuery::AndGroup{});
