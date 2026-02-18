@@ -27,6 +27,7 @@ BASE_CASES = [
     "03162_dynamic_type_nested",
     "03369_variant_escape_filename_merge_tree",
     "03913_tuple_inside_nullable_subcolumns",
+    "03915_tuple_inside_nullable_variant_dynamic_element",
 ]
 
 # When the setting is disabled, some queries throw errors; when it is enabled, they do not.
