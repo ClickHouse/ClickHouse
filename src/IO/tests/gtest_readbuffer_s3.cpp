@@ -173,8 +173,8 @@ struct ClientFake : DB::S3::Client
     {
         last_start_after = request.GetStartAfter().c_str();
         list_requests.emplace_back(ListRequest{
-            .start_after = request.GetStartAfter().c_str(),
-            .continuation_token = request.GetContinuationToken().c_str(),
+            .start_after = request.GetStartAfter(),
+            .continuation_token = request.GetContinuationToken(),
             .start_after_has_been_set = request.StartAfterHasBeenSet()});
 
         if (listObjectsV2Impl)
