@@ -675,25 +675,29 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
             }
 
-            AccessRights difference;
-            difference.grant(flags, fmt_args...);
-            AccessRights original_rights = difference;
-            difference.makeDifference(*getAccessRights());
-
-            if (difference == original_rights)
+            if constexpr (!throw_if_denied)
+                return false;
+            else
             {
+                AccessRights difference;
+                difference.grant(flags, fmt_args...);
+                AccessRights original_rights = difference;
+                difference.makeDifference(*getAccessRights());
+
+                if (difference == original_rights)
+                {
+                    return access_denied(ErrorCodes::ACCESS_DENIED,
+                        "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
+                        AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                }
+
                 return access_denied(ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
+                    "(Missing permissions: {}){}",
+                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                    difference.getElements().toStringWithoutOptions(),
+                    grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
             }
-
-
-            return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
-                "(Missing permissions: {}){}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
-                difference.getElements().toStringWithoutOptions(),
-                grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
 
         return access_denied_no_grant(flags, args...);

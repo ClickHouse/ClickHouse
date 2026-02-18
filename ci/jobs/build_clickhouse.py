@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 
 from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
 from ci.jobs.scripts.clickhouse_version import CHVersion
@@ -225,6 +226,14 @@ def main():
             )
         )
         res = results[-1].is_ok()
+
+        # Pre-seed .ninja_log from toolchain for timing-based scheduling
+        if res:
+            ninja_log_seed = "/usr/local/share/clickhouse-build/ninja_log"
+            if os.path.exists(ninja_log_seed):
+                shutil.copy2(ninja_log_seed, f"{build_dir}/.ninja_log")
+                print(f"Pre-seeded .ninja_log from {ninja_log_seed}")
+            Shell.check("ninja --version", verbose=True)
 
     # Activate FIPS-permissive config for OpenSSL
     os.environ["OPENSSL_CONF"] = "/etc/ssl/openssl.cnf"

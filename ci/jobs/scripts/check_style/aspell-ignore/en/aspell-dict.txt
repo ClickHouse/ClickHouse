@@ -166,6 +166,7 @@ CertificateHandler
 Chadmin
 ChannelID
 ChartDB
+CHouse
 Cidr
 Ciphertext
 CityHash
@@ -294,6 +295,7 @@ DestroyAggregatesThreadsActive
 DictCacheRequests
 DictionaryMaxUpdateDelay
 DictionaryTotalFailedUpdates
+differentiators
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads

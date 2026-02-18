@@ -355,8 +355,6 @@ ManifestFileContent::ManifestFileContent(
                         value_for_bounds[number].first = bound_value;
                     else
                         value_for_bounds[number].second = bound_value;
-
-                    column_ids_which_have_bounds.insert(number);
                 }
             }
         }
@@ -576,16 +574,6 @@ const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() con
     return *(partition_key_description);
 }
 
-bool ManifestFileContent::hasBoundsInfoInManifests() const
-{
-    return !column_ids_which_have_bounds.empty();
-}
-
-const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
-{
-    return column_ids_which_have_bounds;
-}
-
 bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
 {
     for (const auto & file : data_files_without_deleted)
@@ -607,9 +595,20 @@ size_t ManifestFileContent::getSizeInMemory() const
     size_t total_size = sizeof(ManifestFileContent);
     if (partition_key_description)
         total_size += sizeof(DB::KeyDescription);
-    total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
     total_size += data_files_without_deleted.capacity() * sizeof(ManifestFileEntry);
     total_size += position_deletes_files_without_deleted.capacity() * sizeof(ManifestFileEntry);
+    for (const auto & file : data_files_without_deleted)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
+    for (const auto & file : position_deletes_files_without_deleted)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
+    for (const auto & file : equality_deletes_files)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
     return total_size;
 }
 

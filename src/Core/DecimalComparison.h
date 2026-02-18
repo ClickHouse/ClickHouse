@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/TargetSpecific.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -275,7 +276,7 @@ private:
         }
     }
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(
     template <bool check_overflow, bool scale_left, bool scale_right> static void NO_INLINE
     ), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
@@ -298,27 +299,15 @@ private:
     static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImplAVX512BW<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            vectorConstantImpl_x86_64_v4<check_overflow, scale_left, scale_right>(a, b, c, scale);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            vectorConstantImplAVX512F<check_overflow, scale_left, scale_right>(a, b, c, scale);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorConstantImplAVX2<check_overflow, scale_left, scale_right>(a, b, c, scale);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorConstantImplSSE42<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            vectorConstantImpl_x86_64_v3<check_overflow, scale_left, scale_right>(a, b, c, scale);
             return;
         }
 #endif

@@ -88,8 +88,9 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
         removeLowCardinalityFromResult(nested_result_type, nested_result);
 
-        /// If result is Nullable(Nothing), just return column filled with NULLs.
-        if (nested_result_type->onlyNull())
+        /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
+        /// Nothing can appear when the function is executed on an empty type (e.g. arrayElement on Array(Nothing)).
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             auto res = result_type->createColumn();
             res->insertManyDefaults(variant_column.size());
@@ -189,8 +190,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                             ->convertToFullColumnIfConst();
         removeLowCardinalityFromResult(nested_result_type, nested_result);
 
-        /// If result is Nullable(Nothing), just return column filled with NULLs.
-        if (nested_result_type->onlyNull())
+        /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             auto res = result_type->createColumn();
             res->insertManyDefaults(variant_column.size());
@@ -367,8 +368,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
         variants_result_types[i] = nested_result_type;
 
-        /// Set nullptr in case of only NULL values, we will insert NULL for rows of this selector.
-        if (nested_result_type->onlyNull())
+        /// Set nullptr in case of only NULL or Nothing values, we will insert NULL for rows of this selector.
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             variants_results[i] = nullptr;
         }
