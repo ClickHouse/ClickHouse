@@ -270,6 +270,9 @@ SHOW CREATE QUOTA q1_01297;
 ALTER QUOTA q1_01297 ipv4_prefix_bits 20 ipv6_prefix_bits 80;
 SHOW CREATE QUOTA q1_01297;
 
+SELECT '-- system.quotas prefix bits';
+SELECT name, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name LIKE 'q%\_01297' ORDER BY name;
+
 DROP QUOTA IF EXISTS q1_01297, q2_01297, q3_01297, q4_01297, q5_01297;
 
 SELECT '-- ip prefix bits with intervals';
