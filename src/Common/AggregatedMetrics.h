@@ -3,7 +3,6 @@
 #include <Common/CurrentMetrics.h>
 
 #include <atomic>
-#include <new>
 
 /** Allows to aggregate partially changing values into single CurrentMetric.
   * Destination CurrentMetric will be updated instantly after changes will be applied to handle.
