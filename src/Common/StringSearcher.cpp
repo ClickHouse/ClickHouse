@@ -1,4 +1,6 @@
 #include <Common/StringSearcher.h>
+#include <Common/UTF8Helpers.h>
+#include <Poco/Unicode.h>
 
 namespace DB
 {
@@ -114,7 +116,7 @@ bool buildCacheBytes(
 }
 
 /// Shared: trivial byte-by-byte UTF-8 case-insensitive comparison.
-bool compareTrivialUTF8(
+inline ALWAYS_INLINE bool compareTrivialUTF8(
     const UInt8 * haystack_pos,
     const UInt8 * haystack_end,
     const uint8_t * needle_pos,
@@ -129,11 +131,10 @@ bool compareTrivialUTF8(
 
         /// Invalid UTF-8, should not compare equals
         if (!haystack_code_point || !needle_code_point)
-            break;
+            return false;
 
-        /// Not equals case insensitive.
         if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
-            break;
+            return false;
 
         haystack_pos += UTF8::seqLength(*haystack_pos);
         needle_pos += UTF8::seqLength(*needle_pos);
@@ -185,13 +186,8 @@ bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const 
 {
 #ifdef __SSE4_1__
     constexpr size_t N = sizeof(__m128i);
-    const Int64 page_size = ::getPageSize();
-    auto isPageSafe = [page_size](const void * const ptr)
-    {
-        return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N;
-    };
 
-    if (isPageSafe(pos) && !force_fallback)
+    if (likely(!force_fallback) && pos + N <= haystack_end)
     {
         const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
         const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
@@ -199,15 +195,7 @@ bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const 
         const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
         const auto mask = _mm_movemask_epi8(v_against_l_or_u);
 
-        if (0xffffu == cachemask)
-        {
-            if (static_cast<uint32_t>(mask) == cachemask)
-            {
-                if (compareTrivial(pos, haystack_end, needle))
-                    return true;
-            }
-        }
-        else if ((static_cast<uint32_t>(mask) & cachemask) == cachemask)
+        if ((static_cast<uint32_t>(mask) & cachemask) == cachemask)
         {
             if (compareTrivial(pos, haystack_end, needle))
                 return true;
@@ -234,36 +222,45 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
     if (needle_size == 0)
         return haystack;
 
+#ifdef __SSE4_1__
+    constexpr size_t N = sizeof(__m128i);
+
+    /// Continuation bytes (10xxxxxx): after XOR with 0x80 → 00xxxxxx, AND with 0x40 → 0.
+    /// Non-continuation bytes keep bit 6 set. movemask of cmpeq-to-zero gives 1 for continuation.
+    const auto v_0x80 = _mm_set1_epi8(static_cast<char>(0x80));
+    const auto v_0x40 = _mm_set1_epi8(static_cast<char>(0x40));
+
+    if (unlikely(force_fallback))
+        goto scalar;
+
     while (haystack < haystack_end)
     {
-#ifdef __SSE4_1__
-        constexpr size_t N = sizeof(__m128i);
-        const Int64 page_size = ::getPageSize();
-        auto isPageSafe = [page_size](const void * const ptr)
-        {
-            return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N;
-        };
-
-        if (haystack + N <= haystack_end && isPageSafe(haystack) && !force_fallback)
+        /// The first load scans N bytes for first-char matches; the second loads N bytes
+        /// from the match position (at most N-1 bytes ahead). Check 2*N upfront to cover both.
+        if (haystack + 2 * N <= haystack_end)
         {
             const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
             const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
             const auto v_against_u = _mm_cmpeq_epi8(v_haystack, patu);
             const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
 
-            const auto mask = _mm_movemask_epi8(v_against_l_or_u);
+            /// Mask out continuation bytes.
+            const auto v_xor = _mm_xor_si128(v_haystack, v_0x80);
+            const auto v_test = _mm_and_si128(v_xor, v_0x40);
+            const auto v_is_cont = _mm_cmpeq_epi8(v_test, _mm_setzero_si128());
+            const auto cont_mask = static_cast<uint32_t>(_mm_movemask_epi8(v_is_cont));
+
+            const auto mask = static_cast<uint32_t>(_mm_movemask_epi8(v_against_l_or_u)) & ~cont_mask;
 
             if (mask == 0)
             {
                 haystack += N;
-                UTF8::syncForward(haystack, haystack_end);
                 continue;
             }
 
             const auto offset = __builtin_ctz(mask);
             haystack += offset;
 
-            if (haystack + N <= haystack_end && isPageSafe(haystack))
             {
                 const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                 const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
@@ -271,15 +268,7 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
                 const auto v_against_l_or_u_offset = _mm_or_si128(v_against_l_offset, v_against_u_offset);
                 const auto mask_offset_both = _mm_movemask_epi8(v_against_l_or_u_offset);
 
-                if (0xffffu == cachemask)
-                {
-                    if (static_cast<uint32_t>(mask_offset_both) == cachemask)
-                    {
-                        if (compareTrivial(haystack, haystack_end, needle))
-                            return haystack;
-                    }
-                }
-                else if ((static_cast<uint32_t>(mask_offset_both) & cachemask) == cachemask)
+                if ((static_cast<uint32_t>(mask_offset_both) & cachemask) == cachemask)
                 {
                     if (compareTrivial(haystack, haystack_end, needle))
                         return haystack;
@@ -289,7 +278,6 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
                 continue;
             }
         }
-#endif
 
         if (haystack == haystack_end)
             return haystack_end;
@@ -303,7 +291,24 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
                 return haystack;
         }
 
-        /// advance to the start of the next sequence
+        haystack += UTF8::seqLength(*haystack);
+    }
+
+    return haystack_end;
+
+scalar:
+#endif
+    while (haystack < haystack_end)
+    {
+        if (*haystack == l || *haystack == u)
+        {
+            const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
+            const auto * needle_pos = needle + first_needle_symbol_is_ascii;
+
+            if (compareTrivial(haystack_pos, haystack_end, needle_pos))
+                return haystack;
+        }
+
         haystack += UTF8::seqLength(*haystack);
     }
 
@@ -349,13 +354,8 @@ bool UTF8CaseInsensitiveSearcherImpl::compareTrivial(
 bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
 {
     constexpr size_t N = sizeof(__m256i);
-    const Int64 page_size = ::getPageSize();
-    auto isPageSafe = [page_size](const void * const ptr)
-    {
-        return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N;
-    };
 
-    if (isPageSafe(pos) && !force_fallback)
+    if (likely(!force_fallback) && pos + N <= haystack_end)
     {
         const auto v_haystack = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
         const auto v_against_l = _mm256_cmpeq_epi8(v_haystack, cachel);
@@ -397,35 +397,43 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
     if (needle_size == 0)
         return haystack;
 
+    constexpr size_t N = sizeof(__m256i);
+
+    /// Continuation bytes (10xxxxxx): after XOR with 0x80 → 00xxxxxx, AND with 0x40 → 0.
+    const auto v_0x80 = _mm256_set1_epi8(static_cast<char>(0x80));
+    const auto v_0x40 = _mm256_set1_epi8(static_cast<char>(0x40));
+
+    if (unlikely(force_fallback))
+        goto scalar;
+
     while (haystack < haystack_end)
     {
-        constexpr size_t N = sizeof(__m256i);
-        const Int64 page_size = ::getPageSize();
-        auto isPageSafe = [page_size](const void * const ptr)
-        {
-            return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N;
-        };
-
-        if (haystack + N <= haystack_end && isPageSafe(haystack) && !force_fallback)
+        /// The first load scans N bytes for first-char matches; the second loads N bytes
+        /// from the match position (at most N-1 bytes ahead). Check 2*N upfront to cover both.
+        if (haystack + 2 * N <= haystack_end)
         {
             const auto v_haystack = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(haystack));
             const auto v_against_l = _mm256_cmpeq_epi8(v_haystack, patl);
             const auto v_against_u = _mm256_cmpeq_epi8(v_haystack, patu);
             const auto v_against_l_or_u = _mm256_or_si256(v_against_l, v_against_u);
 
-            const auto mask = static_cast<uint32_t>(_mm256_movemask_epi8(v_against_l_or_u));
+            /// Mask out continuation bytes.
+            const auto v_xor = _mm256_xor_si256(v_haystack, v_0x80);
+            const auto v_test = _mm256_and_si256(v_xor, v_0x40);
+            const auto v_is_cont = _mm256_cmpeq_epi8(v_test, _mm256_setzero_si256());
+            const auto cont_mask = static_cast<uint32_t>(_mm256_movemask_epi8(v_is_cont));
+
+            const auto mask = static_cast<uint32_t>(_mm256_movemask_epi8(v_against_l_or_u)) & ~cont_mask;
 
             if (mask == 0)
             {
                 haystack += N;
-                UTF8::syncForward(haystack, haystack_end);
                 continue;
             }
 
             const auto offset = __builtin_ctz(mask);
             haystack += offset;
 
-            if (haystack + N <= haystack_end && isPageSafe(haystack))
             {
                 const auto v_haystack_offset = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(haystack));
                 const auto v_against_l_offset = _mm256_cmpeq_epi8(v_haystack_offset, cachel);
@@ -455,6 +463,23 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
         if (haystack == haystack_end)
             return haystack_end;
 
+        if (*haystack == l || *haystack == u)
+        {
+            const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
+            const auto * needle_pos = needle + first_needle_symbol_is_ascii;
+
+            if (compareTrivial(haystack_pos, haystack_end, needle_pos))
+                return haystack;
+        }
+
+        haystack += UTF8::seqLength(*haystack);
+    }
+
+    return haystack_end;
+
+scalar:
+    while (haystack < haystack_end)
+    {
         if (*haystack == l || *haystack == u)
         {
             const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;

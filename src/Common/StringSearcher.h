@@ -8,11 +8,8 @@
 #include <cstring>
 #include <memory>
 
-#include <base/getPageSize.h>
-#include <Common/UTF8Helpers.h>
 #include <Common/TargetSpecific.h>
 
-#include <Poco/Unicode.h>
 
 #ifdef __SSE2__
 #    include <emmintrin.h>
@@ -38,33 +35,13 @@ namespace DB
 namespace impl
 {
 
-class StringSearcherBase
-{
-public:
-    bool force_fallback = false;
-
-    bool getForceFallback() const { return force_fallback; }
-
-    void setForceFallback(bool force_fallback_) { force_fallback = force_fallback_; }
-
-#ifdef __SSE2__
-protected:
-    static constexpr size_t N = sizeof(__m128i);
-
-    bool isPageSafe(const void * const ptr) const { return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N; }
-
-private:
-    const Int64 page_size = ::getPageSize();
-#endif
-};
-
 /// Performs case-sensitive or case-insensitive search of ASCII or UTF-8 strings
 template <bool CaseSensitive, bool ASCII>
 class StringSearcher;
 
-/// Performs case-sensitive or case-insensitive search of ASCII or UTF-8 strings
+/// Case-sensitive searcher (delegates to StringZilla)
 template <bool ASCII>
-class StringSearcher<true, ASCII> final : public StringSearcherBase
+class StringSearcher<true, ASCII> final
 {
     /// string to be searched for
     sz_cptr_t const needle;
@@ -117,7 +94,7 @@ public:
 
 /// Case-insensitive ASCII searcher
 template <>
-class StringSearcher<false, true> final : public StringSearcherBase
+class StringSearcher<false, true> final
 {
 private:
     /// string to be searched for
@@ -128,6 +105,8 @@ private:
     uint8_t u = 0;
 
 #ifdef __SSE4_1__
+    static constexpr size_t N = sizeof(__m128i);
+
     /// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
     __m128i patl, patu;
     /// lower and uppercase vectors of first 16 characters of `needle`
@@ -168,10 +147,10 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
-        if (isPageSafe(pos))
+        if (pos + N <= haystack_end)
         {
             const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
             const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
@@ -229,7 +208,7 @@ public:
         while (haystack < haystack_end)
         {
 #ifdef __SSE4_1__
-            if (haystack + N <= haystack_end && isPageSafe(haystack))
+            if (haystack + N <= haystack_end)
             {
                 const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                 const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
@@ -247,7 +226,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack + N <= haystack_end && isPageSafe(haystack))
+                if (haystack + N <= haystack_end)
                 {
                     const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                     const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
@@ -443,7 +422,7 @@ namespace impl
 #if defined(__aarch64__)
 /// On ARM, always use StringZilla (NEON is fast)
 template <>
-class StringSearcher<false, false> final : public StringSearcherBase
+class StringSearcher<false, false> final
 {
 private:
     sz_cptr_t const needle;
@@ -490,7 +469,7 @@ public:
 #else
 /// On x86_64: runtime dispatch between x86_64_v4 (StringZilla), x86_64_v3 (AVX2), and Default (SSE4.1)
 template <>
-class StringSearcher<false, false> final : public StringSearcherBase
+class StringSearcher<false, false> final
 {
 private:
     std::unique_ptr<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl> impl_default;
