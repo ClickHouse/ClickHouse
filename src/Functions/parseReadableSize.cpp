@@ -94,7 +94,7 @@ public:
 
         ColumnUInt8::MutablePtr col_null_map;
         if constexpr (error_handling == ErrorHandling::Null)
-            col_null_map = ColumnUInt8::create(input_rows_count, false);
+            col_null_map = ColumnUInt8::create(input_rows_count, 0);
 
         auto & res_data = col_res->getData();
 
@@ -207,7 +207,7 @@ private:
                 value);
         }
 
-        Float64 num_bytes_with_decimals = base * static_cast<Float64>(iter->second);
+        Float64 num_bytes_with_decimals = base * iter->second;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
         if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())

@@ -435,7 +435,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         && CrashWriter::initialized())
     {
         LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
+        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
         {
             if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {

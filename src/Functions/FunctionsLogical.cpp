@@ -149,7 +149,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -307,7 +306,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = static_cast<UInt8>(column_data[i] != 0);
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
+                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
                     }
                 }
                 else
@@ -323,7 +322,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = ternary_column_data[i];
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
+                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
                     }
                 }
             }
@@ -336,7 +335,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
 
             for (size_t i = 0; i < size; ++i)
             {
-                ternary_column_data[i] = static_cast<UInt8>((column_data[i] != 0) << 1);
+                ternary_column_data[i] = (column_data[i] != 0) << 1;
             }
         }
         else
@@ -672,44 +671,6 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
     return col_res;
 }
 
-}
-
-namespace FunctionsLogicalDetail
-{
-
-#if USE_EMBEDDED_COMPILER
-
-/// Cast LLVM value with type to ternary
-llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
-{
-    auto * result_type = llvm::Type::getInt8Ty(b.getContext());
-
-    if (from_type->isNullable())
-    {
-        auto * ternary_null = llvm::ConstantInt::get(result_type, 1);
-        auto * inner = nativeTernaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
-        auto * is_null = b.CreateExtractValue(value, {1});
-        return b.CreateSelect(is_null, ternary_null, inner);
-    }
-
-    auto * zero = llvm::Constant::getNullValue(value->getType());
-    auto * ternary_true = llvm::ConstantInt::get(result_type, 2);
-    auto * ternary_false = llvm::ConstantInt::get(result_type, 0);
-    if (value->getType()->isIntegerTy())
-        return b.CreateSelect(b.CreateICmpNE(value, zero), ternary_true, ternary_false);
-    else if (value->getType()->isFloatingPointTy())
-        return b.CreateSelect(b.CreateFCmpUNE(value, zero), ternary_true, ternary_false);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to ternary", from_type->getName());
-}
-
-/// Cast LLVM value with type to ternary
-llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
-{
-    return nativeTernaryCast(b, value_with_type.type, value_with_type.value);
-}
-
-#endif
 }
 
 template <typename Impl, typename Name>

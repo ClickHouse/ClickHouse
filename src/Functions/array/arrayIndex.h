@@ -94,35 +94,13 @@ private:
 
     static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right;
-        }
-        else
-        {
-            return left[i] == right;
-        }
+        return left[i] == right;
     }
 
     static constexpr bool compare(
             const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j) noexcept
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right[j]);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right[j];
-        }
-        else
-        {
-            return left[i] == right[j];
-        }
+        return left[i] == right[j];
     }
 
     /// LowCardinality
@@ -144,18 +122,7 @@ private:
 
     static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] >= static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) >= right;
-        }
-        else
-        {
-            return left[i] >= right;
-        }
+        return left[i] >= right;
     }
 
     static constexpr bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) noexcept { return left[i] >= right; }

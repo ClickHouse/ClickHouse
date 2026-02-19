@@ -3,7 +3,6 @@ import logging
 import os
 import subprocess
 import sys
-import traceback
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
@@ -64,28 +63,11 @@ def run_fuzz_job(check_name: str):
     info = Info()
     is_sanitized = "san" in info.job_name
 
-    changed_files_path = workspace_path / "ci-changed-files.txt"
-    with open(changed_files_path, "w") as f:
-        changed_files = info.get_changed_files()
-        if changed_files is None:
-            if info.is_local_run:
-                logging.warning(
-                    "No changed files available for local run - fuzzing will not be guided by changed test cases"
-                )
-            changed_files = []
-        else:
-            logging.info("Found %d changed files to guide fuzzing", len(changed_files))
-        f.write("\n".join(changed_files))
+    with open(workspace_path / "ci-changed-files.txt", "w") as f:
+        f.write("\n".join(info.get_changed_files()))
 
     Shell.check(command=run_command, verbose=True)
-
-    # Fix file ownership after running docker as root
-    logging.info("Fixing file ownership after running docker as root")
-    uid = os.getuid()
-    gid = os.getgid()
-    chown_cmd = f"docker run --rm --user root --volume {cwd}:{cwd} --workdir={cwd} {docker_image} sh -c 'find {temp_dir} -user root -exec chown {uid}:{gid} {{}} +'"
-    logging.info("Run ownership fix command: %s", chown_cmd)
-    Shell.check(chown_cmd, verbose=True)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_dir}", shell=True)
 
     fuzzer_log = workspace_path / "fuzzer.log"
     dmesg_log = workspace_path / "dmesg.log"
@@ -116,27 +98,23 @@ def run_fuzz_job(check_name: str):
             server_exit_code = int(server_exit_code)
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
-        error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        result.set_status(Result.Status.ERROR)
+        result.set_info("Unknown error in fuzzer runner script")
+        result.complete_job()
+        sys.exit(1)
 
     # parse runner script exit status
     status = Result.Status.FAILED
+    result_name = ""
     info = []
     is_failed = True
     if server_died:
         # Server died - status will be determined after OOM checks
         is_failed = True
-    elif fuzzer_exit_code in (0, 137, 143):
-        # normal exit with timeout or OOM kill
+    elif fuzzer_exit_code in (0, 143):
+        # normal exit with timeout
         is_failed = False
         status = Result.Status.SUCCESS
-        if fuzzer_exit_code == 0:
-            info.append("Fuzzer exited with success")
-        elif fuzzer_exit_code == 137:
-            info.append("Fuzzer killed")
-        else:
-            info.append("Fuzzer exited with timeout")
-        info.append("\n")
     elif fuzzer_exit_code in (227,):
         # BuzzHouse exception, it means a query oracle failed, or
         # an unwanted exception was found
@@ -150,16 +128,20 @@ def run_fuzz_job(check_name: str):
         info.append(f"ERROR: {error_info}")
     else:
         status = Result.Status.ERROR
-        # The server was alive, but the fuzzer returned some error. This might
-        # be some client-side error detected by fuzzing, or a problem in the
-        # fuzzer itself. Don't grep the server log in this case, because we will
-        # find a message about normal server termination (Received signal 15),
-        # which is confusing.
-        info.append("Client failure (see logs)")
-        info.append("---\nFuzzer log (last 200 lines):")
-        info.extend(
-            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
-        )
+        if fuzzer_exit_code == 137:
+            # Killed.
+            info.append("ERROR: Fuzzer killed")
+        else:
+            # The server was alive, but the fuzzer returned some error. This might
+            # be some client-side error detected by fuzzing, or a problem in the
+            # fuzzer itself. Don't grep the server log in this case, because we will
+            # find a message about normal server termination (Received signal 15),
+            # which is confusing.
+            info.append("Client failure (see logs)")
+            info.append("---\nFuzzer log (last 200 lines):")
+            info.extend(
+                Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
+            )
 
     if is_failed:
         if is_sanitized:
@@ -193,7 +175,7 @@ def run_fuzz_job(check_name: str):
                 workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
             ),
         )
-        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+        parsed_name, parsed_info = fuzzer_log_parser.parse_failure()
 
         if parsed_name:
             results.append(
@@ -201,7 +183,6 @@ def run_fuzz_job(check_name: str):
                     name=parsed_name,
                     info=parsed_info,
                     status=Result.StatusExtended.FAIL,
-                    files=files,
                 )
             )
 

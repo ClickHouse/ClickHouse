@@ -8,22 +8,29 @@
 #include <type_traits>
 #include <utility>
 
-#include <Common/ArenaAllocator.h>
-#include <Common/Exception.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/RadixSort.h>
+#include <Common/Exception.h>
+#include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 
 namespace DB
 {
@@ -55,7 +62,7 @@ struct GroupArraySortedData
     static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
 
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = typename std::conditional_t<is_value_generic_field, VectorWithMemoryTracking<T>, PODArray<T, 32, Allocator>>;
+    using Array = typename std::conditional_t<is_value_generic_field, std::vector<T>, PODArray<T, 32, Allocator>>;
 
     static constexpr size_t partial_sort_max_elements_factor = 2;
 
@@ -416,50 +423,9 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 
 void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
-Returns an array with the first N items in ascending order.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-groupArraySorted(N)(column)
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"column", "Column for which to group into an array.", {"Any"}}
-    };
-    FunctionDocumentation::Parameters parameters = {
-        {"N", "The number of elements to return.", {"UInt64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with the first N items in ascending order.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Getting first 10 numbers",
-        R"(
-SELECT groupArraySorted(10)(number) FROM numbers(100);
-        )",
-        R"(
-┌─groupArraySorted(10)(number)─┐
-│ [0,1,2,3,4,5,6,7,8,9]        │
-└──────────────────────────────┘
-        )"
-    },
-    {
-        "String sorting example",
-        R"(
-SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) AS str FROM numbers(5));
-        )",
-        R"(
-┌─groupArraySorted(5)(str)─┐
-│ ['0','1','2','3','4']    │
-└──────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
 
-    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, properties, documentation });
+    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, properties });
 }
 
 }

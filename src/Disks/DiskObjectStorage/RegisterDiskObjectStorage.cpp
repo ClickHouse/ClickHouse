@@ -51,6 +51,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
 
         DiskPtr disk = std::make_shared<DiskObjectStorage>(
             name,
+            object_storage->getCommonKeyPrefix(),
             std::move(metadata_storage),
             std::move(object_storage),
             config,

@@ -137,9 +137,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "equals"
         || function_name == "notEquals"
         || function_name == "mapContainsKey"
-        || function_name == "mapContainsKeyLike"
         || function_name == "mapContainsValue"
-        || function_name == "mapContainsValueLike"
         || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
@@ -176,12 +174,9 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return is_array_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
-
     if (function_name == "like"
         || function_name == "startsWith"
-        || function_name == "endsWith"
-        || function_name == "mapContainsKeyLike"
-        || function_name == "mapContainsValueLike")
+        || function_name == "endsWith")
     {
         return getHintOrNoneMode();
     }
@@ -206,9 +201,6 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
-    if (query.tokens.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
-        return std::nullopt;
-
     auto query_hash = query.getHash();
     auto it = all_search_queries.find(query_hash.get128());
 
@@ -351,29 +343,6 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
     return rpn_stack[0].can_be_true;
 }
 
-std::string MergeTreeIndexConditionText::getDescription() const
-{
-    std::string description = fmt::format("(mode: {}; tokens: [", global_search_mode);
-
-    if (all_search_tokens.size() > 50)
-    {
-        description += fmt::format("... {} tokens ...", all_search_tokens.size());
-    }
-    else
-    {
-        for (size_t i = 0; i < all_search_tokens.size(); ++i)
-        {
-            if (i > 0)
-                description += ", ";
-
-            description += fmt::format("\"{}\"", all_search_tokens[i]);
-        }
-    }
-
-    description += "])";
-    return description;
-}
-
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     {
@@ -460,7 +429,7 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
     std::vector<String> tokens;
     const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->stringToTokens(value.data(), value.size(), tokens);
-    return token_extractor->compactTokens(tokens);
+    return tokens;
 }
 
 std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
@@ -468,7 +437,7 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
     std::vector<String> tokens;
     const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
-    return token_extractor->compactTokens(tokens);
+    return tokens;
 }
 
 std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
@@ -476,7 +445,7 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     std::vector<String> tokens;
     const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
-    return token_extractor->compactTokens(tokens);
+    return tokens;
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
@@ -514,38 +483,18 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!value_data_type.isStringOrFixedString())
             return false;
 
-        auto make_map_function = [&](RPNElement::Function function, auto tokens) -> bool
+        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
+        /// mapContainsValue can be used only with an index defined as `mapValues(Map(String, ...))`
+        bool is_supported_key_function = has_map_keys_column && (function_name == "mapContainsKey" || function_name == "has");
+        bool is_supported_value_function = has_map_values_column && function_name == "mapContainsValue";
+
+        if (is_supported_key_function || is_supported_value_function)
         {
-            out.function = function;
-            out.text_search_queries.emplace_back(
-                std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            auto tokens = stringToTokens(value_field);
+            out.function = RPNElement::FUNCTION_HAS;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
-        };
-
-        /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
-        if (has_map_keys_column)
-        {
-            /// TODO: The functions used under these two conditions are inconsistent, but preserve backward compatibility.
-            /// This is because #89757 changed `mapContainsKey` and `has` with a text index to return no results when the
-            /// extracted tokens array is empty. Meanwhile, the desired behavior in `hint` mode is that the result set of
-            /// functions like `mapContains*Like` should not change just by adding a text index. Ideally, these should all
-            /// use `FUNCTION_EQUALS`, but that would be another backward-incompatible change.
-            if (function_name == "mapContainsKey" || function_name == "has")
-                return make_map_function(RPNElement::FUNCTION_HAS, stringToTokens(value_field));
-            if (function_name == "mapContainsKeyLike" && token_extractor->supportsStringLike())
-                return make_map_function(RPNElement::FUNCTION_EQUALS, stringLikeToTokens(value_field));
         }
-
-        /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
-        if (has_map_values_column)
-        {
-            /// TODO: See above in `if (has_map_keys_column)`.
-            if (function_name == "mapContainsValue")
-                return make_map_function(RPNElement::FUNCTION_HAS, stringToTokens(value_field));
-            if (function_name == "mapContainsValueLike" && token_extractor->supportsStringLike())
-                return make_map_function(RPNElement::FUNCTION_EQUALS, stringLikeToTokens(value_field));
-        }
-
         return false;
     }
     if (function_name == "notEquals")

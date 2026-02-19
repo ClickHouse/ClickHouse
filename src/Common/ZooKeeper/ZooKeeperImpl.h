@@ -177,9 +177,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch,
-        bool with_stat,
-        bool with_data) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void check(
         const String & path,
@@ -281,7 +279,6 @@ private:
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
         WatchCallbackPtrOrEventPtr watch;
-        StaticString component;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
@@ -356,7 +353,7 @@ private:
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
     /// Observes the operation in Aggregated ZooKeeper Log.
-    void observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component);
+    void observeOperation(const ZooKeeperRequest * request, const ZooKeeperResponse * response, UInt64 elapsed_microseconds);
 
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
