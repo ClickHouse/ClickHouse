@@ -3,18 +3,20 @@
 namespace DB
 {
 
-namespace TargetSpecific::Default
+namespace
 {
 
 using UTF8SequenceBuffer = uint8_t[6];
 
-UTF8CaseInsensitiveSearcherImpl::UTF8CaseInsensitiveSearcherImpl(const UInt8 * needle_, size_t needle_size_)
-    : needle(reinterpret_cast<const uint8_t *>(needle_))
-    , needle_size(needle_size_)
+/// Shared: resolve first character of the needle into lower/upper case bytes.
+/// Returns true if the caller should set `force_fallback` and return early.
+bool initFirstCharacter(
+    const uint8_t * needle,
+    size_t needle_size,
+    bool & first_needle_symbol_is_ascii,
+    uint8_t & l,
+    uint8_t & u)
 {
-    if (needle_size == 0)
-        return;
-
     UTF8SequenceBuffer l_seq;
     UTF8SequenceBuffer u_seq;
 
@@ -23,60 +25,59 @@ UTF8CaseInsensitiveSearcherImpl::UTF8CaseInsensitiveSearcherImpl(const UInt8 * n
         first_needle_symbol_is_ascii = true;
         l = static_cast<uint8_t>(std::tolower(*needle));
         u = static_cast<uint8_t>(std::toupper(*needle));
+        return false;
+    }
+
+    auto first_u32 = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle), needle_size);
+
+    /// Invalid UTF-8
+    if (!first_u32)
+    {
+        size_t src_len = UTF8::seqLength(*needle);
+        memcpy(l_seq, needle, src_len);
+        memcpy(u_seq, needle, src_len);
     }
     else
     {
-        auto first_u32 = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle), needle_size);
+        uint32_t first_l_u32 = Poco::Unicode::toLower(*first_u32);
+        uint32_t first_u_u32 = Poco::Unicode::toUpper(*first_u32);
 
-        /// Invalid UTF-8
-        if (!first_u32)
+        size_t length_l = UTF8::convertCodePointToUTF8(first_l_u32, reinterpret_cast<char *>(l_seq), sizeof(l_seq));
+        size_t length_u = UTF8::convertCodePointToUTF8(first_u_u32, reinterpret_cast<char *>(u_seq), sizeof(u_seq));
+
+        if (length_l != length_u)
         {
-            /// Process it verbatim as a sequence of bytes.
-            size_t src_len = UTF8::seqLength(*needle);
-
-            memcpy(l_seq, needle, src_len);
-            memcpy(u_seq, needle, src_len);
+            l = l_seq[0];
+            u = u_seq[0];
+            return true; /// force_fallback
         }
-        else
-        {
-            uint32_t first_l_u32 = Poco::Unicode::toLower(*first_u32);
-            uint32_t first_u_u32 = Poco::Unicode::toUpper(*first_u32);
-
-            /// lower and uppercase variants of the first octet of the first character in `needle`
-            size_t length_l = UTF8::convertCodePointToUTF8(first_l_u32, reinterpret_cast<char *>(l_seq), sizeof(l_seq));
-            size_t length_u = UTF8::convertCodePointToUTF8(first_u_u32, reinterpret_cast<char *>(u_seq), sizeof(u_seq));
-
-            if (length_l != length_u)
-                force_fallback = true;
-        }
-
-        l = l_seq[0];
-        u = u_seq[0];
-
-        if (force_fallback)
-            return;
     }
 
-#ifdef __SSE4_1__
-    /// for detecting leftmost position of the first symbol
-    patl = _mm_set1_epi8(l);
-    patu = _mm_set1_epi8(u);
-    /// lower and uppercase vectors of first 16 octets of `needle`
+    l = l_seq[0];
+    u = u_seq[0];
+    return false;
+}
+
+/// Shared: build cache byte arrays from needle with case folding.
+/// Returns true if force_fallback should be set (case expansion mismatch).
+bool buildCacheBytes(
+    const uint8_t * needle,
+    const uint8_t * needle_end,
+    size_t cache_size,
+    uint8_t * cache_l_bytes,
+    uint8_t * cache_u_bytes,
+    uint32_t & cachemask,
+    size_t & cache_valid_len,
+    size_t & cache_actual_len)
+{
+    UTF8SequenceBuffer l_seq;
+    UTF8SequenceBuffer u_seq;
 
     const auto * needle_pos = needle;
+    size_t cache_pos = 0;
 
-    constexpr size_t N = sizeof(__m128i);
-    for (size_t i = 0; i < N;)
+    while (cache_pos < cache_size && needle_pos < needle_end)
     {
-        if (needle_pos == needle_end)
-        {
-            cachel = _mm_srli_si128(cachel, 1);
-            cacheu = _mm_srli_si128(cacheu, 1);
-            ++i;
-
-            continue;
-        }
-
         size_t src_len = std::min<size_t>(needle_end - needle_pos, UTF8::seqLength(*needle_pos));
         auto c_u32 = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), src_len);
 
@@ -90,41 +91,41 @@ UTF8CaseInsensitiveSearcherImpl::UTF8CaseInsensitiveSearcherImpl(const UInt8 * n
 
             /// @note Unicode standard states it is a rare but possible occasion
             if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
-            {
-                force_fallback = true;
-                return;
-            }
+                return true; /// force_fallback
         }
 
         cache_actual_len += src_len;
-        if (cache_actual_len < N)
+        if (cache_actual_len < cache_size)
             cache_valid_len += src_len;
 
-        for (size_t j = 0; j < src_len && i < N; ++j, ++i)
+        for (size_t j = 0; j < src_len && cache_pos < cache_size; ++j, ++cache_pos)
         {
-            cachel = _mm_srli_si128(cachel, 1);
-            cacheu = _mm_srli_si128(cacheu, 1);
-
-            if (needle_pos != needle_end)
+            if (needle_pos < needle_end)
             {
-                cachel = _mm_insert_epi8(cachel, l_seq[j], N - 1);
-                cacheu = _mm_insert_epi8(cacheu, u_seq[j], N - 1);
-
-                cachemask |= 1 << i;
+                cache_l_bytes[cache_pos] = l_seq[j];
+                cache_u_bytes[cache_pos] = u_seq[j];
+                cachemask |= 1u << cache_pos;
                 ++needle_pos;
             }
         }
     }
-#endif
+
+    return false;
 }
 
-bool UTF8CaseInsensitiveSearcherImpl::compareTrivial(const UInt8 * haystack_pos, const UInt8 * const haystack_end, const uint8_t * needle_pos) const
+/// Shared: trivial byte-by-byte UTF-8 case-insensitive comparison.
+bool compareTrivialUTF8(
+    const UInt8 * haystack_pos,
+    const UInt8 * haystack_end,
+    const uint8_t * needle_pos,
+    const uint8_t * needle_end)
 {
     while (haystack_pos < haystack_end && needle_pos < needle_end)
     {
         auto haystack_code_point
             = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
-        auto needle_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);
+        auto needle_code_point
+            = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);
 
         /// Invalid UTF-8, should not compare equals
         if (!haystack_code_point || !needle_code_point)
@@ -134,14 +135,50 @@ bool UTF8CaseInsensitiveSearcherImpl::compareTrivial(const UInt8 * haystack_pos,
         if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
             break;
 
-        auto len = UTF8::seqLength(*haystack_pos);
-        haystack_pos += len;
-
-        len = UTF8::seqLength(*needle_pos);
-        needle_pos += len;
+        haystack_pos += UTF8::seqLength(*haystack_pos);
+        needle_pos += UTF8::seqLength(*needle_pos);
     }
 
     return needle_pos == needle_end;
+}
+
+} // anonymous namespace
+
+namespace TargetSpecific::Default
+{
+
+UTF8CaseInsensitiveSearcherImpl::UTF8CaseInsensitiveSearcherImpl(const UInt8 * needle_, size_t needle_size_)
+    : needle(reinterpret_cast<const uint8_t *>(needle_))
+    , needle_size(needle_size_)
+{
+    if (needle_size == 0)
+        return;
+
+    force_fallback = initFirstCharacter(needle, needle_size, first_needle_symbol_is_ascii, l, u);
+    if (force_fallback)
+        return;
+
+#ifdef __SSE4_1__
+    patl = _mm_set1_epi8(l);
+    patu = _mm_set1_epi8(u);
+
+    constexpr size_t N = sizeof(__m128i);
+    uint8_t cache_l_bytes[N] = {};
+    uint8_t cache_u_bytes[N] = {};
+
+    force_fallback = buildCacheBytes(needle, needle_end, N, cache_l_bytes, cache_u_bytes, cachemask, cache_valid_len, cache_actual_len);
+    if (force_fallback)
+        return;
+
+    cachel = _mm_loadu_si128(reinterpret_cast<const __m128i *>(cache_l_bytes));
+    cacheu = _mm_loadu_si128(reinterpret_cast<const __m128i *>(cache_u_bytes));
+#endif
+}
+
+bool UTF8CaseInsensitiveSearcherImpl::compareTrivial(
+    const UInt8 * haystack_pos, const UInt8 * const haystack_end, const uint8_t * needle_pos) const
+{
+    return compareTrivialUTF8(haystack_pos, haystack_end, needle_pos, needle_end);
 }
 
 bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
@@ -162,15 +199,15 @@ bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const 
         const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
         const auto mask = _mm_movemask_epi8(v_against_l_or_u);
 
-        if (0xffff == cachemask)
+        if (0xffffu == cachemask)
         {
-            if (mask == cachemask)
+            if (static_cast<uint32_t>(mask) == cachemask)
             {
                 if (compareTrivial(pos, haystack_end, needle))
                     return true;
             }
         }
-        else if ((mask & cachemask) == cachemask)
+        else if ((static_cast<uint32_t>(mask) & cachemask) == cachemask)
         {
             if (compareTrivial(pos, haystack_end, needle))
                 return true;
@@ -234,21 +271,20 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
                 const auto v_against_l_or_u_offset = _mm_or_si128(v_against_l_offset, v_against_u_offset);
                 const auto mask_offset_both = _mm_movemask_epi8(v_against_l_or_u_offset);
 
-                if (0xffff == cachemask)
+                if (0xffffu == cachemask)
                 {
-                    if (mask_offset_both == cachemask)
+                    if (static_cast<uint32_t>(mask_offset_both) == cachemask)
                     {
                         if (compareTrivial(haystack, haystack_end, needle))
                             return haystack;
                     }
                 }
-                else if ((mask_offset_both & cachemask) == cachemask)
+                else if ((static_cast<uint32_t>(mask_offset_both) & cachemask) == cachemask)
                 {
                     if (compareTrivial(haystack, haystack_end, needle))
                         return haystack;
                 }
 
-                /// first octet was ok, but not the first 16, move to start of next sequence and reapply
                 haystack += UTF8::seqLength(*haystack);
                 continue;
             }
@@ -275,6 +311,166 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
 }
 
 } // namespace TargetSpecific::Default
+
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+
+UTF8CaseInsensitiveSearcherImpl::UTF8CaseInsensitiveSearcherImpl(const UInt8 * needle_, size_t needle_size_)
+    : needle(reinterpret_cast<const uint8_t *>(needle_))
+    , needle_size(needle_size_)
+{
+    if (needle_size == 0)
+        return;
+
+    force_fallback = initFirstCharacter(needle, needle_size, first_needle_symbol_is_ascii, l, u);
+    if (force_fallback)
+        return;
+
+    patl = _mm256_set1_epi8(l);
+    patu = _mm256_set1_epi8(u);
+
+    constexpr size_t N = sizeof(__m256i);
+    uint8_t cache_l_bytes[N] = {};
+    uint8_t cache_u_bytes[N] = {};
+
+    force_fallback = buildCacheBytes(needle, needle_end, N, cache_l_bytes, cache_u_bytes, cachemask, cache_valid_len, cache_actual_len);
+    if (force_fallback)
+        return;
+
+    cachel = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(cache_l_bytes));
+    cacheu = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(cache_u_bytes));
+}
+
+bool UTF8CaseInsensitiveSearcherImpl::compareTrivial(
+    const UInt8 * haystack_pos, const UInt8 * const haystack_end, const uint8_t * needle_pos) const
+{
+    return compareTrivialUTF8(haystack_pos, haystack_end, needle_pos, needle_end);
+}
+
+bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
+{
+    constexpr size_t N = sizeof(__m256i);
+    const Int64 page_size = ::getPageSize();
+    auto isPageSafe = [page_size](const void * const ptr)
+    {
+        return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N;
+    };
+
+    if (isPageSafe(pos) && !force_fallback)
+    {
+        const auto v_haystack = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
+        const auto v_against_l = _mm256_cmpeq_epi8(v_haystack, cachel);
+        const auto v_against_u = _mm256_cmpeq_epi8(v_haystack, cacheu);
+        const auto v_against_l_or_u = _mm256_or_si256(v_against_l, v_against_u);
+        const auto mask = static_cast<uint32_t>(_mm256_movemask_epi8(v_against_l_or_u));
+
+        if (0xffffffffu == cachemask)
+        {
+            if (mask == cachemask)
+            {
+                if (compareTrivial(pos, haystack_end, needle))
+                    return true;
+            }
+        }
+        else if ((mask & cachemask) == cachemask)
+        {
+            if (compareTrivial(pos, haystack_end, needle))
+                return true;
+        }
+
+        return false;
+    }
+
+    if (*pos == l || *pos == u)
+    {
+        pos += first_needle_symbol_is_ascii;
+        const auto * needle_pos = needle + first_needle_symbol_is_ascii;
+
+        if (compareTrivial(pos, haystack_end, needle_pos))
+            return true;
+    }
+
+    return false;
+}
+
+const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+{
+    if (needle_size == 0)
+        return haystack;
+
+    while (haystack < haystack_end)
+    {
+        constexpr size_t N = sizeof(__m256i);
+        const Int64 page_size = ::getPageSize();
+        auto isPageSafe = [page_size](const void * const ptr)
+        {
+            return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - N;
+        };
+
+        if (haystack + N <= haystack_end && isPageSafe(haystack) && !force_fallback)
+        {
+            const auto v_haystack = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(haystack));
+            const auto v_against_l = _mm256_cmpeq_epi8(v_haystack, patl);
+            const auto v_against_u = _mm256_cmpeq_epi8(v_haystack, patu);
+            const auto v_against_l_or_u = _mm256_or_si256(v_against_l, v_against_u);
+
+            const auto mask = static_cast<uint32_t>(_mm256_movemask_epi8(v_against_l_or_u));
+
+            if (mask == 0)
+            {
+                haystack += N;
+                UTF8::syncForward(haystack, haystack_end);
+                continue;
+            }
+
+            const auto offset = __builtin_ctz(mask);
+            haystack += offset;
+
+            if (haystack + N <= haystack_end && isPageSafe(haystack))
+            {
+                const auto v_haystack_offset = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(haystack));
+                const auto v_against_l_offset = _mm256_cmpeq_epi8(v_haystack_offset, cachel);
+                const auto v_against_u_offset = _mm256_cmpeq_epi8(v_haystack_offset, cacheu);
+                const auto v_against_l_or_u_offset = _mm256_or_si256(v_against_l_offset, v_against_u_offset);
+                const auto mask_offset_both = static_cast<uint32_t>(_mm256_movemask_epi8(v_against_l_or_u_offset));
+
+                if (0xffffffffu == cachemask)
+                {
+                    if (mask_offset_both == cachemask)
+                    {
+                        if (compareTrivial(haystack, haystack_end, needle))
+                            return haystack;
+                    }
+                }
+                else if ((mask_offset_both & cachemask) == cachemask)
+                {
+                    if (compareTrivial(haystack, haystack_end, needle))
+                        return haystack;
+                }
+
+                haystack += UTF8::seqLength(*haystack);
+                continue;
+            }
+        }
+
+        if (haystack == haystack_end)
+            return haystack_end;
+
+        if (*haystack == l || *haystack == u)
+        {
+            const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
+            const auto * needle_pos = needle + first_needle_symbol_is_ascii;
+
+            if (compareTrivial(haystack_pos, haystack_end, needle_pos))
+                return haystack;
+        }
+
+        haystack += UTF8::seqLength(*haystack);
+    }
+
+    return haystack_end;
+}
+
+) // DECLARE_X86_64_V3_SPECIFIC_CODE
 
 namespace impl
 {

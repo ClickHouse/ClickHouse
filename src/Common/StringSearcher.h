@@ -22,6 +22,10 @@
 #    include <smmintrin.h>
 #endif
 
+#if USE_MULTITARGET_CODE
+#    include <immintrin.h>
+#endif
+
 #include <stringzilla/stringzilla.h>
 
 namespace DB
@@ -333,7 +337,7 @@ private:
     __m128i patu;
     __m128i cachel = _mm_setzero_si128();
     __m128i cacheu = _mm_setzero_si128();
-    int cachemask = 0;
+    uint32_t cachemask = 0;
     size_t cache_valid_len = 0;
     size_t cache_actual_len = 0;
 #endif
@@ -349,6 +353,42 @@ public:
 };
 
 } // namespace TargetSpecific::Default
+
+/// AVX2-based implementation for x86_64_v3 CPUs (32-byte vectors instead of 16).
+/// Uses DECLARE macro since the class has no #ifdef - AVX2 intrinsics are guaranteed by the target attribute.
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+
+class UTF8CaseInsensitiveSearcherImpl
+{
+private:
+    using UTF8SequenceBuffer = uint8_t[6];
+
+    const uint8_t * const needle;
+    const size_t needle_size;
+    const uint8_t * const needle_end = needle + needle_size;
+    bool first_needle_symbol_is_ascii = false;
+    uint8_t l = 0;
+    uint8_t u = 0;
+
+    __m256i patl;
+    __m256i patu;
+    __m256i cachel = _mm256_setzero_si256();
+    __m256i cacheu = _mm256_setzero_si256();
+    uint32_t cachemask = 0;
+    size_t cache_valid_len = 0;
+    size_t cache_actual_len = 0;
+
+    bool force_fallback = false;
+
+public:
+    UTF8CaseInsensitiveSearcherImpl(const UInt8 * needle_, size_t needle_size_);
+
+    bool compareTrivial(const UInt8 * haystack_pos, const UInt8 * haystack_end, const uint8_t * needle_pos) const;
+    bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const;
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * haystack_end) const;
+};
+
+) // DECLARE_X86_64_V3_SPECIFIC_CODE
 
 /// StringZilla-based implementation (for x86_64_v4 with AVX-512)
 DECLARE_X86_64_V4_SPECIFIC_CODE(
@@ -448,7 +488,7 @@ public:
 };
 
 #else
-/// On x86_64: runtime dispatch between x86_64_v4 (StringZilla) and Default (Poco)
+/// On x86_64: runtime dispatch between x86_64_v4 (StringZilla), x86_64_v3 (AVX2), and Default (SSE4.1)
 template <>
 class StringSearcher<false, false> final : public StringSearcherBase
 {
@@ -456,30 +496,49 @@ private:
     std::unique_ptr<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl> impl_default;
 #if USE_MULTITARGET_CODE
     std::unique_ptr<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl> impl_v4;
+    std::unique_ptr<TargetSpecific::x86_64_v3::UTF8CaseInsensitiveSearcherImpl> impl_v3;
 #endif
-    bool use_v4 = false;
+    enum class Impl : uint8_t { Default, V3, V4 };
+
+    static Impl selectImpl()
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return Impl::V4;
+        if (isArchSupported(TargetArch::x86_64_v3))
+            return Impl::V3;
+#endif
+        return Impl::Default;
+    }
+
+    const Impl active = selectImpl();
 
 public:
     StringSearcher(const UInt8 * needle_, size_t needle_size)
     {
+        switch (active)
+        {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
-        {
-            impl_v4 = std::make_unique<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
-            use_v4 = true;
-        }
-        else
+            case Impl::V4:
+                impl_v4 = std::make_unique<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
+                break;
+            case Impl::V3:
+                impl_v3 = std::make_unique<TargetSpecific::x86_64_v3::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
+                break;
 #endif
-        {
-            impl_default = std::make_unique<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
+            default:
+                impl_default = std::make_unique<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
+                break;
         }
     }
 
     ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
     {
 #if USE_MULTITARGET_CODE
-        if (use_v4)
+        if (active == Impl::V4)
             return impl_v4->compare(haystack, haystack_end, pos);
+        if (active == Impl::V3)
+            return impl_v3->compare(haystack, haystack_end, pos);
 #endif
         return impl_default->compare(haystack, haystack_end, pos);
     }
@@ -487,8 +546,10 @@ public:
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
 #if USE_MULTITARGET_CODE
-        if (use_v4)
+        if (active == Impl::V4)
             return impl_v4->search(haystack, haystack_end);
+        if (active == Impl::V3)
+            return impl_v3->search(haystack, haystack_end);
 #endif
         return impl_default->search(haystack, haystack_end);
     }
