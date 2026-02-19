@@ -84,6 +84,9 @@ struct JoinSettings
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
 
+    /* Spilling hash join settings */
+    bool enable_auto_spilling_hash_join;
+
     /* Full sorting merge join settings */
     UInt64 max_rows_in_set_to_optimize_join;
     String temporary_files_codec;

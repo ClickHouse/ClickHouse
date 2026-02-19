@@ -54,34 +54,6 @@ void QueryPipelineBuilder::checkInitializedAndNotCompleted()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPipeline is already completed");
 }
 
-static void checkSource(const ProcessorPtr & source, bool can_have_totals)
-{
-    if (!source->getInputs().empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for query pipeline shouldn't have any input, but {} has {} inputs",
-            source->getName(),
-            source->getInputs().size());
-
-    if (source->getOutputs().empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Source for query pipeline should have single output, but {} doesn't have any", source->getName());
-
-    if (!can_have_totals && source->getOutputs().size() != 1)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for query pipeline should have single output, but {} has {} outputs",
-            source->getName(),
-            source->getOutputs().size());
-
-    if (source->getOutputs().size() > 2)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for query pipeline should have 1 or 2 output, but {} has {} outputs",
-            source->getName(),
-            source->getOutputs().size());
-}
-
 void QueryPipelineBuilder::init(Pipe pipe_)
 {
     if (initialized())
@@ -150,19 +122,6 @@ void QueryPipelineBuilder::setSinks(const Pipe::ProcessorGetterSharedHeaderWithS
     pipe.setSinks(getter);
 }
 
-void QueryPipelineBuilder::addDelayedStream(ProcessorPtr source)
-{
-    checkInitializedAndNotCompleted();
-
-    checkSource(source, false);
-    assertBlocksHaveEqualStructure(getHeader(), source->getOutputs().front().getHeader(), "QueryPipeline");
-
-    IProcessor::PortNumbers delayed_streams = { pipe.numOutputPorts() };
-    pipe.addSource(std::move(source));
-
-    auto processor = std::make_shared<DelayedPortsProcessor>(getSharedHeader(), pipe.numOutputPorts(), delayed_streams);
-    addTransform(std::move(processor));
-}
 
 void QueryPipelineBuilder::addMergingAggregatedMemoryEfficientTransform(
     AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number)

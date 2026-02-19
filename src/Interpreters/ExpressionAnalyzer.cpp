@@ -29,6 +29,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/Set.h>
@@ -112,6 +113,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
+    extern const SettingsBool enable_auto_spilling_hash_join;
 }
 
 
@@ -1033,6 +1035,23 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         const auto & settings = context->getSettingsRef();
 
+        /// SpillingHashJoin: automatically spill to disk when memory limits are exceeded.
+        /// Only for non-parallel path; ConcurrentHashJoin is not yet supported.
+        if (settings[Setting::enable_auto_spilling_hash_join]
+            && !analyzed_join->allowParallelHashJoin()
+            && GraceHashJoin::isSupported(analyzed_join)
+            && context->getTempDataOnDisk())
+        {
+            Block left_sample_block(left_sample_columns);
+            if (sanitizeBlock(left_sample_block, false))
+                return std::make_shared<SpillingHashJoin>(
+                    analyzed_join,
+                    std::make_shared<const Block>(std::move(left_sample_block)),
+                    right_sample_block,
+                    context->getTempDataOnDisk(),
+                    settings[Setting::grace_hash_join_max_buckets]);
+        }
+
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(
                 analyzed_join, settings[Setting::max_threads], right_sample_block, StatsCollectingParams{});
@@ -1058,6 +1077,22 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
+        const auto & settings = context->getSettingsRef();
+
+        if (settings[Setting::enable_auto_spilling_hash_join]
+            && GraceHashJoin::isSupported(analyzed_join)
+            && context->getTempDataOnDisk())
+        {
+            Block left_sample_block(left_sample_columns);
+            if (sanitizeBlock(left_sample_block, false))
+                return std::make_shared<SpillingHashJoin>(
+                    analyzed_join,
+                    std::make_shared<const Block>(std::move(left_sample_block)),
+                    right_sample_block,
+                    context->getTempDataOnDisk(),
+                    settings[Setting::grace_hash_join_max_buckets]);
+        }
+
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);

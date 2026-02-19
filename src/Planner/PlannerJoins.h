@@ -257,6 +257,8 @@ struct JoinAlgorithmParams
     UInt64 max_size_to_preallocate_for_joins;
     UInt64 max_threads;
 
+    bool enable_auto_spilling_hash_join = false;
+
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout;
 

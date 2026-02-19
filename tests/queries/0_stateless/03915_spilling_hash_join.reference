@@ -1,0 +1,16 @@
+inner join small
+100	49500
+left join small
+100	1225
+right join small
+100
+full join small
+150
+inner join spill
+10000	49995000
+left join spill
+10000
+right join spill
+10000
+full join spill
+15000

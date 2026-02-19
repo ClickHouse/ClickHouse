@@ -526,7 +526,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
         key_columns.push_back(key_col_no_lc.get());
     }
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+    extractNestedColumnsAndNullMap(key_columns, null_map);
 
     auto calculate_selector = [&](auto & maps)
     {

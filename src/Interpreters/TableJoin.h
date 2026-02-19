@@ -160,6 +160,7 @@ private:
     const bool allow_join_sorting = false;
     const bool allow_dynamic_type_in_join_keys = false;
     const bool enable_lazy_columns_replication = false;
+    const bool enable_auto_spilling_hash_join = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -320,6 +321,7 @@ public:
     UInt64 temporaryFilesBufferSize() const { return temporary_files_buffer_size; }
     bool needStreamWithNonJoinedRows() const;
     bool enableColumnsLazyReplication() const { return enable_lazy_columns_replication; }
+    bool enableAutoSpillingHashJoin() const { return enable_auto_spilling_hash_join; }
 
     bool oneDisjunct() const;
 

@@ -40,6 +40,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
+#include <Interpreters/SpillingHashJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -68,6 +69,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
+    extern const SettingsBool enable_auto_spilling_hash_join;
 }
 
 namespace ServerSetting
@@ -1176,6 +1178,18 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             }
         }
 
+        if (params.enable_auto_spilling_hash_join
+            && GraceHashJoin::isSupported(table_join)
+            && Context::getGlobalContextInstance()->getTempDataOnDisk())
+        {
+            return std::make_shared<SpillingHashJoin>(
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                params.grace_hash_join_max_buckets);
+        }
+
         return std::make_shared<HashJoin>(
             table_join, right_table_expression_header, params.join_any_take_last_row);
     }
@@ -1202,6 +1216,18 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
+        if (params.enable_auto_spilling_hash_join
+            && GraceHashJoin::isSupported(table_join)
+            && Context::getGlobalContextInstance()->getTempDataOnDisk())
+        {
+            return std::make_shared<SpillingHashJoin>(
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                params.grace_hash_join_max_buckets);
+        }
+
         if (MergeJoin::isSupported(table_join))
             return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
@@ -1227,6 +1253,8 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     max_size_to_preallocate_for_joins = settings[Setting::max_size_to_preallocate_for_joins];
     max_threads = settings[Setting::max_threads];
 
+    enable_auto_spilling_hash_join = settings[Setting::enable_auto_spilling_hash_join];
+
     initial_query_id = context.getInitialQueryId();
     lock_acquire_timeout = std::chrono::milliseconds(settings[Setting::lock_acquire_timeout].totalMilliseconds());
 }
@@ -1251,6 +1279,8 @@ JoinAlgorithmParams::JoinAlgorithmParams(
 
     max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
     max_threads = max_threads_;
+
+    enable_auto_spilling_hash_join = join_settings.enable_auto_spilling_hash_join;
 
     initial_query_id = std::move(initial_query_id_);
     lock_acquire_timeout = lock_acquire_timeout_;

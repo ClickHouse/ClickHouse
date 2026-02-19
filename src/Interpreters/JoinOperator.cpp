@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
+    extern const SettingsBool enable_auto_spilling_hash_join;
 }
 
 namespace QueryPlanSerializationSetting
@@ -138,6 +139,8 @@ JoinSettings::JoinSettings(const Settings & query_settings)
 
     grace_hash_join_initial_buckets = query_settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = query_settings[Setting::grace_hash_join_max_buckets];
+
+    enable_auto_spilling_hash_join = query_settings[Setting::enable_auto_spilling_hash_join];
 
     max_rows_in_set_to_optimize_join = query_settings[Setting::max_rows_in_set_to_optimize_join];
 

@@ -532,7 +532,9 @@ size_t HashJoin::getTotalByteCount() const
 
 bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 {
-    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
+        || table_join.enableAutoSpillingHashJoin();
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
