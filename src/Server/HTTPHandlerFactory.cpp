@@ -361,6 +361,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
 
+    auto clickstack_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ClickStackUIRequestHandler>>(server);
+    clickstack_handler->attachNonStrictPath("/clickstack");
+    clickstack_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/clickstack");
+    factory.addHandler(clickstack_handler);
+
 #if USE_SSL
     if (server.config().has("acme"))
     {

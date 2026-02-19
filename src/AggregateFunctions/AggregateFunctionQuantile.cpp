@@ -157,7 +157,7 @@ Computes an approximate [`quantile`](https://en.wikipedia.org/wiki/Quantile) of 
 
 This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and a random number generator for sampling.
 The result is non-deterministic.
-To get an exact quantile, use the [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileexact) function.
+To get an exact quantile, use the [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileExact) function.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
 In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.

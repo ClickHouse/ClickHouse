@@ -62,6 +62,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
     extern const Event MergeTreeDataProjectionWriterSortingBlocksMicroseconds;
     extern const Event MergeTreeDataProjectionWriterMergingBlocksMicroseconds;
+    extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
     extern const Event RejectedInserts;
 }
 
@@ -661,11 +662,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
     }
 
-
-    ColumnsStatistics statistics;
-    if (global_settings[Setting::materialize_statistics_on_insert])
-        statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
-
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
@@ -718,6 +714,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+    }
+
+    ColumnsStatistics statistics;
+    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+        statistics.build(block);
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon
@@ -868,20 +872,23 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
+    IMergedBlockOutputStream::GatheredData gathered_data;
+    gathered_data.statistics = std::move(statistics);
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
         metadata_snapshot,
         columns,
         indices,
-        statistics,
         compression_codec,
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        context->getWriteSettings());
+        context->getWriteSettings(),
+        static_cast<WrittenOffsetSubstreams *>(nullptr));
 
     out->writeWithPermutation(block, perm_ptr);
 
@@ -905,10 +912,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         }
     }
 
+    out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(
         new_data_part,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert],
-        nullptr, nullptr);
+        gathered_data,
+        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -1042,18 +1050,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
-        /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        ColumnsStatistics{},
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings());
+        data.getContext()->getWriteSettings(),
+        static_cast<WrittenOffsetSubstreams *>(nullptr));
 
     out->writeWithPermutation(block, perm_ptr);
-    auto finalizer = out->finalizePartAsync(new_data_part, false);
+    out->finalizeIndexGranularity();
+    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 

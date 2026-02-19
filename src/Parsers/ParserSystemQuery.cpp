@@ -12,7 +12,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
 
@@ -193,9 +192,7 @@ enum class SystemQueryTargetType : uint8_t
             String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
                 zk_path.pop_back();
-            res->full_replica_zk_path = std::move(zk_path);
-            res->zk_name = zkutil::extractZooKeeperName(res->full_replica_zk_path);
-            res->replica_zk_path = zkutil::extractZooKeeperPath(res->full_replica_zk_path, /*check_starts_with_slash*/false);
+            res->replica_zk_path = zk_path;
         }
         else
             return false;
@@ -349,6 +346,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
                 res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
 
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->delta_kernel_tracing_level = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
             break;
         }
 
@@ -689,7 +695,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             if (ParserKeyword{Keyword::FROM}.ignore(pos, expected) && ParserIdentifierWithOptionalParameters{}.parse(pos, ast, expected))
             {
-                ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+                ast->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
                 res->backup_source = ast;
                 res->children.push_back(res->backup_source);
             }

@@ -1,0 +1,6 @@
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Change remote column names to local column names)))))
+  ReadFromCluster
+4
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+  ReadFromObjectStorage
+4

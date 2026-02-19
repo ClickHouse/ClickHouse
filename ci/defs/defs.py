@@ -29,6 +29,8 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
+    MACOS_ARM_SMALL = ["self-hosted", "arm_macos_small"]
+    MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
 
@@ -326,6 +328,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     PR_BODY = "PR formatter"
     FAST_TEST = "Fast test"
+    SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -352,6 +355,8 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
+    UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
 
 
 class ToolSet:
@@ -364,9 +369,14 @@ class ToolSet:
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
-    CH_AMD_LLVM_COVERAGE_BUILD = "CH_AMD_LLVM_COVERAGE_BUILD" # build with LLVM coverage enabled
+    CH_AMD_LLVM_COVERAGE_BUILD = (
+        "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
+    )
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
-    LLVM_COVERAGE_HTML_REPORT = "LLVM_COVERAGE_HTML_REPORT" # .tar.gz file with html report
+    LLVM_COVERAGE_HTML_REPORT = (
+        "LLVM_COVERAGE_HTML_REPORT"  # .tar.gz file with html report
+    )
+    LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     CH_AMD_ASAN = "CH_AMD_ASAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
@@ -415,23 +425,44 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
+    PARSER_MEMORY_PROFILER = "PARSER_MEMORY_PROFILER"
+
+    TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
+    TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
+
 
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 5
 LLVM_FT_ARTIFACTS_LIST = [
-        # default.profraw files for 3 batches from Stateless(Functional) tests
-        ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
-        for total_batches in (LLVM_FT_NUM_BATCHES,)
-        for batch in range(1, total_batches + 1)
-    ] 
+    # default.profraw files for 3 batches from Stateless(Functional) tests
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
+    for total_batches in (LLVM_FT_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
 
 LLVM_IT_ARTIFACTS_LIST = [
-        # default.profraw files for 5 batches from Integration tests
-        ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
-        for total_batches in (LLVM_IT_NUM_BATCHES,)
-        for batch in range(1, total_batches + 1)
-    ] 
-LLVM_ARTIFACTS_LIST = LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]
+    # default.profraw files for 5 batches from Integration tests
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
+    for total_batches in (LLVM_IT_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+LLVM_ARTIFACTS_LIST = (
+    LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]
+)
+
+BINARIES_WITH_LONG_RETENTION = [
+    ArtifactNames.CH_AMD_DEBUG,
+    ArtifactNames.CH_AMD_RELEASE,
+    ArtifactNames.CH_AMD_ASAN,
+    ArtifactNames.CH_AMD_TSAN,
+    ArtifactNames.CH_AMD_MSAN,
+    ArtifactNames.CH_AMD_UBSAN,
+    ArtifactNames.CH_AMD_BINARY,
+    ArtifactNames.CH_ARM_RELEASE,
+    ArtifactNames.CH_ARM_ASAN,
+    ArtifactNames.CH_ARM_TSAN,
+]
+
 
 class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
@@ -471,15 +502,18 @@ class ArtifactConfigs:
         type=Artifact.Type.S3,
         path=[
             f"./*.profdata",
-        ]
-    ).parametrize(
-        names=LLVM_ARTIFACTS_LIST
-    )
+        ],
+    ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
     llvm_coverage_html_report = Artifact.Config(
         name=ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
+    )
+    llvm_coverage_info_file = Artifact.Config(
+        name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/llvm_coverage.info",
     )
     clickhouse_debians = Artifact.Config(
         name="*",
@@ -528,7 +562,7 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_AMD_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,
             ArtifactNames.UNITTEST_AMD_UBSAN,
-            ArtifactNames.UNITTEST_LLVM_COVERAGE
+            ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
     )
     fuzzers = Artifact.Config(
@@ -544,4 +578,19 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
+    )
+    parser_memory_profiler = Artifact.Config(
+        name=ArtifactNames.PARSER_MEMORY_PROFILER,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/src/Parsers/examples/parser_memory_profiler",
+    )
+    toolchain_pgo_bolt_amd = Artifact.Config(
+        name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
+    )
+    toolchain_pgo_bolt_arm = Artifact.Config(
+        name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
     )

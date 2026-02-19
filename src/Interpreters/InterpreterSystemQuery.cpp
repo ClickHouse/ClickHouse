@@ -72,6 +72,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <base/sleep.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -86,6 +87,14 @@
 #endif
 
 #include "config.h"
+
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#include <delta_kernel_ffi.hpp>
+namespace DB
+{
+    void tracingCallback(struct ffi::Event event);
+}
+#endif
 
 namespace CurrentMetrics
 {
@@ -130,6 +139,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
+    extern const int DELTA_KERNEL_ERROR;
 }
 
 namespace ActionLocks
@@ -474,7 +484,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            const auto user_id = FileCache::getCommonUser().user_id;
+            const auto user_id = FileCache::getCommonOrigin().user_id;
 
             if (query.filesystem_cache_name.empty())
             {
@@ -529,8 +539,7 @@ BlockIO InterpreterSystemQuery::execute()
                 {
                     size_t i = 0;
                     const auto path = cache->getFileSegmentPath(
-                        file_segment.key, file_segment.offset, file_segment.kind,
-                        FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
+                        file_segment.key, file_segment.offset, file_segment.kind, file_segment.origin);
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
                     res_columns[i++]->insert(file_segment.downloaded_size);
@@ -704,6 +713,38 @@ BlockIO InterpreterSystemQuery::execute()
             if (asynchronous_metrics)
                 asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
             break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+            const auto & level_str = query.delta_kernel_tracing_level;
+            ffi::Level level;
+
+            if (level_str == "ERROR")
+                level = ffi::Level::ERROR;
+            else if (level_str == "WARN")
+                level = ffi::Level::WARN;
+            else if (level_str == "INFO")
+                level = ffi::Level::INFO;
+            else if (level_str == "DEBUG")
+                level = ffi::Level::DEBUG;
+            else if (level_str == "TRACE")
+                level = ffi::Level::TRACE;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
+
+            /// Reload tracing with the new level (can be called multiple times)
+            bool success = ffi::enable_event_tracing(tracingCallback, level);
+
+            if (success)
+                LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
+            else
+                throw Exception(ErrorCodes::DELTA_KERNEL_ERROR, "Failed to reload delta kernel tracing level to {}", level_str);
+
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Delta Kernel support is not enabled");
+#endif
         }
         case Type::RECONNECT_ZOOKEEPER:
         {
@@ -1057,7 +1098,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
     }
 
-    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
+    replicated_db->restoreDatabaseInKeeper(getContext());
 
     LOG_TRACE(log, "Replicated database {} was restored.", database_name);
 }
@@ -1098,6 +1139,14 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     });
     table->is_being_restarted = true;
     table->flushAndShutdown();
+
+    /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
+    /// The table is removed from the in-memory tables map between detach and attach, making it
+    /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
+    std::optional<DatabaseReplicated::RestartReplicaGuard> restart_guard;
+    if (auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get()))
+        restart_guard.emplace(*replicated_db);
+
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -1117,7 +1166,16 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
+    /// After the table is detached, we must re-create and re-attach it.
+    /// If table creation fails (e.g. due to memory allocation failure from fault injection),
+    /// the table is left permanently detached from the database while still existing in ZooKeeper
+    /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
+    /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
+    /// should always eventually succeed for transient errors.
+
     StoragePtr new_table;
+    size_t non_zk_retries = 0;
+    constexpr size_t max_non_zk_retries = 10;
     while (true)
     {
         try
@@ -1132,15 +1190,41 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
             break;
         }
-        catch (...)
+        catch (const Coordination::Exception & e)
         {
+            /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
                 fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+
+            /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
+        }
+        catch (...)
+        {
+            if (++non_zk_retries > max_non_zk_retries)
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                    replica.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
         }
     }
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
+    restart_guard.reset();
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
 
@@ -1257,7 +1341,11 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
-    else if (!query.replica_zk_path.empty())
+    else if (query.replica_zk_path.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path is empty");
+    }
+    else
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
         String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
@@ -1299,8 +1387,6 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         StorageReplicatedMergeTree::dropReplica(zookeeper, info, log);
         LOG_INFO(log, "Dropped replica {}", remote_replica_path);
     }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
 bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, const StoragePtr & storage)
@@ -1332,9 +1418,9 @@ void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & quer
 }
 
 DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
-    const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
+    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
-    auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+    auto zookeeper = getContext()->getZooKeeper();
 
     String metadata_path = zookeeper_path + "/metadata";
     if (!zookeeper->exists(metadata_path))
@@ -1581,8 +1667,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(
-                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -1609,12 +1694,15 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(
-                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
-    else if (!query.replica_zk_path.empty())
+    else if (query.replica_zk_path.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path is empty");
+    }
+    else
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1643,7 +1731,6 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 executeQuery(drop_query, drop_ctx);
             });
             auto database = restoreDatabaseFromKeeperPath(
-                /*zookeeper_name=*/query.zk_name,
                 /*zookeeper_path=*/query.replica_zk_path,
                 /*full_replica_name=*/full_replica_name,
                 /*restoring_database_name=*/restoring_database_name);
@@ -1654,11 +1741,9 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
         }
 
-        DatabaseReplicated::dropReplica(nullptr, query.zk_name, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
-        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.full_replica_zk_path);
+        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
+        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
     }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
 bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
@@ -2047,6 +2132,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            /// No access check required
             break;
         }
         case Type::RECONNECT_ZOOKEEPER:

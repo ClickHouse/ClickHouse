@@ -377,9 +377,8 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
 
     /// When no rows were physically read (e.g., all columns are defaults/missing,
-    /// or a constant PREWHERE expression like `PREWHERE 1`), the granule sizes
-    /// were determined directly from the index granularity and are already accurate.
-    /// No adjustment is needed in this case.
+    /// or a constant PREWHERE expression), the granule sizes were determined from
+    /// the index granularity and are already accurate. No adjustment is needed.
     if (num_read_rows == 0)
         return;
 
@@ -737,7 +736,7 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
     new_filter_vec.resize(new_filter_data - new_filter_vec.data());
 }
 
-DECLARE_AVX512BW_SPECIFIC_CODE(
+DECLARE_X86_64_V4_SPECIFIC_CODE(
 size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
@@ -768,7 +767,7 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 }
 ) /// DECLARE_AVX512BW_SPECIFIC_CODE
 
-DECLARE_AVX2_SPECIFIC_CODE(
+DECLARE_X86_64_V3_SPECIFIC_CODE(
 size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
@@ -807,10 +806,10 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 {
 #if USE_MULTITARGET_CODE
     /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
-    if (isArchSupported(TargetArch::AVX512BW))
-        return TargetSpecific::AVX512BW::numZerosInTail(begin, end);
-    if (isArchSupported(TargetArch::AVX2))
-        return TargetSpecific::AVX2::numZerosInTail(begin, end);
+    if (isArchSupported(TargetArch::x86_64_v4))
+        return TargetSpecific::x86_64_v4::numZerosInTail(begin, end);
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return TargetSpecific::x86_64_v3::numZerosInTail(begin, end);
 #endif
 
     size_t count = 0;
@@ -1083,10 +1082,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    /// Use total_rows_per_granule because:
-    /// - In normal cases, after adjustLastGranule, it equals numReadRows()
-    /// - When no columns are read (e.g., constant PREWHERE), it has the correct value from index granularity
-    result.num_rows = result.total_rows_per_granule;
+    /// When no columns were physically read (e.g., constant PREWHERE expression),
+    /// numReadRows() is 0 but total_rows_per_granule has the correct row count
+    /// from the index granularity. Use it so the reading chain can continue
+    /// to subsequent readers that read actual data columns.
+    result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());
 
@@ -1332,7 +1332,7 @@ static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second
             "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
 }
 
-DECLARE_AVX512VBMI2_SPECIFIC_CODE(
+DECLARE_X86_ICELAKE_SPECIFIC_CODE(
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t AVX512_VEC_SIZE_IN_BYTES = 64;
@@ -1397,7 +1397,7 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
  * 1. https://www.felixcloutier.com/x86/pdep
  * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
  */
-DECLARE_AVX2_SPECIFIC_CODE(
+DECLARE_X86_64_V3_SPECIFIC_CODE(
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
@@ -1476,13 +1476,13 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     const auto * second_data = second_descr.data->data();
 
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512VBMI2))
+    if (isArchSupported(TargetArch::x86_64_icelake))
     {
-        TargetSpecific::AVX512VBMI2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+        TargetSpecific::x86_64_icelake::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
-    else if (isArchSupported(TargetArch::AVX2))
+    else if (isArchSupported(TargetArch::x86_64_v3))
     {
-        TargetSpecific::AVX2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+        TargetSpecific::x86_64_v3::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
     else
 #endif

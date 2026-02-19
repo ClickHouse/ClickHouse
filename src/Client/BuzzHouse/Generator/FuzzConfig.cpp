@@ -526,6 +526,14 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
+    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
+    /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    loadServerSettings<String>(
+        this->failpoints,
+        "failpoints",
+        "SELECT \"name\" FROM \"system\".\"fail_points\""
+        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
@@ -662,6 +670,23 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
         std::getline(infile, res);
     }
     return res.empty() ? "-1" : res;
+}
+
+String FuzzConfig::getRandomFileSystemCacheValue()
+{
+    String res;
+
+    /// Can't use sampling here either
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res;
 }
 
 String FuzzConfig::tableGetRandomPartitionOrPart(

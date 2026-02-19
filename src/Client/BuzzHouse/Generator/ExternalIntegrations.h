@@ -24,6 +24,7 @@
 #    include <mongocxx/collection.hpp>
 #    include <mongocxx/database.hpp>
 #    include <mongocxx/exception/exception.hpp>
+#    include <mongocxx/instance.hpp>
 #endif
 
 #if USE_LIBPQXX

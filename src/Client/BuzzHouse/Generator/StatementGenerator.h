@@ -129,8 +129,6 @@ enum class TableRequirement
 class StatementGenerator
 {
 public:
-    static const std::vector<std::vector<OutFormat>> outFormats;
-    static const std::unordered_map<OutFormat, InFormat> outIn;
     static const std::unordered_map<JoinType, std::vector<JoinConst>> joinMappings;
 
     FuzzConfig & fc;
@@ -262,6 +260,7 @@ private:
         LambdaExpr,
         ProjectionExpr,
         DictExpr,
+        JoinExpr,
         StarExpr
     };
 
@@ -286,7 +285,7 @@ private:
         Table,
         View,
         RemoteUDF,
-        GenerateSeriesUDF,
+        NumbersUDF,
         SystemTable,
         MergeUDF,
         ClusterUDF,
@@ -451,7 +450,7 @@ private:
         ColumnDef * cd);
     void addTableColumn(
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
-    void addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, IndexDef * idef);
+    void addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, bool projection, IndexDef * idef);
     void addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
@@ -586,7 +585,8 @@ private:
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
     void dropDatabase(uint32_t dname, bool all);
 
-    void generateNextTablePartition(RandomGenerator & rg, bool allow_parts, const SQLTable & t, PartitionExpr * pexpr);
+    void generateNextTablePartition(
+        RandomGenerator & rg, bool allow_parts, bool detached, bool supports_all, const SQLTable & t, PartitionExpr * pexpr);
 
     void generateNextBackup(RandomGenerator & rg, BackupRestore * br);
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
@@ -670,7 +670,7 @@ private:
                 const InOutFormat next_format
                     = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
                     ? b.file_format.value()
-                    : static_cast<InOutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+                    : rg.pickRandomly(rg.pickRandomly(inOutFormats));
 
                 next->set_key("format");
                 next->set_value(InOutFormat_Name(next_format).substr(6));

@@ -97,8 +97,8 @@ public:
             FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomImpl<TargetSpecific::x86_64_v3::RandImpl, ToType, Name>>();
     #endif
     }
 

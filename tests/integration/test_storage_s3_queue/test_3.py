@@ -398,7 +398,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
     def get_processed_files():
         return (
             node.query(
-                f"SELECT file_name FROM system.s3queue WHERE zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 "
+                f"SELECT file_name FROM system.s3queue_metadata_cache WHERE zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 "
             )
             .strip()
             .split("\n")
@@ -407,7 +407,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
     def get_failed_files():
         return (
             node.query(
-                f"SELECT file_name FROM system.s3queue WHERE zookeeper_path ilike '%{table_name}%' and status = 'Failed'"
+                f"SELECT file_name FROM system.s3queue_metadata_cache WHERE zookeeper_path ilike '%{table_name}%' and status = 'Failed'"
             )
             .strip()
             .split("\n")
