@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-debug, no-asan, no-tsan, no-msan, no-ubsan
+# Test is flaky in debug/sanitizer builds because large data transfer
+# can cause connection timeouts before the parsing error is reported.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
