@@ -272,7 +272,7 @@ struct HashTableGrower
   * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrowerWithPrecalculation
+class alignas(std::hardware_destructive_interference_size) HashTableGrowerWithPrecalculation
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 

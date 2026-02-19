@@ -78,7 +78,7 @@ constexpr bool useSparseHashForHashedDictionary()
 ///
 /// Based on HashTableGrowerWithPrecalculation
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrowerWithPrecalculationAndMaxLoadFactor
+class alignas(std::hardware_destructive_interference_size) HashTableGrowerWithPrecalculationAndMaxLoadFactor
 {
     UInt8 size_degree = initial_size_degree;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;

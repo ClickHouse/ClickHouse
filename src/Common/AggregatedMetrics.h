@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 
 #include <atomic>
+#include <new>
 
 /** Allows to aggregate partially changing values into single CurrentMetric.
   * Destination CurrentMetric will be updated instantly after changes will be applied to handle.
@@ -22,6 +23,6 @@ namespace AggregatedMetrics
 
     private:
         CurrentMetrics::Metric destination_metric;
-        alignas(64) std::atomic<CurrentMetrics::Value> accounted_value = 0;
+        alignas(std::hardware_destructive_interference_size) std::atomic<CurrentMetrics::Value> accounted_value = 0;
     };
 }
