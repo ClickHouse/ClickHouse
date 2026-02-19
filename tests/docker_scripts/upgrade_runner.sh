@@ -376,6 +376,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot open file /var/lib/clickhouse/access/" \
            -e "NO_SUCH_INTERSERVER_IO_ENDPOINT" \
            -e "Mapping for table with UUID=1f474183-1403-4282-9309-21f6e3518dab already exists" \
+           -e "Cannot parse projection test_projection" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true

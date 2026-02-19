@@ -4081,7 +4081,33 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
 
-    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr);
+    /// Always use getQueryContext() for table function result caching (shared across all subqueries).
+    /// The execution context is used for the actual table function execution and its settings
+    /// are incorporated into the cache key (so identical settings still reuse the cache,
+    /// while different settings get separate entries).
+    /// If a parent *subquery* has per-subquery SETTINGS, use the nearest query scope's
+    /// context (which has accumulated settings applied). We only consider subqueries
+    /// (not the outermost query) because the outermost query's SETTINGS are already on
+    /// the query context, and switching to the QueryNode's own context copy could change
+    /// non-settings state (e.g. isDistributed) and break table function execution
+    /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    ContextPtr execution_context = scope_context->getQueryContext();
+    {
+        const IdentifierResolveScope * scope_to_check = &scope;
+        while (scope_to_check != nullptr)
+        {
+            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>();
+                query_node && query_node->hasSettingsChanges() && query_node->isSubquery())
+            {
+                auto * nearest_query_scope = scope.getNearestQueryScope();
+                if (nearest_query_scope)
+                    execution_context = nearest_query_scope->scope_node->as<QueryNode &>().getMutableContext();
+                break;
+            }
+            scope_to_check = scope_to_check->parent_scope;
+        }
+    }
+    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
@@ -4262,7 +4288,7 @@ static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
                 for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 

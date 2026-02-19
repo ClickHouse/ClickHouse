@@ -37,6 +37,12 @@ public:
     void appendMark(size_t rows_count) override;
     void adjustLastMark(size_t rows_count) override;
 
+    /// Fix the last mark granularity and final mark from the actual row count.
+    /// When loaded from non-adaptive mark files, all marks are treated as data marks
+    /// with constant granularity, and has_final_mark is set to false.
+    /// This method detects the final mark and adjusts the last data mark's granularity.
+    void fixFromRowsCount(size_t rows_count);
+
     uint64_t getBytesSize() const override { return sizeof(size_t) * 3 + sizeof(bool); }
     uint64_t getBytesAllocated() const override { return getBytesSize(); }
 

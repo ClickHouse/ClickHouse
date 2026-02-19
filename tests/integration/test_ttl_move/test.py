@@ -83,17 +83,13 @@ def get_disks_state(node, table_name, partition=None):
 def get_disk_names(node, table_name, partition=None):
     return set(get_disks_state(node, table_name, partition).keys())
 
-def wait_if_moving_then_assert_disks(node, table_name, partition=None, retries=10, sleep_sec=1, target_state=None):
+def wait_if_moving_then_assert_disks(node, table_name, partition=None, retries=30, sleep_sec=1, target_state=None):
 
     for _ in range(retries):
         moves = int(node.query(f"SELECT count() FROM system.moves WHERE table = '{table_name}'").strip())
 
-        if moves > 0:
-            # just waiting until the moves are actually finished
-            continue
-
-        elif get_disks_state(node, table_name, partition) == target_state:
-            # if there's no active move happenning, and we're in the target state - this is success
+        if moves == 0 and get_disks_state(node, table_name, partition) == target_state:
+            # if there's no active move happening, and we're in the target state - this is success
             return
 
         time.sleep(sleep_sec)

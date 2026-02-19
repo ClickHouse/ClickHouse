@@ -1721,6 +1721,12 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, local_context, old_metadata);
     new_metadata.setMetadataVersion(new_metadata_version);
 
+    /// Implicit statistics (auto_statistics_types) are not serialized to ZooKeeper,
+    /// so we need to re-add them after loading metadata from ZK.
+    auto settings = getSettings();
+    auto [auto_stats_types, _] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings);
+    addImplicitStatistics(new_metadata.columns, auto_stats_types);
+
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
@@ -6987,9 +6993,17 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     for (const auto & part : all_parts)
     {
         if (part->getState() == DataPartState::Active)
+        {
             active_parts_names.push_back(part->name);
-
-        forcefullyMovePartToDetachedAndRemoveFromMemory(part);
+            forcefullyMovePartToDetachedAndRemoveFromMemory(part);
+        }
+        else
+        {
+            /// Non-active (outdated) parts are renamed with the "ignored_" prefix so they
+            /// won't be picked up by a subsequent ATTACH PARTITION ALL. These parts are
+            /// intermediate merge results that can intersect with each other and with active parts.
+            forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored");
+        }
     }
 
     LOG_INFO(log, "Moved all parts to detached/");

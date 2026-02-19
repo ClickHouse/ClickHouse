@@ -83,6 +83,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace MergeTreeSetting
@@ -377,6 +378,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
+    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -395,7 +397,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        else
+        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
+        else if (!analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -1681,6 +1684,7 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
             old_view_dependencies.push_back(the_table_from);
         }
     }
+
     return {
         referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),

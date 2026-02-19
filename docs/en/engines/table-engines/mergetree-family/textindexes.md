@@ -215,30 +215,20 @@ Typical use cases for the preprocessor argument include
 The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
 
 Examples:
+
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
 
-Also, the preprocessor expression must only reference the column on top of which the text index is defined.
+Also, the preprocessor expression must only reference the column or expression on top of which the text index is defined.
+
+Examples:
+
+- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
+- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
+- Not allowed: `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
+
 Using non-deterministic functions is disallowed.
-
-The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
-In this case, the preprocessor expression transforms the array elements individually.
-
-Example:
-
-```sql
-CREATE TABLE table
-(
-    col Array(String),
-    INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))
-
-    -- This is not legal:
-    INDEX idx_illegal col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(col))
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-```
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
@@ -247,7 +237,6 @@ For example,
 ```sql
 CREATE TABLE table
 (
-    key UInt64,
     str String,
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
@@ -262,7 +251,6 @@ is equivalent to:
 ```sql
 CREATE TABLE table
 (
-    key UInt64,
     str String,
     INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
 )
@@ -271,6 +259,44 @@ ORDER BY tuple();
 
 SELECT count() FROM table WHERE hasToken(str, lower('Foo'));
 ```
+
+The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
+In this case, the preprocessor expression transforms the array elements individually.
+
+Example:
+
+```sql
+CREATE TABLE table
+(
+    arr Array(String),
+    INDEX idx arr TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr))
+
+    -- This is not legal:
+    INDEX idx_illegal arr TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(arr))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasAllTokens(arr, 'foo');
+```
+
+To define a preprocessor in a text index on build [Map](/sql-reference/data-types/map.md)-type columns, users need to decide if the index is
+build on the map keys or values.
+
+Example:
+
+```sql
+CREATE TABLE table
+(
+    map Map(String, String),
+    INDEX idx mapKeys(map)  TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(mapKeys(map)))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
+```
+
 **Other arguments (optional)**.
 
 <details markdown="1">

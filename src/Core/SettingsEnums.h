@@ -437,6 +437,8 @@ enum class FileCachePolicy : uint8_t
 {
     LRU,
     SLRU,
+    SLRU_OVERCOMMIT,
+    LRU_OVERCOMMIT,
 };
 
 DECLARE_SETTING_ENUM(FileCachePolicy)
