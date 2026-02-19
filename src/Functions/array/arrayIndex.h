@@ -1,6 +1,8 @@
 #pragma once
+
 #include <cstddef>
 #include <type_traits>
+
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -11,8 +13,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnObject.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
@@ -23,8 +23,10 @@
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeObject.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnDynamic.h>
+#include <DataTypes/DataTypeObject.h>
 
 
 namespace DB
@@ -516,16 +518,15 @@ public:
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(first_argument_type.get());
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(first_argument_type.get());
-        const DataTypeObject * object_type = checkAndGetDataType<DataTypeObject>(first_argument_type.get());
 
         DataTypePtr inner_type;
 
-        /// If map is first argument only has(map_column, key) function is supported
+        const DataTypeObject * object_type = checkAndGetDataType<DataTypeObject>(first_argument_type.get());
         if constexpr (std::is_same_v<ConcreteAction, HasAction>)
         {
             if (!array_type && !map_type && !object_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array, map or object. Actual {}",
+                    "First argument for function {} must be an array, map or JSON. Actual {}",
                     getName(),
                     first_argument_type->getName());
 
@@ -533,7 +534,7 @@ public:
             {
                 if (!isStringOrFixedString(second_argument_type))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Second argument for function {} must be String when the first argument is Object. Actual {}",
+                        "Second argument for function {} must be String when the first argument is JSON. Actual {}",
                         getName(), second_argument_type->getName());
 
                 return std::make_shared<DataTypeUInt8>();
@@ -918,6 +919,95 @@ private:
         return executeArrayImpl(arguments_copy, result_type);
     }
 
+    /**
+     * Helper function to check if a path or its prefix exists in shared data.
+     */
+     static bool hasPathInSharedData(
+        const String & path,
+        const String & prefix,
+        const ColumnString * shared_paths,
+        const ColumnVector<UInt64>::Container & shared_offsets,
+        size_t row)
+    {
+        if (!shared_paths)
+            return false;
+
+        size_t start = shared_offsets[static_cast<ssize_t>(row) - 1];
+        size_t end = shared_offsets[row];
+
+        if (start == end)
+            return false;
+
+        /// Check for exact match
+        size_t pos = ColumnObject::findPathLowerBoundInSharedData(path, *shared_paths, start, end);
+        if (pos < end && shared_paths->getDataAt(pos) == path)
+            return true;
+
+        /// Check for prefix match (path + ".")
+        pos = ColumnObject::findPathLowerBoundInSharedData(prefix, *shared_paths, start, end);
+        if (pos < end && shared_paths->getDataAt(pos).starts_with(prefix))
+            return true;
+
+        return false;
+    }
+
+    /**
+     * Check if a path exists in JSON object for a specific row.
+     * Returns true if the path (or any path with this prefix) exists.
+     */
+    static bool hasPathInObjectRow(
+        const ColumnObject & object_column,
+        size_t row,
+        const String & path,
+        const String & prefix,
+        const ColumnString * shared_paths,
+        const ColumnVector<UInt64>::Container & shared_offsets)
+    {
+        /// First, check for the requested path in typed paths.
+        /// Typed paths are always considered to be present in each row (even if null).
+        const auto & typed_paths = object_column.getTypedPaths();
+        if (typed_paths.contains(path))
+            return true;
+
+        for (const auto & [key, col] : typed_paths)
+        {
+            if (key.starts_with(prefix))
+                return true;
+        }
+
+        /// Second, check for the requested path in dynamic paths.
+        /// For dynamic paths, we consider null equivalent to absence of the value.
+        const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
+        if (auto it = dynamic_paths.find(path); it != dynamic_paths.end() && !it->second->isNullAt(row))
+            return true;
+
+        for (const auto & [key, col] : dynamic_paths)
+        {
+            if (key.starts_with(prefix) && !col->isNullAt(row))
+                return true;
+        }
+
+        /// Third, check for the requested path in shared data.
+        return hasPathInSharedData(path, prefix, shared_paths, shared_offsets, row);
+    }
+
+    /**
+     * Execute has() function for JSON/Object type.
+     * Checks if a path exists in the JSON object.
+     *
+     * The function checks three storage tiers in order:
+     * 1. Typed paths - explicitly declared paths that are always present (even if null)
+     * 2. Dynamic paths - paths inferred at runtime, null means absence
+     * 3. Shared data - overflow storage for rare paths, uses binary search
+     *
+     * Optimizations:
+     * - For constant path: if found in typed paths, returns 1 for all rows immediately
+     * - For constant path: pre-collects relevant dynamic columns to avoid repeated lookups
+     * - For non-constant path: uses hasPathInObjectRow() helper with early returns
+     *
+     * @param arguments - [0] JSON column (or const JSON), [1] path column
+     * @return ColumnUInt8 with 1 if path exists, 0 otherwise
+    */
     ColumnPtr executeObject(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/) const
     {
         if constexpr (!std::is_same_v<ConcreteAction, HasAction>)
@@ -941,66 +1031,54 @@ private:
         const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
         const auto & shared_offsets = object_column.getSharedDataOffsets();
 
-        auto check_shared = [&](size_t row, const String & path) -> bool
-        {
-            if (!shared_paths)
-                return false;
-
-            size_t start = (row == 0) ? 0 : shared_offsets[row - 1];
-            size_t end = shared_offsets[row];
-            if (start >= end)
-                return false;
-
-            // 1. Exact match
-            size_t pos = ColumnObject::findPathLowerBoundInSharedData(path, *shared_paths, start, end);
-            if (pos < end && shared_paths->getDataAt(pos) == path)
-                return true;
-
-            // 2. Prefix match (path + ".")
-            String prefix = path + ".";
-            pos = ColumnObject::findPathLowerBoundInSharedData(prefix, *shared_paths, start, end);
-            if (pos < end)
-            {
-                auto s = shared_paths->getDataAt(pos);
-                if (std::string_view(s).starts_with(prefix))
-                    return true;
-            }
-            return false;
-        };
-
         if (isColumnConst(path_column))
         {
-            const String path = String(path_column.getDataAt(0));
-            String prefix = path + ".";
+            const String path(path_column.getDataAt(0));
+            const String prefix = path + ".";
 
-            std::vector<const IColumn *> relevant_columns;
-
-            // Collect exact and prefix matches from Typed Paths (O(N_paths) scan due to unordered_map)
+            /// Optimization: if path or its prefix exists in typed paths,
+            /// we can return 1 for all rows since typed paths are always present.
             const auto & typed_paths = object_column.getTypedPaths();
-            if (auto it = typed_paths.find(path); it != typed_paths.end())
-                relevant_columns.push_back(it->second.get());
-
-            for (const auto & [key, col] : typed_paths)
+            bool found_in_typed = typed_paths.contains(path);
+            if (!found_in_typed)
             {
-                if (std::string_view(key).starts_with(prefix))
-                    relevant_columns.push_back(col.get());
+                for (const auto & [key, col] : typed_paths)
+                {
+                    if (key.starts_with(prefix))
+                    {
+                        found_in_typed = true;
+                        break;
+                    }
+                }
             }
 
-            // Collect exact and prefix matches from Dynamic Paths
+            if (found_in_typed)
+            {
+                /// Path exists in typed paths - return 1 for all rows
+                std::fill(res_data.begin(), res_data.end(), 1);
+                return res_col;
+            }
+
+            /// Collect columns from dynamic paths that match exact path or prefix.
+            /// These columns need to be checked for non-null values per row.
+            std::vector<const IColumn *> relevant_dynamic_columns;
             const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
+
             if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
-                relevant_columns.push_back(it->second);
+                relevant_dynamic_columns.push_back(it->second);
 
             for (const auto & [key, col] : dynamic_paths)
             {
-                if (std::string_view(key).starts_with(prefix))
-                    relevant_columns.push_back(col);
+                if (key.starts_with(prefix))
+                    relevant_dynamic_columns.push_back(col);
             }
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 bool found = false;
-                for (const auto * col : relevant_columns)
+
+                /// Check dynamic paths - need to verify non-null for each row
+                for (const auto * col : relevant_dynamic_columns)
                 {
                     if (!col->isNullAt(i))
                     {
@@ -1009,65 +1087,23 @@ private:
                     }
                 }
 
+                /// Check shared data if not found in dynamic paths
                 if (!found)
-                    found = check_shared(i, path);
-
+                {
+                    found = hasPathInSharedData(path, prefix, shared_paths, shared_offsets, i);
+                }
                 res_data[i] = found;
             }
         }
         else
         {
-            // Non-const path: Use efficient per-row lookup
-
+            /// Non-constant path: check each row individually
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const String path = String(path_column.getDataAt(i));
+                const String path(path_column.getDataAt(i));
+                const String prefix = path + ".";
 
-                String prefix = path + ".";
-                bool found = false;
-
-                // Typed
-                const auto & typed_paths = object_column.getTypedPaths();
-                if (auto it = typed_paths.find(path); it != typed_paths.end() && !it->second->isNullAt(i))
-                    found = true;
-
-                if (!found)
-                {
-                    for (const auto & [key, col] : typed_paths)
-                    {
-                        if (std::string_view(key).starts_with(prefix) && !col->isNullAt(i))
-                        {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-
-                // Dynamic
-                if (!found)
-                {
-                    const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
-                    if (auto it = dynamic_paths.find(path); it != dynamic_paths.end() && !it->second->isNullAt(i))
-                        found = true;
-
-                    if (!found)
-                    {
-                        for (const auto & [key, col] : dynamic_paths)
-                        {
-                            if (std::string_view(key).starts_with(prefix) && !col->isNullAt(i))
-                            {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Shared
-                if (!found)
-                    found = check_shared(i, path);
-
-                res_data[i] = found;
+                res_data[i] = hasPathInObjectRow(object_column, i, path, prefix, shared_paths, shared_offsets);
             }
         }
 
