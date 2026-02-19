@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 String toString(AccessEntityType type)
 {
     return AccessEntityTypeInfo::get(type).name;
