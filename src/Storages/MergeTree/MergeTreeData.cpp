@@ -4484,7 +4484,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(getInMemoryMetadata()))
+        else if (command.isRequireMutationStage(getInMemoryMetadata(), local_context))
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
