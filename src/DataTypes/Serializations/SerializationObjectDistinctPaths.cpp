@@ -23,6 +23,7 @@ SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::ve
 UInt128 SerializationObjectDistinctPaths::getHash() const
 {
     SipHash hash;
+    hash.update("ObjectDistinctPaths");
     for (const auto & path : typed_paths)
         hash.update(path);
     hash.update(shared_data_paths_serialization->getHash());

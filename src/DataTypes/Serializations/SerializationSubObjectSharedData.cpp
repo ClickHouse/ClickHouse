@@ -46,6 +46,7 @@ UInt128 SerializationSubObjectSharedData::getHash() const
     hash.update(static_cast<int>(serialization_version.value));
     hash.update(buckets);
     hash.update(paths_prefix);
+    hash.update(dynamic_type->getName());
     return hash.get128();
 }
 

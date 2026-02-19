@@ -30,6 +30,11 @@ UInt128 SerializationSubObject::getHash() const
     hash.update("SubObject");
     hash.update(paths_prefix);
     hash.update(dynamic_type->getName());
+    for (const auto & [path, serialization] : typed_paths_serializations)
+    {
+        hash.update(path);
+        hash.update(serialization->getHash());
+    }
     return hash.get128();
 }
 
