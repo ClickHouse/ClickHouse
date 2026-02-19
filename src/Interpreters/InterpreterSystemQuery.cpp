@@ -88,6 +88,14 @@
 
 #include "config.h"
 
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#include <delta_kernel_ffi.hpp>
+namespace DB
+{
+    void tracingCallback(struct ffi::Event event);
+}
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric RestartReplicaThreads;
@@ -131,6 +139,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
+    extern const int DELTA_KERNEL_ERROR;
 }
 
 namespace ActionLocks
@@ -705,6 +714,38 @@ BlockIO InterpreterSystemQuery::execute()
                 asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
             break;
         }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+            const auto & level_str = query.delta_kernel_tracing_level;
+            ffi::Level level;
+
+            if (level_str == "ERROR")
+                level = ffi::Level::ERROR;
+            else if (level_str == "WARN")
+                level = ffi::Level::WARN;
+            else if (level_str == "INFO")
+                level = ffi::Level::INFO;
+            else if (level_str == "DEBUG")
+                level = ffi::Level::DEBUG;
+            else if (level_str == "TRACE")
+                level = ffi::Level::TRACE;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
+
+            /// Reload tracing with the new level (can be called multiple times)
+            bool success = ffi::enable_event_tracing(tracingCallback, level);
+
+            if (success)
+                LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
+            else
+                throw Exception(ErrorCodes::DELTA_KERNEL_ERROR, "Failed to reload delta kernel tracing level to {}", level_str);
+
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Delta Kernel support is not enabled");
+#endif
+        }
         case Type::RECONNECT_ZOOKEEPER:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
@@ -1125,7 +1166,16 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
+    /// After the table is detached, we must re-create and re-attach it.
+    /// If table creation fails (e.g. due to memory allocation failure from fault injection),
+    /// the table is left permanently detached from the database while still existing in ZooKeeper
+    /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
+    /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
+    /// should always eventually succeed for transient errors.
+
     StoragePtr new_table;
+    size_t non_zk_retries = 0;
+    constexpr size_t max_non_zk_retries = 10;
     while (true)
     {
         try
@@ -1151,6 +1201,21 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
                 fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
 
             /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
+        }
+        catch (...)
+        {
+            if (++non_zk_retries > max_non_zk_retries)
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                    replica.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
             if (auto process_list_element = getContext()->getProcessListElementSafe())
                 process_list_element->checkTimeLimit();
 
@@ -2067,6 +2132,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            /// No access check required
             break;
         }
         case Type::RECONNECT_ZOOKEEPER:

@@ -1,3 +1,4 @@
+#include <atomic>
 #include <map>
 #include <set>
 #include <optional>
@@ -5,7 +6,6 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -20,6 +20,8 @@
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/SipHash.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
@@ -399,7 +401,6 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
-    extern const int TYPE_MISMATCH;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -680,8 +681,7 @@ struct ContextSharedPart : boost::noncopyable
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
 
 #if USE_NURAFT
-    mutable std::mutex keeper_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
 
     ContextSharedPart()
@@ -873,6 +873,17 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down object storage queue streaming");
         ObjectStorageQueueFactory::instance().shutdown();
 
+        /// Stop all MergeTree background executors before shutting down databases.
+        /// This ensures no background tasks (merges, mutations, moves, part cleanup)
+        /// are running when storage objects are shut down or destroyed.
+        /// Without this, a background task could be accessing a storage's data_parts_indexes
+        /// while DatabaseCatalog::shutdown is destroying that storage, causing a SIGBUS.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/85433
+        SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
+        SHUTDOWN(log, "fetches executor", fetch_executor, wait());
+        SHUTDOWN(log, "moves executor", moves_executor, wait());
+        SHUTDOWN(log, "common executor", common_executor, wait());
+
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown([this]()
         {
@@ -882,11 +893,6 @@ struct ContextSharedPart : boost::noncopyable
         NamedCollectionFactory::instance().shutdown();
 
         delete_async_insert_queue.reset();
-
-        SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
-        SHUTDOWN(log, "fetches executor", fetch_executor, wait());
-        SHUTDOWN(log, "moves executor", moves_executor, wait());
-        SHUTDOWN(log, "common executor", common_executor, wait());
 
         TransactionLog::shutdownIfAny();
 
@@ -2785,20 +2791,44 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     return res;
 }
 
-StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
+StoragePtr Context::executeTableFunction(
+    const ASTPtr & table_expression,
+    const TableFunctionPtr & table_function_ptr,
+    const ContextPtr & execution_context)
 {
     const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
-    const auto key = toString(hash);
+    const auto bare_key = toString(hash);
+    auto key = bare_key;
+
+    /// Incorporate a hash of the execution context's changed settings into the cache key.
+    /// This ensures that:
+    /// - identical table functions with the same effective settings are still reused from cache,
+    /// - table functions with different settings get separate cache entries.
+    {
+        SipHash settings_hash;
+        for (const auto & change : execution_context->getSettingsRef().changes())
+        {
+            settings_hash.update(change.name);
+            applyVisitor(FieldVisitorHash(settings_hash), change.value);
+        }
+        key += '/' + toString(settings_hash.get128());
+    }
 
     StoragePtr res;
     {
         std::lock_guard lock(table_function_results_mutex);
         res = table_function_results[key];
+        /// Also check the bare key (without settings suffix) for compatibility with
+        /// the other overload of executeTableFunction. That overload is used in
+        /// executeQuery.cpp to pre-create StorageInput for INSERT...SELECT with
+        /// inline data, and it caches the result under the bare AST hash key.
+        if (!res && key != bare_key)
+            res = table_function_results[bare_key];
     }
 
     if (!res)
     {
-        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+        res = table_function_ptr->execute(table_expression, execution_context, table_function_ptr->getName());
         std::lock_guard lock(table_function_results_mutex);
         /// In case of race, another thread might have inserted a result already.
         /// We just overwrite it since both should be equivalent.
@@ -2836,32 +2866,9 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
-
-    /* Check that the actual schema matches the defined one (if any) */
-    auto actual_names_and_types = sample_block->getNamesAndTypesList();
-    const auto original_defined_columns = original_view_metadata->getColumns();
-    if (!original_defined_columns.empty())
-    {
-        auto throw_schema_mismatch = [table_name]()
-        {
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
-                backQuote(table_name));
-        };
-        if (original_defined_columns.size() != actual_names_and_types.size())
-            throw_schema_mismatch();
-
-        for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
-        {
-            if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
-                throw_schema_mismatch();
-        }
-    }
-
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
-                                                ColumnsDescription(actual_names_and_types),
+                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
             /* comment */ "",
             /* is_parameterized_view */ true);
     res->startup();
@@ -4825,9 +4832,7 @@ void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-
-    if (shared->keeper_dispatcher)
+    if (std::atomic_load_explicit(&shared->keeper_dispatcher, std::memory_order_relaxed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
@@ -4846,8 +4851,9 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
                      "will wait for Keeper synchronously");
         }
 
-        shared->keeper_dispatcher = std::make_shared<KeeperDispatcher>();
-        shared->keeper_dispatcher->initialize(config, is_standalone_app, start_async, getMacros());
+        auto dispatcher = std::make_shared<KeeperDispatcher>();
+        dispatcher->initialize(config, is_standalone_app, start_async, getMacros());
+        std::atomic_store_explicit(&shared->keeper_dispatcher, dispatcher, std::memory_order_relaxed);
     }
 #endif
 }
@@ -4855,41 +4861,44 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
 #if USE_NURAFT
 std::shared_ptr<KeeperDispatcher> Context::getKeeperDispatcher() const
 {
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-    if (!shared->keeper_dispatcher)
+    auto dispatcher = tryGetKeeperDispatcher();
+    if (!dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->keeper_dispatcher;
+    return dispatcher;
 }
 
 std::shared_ptr<KeeperDispatcher> Context::tryGetKeeperDispatcher() const
 {
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-    return shared->keeper_dispatcher;
+    return std::atomic_load_explicit(&shared->keeper_dispatcher, std::memory_order_relaxed);
+}
+
+void Context::setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const
+{
+    std::atomic_store_explicit(&shared->keeper_dispatcher, dispatcher, std::memory_order_relaxed);
 }
 #endif
 
 void Context::shutdownKeeperDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-    if (shared->keeper_dispatcher)
+    if (auto dispatcher = tryGetKeeperDispatcher())
     {
-        shared->keeper_dispatcher->shutdown();
-        shared->keeper_dispatcher.reset();
+        dispatcher->shutdown();
+        setKeeperDispatcher(nullptr);
     }
 #endif
 }
 
 
-void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config)
+void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config) const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_dispatcher_mutex);
-    if (!shared->keeper_dispatcher)
+    auto dispatcher = tryGetKeeperDispatcher();
+    if (!dispatcher)
         return;
 
-    shared->keeper_dispatcher->updateConfiguration(config, getMacros());
+    dispatcher->updateConfiguration(config, getMacros());
 #endif
 }
 
@@ -5771,19 +5780,19 @@ String trim(const String & text)
 
 }
 
-void Context::setDashboardsConfig(const ConfigurationPtr & config)
+void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("dashboards", keys);
+    config.keys("dashboards", keys);
 
     Dashboards dashboards;
     for (const auto & key : keys)
     {
         const auto & prefix = "dashboards." + key + ".";
         dashboards.push_back({
-            { "dashboard", config->getString(prefix + "dashboard") },
-            { "title",     config->getString(prefix + "title") },
-            { "query",     trim(config->getString(prefix + "query")) },
+            { "dashboard", config.getString(prefix + "dashboard") },
+            { "title",     config.getString(prefix + "title") },
+            { "query",     trim(config.getString(prefix + "query")) },
         });
     }
 

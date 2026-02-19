@@ -568,7 +568,7 @@ def test_insert(started_cluster):
     create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER, table_name)
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'), NULL);", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
+    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'), NULL);", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     catalog.load_table(f"{root_namespace}.{table_name}")
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\t{}\n"
 
@@ -582,7 +582,7 @@ def test_create(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
-    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
+    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 

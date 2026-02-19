@@ -449,6 +449,31 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
+        Job.ParamSet(
+            parameter="amd_tsan, flaky check",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_msan, flaky check",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_ubsan, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_debug, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
     )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
@@ -798,7 +823,16 @@ class JobConfigs:
             )
             for total_batches in (6,)
             for batch in range(1, total_batches + 1)
-        ]
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_msan, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_MSAN],
+            )
+            for total_batches in (6,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     integration_test_asan_flaky_pr_jobs = (
         common_integration_test_job_config.parametrize(
@@ -1151,6 +1185,33 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+    )
+    toolchain_build_jobs = Job.Config(
+        name=JobNames.BUILD_TOOLCHAIN,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/build_toolchain.py",
+        run_in_docker=BINARY_DOCKER_COMMAND,
+        timeout=8 * 3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/build_toolchain.py"],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd64",
+            runs_on=RunnerLabels.AMD_LARGE,
+            provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD],
+        ),
+        Job.ParamSet(
+            parameter="aarch64",
+            runs_on=RunnerLabels.ARM_LARGE,
+            provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM],
+        ),
+    )
+    update_toolchain_dockerfile_job = Job.Config(
+        name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
+        enable_gh_auth=True,
     )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",

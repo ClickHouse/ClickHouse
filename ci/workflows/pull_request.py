@@ -126,6 +126,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -136,6 +137,8 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.parser_memory_profiler,
+        ArtifactConfigs.toolchain_pgo_bolt_amd,
+        ArtifactConfigs.toolchain_pgo_bolt_arm,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,

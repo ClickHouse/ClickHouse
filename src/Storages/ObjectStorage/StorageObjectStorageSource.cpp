@@ -814,7 +814,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// FIXME: Use async buffer if use_cache,
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    bool use_async_buffer = use_prefetch || use_filesystem_cache || use_distributed_cache;
+    bool use_async_buffer = use_prefetch || use_distributed_cache;
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
 #if ENABLE_DISTRIBUTED_CACHE
@@ -909,7 +909,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         return impl;
     }
 
-    LOG_TRACE(log, "Downloading object {} of size {} with initial prefetch", object_info.getPath(), object_size);
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size
         && impl->isCached();
 
@@ -919,6 +918,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);
+
+    LOG_TRACE(
+        log, "Downloading object {} of size {} {} initial prefetch (buffer size: {})",
+        object_info.getPath(), object_size, use_prefetch ? "with" : "without", buffer_size);
 
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
@@ -930,7 +933,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
-    if (use_prefetch)
+    if (use_prefetch && !impl->supportsReadAt())
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);

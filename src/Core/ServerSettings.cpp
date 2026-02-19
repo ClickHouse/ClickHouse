@@ -19,6 +19,8 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/MemoryTracker.h>
 
+#include <Common/DNSResolver.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -1768,6 +1770,9 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
+
+            {"dns_allow_resolve_names_to_ipv4", {std::to_string(DNSResolver::instance().getFilterIPv4()), ChangeableWithoutRestart::Yes}},
+            {"dns_allow_resolve_names_to_ipv6", {std::to_string(DNSResolver::instance().getFilterIPv6()), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())
