@@ -1,9 +1,8 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-azure-blob-storage
 
 -- Tests that text indexes can be build on and used with Array columns.
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 

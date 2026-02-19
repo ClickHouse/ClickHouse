@@ -21,6 +21,7 @@ public:
         Bucket bucket;
         std::string bucket_lock_path;
         std::string processor_info;
+        std::string zookeeper_name;
         std::string toString() const;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
@@ -35,6 +36,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
         const ObjectStorageQueueFilenameParser * parser_,
@@ -50,6 +52,7 @@ public:
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
         bool use_persistent_processing_nodes_,
+        const std::string & zookeeper_name_,
         LoggerPtr log_);
 
     static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
@@ -61,13 +64,18 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static void migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value);
+    static void migrateToBuckets(
+        const std::string & zk_path,
+        size_t value,
+        size_t prev_value,
+        const std::string & zookeeper_name_);
 
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
+        const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
@@ -91,7 +99,8 @@ private:
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        const std::string & zookeeper_name_);
 
     struct ProcessingStateFromKeeper
     {
@@ -114,12 +123,14 @@ private:
         const std::string & file_path,
         std::optional<std::string> processed_node_hive_partitioning_path = std::nullopt,
         std::optional<std::string> failed_node_path = std::nullopt,
-        LoggerPtr log_ = nullptr);
+        LoggerPtr log_ = nullptr,
+        const std::string & zookeeper_name_ = {});
 
     static bool getMaxProcessedFilesByHivePartition(
         std::unordered_map<std::string, std::string> & last_processed_path_per_hive_partition,
         const std::string & processed_node_path_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        const std::string & zookeeper_name_);
 
     void doPrepareProcessedRequests(
         Coordination::Requests & requests,
@@ -136,7 +147,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        const std::string & zookeeper_name_);
 
     ~BucketHolder();
 

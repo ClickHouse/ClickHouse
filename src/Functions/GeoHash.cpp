@@ -335,8 +335,8 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
         for (size_t j = 0; j < args.latitude_items; ++j)
         {
             size_t length = geohashEncodeImpl(
-                args.longitude_min + args.longitude_step * i,
-                args.latitude_min + args.latitude_step * j,
+                args.longitude_min + args.longitude_step * static_cast<Float64>(i),
+                args.latitude_min + args.latitude_step * static_cast<Float64>(j),
                 args.precision,
                 out);
 

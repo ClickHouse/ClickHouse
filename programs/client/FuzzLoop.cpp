@@ -498,19 +498,6 @@ bool Client::processBuzzHouseQuery(const String & full_query)
     return server_up;
 }
 
-using sighandler_t = void (*)(int);
-sighandler_t volatile prev_signal = nullptr;
-std::sig_atomic_t volatile buzz_done = 0;
-
-static void finishBuzzHouse(int num)
-{
-    if (prev_signal)
-    {
-        prev_signal(num);
-    }
-    buzz_done = 1;
-}
-
 bool Client::fuzzLoopReconnect()
 {
     connection->disconnect();
@@ -539,7 +526,9 @@ static const String & health_check_cmd = "--Health check";
 bool Client::buzzHouse()
 {
     String full_query;
+    bool no_eof = true;
     bool server_up = true;
+    bool no_timeout = true;
     static const String & rerun_database = "--External database ";
     static const RE2 rerun_database_re(R"((?i)^--External\s+database\s+(.*)$)");
     static const String & rerun_table = "--External table ";
@@ -548,18 +537,17 @@ bool Client::buzzHouse()
         R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s([^\s.]+)\stable\s+([^\s.]+)\.([^\s.]+)\s*$)");
 
     /// Set time to run, but what if a query runs for too long?
-    buzz_done = 0;
-    if (fuzz_config->time_to_run > 0)
-    {
-        prev_signal = std::signal(SIGALRM, finishBuzzHouse);
-    }
-    alarm(fuzz_config->time_to_run);
+    using clock = std::chrono::steady_clock;
+    const auto deadline = fuzz_config->time_to_run > 0
+        ? std::optional<clock::time_point>(clock::now() + std::chrono::minutes(fuzz_config->time_to_run))
+        : std::nullopt;
     full_query.reserve(8192);
     if (fuzz_config->read_log)
     {
         std::ifstream infile(fuzz_config->log_path);
 
-        while (server_up && !buzz_done && std::getline(infile, full_query))
+        while (server_up && (no_timeout = (!deadline || clock::now() < *deadline))
+               && (no_eof = static_cast<bool>(std::getline(infile, full_query))))
         {
             String async_flag;
             String seed_str;
@@ -643,7 +631,7 @@ bool Client::buzzHouse()
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(rg, *fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
-        while (server_up && !buzz_done)
+        while (server_up && (no_timeout = (!deadline || clock::now() < *deadline)))
         {
             sq1.Clear();
             full_query.resize(0);
@@ -932,6 +920,18 @@ bool Client::buzzHouse()
                 }
             }
         }
+    }
+    if (!server_up)
+    {
+        LOG_INFO(fuzz_config->log, "The server is not responding, stopping fuzzing");
+    }
+    if (!no_timeout)
+    {
+        LOG_INFO(fuzz_config->log, "The fuzzing time limit has been reached, stopping fuzzing");
+    }
+    if (!no_eof)
+    {
+        LOG_INFO(fuzz_config->log, "End of fuzzing log file reached, stopping fuzzing");
     }
     return server_up;
 }

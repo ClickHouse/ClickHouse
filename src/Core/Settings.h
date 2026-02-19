@@ -113,7 +113,8 @@ class WriteBuffer;
     M(CLASS_NAME, ObjectStorageGranularityLevel) \
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
-    M(CLASS_NAME, DeduplicateInsertSelectMode)
+    M(CLASS_NAME, DeduplicateInsertSelectMode) \
+    M(CLASS_NAME, DeduplicateInsertMode) \
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
@@ -146,6 +147,7 @@ struct Settings
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
     std::vector<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
     std::vector<std::string_view> getChangedAndObsoleteNames() const;
     std::vector<std::string_view> getUnchangedNames() const;
 

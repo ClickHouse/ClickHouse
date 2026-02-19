@@ -453,6 +453,12 @@ std::optional<String> optimizeUseNormalProjections(
             next_node = &expr_node;
         }
 
+        /// Verify headers are compatible before creating the Union.
+        /// If they differ (e.g., different columns due to different query DAGs being applied),
+        /// skip this optimization to avoid "Block structure mismatch" errors.
+        if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
+            return {};
+
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_headers));

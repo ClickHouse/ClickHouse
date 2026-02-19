@@ -81,7 +81,7 @@ struct AvgFraction
         if constexpr (is_decimal<Denominator>)
             denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else
-            denominator_float = denominator;
+            denominator_float = static_cast<Float64>(denominator);
 
         return numerator_float / denominator_float;
     }
@@ -91,7 +91,7 @@ struct AvgFraction
         if constexpr (DecimalOrExtendedInt<Denominator>) /// if extended int
             return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
         else
-            return static_cast<Float64>(numerator) / denominator;
+            return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
     }
 };
 
@@ -364,7 +364,7 @@ public:
             sum_data.addMany(column.getData().data(), row_begin, row_end);
             this->data(place).denominator += (row_end - row_begin);
         }
-        increment(place, sum_data.sum);
+        increment(place, sum_data.get());
     }
 
     void addBatchSinglePlaceNotNull(
@@ -400,7 +400,7 @@ public:
             sum_data.addManyNotNull(column.getData().data(), null_map, row_begin, row_end);
             this->data(place).denominator += (row_end - row_begin) - countBytesInFilter(null_map, row_begin, row_end);
         }
-        increment(place, sum_data.sum);
+        increment(place, sum_data.get());
     }
 
     String getName() const override { return "avg"; }

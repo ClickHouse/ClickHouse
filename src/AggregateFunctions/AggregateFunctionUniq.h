@@ -25,6 +25,7 @@
 #include <AggregateFunctions/UniqExactSet.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace ErrorCodes
 {
@@ -369,8 +370,19 @@ private:
         {
             if (!null_map)
             {
-                for (size_t row = row_begin; row < row_end; ++row)
-                    add<hint>(data, columns, num_args, row);
+                if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData> &&
+                        !std::is_same_v<T, String> &&
+                        !std::is_same_v<T, IPv6>)
+                {
+                    const auto & column = *columns[0];
+                    data.set.template insertMany<T, AggregateFunctionUniqTraits<T>::hash>(
+                        assert_cast<const ColumnVector<T> &>(column).getData().data() + row_begin, row_end - row_begin);
+                }
+                else
+                {
+                    for (size_t row = row_begin; row < row_end; ++row)
+                        add<hint>(data, columns, num_args, row);
+                }
             }
             else
             {
@@ -470,7 +482,7 @@ public:
     {
         if constexpr (is_parallelize_merge_prepare_needed)
         {
-            std::vector<DataSet *> data_vec;
+            VectorWithMemoryTracking<DataSet *> data_vec;
             data_vec.resize(places.size());
 
             for (size_t i = 0; i < data_vec.size(); ++i)
