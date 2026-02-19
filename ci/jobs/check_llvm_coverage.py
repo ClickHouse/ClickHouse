@@ -63,9 +63,23 @@ if __name__ == "__main__":
     os.environ["REPO_NAME"] = repo_name
     os.environ["PR_NUMBER"] = str(pr_number)
 
-    result = Result.from_commands_run(
-        name="LLVM Coverage Check",
-        command=["bash ci/jobs/scripts/diff_coverage.sh"],
+    results = []
+    results.append(
+        Result.from_commands_run(
+            name="LLVM Coverage Check",
+            command=["bash ci/jobs/scripts/diff_coverage.sh"],
+        )
+    )
+
+    # Generate report for changed blocks only
+    results.append(
+        Result.from_commands_run(
+            name="Print uncovered changed code with context",
+            command=["python3 ci/jobs/scripts/print_uncovered_code.py"],
+            with_log=True,
+            with_info=True,
+            with_info_on_failure=True
+        )
     )
 
     Utils.compress_gz(
@@ -89,8 +103,5 @@ if __name__ == "__main__":
                 assets_to_attach.append(str(file_path))
 
     Result.create_from(
-        results=[result],
-        files=files_to_attach,
-        assets=assets_to_attach,
-        info="LLVM Coverage Check Completed",
+        results=results, files=files_to_attach, assets=assets_to_attach
     ).complete_job(disable_attached_files_sorting=True)
