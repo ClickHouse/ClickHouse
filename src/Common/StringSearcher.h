@@ -19,6 +19,10 @@
 #    include <smmintrin.h>
 #endif
 
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
+#endif
+
 #if USE_MULTITARGET_CODE
 #    include <immintrin.h>
 #endif
@@ -104,13 +108,38 @@ private:
     uint8_t l = 0;
     uint8_t u = 0;
 
+#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
 #ifdef __SSE4_1__
-    static constexpr size_t N = sizeof(__m128i);
+    using Vec = __m128i;
+    static Vec vecLoad(const void * p) { return _mm_loadu_si128(reinterpret_cast<const __m128i *>(p)); }
+    static Vec vecCmpeq(Vec a, Vec b) { return _mm_cmpeq_epi8(a, b); }
+    static Vec vecOr(Vec a, Vec b) { return _mm_or_si128(a, b); }
+    static int vecMovemask(Vec v) { return _mm_movemask_epi8(v); }
+    static Vec vecSet1(uint8_t v) { return _mm_set1_epi8(static_cast<int8_t>(v)); }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+    using Vec = uint8x16_t;
+    static Vec vecLoad(const void * p) { return vld1q_u8(reinterpret_cast<const uint8_t *>(p)); }
+    static Vec vecCmpeq(Vec a, Vec b) { return vceqq_u8(a, b); }
+    static Vec vecOr(Vec a, Vec b) { return vorrq_u8(a, b); }
+    static int vecMovemask(Vec v)
+    {
+        const uint8x16_t bitmask = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128};
+        uint8x16_t masked = vandq_u8(v, bitmask);
+        uint8x16_t paired = vpaddq_u8(masked, masked);
+        paired = vpaddq_u8(paired, paired);
+        paired = vpaddq_u8(paired, paired);
+        return static_cast<int>(vgetq_lane_u16(vreinterpretq_u16_u8(paired), 0));
+    }
+    static Vec vecSet1(uint8_t v) { return vdupq_n_u8(v); }
+#endif
+
+    static constexpr size_t N = sizeof(Vec);
 
     /// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
-    __m128i patl, patu;
+    Vec patl, patu;
     /// lower and uppercase vectors of first 16 characters of `needle`
-    __m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
+    Vec cachel{};
+    Vec cacheu{};
     int cachemask = 0;
 #endif
 
@@ -125,38 +154,40 @@ public:
         l = static_cast<uint8_t>(std::tolower(*needle));
         u = static_cast<uint8_t>(std::toupper(*needle));
 
-#ifdef __SSE4_1__
-        patl = _mm_set1_epi8(l);
-        patu = _mm_set1_epi8(u);
+#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+        patl = vecSet1(l);
+        patu = vecSet1(u);
 
+        uint8_t cache_l_bytes[N] = {};
+        uint8_t cache_u_bytes[N] = {};
         const auto * needle_pos = needle;
 
         for (size_t i = 0; i < N; ++i)
         {
-            cachel = _mm_srli_si128(cachel, 1);
-            cacheu = _mm_srli_si128(cacheu, 1);
-
             if (needle_pos != needle_end)
             {
-                cachel = _mm_insert_epi8(cachel, std::tolower(*needle_pos), N - 1);
-                cacheu = _mm_insert_epi8(cacheu, std::toupper(*needle_pos), N - 1);
+                cache_l_bytes[i] = static_cast<uint8_t>(std::tolower(*needle_pos));
+                cache_u_bytes[i] = static_cast<uint8_t>(std::toupper(*needle_pos));
                 cachemask |= 1 << i;
                 ++needle_pos;
             }
         }
+
+        cachel = vecLoad(cache_l_bytes);
+        cacheu = vecLoad(cache_u_bytes);
 #endif
     }
 
     ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
     {
-#ifdef __SSE4_1__
+#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
         if (pos + N <= haystack_end)
         {
-            const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-            const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
-            const auto v_against_u = _mm_cmpeq_epi8(v_haystack, cacheu);
-            const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
-            const auto mask = _mm_movemask_epi8(v_against_l_or_u);
+            const auto v_haystack = vecLoad(pos);
+            const auto v_against_l = vecCmpeq(v_haystack, cachel);
+            const auto v_against_u = vecCmpeq(v_haystack, cacheu);
+            const auto v_against_l_or_u = vecOr(v_against_l, v_against_u);
+            const auto mask = vecMovemask(v_against_l_or_u);
 
             if (0xffff == cachemask)
             {
@@ -207,15 +238,15 @@ public:
 
         while (haystack < haystack_end)
         {
-#ifdef __SSE4_1__
+#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
             if (haystack + N <= haystack_end)
             {
-                const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
-                const auto v_against_u = _mm_cmpeq_epi8(v_haystack, patu);
-                const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
+                const auto v_haystack = vecLoad(haystack);
+                const auto v_against_l = vecCmpeq(v_haystack, patl);
+                const auto v_against_u = vecCmpeq(v_haystack, patu);
+                const auto v_against_l_or_u = vecOr(v_against_l, v_against_u);
 
-                const auto mask = _mm_movemask_epi8(v_against_l_or_u);
+                const auto mask = vecMovemask(v_against_l_or_u);
 
                 if (mask == 0)
                 {
@@ -228,11 +259,11 @@ public:
 
                 if (haystack + N <= haystack_end)
                 {
-                    const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                    const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
-                    const auto v_against_u_offset = _mm_cmpeq_epi8(v_haystack_offset, cacheu);
-                    const auto v_against_l_or_u_offset = _mm_or_si128(v_against_l_offset, v_against_u_offset);
-                    const auto mask_offset = _mm_movemask_epi8(v_against_l_or_u_offset);
+                    const auto v_haystack_offset = vecLoad(haystack);
+                    const auto v_against_l_offset = vecCmpeq(v_haystack_offset, cachel);
+                    const auto v_against_u_offset = vecCmpeq(v_haystack_offset, cacheu);
+                    const auto v_against_l_or_u_offset = vecOr(v_against_l_offset, v_against_u_offset);
+                    const auto mask_offset = vecMovemask(v_against_l_or_u_offset);
 
                     if (0xffff == cachemask)
                     {

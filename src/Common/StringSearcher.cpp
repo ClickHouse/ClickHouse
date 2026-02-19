@@ -62,6 +62,8 @@ bool initFirstCharacter(
 
 /// Shared: build cache byte arrays from needle with case folding.
 /// Returns true if force_fallback should be set (case expansion mismatch).
+/// Only used by SSE4.1 (Default) and AVX2 (x86_64_v3) paths.
+#if defined(__SSE4_1__) || USE_MULTITARGET_CODE
 bool buildCacheBytes(
     const uint8_t * needle,
     const uint8_t * needle_end,
@@ -114,6 +116,7 @@ bool buildCacheBytes(
 
     return false;
 }
+#endif
 
 /// Shared: trivial byte-by-byte UTF-8 case-insensitive comparison.
 inline ALWAYS_INLINE bool compareTrivialUTF8(
