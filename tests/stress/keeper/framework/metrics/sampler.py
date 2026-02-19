@@ -207,10 +207,10 @@ class MetricsSampler:
         for k, v in (kv or {}).items():
             self._append_row_at(ts, node_name, source, k, v)
 
-    def _snapshot_node(self, n):
-        """Sample all metrics from a single node (for continuous sampling)."""
-        ts = ts_ms()
-        
+    def _snapshot_node(self, ts, n):
+        """Sample all metrics from a single node (for continuous sampling).
+        ts: single timestamp for this snapshot round (same for all nodes).
+        """
         def _sample_kv(source, fn):
             try:
                 kv = fn()
@@ -255,8 +255,9 @@ class MetricsSampler:
         # Time-series data for these metrics is not needed - final values are sufficient
 
     def _snapshot_once(self):
+        ts = ts_ms()
         for n in self.nodes:
-            self._snapshot_node(n)
+            self._snapshot_node(ts, n)
 
     def _loop(self):
         while not self._stop:

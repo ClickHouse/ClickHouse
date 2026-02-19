@@ -33,10 +33,10 @@ def load_jsonl(path: Path) -> List[dict]:
 
 
 def extract_base_scenario(scenario_id: str) -> str:
-    """Extract base scenario name without backend/topology suffix.
+    """Extract base scenario name without backend suffix.
 
-    CFG-02[default|t3] -> CFG-02
-    BND-01[rocks|t3] -> BND-01
+    CFG-02[default] -> CFG-02
+    BND-01[rocks] -> BND-01
     """
     match = re.match(r"^([A-Z]+-\d+)", scenario_id or "")
     if match:

@@ -171,12 +171,12 @@ def wait_until(cond, timeout_s=60.0, interval=0.5, desc=""):
 
 
 def ts_ms():
-    """Return UTC timestamp string with ms precision."""
+    """Return UTC timestamp string with ms precision. Uses whole-second truncation
+    so stored times never round to the next second in Grafana (e.g. 19:08:27.999 -> 19:08:28)."""
     t = time.time()
     int_t = int(t)
-    ms = int((t - int_t) * 1000)
-    utc_tuple = time.gmtime(t)
-    return f"{utc_tuple.tm_year:04d}-{utc_tuple.tm_mon:02d}-{utc_tuple.tm_mday:02d} {utc_tuple.tm_hour:02d}:{utc_tuple.tm_min:02d}:{utc_tuple.tm_sec:02d}.{ms:03d}"
+    utc_tuple = time.gmtime(int_t)
+    return f"{utc_tuple.tm_year:04d}-{utc_tuple.tm_mon:02d}-{utc_tuple.tm_mday:02d} {utc_tuple.tm_hour:02d}:{utc_tuple.tm_min:02d}:{utc_tuple.tm_sec:02d}.000"
 
 
 def leader_or_first(nodes):

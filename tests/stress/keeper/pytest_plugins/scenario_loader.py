@@ -284,6 +284,6 @@ def expand_matrix_clones(s, backends, topologies):
             clone["backend"] = b
             clone["topology"] = topo
             sid = clone.get("id")
-            clone["id"] = f"{sid}[{b}|t{topo}]"
+            clone["id"] = f"{sid}[{b}]"
             clones.append(clone)
     return clones

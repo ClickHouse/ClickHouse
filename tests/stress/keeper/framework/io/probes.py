@@ -220,7 +220,8 @@ def dirs(node):
 
 def container_stats(node):
     """Return CPU and memory usage for the container (from cgroup, inside container).
-    Returns dict with container_memory_bytes and container_cpu_usage_usec (may be missing if unreadable).
+    Returns dict with container_memory_bytes, container_cpu_usage_usec (may be missing if unreadable),
+    and container_cpu_limit_cores when a CPU limit is set (cgroup quota); use with usage rate for CPU % of limit.
     """
     out = {}
     try:
@@ -236,26 +237,63 @@ def container_stats(node):
         print(f"[keeper][container_stats] error getting container memory for node {node.name}: {e}")
     try:
         # CPU: cgroup v2 cpu.stat (usage_usec) or v1 cpuacct.usage (nanoseconds).
-        # Try multiple paths: v2 unified, v1 cpuacct, v1 cpu,cpuacct (common in Docker).
-        cpu_commands = [
-            "grep '^usage_usec' /sys/fs/cgroup/cpu.stat 2>/dev/null | awk '{print $2}'",
-            "cat /sys/fs/cgroup/cpuacct/cpuacct.usage 2>/dev/null",
-            "cat /sys/fs/cgroup/cpu,cpuacct/cpuacct.usage 2>/dev/null",
+        # We always store microseconds so queries can use rate/1e6 = cores.
+        cpu_sources = [
+            ("grep '^usage_usec' /sys/fs/cgroup/cpu.stat 2>/dev/null | awk '{print $2}'", "usec"),
+            ("cat /sys/fs/cgroup/cpuacct/cpuacct.usage 2>/dev/null", "ns"),
+            ("cat /sys/fs/cgroup/cpu,cpuacct/cpuacct.usage 2>/dev/null", "ns"),
         ]
         val = None
-        for cpu_cmd in cpu_commands:
-            r = _exec(node, cpu_cmd, nothrow=True, timeout=2)
+        for cmd, unit in cpu_sources:
+            r = _exec(node, cmd, nothrow=True, timeout=2)
             s = (r and str(r).strip()).strip() if r else ""
-            # Allow first token only (in case of trailing newline or extra output)
             s = s.splitlines()[0].strip() if s else ""
             if s and s.isdigit():
                 val = int(s)
+                if unit == "ns":
+                    val = val // 1000  # ns -> usec
                 break
         if val is not None:
-            # cpuacct.usage is in nanoseconds; convert to microseconds for a single metric unit
-            if val > 10**12:
-                val = val // 1000
             out["container_cpu_usage_usec"] = val
     except Exception as e:
         print(f"[keeper][container_stats] error getting container cpu for node {node.name}: {e}")
+    try:
+        # CPU limit (effective cores): so one can compute CPU % of limit from usage rate.
+        # cgroup v2: cpu.max is "quota period" (usec) or "max"; effective_cores = quota/period.
+        # cgroup v1: cpu.cfs_quota_us, cpu.cfs_period_us; quota -1 = no limit; else effective_cores = quota/period.
+        limit_cores = None
+        r = _exec(node, "cat /sys/fs/cgroup/cpu.max 2>/dev/null", nothrow=True, timeout=2)
+        if r:
+            parts = str(r).strip().split()
+            if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                quota, period = int(parts[0]), int(parts[1])
+                if period > 0:
+                    limit_cores = quota / period
+        if limit_cores is None:
+            r2 = _exec(
+                node,
+                "quota=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us 2>/dev/null); period=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us 2>/dev/null); echo $quota $period",
+                nothrow=True,
+                timeout=2,
+            )
+            if not r2:
+                r2 = _exec(
+                    node,
+                    "quota=$(cat /sys/fs/cgroup/cpu,cpuacct/cpu.cfs_quota_us 2>/dev/null); period=$(cat /sys/fs/cgroup/cpu,cpuacct/cpu.cfs_period_us 2>/dev/null); echo $quota $period",
+                    nothrow=True,
+                    timeout=2,
+                )
+            if r2:
+                parts = str(r2).strip().split()
+                if len(parts) >= 2:
+                    try:
+                        quota, period = int(parts[0]), int(parts[1])
+                        if period > 0 and quota > 0:
+                            limit_cores = quota / period
+                    except ValueError:
+                        pass
+        if limit_cores is not None and limit_cores > 0:
+            out["container_cpu_limit_cores"] = limit_cores
+    except Exception as e:
+        print(f"[keeper][container_stats] error getting container cpu limit for node {node.name}: {e}")
     return out
