@@ -234,6 +234,11 @@ This may reduce memory usage in case of row with many matches in right table, bu
 Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
 The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
 )", 0) \
+    DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
+Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
+This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
+When disabled, non-joined rows are processed by a single thread.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -2582,6 +2587,15 @@ Possible values:
 - Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
 - 1 — The trace for all executed queries is enabled.
 )", 0) \
+    DECLARE(FloatAuto, opentelemetry_start_keeper_trace_probability, Field("auto"), R"(
+Probability to start a trace for ZooKeeper request - whether there is a parent trace or not.
+
+Possible values:
+- 'auto' - Equals the opentelemetry_start_trace_probability setting
+- 0 — Tracing is disabled
+- 0 to 1 — Probability (e.g., 1.0 = always enable)
+
+)", 0) \
     DECLARE(Bool, opentelemetry_trace_processors, false, R"(
 Collect OpenTelemetry spans for processors.
 )", 0) \
@@ -4783,7 +4797,7 @@ Propagate WITH statements to UNION queries and all subqueries
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
 If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
 
-Note that this is a compatibility setting for new analyzer to allow running some invalid queries that old analyzer could execute.
+Note that this is a compatibility setting for the analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0) \
     DECLARE(Bool, aggregate_functions_null_for_empty, false, R"(
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -5156,14 +5170,6 @@ Whether to delete all iceberg files on drop or not.
 )", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, use_parquet_metadata_cache, true, R"(
-If turned on, parquet format may utilize the parquet metadata cache.
 
 Possible values:
 
@@ -6166,6 +6172,9 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
 )", 0) \
     DECLARE(Bool, check_referential_table_dependencies, false, R"(
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
+)", 0) \
+    DECLARE(Bool, check_named_collection_dependencies, true, R"(
+Check that DROP NAMED COLLECTION will not break tables that depend on it
 )", 0) \
     \
     DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(
@@ -7410,7 +7419,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
     \
-    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
 )", BETA, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
@@ -7478,9 +7487,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
-    DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
+    DECLARE(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \

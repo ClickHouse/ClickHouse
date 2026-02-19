@@ -352,7 +352,7 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
     )
 
     node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
-    node.query("SYSTEM DROP FILESYSTEM CACHE")
+    node.query("SYSTEM CLEAR FILESYSTEM CACHE")
 
     # Check cache is filled
     assert 0 == int(node.query("SELECT count() FROM system.filesystem_cache"))

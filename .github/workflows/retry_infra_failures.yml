@@ -49,26 +49,39 @@ jobs:
             run_url="https://github.com/$GH_REPO/actions/runs/$run_id"
             echo "Checking run $run_url ..."
 
-            # A run is an infrastructure failure if every failed job either:
-            # - never reached its main "Run" step (failed during checkout/setup), or
-            # - is the "Config Workflow" job (pipeline configuration, not actual tests)
-            is_infra=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
-              --jq '
-                [.jobs[] | select(.conclusion == "failure")] as $failed |
-                if ($failed | length) == 0 then
-                  false
+            # Collect per-job verdicts across all pages (runs can have >100 jobs).
+            # Each failed job emits "true" (infrastructure) or "false" (real failure).
+            # A job is considered an infrastructure failure if:
+            # - it is the "Config Workflow" job (pipeline configuration, not actual tests), or
+            # - it never reached its main "Run" step (failed during checkout/setup), or
+            # - the "Run" step was skipped, or
+            # - the "Run" step failed almost immediately (under 2 minutes), indicating
+            #   a setup/download issue (e.g. missing S3 credentials) rather than a real
+            #   test failure
+            verdicts=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
+              --paginate --jq '
+                .jobs[] | select(.conclusion == "failure") |
+                if .name == "Config Workflow" then true
                 else
-                  [$failed[] |
-                    if .name == "Config Workflow" then true
-                    else
-                      [.steps[] | select(.name == "Run")] |
-                      if length == 0 then true
-                      else .[0].conclusion == "skipped"
-                      end
-                    end
-                  ] | all
+                  [.steps[] | select(.name == "Run")] |
+                  if length == 0 then true
+                  elif .[0].conclusion == "skipped" then true
+                  elif .[0].conclusion == "failure" then
+                    ((.[0].completed_at | fromdateiso8601) -
+                     (.[0].started_at | fromdateiso8601)) < 120
+                  else false
+                  end
                 end
               ')
+
+            # Infrastructure failure = at least one failed job, and all of them are infra
+            if [ -z "$verdicts" ]; then
+              is_infra=false
+            elif echo "$verdicts" | grep -q "false"; then
+              is_infra=false
+            else
+              is_infra=true
+            fi
 
             if [ "$is_infra" = "true" ]; then
               echo "  Infrastructure failure detected, rerunning..."

@@ -51,7 +51,9 @@ Upcoming meetups
 * [Toronto Meetup](https://luma.com/8p8unbnw) - February 19th, 2026
 * [Melbourne Meetup](https://www.meetup.com/clickhouse-melbourne-user-group/events/312871833/) - February 24th, 2026
 * [Seattle Meetup](https://luma.com/jsctpwoa) - February 26th, 2026
+* [Bangalore GDG + Deutsche Bank Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/313325219/) - February 28th, 2026
 * [LA Meetup](https://luma.com/wbkqmaqk) - March 6th, 2026
+* [Tokyo Meetup - LibreChat Night](https://www.meetup.com/clickhouse-tokyo-user-group/events/313275265/) - March 9th, 2026
 * [Women+ in open source](https://luma.com/qcqlia4g) - March 9th, 2026 
 * [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/313294062) - March 10th, 2026
 

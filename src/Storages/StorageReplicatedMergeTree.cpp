@@ -1721,6 +1721,12 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, local_context, old_metadata);
     new_metadata.setMetadataVersion(new_metadata_version);
 
+    /// Implicit statistics (auto_statistics_types) are not serialized to ZooKeeper,
+    /// so we need to re-add them after loading metadata from ZK.
+    auto settings = getSettings();
+    auto [auto_stats_types, _] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings);
+    addImplicitStatistics(new_metadata.columns, auto_stats_types);
+
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
@@ -6010,7 +6016,7 @@ void StorageReplicatedMergeTree::read(
         readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
         return;
     }
-    /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
+    /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
     if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
     {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);

@@ -125,6 +125,7 @@
     M(ObjectStorageQueueShutdownThreadsScheduled, "Number of queued or active jobs in object storage queue shutdown pool.") \
     M(ObjectStorageQueueMetadataCacheSizeBytes, "Size in bytes of ObjectStorageQueue metadata cache.") \
     M(ObjectStorageQueueMetadataCacheSizeElements, "Size in elements of ObjectStorageQueue metadata cache.") \
+    M(DeltaLakeSnapshotCacheSizeElements, "Size in elements of DeltaLake snapshot cache.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
     M(BackupsIOThreadsActive, "Number of threads in the BackupsIO thread pool running a task.") \
     M(BackupsIOThreadsScheduled, "Number of queued or active jobs in the BackupsIO thread pool.") \
@@ -318,8 +319,6 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
-    M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
-    M(ParquetMetadataCacheFiles, "Number of cached files in the Parquet metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
     M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
     M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \

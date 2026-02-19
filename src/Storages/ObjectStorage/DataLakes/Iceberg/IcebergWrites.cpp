@@ -821,6 +821,11 @@ void IcebergStorageSink::onFinish()
     releaseBuffers();
 }
 
+void IcebergStorageSink::onException(std::exception_ptr /* exception */)
+{
+    cancelBuffers();
+}
+
 void IcebergStorageSink::finalizeBuffers()
 {
     for (auto & [partition_key, writer] : writer_per_partition_key)
