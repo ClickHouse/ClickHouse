@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Dictionaries/IDictionary.h>
-#include <Common/HashTable/PackedHashMap.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/HashSet.h>
+#include <new>
+#include <type_traits>
 #include <Core/Types_fwd.h>
+#include <Dictionaries/IDictionary.h>
 #include <sparsehash/sparse_hash_map>
 #include <sparsehash/sparse_hash_set>
-#include <type_traits>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/PackedHashMap.h>
 
 namespace DB::HashedDictionaryImpl
 {
@@ -150,7 +151,7 @@ public:
         increaseSizeDegree(0);
     }
 };
-static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == std::hardware_destructive_interference_size);
 
 HashTableGrowerWithPrecalculationAndMaxLoadFactor() -> HashTableGrowerWithPrecalculationAndMaxLoadFactor<8>;
 
