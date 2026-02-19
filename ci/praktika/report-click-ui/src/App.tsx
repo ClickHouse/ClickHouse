@@ -960,7 +960,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
         </div>
 
         {/* Main Content */}
-        <Container orientation='vertical' gap='none' padding='md' style={{ marginTop: '56px' }}>
+        <Container orientation='vertical' gap='none' padding='xl' style={{ marginTop: '56px', maxWidth: '100vw', boxSizing: 'border-box' }}>
 
           {loading && <Text>Loading test results...</Text>}
 
@@ -971,7 +971,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
           {data && !loading && (
             <Container orientation='vertical' gap='none'>
               {data.ext && nameParams.length <= 1 && (
-                <Panel hasBorder padding='md' orientation='vertical' gap='xs' fillWidth style={{ marginBottom: '16px' }}>
+                <Panel hasBorder padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px' }}>
                     <Icon name="git-merge" size="md" />
                     {data.ext.pr_number && data.ext.pr_number > 0 ? (
@@ -1015,7 +1015,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
               </div>
 
               {data.info && (
-                <Panel hasShadow padding='md' orientation='vertical' gap='xs' fillWidth alignItems='start' style={{ marginBottom: '16px' }}>
+                <Panel hasShadow padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
                   <Text style={{ whiteSpace: 'pre-wrap', fontSize: '13px' }}>{data.info}</Text>
                 </Panel>
               )}
