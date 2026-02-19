@@ -297,7 +297,7 @@ private:
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
 
-    UInt64 access_entities_num_limit;
+    UInt64 access_entities_num_limit = 0;
 };
 
 }
