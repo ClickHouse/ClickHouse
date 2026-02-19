@@ -1,20 +1,20 @@
 Ring empty:	MULTIPOLYGON()
-Ring single:	MULTIPOLYGON(((0 0,0 5,5 5,5 0,0 0)))
-Ring union:	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
+Ring single:	1
+Ring union:	1
 Polygon empty:	MULTIPOLYGON()
-Polygon single:	MULTIPOLYGON(((0 0,0 5,5 5,5 0,0 0)))
-Polygon union:	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
+Polygon single:	1
+Polygon union:	1
 MultiPolygon empty:	MULTIPOLYGON()
-MultiPolygon single:	MULTIPOLYGON(((0 0,0 5,5 5,5 0,0 0)))
-MultiPolygon union:	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
+MultiPolygon single:	1
+MultiPolygon union:	1
 Ring type:	MultiPolygon	Polygon type:	MultiPolygon	MultiPolygon type:	MultiPolygon
-1	MULTIPOLYGON(((1 2,1 3,3 3,3 1,2 1,2 0,0 0,0 2,1 2)))
-2	MULTIPOLYGON(((10 10,10 12,12 12,12 10,10 10)))
-Disjoint:	MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)),((10 10,10 11,11 11,11 10,10 10)))
-correct_geometry=1:	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
-correct_geometry=0:	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
-correct_geometry mixed:	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
-1	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
-2	MULTIPOLYGON(((12 15,12 18,18 18,18 12,15 12,15 10,10 10,10 15,12 15)))
-Ring with correct_geometry:	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
-MultiPolygon with correct_geometry:	MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))
+1	1
+2	1
+Disjoint:	1
+correct_geometry=1:	1
+correct_geometry=0:	1
+correct_geometry mixed:	1
+1	1
+2	1
+Ring with correct_geometry:	1
+MultiPolygon with correct_geometry:	1
