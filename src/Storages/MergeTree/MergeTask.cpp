@@ -2264,6 +2264,11 @@ public:
         , current_time(current_time_)
         , force(force_)
     {
+        /// Collect subqueries eagerly in the constructor, following the same pattern as TTLStep.
+        /// transformPipeline() runs later during pipeline construction, after getSubqueries()
+        /// has already been called by createMergedStream(), so subqueries must be available now.
+        TTLDeleteFilterTransform probe(context, input_header_, metadata_snapshot, old_ttl_infos, current_time, force);
+        subqueries_for_sets = probe.getSubqueries();
     }
 
     String getName() const override { return "TTLDeleteFilter"; }
@@ -2272,13 +2277,8 @@ public:
     {
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
-            auto transform = std::make_shared<TTLDeleteFilterTransform>(
+            return std::make_shared<TTLDeleteFilterTransform>(
                 context, header, metadata_snapshot, old_ttl_infos, current_time, force);
-
-            auto sub = transform->getSubqueries();
-            subqueries_for_sets.insert(subqueries_for_sets.end(), sub.begin(), sub.end());
-
-            return transform;
         });
     }
 
