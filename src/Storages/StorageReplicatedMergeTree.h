@@ -33,7 +33,6 @@
 #include <Storages/TableZnodeInfo.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/EventNotifier.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/Throttler.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>

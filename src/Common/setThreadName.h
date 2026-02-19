@@ -83,6 +83,7 @@ namespace DB
     M(MERGE_MUTATE, "MergeMutate") \
     M(MERGETREE_COMMON, "Common") \
     M(MERGETREE_FETCH, "Fetch") \
+    M(MERGETREE_ATTACH, "Attach") \
     M(MERGETREE_FETCH_PARTITION, "FetchPartition") \
     M(MERGETREE_FREEZE_PART, "FreezePart") \
     M(MERGETREE_INDEX, "MergeTreeIndex") \
@@ -94,6 +95,7 @@ namespace DB
     M(MERGETREE_PREWARM_CACHE, "PrewarmCaches") \
     M(MERGETREE_READ, "MergeTreeRead") \
     M(MERGETREE_VECTOR_SIM_INDEX, "VectorSimIndex") \
+    M(MERGETREE_WRITE_PART, "WritePart") \
     M(METRIC_LOG, "MetricLog") \
     M(METRICS_TRANSMITTER, "MetricsTransmtr") \
     M(MSG_BROKER_SCHEDULE_POOL, "BgMBSchPool") \
@@ -160,7 +162,6 @@ namespace DB
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
-    M(MERGETREE_WRITE_PART, "MTSinkWrite") \
 
 
 enum class ThreadName : uint8_t

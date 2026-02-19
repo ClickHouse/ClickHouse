@@ -77,7 +77,7 @@ bool MergeProjectionPartsTask::executeStep()
             projection_future_part,
             projection.metadata,
             merge_entry,
-            std::make_unique<MergeListElement>((*merge_entry)->table_id, projection_future_part, context),
+            std::make_unique<MergeListElement>((*merge_entry)->table_id, projection_future_part, (*merge_entry)->thread_group),
             *table_lock_holder,
             time_of_merge,
             context,

@@ -11,9 +11,9 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
@@ -21,8 +21,10 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/randomDelay.h>
+#include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/setThreadName.h>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
@@ -2409,7 +2411,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     if (entry.type == LogEntry::ATTACH_PART)
     {
-        ProfileEventsScope profile_events_scope;
+        auto thread_group = ThreadGroup::createForScope();
+        ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::MERGETREE_ATTACH, /*allow_existing_group*/ true);
 
         PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry, renamed_parts))
@@ -2426,9 +2429,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
             renamed_parts.old_and_new_names.front().old_dir.clear();
 
+            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
-                profile_events_scope.getSnapshot());
+                counters_snapshot);
 
             return true;
         }
@@ -5331,17 +5335,19 @@ bool StorageReplicatedMergeTree::fetchPart(
         table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
     /// Logging
-    Stopwatch stopwatch;
     MutableDataPartPtr part;
     DataPartsVector replaced_parts;
-    ProfileEventsScope profile_events_scope;
+
+    auto thread_group = ThreadGroup::createForScope();
+    ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::MERGETREE_FETCH, true);
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         writePartLog(
-            PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
+            PartLogElement::DOWNLOAD_PART, execution_status, thread_group->getGroupElapsedNs(),
             part_name, part, replaced_parts, nullptr,
-            profile_events_scope.getSnapshot());
+            counters_snapshot);
     };
 
     auto is_zero_copy_part = [&settings_ptr](const auto & data_part)
@@ -5608,17 +5614,19 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
     TableLockHolder table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
     /// Logging
-    Stopwatch stopwatch;
     MutableDataPartPtr part;
     DataPartsVector replaced_parts;
-    ProfileEventsScope profile_events_scope;
+
+    auto thread_group = ThreadGroup::createForScope();
+    ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::MERGETREE_FETCH, /*allow_existing_group*/ true);
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         writePartLog(
-            PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
+            PartLogElement::DOWNLOAD_PART, execution_status, thread_group->getGroupElapsedNs(),
             part_name, part, replaced_parts, nullptr,
-            profile_events_scope.getSnapshot());
+            counters_snapshot);
     };
 
     std::function<MutableDataPartPtr()> get_part;

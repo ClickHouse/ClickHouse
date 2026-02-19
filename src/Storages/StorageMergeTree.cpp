@@ -53,7 +53,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/ThreadStatus.h>
 #include <Common/escapeForFileName.h>
 

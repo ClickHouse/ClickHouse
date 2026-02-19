@@ -366,9 +366,6 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
         pool.scheduleOrThrowOnError(
             [this, key, global_context, thread_group = CurrentThread::getGroup(), shard_num, my_data = data_shared]() mutable
             {
-                /// attach to the thread group of the query that flushes async insert queue to account profile events in it
-                /// when async insert is flushed by timeout, there is no such query and thread will not be attached to a thread group, which is also fine
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::ASYNC_INSERT_FLUSH);
                 processData(
                     key,
                     std::move(*my_data),

@@ -53,13 +53,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     future_mutated_part->uuid = entry.new_part_uuid;
     future_mutated_part->part_info = new_part_info;
 
-    stopwatch_ptr = std::make_unique<Stopwatch>();
-
     auto part_log_writer = [this](const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
-            PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
+            PartLogElement::MUTATE_PART, execution_status, thread_group->getGroupElapsedNs(),
             entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
             mutation_ids_for_log);
     };
@@ -217,14 +215,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    task_context->makeQueryContextForMutate(*storage.getSettings());
-    task_context->setCurrentQueryId(getQueryId());
-
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_mutated_part,
-        task_context);
+        thread_group);
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,

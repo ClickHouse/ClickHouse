@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/InsertDeduplication.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/setThreadName.h>
 
 namespace DB
