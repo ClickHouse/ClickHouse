@@ -6993,9 +6993,17 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     for (const auto & part : all_parts)
     {
         if (part->getState() == DataPartState::Active)
+        {
             active_parts_names.push_back(part->name);
-
-        forcefullyMovePartToDetachedAndRemoveFromMemory(part);
+            forcefullyMovePartToDetachedAndRemoveFromMemory(part);
+        }
+        else
+        {
+            /// Non-active (outdated) parts are renamed with the "ignored_" prefix so they
+            /// won't be picked up by a subsequent ATTACH PARTITION ALL. These parts are
+            /// intermediate merge results that can intersect with each other and with active parts.
+            forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored");
+        }
     }
 
     LOG_INFO(log, "Moved all parts to detached/");

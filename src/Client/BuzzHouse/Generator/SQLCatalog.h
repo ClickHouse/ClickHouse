@@ -154,8 +154,12 @@ struct SQLDatabase
 {
 public:
     bool random_engine = false;
-    String keeper_path, shard_name, replica_name;
-    uint32_t dname = 0, replica_counter = 0, shard_counter = 0;
+    String keeper_path;
+    String shard_name;
+    String replica_name;
+    uint32_t dname = 0;
+    uint32_t replica_counter = 0;
+    uint32_t shard_counter = 0;
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
@@ -206,16 +210,35 @@ struct SQLBase
 {
 public:
     String prefix;
-    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, has_order_by = false,
-         random_engine = false, can_run_merges = true;
-    uint32_t tname = 0, replica_counter = 0, shard_counter = 0;
+    bool is_temp = false;
+    bool is_deterministic = false;
+    bool has_metadata = false;
+    bool has_partition_by = false;
+    bool has_order_by = false;
+    bool random_engine = false;
+    bool can_run_merges = true;
+    uint32_t tname = 0;
+    uint32_t replica_counter = 0;
+    uint32_t shard_counter = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
-        bucket_path, topic, group;
-    String keeper_path, shard_name, replica_db, replica_table, replica_name;
+    std::optional<String> cluster;
+    std::optional<String> file_comp;
+    std::optional<String> partition_strategy;
+    std::optional<String> partition_columns_in_data_file;
+    std::optional<String> storage_class_name;
+    std::optional<String> host_params;
+    std::optional<String> bucket_path;
+    std::optional<String> topic;
+    std::optional<String> group;
+    String keeper_path;
+    String shard_name;
+    String replica_db;
+    String replica_table;
+    String replica_name;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
-    TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
+    TableEngineValues teng = TableEngineValues::Null;
+    TableEngineValues sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     std::optional<InOutFormat> file_format;
     IntegrationCall integration = IntegrationCall::None;
@@ -385,10 +408,19 @@ public:
 struct SQLTable : SQLBase
 {
 public:
-    uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
-    std::unordered_map<uint32_t, SQLColumn> cols, staged_cols;
-    std::unordered_map<uint32_t, SQLIndex> idxs, staged_idxs;
-    std::unordered_set<uint32_t> projs, staged_projs, constrs, staged_constrs;
+    uint32_t col_counter = 0;
+    uint32_t idx_counter = 0;
+    uint32_t proj_counter = 0;
+    uint32_t constr_counter = 0;
+    uint32_t freeze_counter = 0;
+    std::unordered_map<uint32_t, SQLColumn> cols;
+    std::unordered_map<uint32_t, SQLColumn> staged_cols;
+    std::unordered_map<uint32_t, SQLIndex> idxs;
+    std::unordered_map<uint32_t, SQLIndex> staged_idxs;
+    std::unordered_set<uint32_t> projs;
+    std::unordered_set<uint32_t> staged_projs;
+    std::unordered_set<uint32_t> constrs;
+    std::unordered_set<uint32_t> staged_constrs;
     std::unordered_map<uint32_t, String> frozen_partitions;
 
     SQLTable()
