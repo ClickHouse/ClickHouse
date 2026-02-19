@@ -288,6 +288,23 @@ String JoinStepLogical::getReadableRelationName() const
     return fmt::format("{} {} {}", left_table_label, joinTypePretty(join_operator), right_table_label);
 }
 
+void JoinStepLogical::swapInputs()
+{
+    auto inputs = getInputHeaders();
+    chassert(inputs.size() == 2);
+
+    /// TODO: any other checks that join sides can be swapped?
+
+    updateInputHeaders({inputs[1], inputs[0]});
+
+    if (join_operator.kind == JoinKind::Left)
+        join_operator.kind = JoinKind::Right;
+    else if (join_operator.kind == JoinKind::Right)
+        join_operator.kind = JoinKind::Left;
+
+    expression_actions.swapExpressionSources();
+}
+
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
 {
     std::vector<std::pair<String, String>> description;
@@ -1377,6 +1394,8 @@ void JoinStepLogical::buildPhysicalJoin(
         join_step->actions_after_join,
         optimization_settings,
         nodes);
+
+    new_node.cost_estimation = node.cost_estimation;
 
     node = std::move(new_node);
 }

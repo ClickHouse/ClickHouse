@@ -125,6 +125,8 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    std::unique_ptr<IQueryPlanStep> clone() const override;
+
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
