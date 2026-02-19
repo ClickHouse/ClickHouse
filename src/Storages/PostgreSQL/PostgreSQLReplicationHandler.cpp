@@ -74,14 +74,7 @@ public:
 
     ~TemporaryReplicationSlot()
     {
-        try
-        {
-            handler->dropReplicationSlot(*tx, /* temporary */true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException("TemporaryReplicationSlot");
-        }
+        handler->dropReplicationSlot(*tx, /* temporary */true);
     }
 
 private:

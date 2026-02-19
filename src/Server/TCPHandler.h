@@ -301,11 +301,11 @@ private:
 
     /// Process INSERT query
     void startInsertQuery(QueryState & state);
-    void processInsertQuery(QueryState & state);
+    void processInsertQuery(QueryState & state, CurrentThread::QueryScope & query_scope);
     AsynchronousInsertQueue::PushResult processAsyncInsertQuery(QueryState & state, AsynchronousInsertQueue & insert_queue);
 
     /// Process a request that does not require the receiving of data blocks from the client
-    void processOrdinaryQuery(QueryState & state);
+    void processOrdinaryQuery(QueryState & state, CurrentThread::QueryScope & query_scope);
 
     void processTablesStatusRequest();
 

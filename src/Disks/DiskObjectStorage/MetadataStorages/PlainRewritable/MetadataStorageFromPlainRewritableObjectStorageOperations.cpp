@@ -356,19 +356,15 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
     std::filesystem::path path_,
-    bool if_exists_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_,
-    StoredObjects & removed_objects_)
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path(std::move(path_))
-    , if_exists(if_exists_)
     , object_storage(object_storage_)
     , fs_tree(fs_tree_)
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
-    , removed_objects(removed_objects_)
 {
     chassert(metrics);
 }
@@ -381,12 +377,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
         path);
 
     if (!fs_tree->existsFile(path))
-    {
-        if (if_exists)
-            return;
-
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", path);
-    }
 
     file_remote_info = fs_tree->getFileRemoteInfo(path);
 
@@ -423,8 +414,6 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
 {
-    removed_objects.push_back(StoredObject(remote_source_path));
-
     if (copy_started)
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
 }
@@ -496,8 +485,7 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_,
-    StoredObjects & removed_objects_)
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : replaceable(replaceable_)
     , path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
@@ -505,7 +493,6 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     , fs_tree(std::move(fs_tree_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
-    , removed_objects(removed_objects_)
 {
     chassert(metrics);
 }
@@ -646,8 +633,6 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
 {
-    removed_objects.push_back(StoredObject(remote_path_from));
-
     if (moved_existing_source_file)
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
 
@@ -660,14 +645,12 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_,
-    StoredObjects & removed_objects_)
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path(std::move(path_))
     , object_storage(std::move(object_storage_))
     , fs_tree(std::move(fs_tree_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
-    , removed_objects(removed_objects_)
     , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
     chassert(metrics);
@@ -736,7 +719,6 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
 
     fs_tree->unlinkTree(tmp_path);
     object_storage->removeObjectsIfExist(objects_to_remove);
-    removed_objects.append_range(objects_to_remove);
 }
 
 }

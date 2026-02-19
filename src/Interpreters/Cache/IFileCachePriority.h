@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Core/Types.h>
 #include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Interpreters/Cache/UserInfo.h>
 
 #include <atomic>
 #include <memory>
@@ -25,8 +25,8 @@ class IFileCachePriority : private boost::noncopyable
 public:
     using Key = FileCacheKey;
     using QueueEntryType = FileCacheQueueEntryType;
-    using OriginInfo = FileCacheOriginInfo;
-    using UserID = OriginInfo::UserID;
+    using UserInfo = FileCacheUserInfo;
+    using UserID = UserInfo::UserID;
 
     struct Entry
     {
@@ -190,7 +190,8 @@ public:
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
-        const IFileCachePriority::OriginInfo & origin,
+        bool is_dynamic_resize,
+        const IFileCachePriority::UserInfo & user,
         const CacheStateGuard::Lock &) = 0;
 
     enum class IterationResult : uint8_t
@@ -210,6 +211,7 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
+        const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool best_effort = false) = 0;
@@ -222,7 +224,6 @@ public:
         size_t elements,
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
-        const OriginInfo & origin_info = {},
         bool best_effort = false) const = 0;
 
     virtual bool tryIncreasePriority(
@@ -235,13 +236,8 @@ public:
 
     struct IPriorityDump
     {
-        std::vector<FileSegmentInfo> infos;
-        IPriorityDump() = default;
-        explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
-        void merge(const IPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
         virtual ~IPriorityDump() = default;
     };
-
     using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
@@ -257,7 +253,7 @@ public:
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
-        const OriginInfo & origin_info,
+        const UserInfo & user,
         CachePriorityGuard &,
         CacheStateGuard &) = 0;
 
@@ -277,16 +273,6 @@ public:
         size_t max_elements_,
         double size_ratio_,
         const CacheStateGuard::Lock &) = 0;
-
-    /// Compute eviction info needed to resize the cache to the given limits.
-    /// Unlike collectEvictionInfo which takes total amounts to evict,
-    /// this method takes desired limits and computes per-sub-queue eviction
-    /// correctly for priority types with internal structure (e.g., SLRU).
-    virtual EvictionInfoPtr collectEvictionInfoForResize(
-        size_t desired_max_size,
-        size_t desired_max_elements,
-        const OriginInfo & origin_info,
-        const CacheStateGuard::Lock & lock) = 0;
 
     virtual void resetEvictionPos() = 0;
 
@@ -371,7 +357,5 @@ protected:
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
 };
-
-using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
 
 }

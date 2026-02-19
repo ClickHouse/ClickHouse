@@ -72,9 +72,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch,
-        bool with_stat,
-        bool with_data) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void check(
         const String & path,

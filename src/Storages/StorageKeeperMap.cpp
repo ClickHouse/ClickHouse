@@ -1162,11 +1162,10 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
 
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
-        auto self = std::static_pointer_cast<StorageKeeperMap>(shared_from_this());
         auto with_retries = std::make_shared<WithRetries>
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
-            [self] { return self->getClient(); },
+            [&] { return getClient(); },
             BackupKeeperSettings(backup_entries_collector.getContext()),
             backup_entries_collector.getContext()->getProcessListElement()
         );
@@ -1697,7 +1696,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");

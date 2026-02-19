@@ -1,16 +1,14 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ITokenizer.h>
-#include <Interpreters/TokenizerFactory.h>
-#include <ranges>
+#include <Interpreters/ITokenExtractor.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -26,14 +24,10 @@ namespace
 constexpr size_t arg_value = 0;
 constexpr size_t arg_tokenizer = 1;
 
-std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
+std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer_str = arguments.size() < 2 || !arguments[arg_tokenizer].column
-        ? SplitByNonAlphaTokenizer::getExternalName()
-        : arguments[arg_tokenizer].column->getDataAt(0);
-
-    if (arguments.size() <= 2)
-        return TokenizerFactory::instance().get(tokenizer_str);
+    const auto tokenizer = arguments.size() < 2 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenExtractor::getExternalName()
+                                                                                    : arguments[arg_tokenizer].column->getDataAt(0);
 
     FieldVector params;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -67,7 +61,14 @@ std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & argum
         }
     }
 
-    return TokenizerFactory::instance().get(tokenizer_str, params);
+    static std::vector<String> allowed_tokenizers
+        = {NgramsTokenExtractor::getExternalName(),
+           SplitByNonAlphaTokenExtractor::getExternalName(),
+           SplitByStringTokenExtractor::getExternalName(),
+           ArrayTokenExtractor::getExternalName(),
+           SparseGramsTokenExtractor::getExternalName()};
+
+    return TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, function_name);
 }
 
 class ExecutableFunctionTokens : public IExecutableFunction
@@ -75,8 +76,8 @@ class ExecutableFunctionTokens : public IExecutableFunction
 public:
     static constexpr auto name = "tokens";
 
-    explicit ExecutableFunctionTokens(std::shared_ptr<const ITokenizer> tokenizer_)
-        : tokenizer(std::move(tokenizer_))
+    explicit ExecutableFunctionTokens(std::shared_ptr<const ITokenExtractor> token_extractor_)
+        : token_extractor(std::move(token_extractor_))
     {
     }
 
@@ -92,17 +93,17 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(std::move(col_result), std::move(col_offsets));
 
-        if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
         {
-            /// The sparse gram tokenizer stores an internal state which modified during the execution.
+            /// The sparse gram token extractor stores an internal state which modified during the execution.
             /// This leads to an error while executing this function multi-threaded because that state is not protected.
-            /// To avoid this case, a clone of the sparse gram tokenizer will be used.
-            auto sparse_grams_tokenizer = tokenizer->clone();
-            executeWithTokenizer(*sparse_grams_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            /// To avoid this case, a clone of the sparse gram token extractor will be used.
+            auto sparse_gram_extractor = token_extractor->clone();
+            executeWithTokenizer(*sparse_gram_extractor, std::move(col_input), *col_offsets, input_rows_count, *col_result);
         }
         else
         {
-            executeWithTokenizer(*tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            executeWithTokenizer(*token_extractor, std::move(col_input), *col_offsets, input_rows_count, *col_result);
         }
 
         return ColumnArray::create(std::move(col_result), std::move(col_offsets));
@@ -110,21 +111,21 @@ public:
 
 private:
     void executeWithTokenizer(
-        const ITokenizer & tokenizer_,
+        const ITokenExtractor & extractor,
         ColumnPtr col_input,
         ColumnArray::ColumnOffsets & col_offsets,
         size_t input_rows_count,
         ColumnString & col_result) const
     {
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            executeImpl(tokenizer_, *column_string, col_offsets, input_rows_count, col_result);
+            executeImpl(extractor, *column_string, col_offsets, input_rows_count, col_result);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            executeImpl(tokenizer_, *column_fixed_string, col_offsets, input_rows_count, col_result);
+            executeImpl(extractor, *column_fixed_string, col_offsets, input_rows_count, col_result);
     }
 
     template <typename StringColumnType>
     void executeImpl(
-        const ITokenizer & tokenizer_,
+        const ITokenExtractor & extractor,
         const StringColumnType & column_input,
         ColumnArray::ColumnOffsets & column_offsets_input,
         size_t input_rows_count,
@@ -138,7 +139,7 @@ private:
         {
             std::string_view input = column_input.getDataAt(i);
 
-            forEachTokenPadded(tokenizer_, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+            forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
             {
                 column_result.insertData(token_start, token_len);
                 ++tokens_count;
@@ -149,7 +150,7 @@ private:
         }
     }
 
-    std::shared_ptr<const ITokenizer> tokenizer;
+    std::shared_ptr<const ITokenExtractor> token_extractor;
 };
 
 class FunctionBaseTokens : public IFunctionBase
@@ -157,8 +158,8 @@ class FunctionBaseTokens : public IFunctionBase
 public:
     static constexpr auto name = "tokens";
 
-    FunctionBaseTokens(std::shared_ptr<const ITokenizer> tokenizer_, DataTypes argument_types_, DataTypePtr result_type_)
-        : tokenizer(std::move(tokenizer_))
+    FunctionBaseTokens(std::shared_ptr<const ITokenExtractor> token_extractor_, DataTypes argument_types_, DataTypePtr result_type_)
+        : token_extractor(std::move(token_extractor_))
         , argument_types(std::move(argument_types_))
         , result_type(std::move(result_type_))
     {
@@ -171,11 +172,11 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionTokens>(tokenizer);
+        return std::make_unique<ExecutableFunctionTokens>(token_extractor);
     }
 
 private:
-    std::shared_ptr<const ITokenizer> tokenizer;
+    std::shared_ptr<const ITokenExtractor> token_extractor;
     DataTypes argument_types;
     DataTypePtr result_type;
 };
@@ -204,23 +205,23 @@ public:
 
         if (arguments.size() > 1)
         {
-            optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+            optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String");
             validateFunctionArguments(name, {arguments[arg_value], arguments[arg_tokenizer]}, mandatory_args, optional_args);
 
             if (arguments.size() == 3)
             {
                 const std::string tokenizer{arguments[arg_tokenizer].column->getDataAt(0)};
 
-                if (tokenizer == NgramsTokenizer::getExternalName())
+                if (tokenizer == NgramsTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
-                else if (tokenizer == SplitByStringTokenizer::getExternalName())
+                else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
             else if (arguments.size() == 4 || arguments.size() == 5)
             {
                 const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0);
 
-                if (tokenizer == SparseGramsTokenizer::getExternalName())
+                if (tokenizer == SparseGramsTokenExtractor::getExternalName())
                 {
                     optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                     optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
@@ -236,9 +237,9 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        auto tokenizer = createTokenizer(arguments, getName());
+        auto token_extractor = createTokenizer(arguments, getName());
         DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
-        return std::make_shared<FunctionBaseTokens>(std::move(tokenizer), std::move(argument_types), return_type);
+        return std::make_shared<FunctionBaseTokens>(std::move(token_extractor), std::move(argument_types), return_type);
     }
 };
 

@@ -1,5 +1,4 @@
--- Tags: no-parallel-replicas, no-parallel
--- Test depends on mark cache, don't run with others in parallel
+-- Tags: no-parallel-replicas
 
 -- Note: we need to have index_granularity==number or rows, to avoid processing
 -- parts in parallel, since in this case marks can be requested from multiple

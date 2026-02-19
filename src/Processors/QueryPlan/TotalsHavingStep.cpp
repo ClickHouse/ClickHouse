@@ -191,7 +191,7 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
     }
 }
 
-QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");

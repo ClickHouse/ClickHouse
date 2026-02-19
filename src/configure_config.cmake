@@ -218,10 +218,6 @@ endif()
 if (TARGET ch_contrib::simdcomp)
     set(USE_SIMDCOMP 1)
 endif()
-if (TARGET ch_contrib::libcotp)
-    set(USE_LIBCOTP 1)
-endif()
-
 set (USE_YTSAURUS 1)
 
 

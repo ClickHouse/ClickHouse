@@ -21,7 +21,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WithFileName.h>

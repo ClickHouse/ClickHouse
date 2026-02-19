@@ -24,7 +24,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -48,9 +48,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
@@ -62,7 +64,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -86,9 +88,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -100,7 +104,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -124,9 +128,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   build_amd_coverage:
     runs-on: [self-hosted, arm-large]
@@ -138,7 +144,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -162,9 +168,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_coverage)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Build (amd_coverage)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Build (amd_coverage)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   stateless_tests_amd_coverage_1_8:
     runs-on: [self-hosted, amd-small]
@@ -176,7 +184,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -200,9 +208,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_coverage, 1/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_coverage, 1/8)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_coverage, 1/8)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   stateless_tests_amd_coverage_2_8:
     runs-on: [self-hosted, amd-small]
@@ -214,7 +224,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -238,9 +248,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_coverage, 2/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_coverage, 2/8)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_coverage, 2/8)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   stateless_tests_amd_coverage_3_8:
     runs-on: [self-hosted, amd-small]
@@ -252,7 +264,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -276,9 +288,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_coverage, 3/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_coverage, 3/8)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_coverage, 3/8)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   stateless_tests_amd_coverage_4_8:
     runs-on: [self-hosted, amd-small]
@@ -290,7 +304,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -314,9 +328,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_coverage, 4/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_coverage, 4/8)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_coverage, 4/8)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   stateless_tests_amd_coverage_5_8:
     runs-on: [self-hosted, amd-small]
@@ -328,7 +344,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -352,9 +368,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_coverage, 5/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_coverage, 5/8)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_coverage, 5/8)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   stateless_tests_amd_coverage_6_8:
     runs-on: [self-hosted, amd-small]
@@ -366,7 +384,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -390,9 +408,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_coverage, 6/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_coverage, 6/8)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_coverage, 6/8)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   stateless_tests_amd_coverage_7_8:
     runs-on: [self-hosted, amd-small]
@@ -404,7 +424,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -428,9 +448,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_coverage, 7/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_coverage, 7/8)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_coverage, 7/8)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   stateless_tests_amd_coverage_8_8:
     runs-on: [self-hosted, amd-small]
@@ -442,7 +464,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -466,9 +488,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_coverage, 8/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_coverage, 8/8)' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_coverage, 8/8)' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -480,7 +504,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -504,6 +528,8 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Finish Workflow' --workflow "NightlyCoverage" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Finish Workflow' --workflow "NightlyCoverage" --ci |& tee ./ci/tmp/job.log
+          fi

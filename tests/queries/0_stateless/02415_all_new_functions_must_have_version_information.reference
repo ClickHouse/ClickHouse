@@ -4,13 +4,11 @@ URLHierarchy
 URLPathHierarchy
 _CAST
 __actionName
-__applyFilter
 __bitBoolMaskAnd
 __bitBoolMaskOr
 __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
-__patchPartitionID
 __scalarSubqueryResult
 caseWithExpression
 currentQueryID

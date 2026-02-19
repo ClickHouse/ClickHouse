@@ -1412,7 +1412,7 @@ private:
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
 
-    VectorWithMemoryTracking<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
+    std::vector<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
 
     pcg64 rnd_engine;
 

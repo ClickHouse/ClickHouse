@@ -1,6 +1,8 @@
 -- Tags: no-fasttest, no-ordinary-database
 
--- Tests that text search indexes use a (non-standard) index granularity of 100 million by default.
+-- Tests that text search indexes use a (non-standard) index granularity of 64 by default.
+
+SET enable_full_text_index = 1;
 
 -- After CREATE TABLE
 DROP TABLE IF EXISTS tab;

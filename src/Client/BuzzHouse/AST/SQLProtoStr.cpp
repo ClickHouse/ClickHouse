@@ -1188,10 +1188,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kTuple: {
             const TupleTypeDef & tt = ttn.tuple();
 
-            if (tt.is_nullable())
-            {
-                ret += "Nullable(";
-            }
             ret += "Tuple";
             if (tt.has_with_names())
             {
@@ -1204,10 +1200,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             else
             {
                 ret += "()";
-            }
-            if (tt.is_nullable())
-            {
-                ret += ")";
             }
         }
         break;
@@ -2022,9 +2014,9 @@ CONV_FN(FormatFunc, ff)
     ret += "$$)";
 }
 
-CONV_FN(NumbersFunc, gsf)
+CONV_FN(GenerateSeriesFunc, gsf)
 {
-    ret += NumbersFunc_NumbersName_Name(gsf.fname());
+    ret += GenerateSeriesFunc_GSName_Name(gsf.fname());
     ret += "(";
     ExprToString(ret, gsf.expr1());
     if (gsf.has_expr2())
@@ -2440,8 +2432,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kFormat:
             FormatFuncToString(ret, tf.format());
             break;
-        case TableFunctionType::kNumbers:
-            NumbersFuncToString(ret, tf.numbers());
+        case TableFunctionType::kGseries:
+            GenerateSeriesFuncToString(ret, tf.gseries());
             break;
         case TableFunctionType::kRemote:
             RemoteFuncToString(ret, tf.remote());
@@ -3173,11 +3165,8 @@ CONV_FN(ColumnDef, cdf)
 CONV_FN(IndexDef, idef)
 {
     ret += "INDEX ";
-    if (idef.has_idx())
-    {
-        IndexToString(ret, idef.idx());
-        ret += " ";
-    }
+    IndexToString(ret, idef.idx());
+    ret += " ";
     ExprToString(ret, idef.expr());
     ret += " TYPE ";
     ret += IndexType_Name(idef.type()).substr(4);
@@ -3201,35 +3190,18 @@ CONV_FN(IndexDef, idef)
     }
 }
 
-CONV_FN(ProjectionSelectDef, psdef)
-{
-    ret += "(";
-    SelectToString(ret, psdef.select());
-    ret += ")";
-    if (psdef.has_setting_values())
-    {
-        ret += " WITH SETTINGS (";
-        SettingValuesToString(ret, psdef.setting_values());
-        ret += ")";
-    }
-}
-
 CONV_FN(ProjectionDef, proj_def)
 {
     ret += "PROJECTION ";
     ProjectionToString(ret, proj_def.proj());
-    ret += " ";
-    using ProjectionDefType = ProjectionDef::ProjectionOneofCase;
-    switch (proj_def.projection_oneof_case())
+    ret += " (";
+    SelectToString(ret, proj_def.select());
+    ret += ")";
+    if (proj_def.has_setting_values())
     {
-        case ProjectionDefType::kSelDef:
-            ProjectionSelectDefToString(ret, proj_def.sel_def());
-            break;
-        case ProjectionDefType::kIdxDef:
-            IndexDefToString(ret, proj_def.idx_def());
-            break;
-        default:
-            ret += "(SELECT c0 ORDER BY c0)";
+        ret += " WITH SETTINGS (";
+        SettingValuesToString(ret, proj_def.setting_values());
+        ret += ")";
     }
 }
 
@@ -5106,11 +5078,11 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kEnableFailpoint:
             ret += "ENABLE FAILPOINT ";
-            ret += cmd.enable_failpoint();
+            ret += FailPoint_Name(cmd.enable_failpoint());
             break;
         case CmdType::kDisableFailpoint:
             ret += "DISABLE FAILPOINT ";
-            ret += cmd.disable_failpoint();
+            ret += FailPoint_Name(cmd.disable_failpoint());
             break;
         case CmdType::kIcebergMetadataCache:
             ret += "DROP ICEBERG METADATA CACHE";
@@ -5135,18 +5107,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropTextIndexCaches:
             ret += "DROP TEXT INDEX CACHES";
             can_set_cluster = true;
-            break;
-        case CmdType::kResetDdlWorker:
-            ret += "RESET DDL WORKER";
-            can_set_cluster = true;
-            break;
-        case CmdType::kWaitFailpoint:
-            ret += "WAIT FAILPOINT ";
-            ret += cmd.wait_failpoint();
-            break;
-        case CmdType::kNotifyFailpoint:
-            ret += "NOTIFY FAILPOINT ";
-            ret += cmd.notify_failpoint();
             break;
         default:
             ret += "FLUSH LOGS";

@@ -348,15 +348,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
-        case Type::RELOAD_DELTA_KERNEL_TRACING:
-        {
-            ASTPtr ast;
-            if (ParserIdentifier{}.parse(pos, ast, expected))
-                res->delta_kernel_tracing_level = ast->as<ASTIdentifier &>().name();
-            else
-                return false;
-            break;
-        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -695,7 +686,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             if (ParserKeyword{Keyword::FROM}.ignore(pos, expected) && ParserIdentifierWithOptionalParameters{}.parse(pos, ast, expected))
             {
-                ast->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
+                ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 res->backup_source = ast;
                 res->children.push_back(res->backup_source);
             }
@@ -929,11 +920,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 #endif
-        case Type::RESET_DDL_WORKER: {
-            if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            break;
-        }
+
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))

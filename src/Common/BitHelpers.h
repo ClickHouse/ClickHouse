@@ -76,11 +76,11 @@ inline size_t getTrailingZeroBitsUnsafe(T x)
     }
     else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
-        return __builtin_ctzl(x); // NOLINT(readability-redundant-casting) clang-tidy cross-references this with arrow's bit_util.h
+        return __builtin_ctzl(x);
     }
     else
     {
-        return __builtin_ctzll(x); // NOLINT(readability-redundant-casting)
+        return __builtin_ctzll(x);
     }
 }
 

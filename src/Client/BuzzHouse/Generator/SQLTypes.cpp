@@ -54,46 +54,22 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
     return ret;
 }
 
-static String numberColumnEntry(RandomGenerator & rg, const bool negative, const bool iffunc)
+static String numberColumn(RandomGenerator & rg, const bool negative, String && typeName)
 {
-    String buf;
+    String buf = "CAST(";
 
     buf += negative ? "(-" : "";
     buf += "number";
     buf += negative ? ")" : "";
-    if (iffunc || rg.nextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 4)
     {
         /// Generate identical numbers
         buf += " % ";
-        buf += std::to_string(rg.randomInt<uint32_t>(2, 31));
+        buf += std::to_string(rg.randomInt<uint32_t>(2, 100));
     }
-    return buf;
-}
-
-static String numberColumn(RandomGenerator & rg, const bool can_negative, String && typeName)
-{
-    String buf;
-    const bool iffunc = rg.nextSmallNumber() < 4;
-
-    if (iffunc)
-    {
-        buf += "if(";
-        buf += numberColumnEntry(rg, can_negative && rg.nextBool(), true);
-        buf += ",";
-    }
-    buf += "CAST(";
-    buf += numberColumnEntry(rg, can_negative && rg.nextBool(), false);
     buf += " AS ";
     buf += typeName;
     buf += ")";
-    if (iffunc)
-    {
-        buf += ",CAST(";
-        buf += numberColumnEntry(rg, can_negative && rg.nextBool(), false);
-        buf += " AS ";
-        buf += typeName;
-        buf += "))";
-    }
     return buf;
 }
 
@@ -232,7 +208,7 @@ String IntType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen
 {
     if (size > 8 && rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, !is_unsigned, typeName(false, false));
+        return numberColumn(rg, !is_unsigned && rg.nextBool(), typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -271,7 +247,7 @@ String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & g
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, true, typeName(false, false));
+        return numberColumn(rg, rg.nextBool(), typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -528,7 +504,7 @@ String DecimalType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, true, typeName(false, false));
+        return numberColumn(rg, rg.nextBool(), typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -593,7 +569,7 @@ String StringType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &,
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, true, "String");
+        return numberColumn(rg, rg.nextBool(), "String");
     }
     return rg.nextString("'", true, std::min(max_strlen, precision.value_or(rg.nextStrlen())));
 }
@@ -1244,10 +1220,6 @@ String TupleType::typeName(const bool escape, const bool simplified) const
 {
     String ret;
 
-    if (nullable)
-    {
-        ret += "Nullable(";
-    }
     ret += "Tuple(";
     for (size_t i = 0; i < subtypes.size(); i++)
     {
@@ -1266,10 +1238,6 @@ String TupleType::typeName(const bool escape, const bool simplified) const
         ret += sub.subtype->typeName(escape, simplified);
     }
     ret += ")";
-    if (nullable)
-    {
-        ret += ")";
-    }
     return ret;
 }
 
@@ -1297,15 +1265,11 @@ SQLType * TupleType::typeDeepCopy() const
     {
         nsubtypes.emplace_back(SubType(entry.cname, entry.subtype->typeDeepCopy()));
     }
-    return new TupleType(nullable, std::move(nsubtypes));
+    return new TupleType(std::move(nsubtypes));
 }
 
 String TupleType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    if (nullable && rg.nextMediumNumber() < 21)
-    {
-        return "NULL";
-    }
     String ret = "(";
     for (const auto & entry : subtypes)
     {
@@ -1319,10 +1283,6 @@ String TupleType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
 String TupleType::insertNumberEntry(
     RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
 {
-    if (nullable && rg.nextMediumNumber() < 21)
-    {
-        return "NULL";
-    }
     String ret = "(";
     for (const auto & entry : subtypes)
     {
@@ -2286,12 +2246,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_
         TupleWithOutColumnNames * twocn = (tp && !with_names) ? tt->mutable_no_names() : nullptr;
         const uint32_t ncols
             = this->width >= this->fc.max_width ? 0 : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
-        const bool is_nullable = rg.nextSmallNumber() < 4;
 
-        if (tt)
-        {
-            tt->set_is_nullable(is_nullable);
-        }
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
         {
@@ -2311,7 +2266,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_
             subtypes.emplace_back(SubType(opt_cname, k));
         }
         this->depth--;
-        return new TupleType(is_nullable, std::move(subtypes));
+        return new TupleType(subtypes);
     }
     else if (variant_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + 1))
     {

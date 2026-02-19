@@ -354,11 +354,8 @@ private:
 
         /// Create new dictionary with only keys that are mentioned in indexes.
         void compact(MutableColumnPtr & indexes);
-        /// Create nullable dictionary with only keys that are mentioned in indexes.
-        void compactToNullable(MutableColumnPtr & indexes);
 
         static MutableColumnPtr compact(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
-        static MutableColumnPtr compactToNullable(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
 
     private:
         WrappedPtr column_unique;
@@ -369,7 +366,6 @@ private:
     ColumnIndex idx;
 
     void compactInplace();
-    void compactInplaceToNullable();
     void compactIfSharedDictionary();
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
