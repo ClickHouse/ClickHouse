@@ -50,6 +50,9 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     return block_copy.getByName(result_column).column;
 }
 
+/// TODO: This per-row type dispatch is inefficient when called in a loop.
+/// Callers should resolve the column type once and iterate over typed data directly.
+/// See TTLDeleteFilterTransform::extractTimestamps for a batch-oriented approach.
 Int64 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) const
 {
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
