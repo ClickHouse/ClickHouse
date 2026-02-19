@@ -10,7 +10,7 @@ CREATE TABLE edges
 (
     from_id UInt64,
     to_id UInt64
-) ENGINE = MergeTree ORDER BY from_id;
+) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 8192;
 
 -- Insert a chain: 0->1->2->...->9
 INSERT INTO edges SELECT number, number + 1 FROM numbers(10);

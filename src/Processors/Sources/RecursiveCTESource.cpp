@@ -34,6 +34,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
 }
 
@@ -330,6 +331,13 @@ public:
 
         recursive_query_context = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getMutableContext() :
             recursive_query->as<UnionNode &>().getMutableContext();
+
+        /// Disable parallel replicas for recursive CTE step queries. When parallel replicas
+        /// is enabled, JOINs are rewritten to GLOBAL JOINs and the right-side subquery is
+        /// materialized into a cached external table keyed by tree hash. Since the recursive
+        /// CTE temporary table has the same tree structure across steps (only the data changes),
+        /// the hash stays identical and stale cached data is reused, producing wrong results.
+        recursive_query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
 
         const auto & recursive_query_projection_columns = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getProjectionColumns() :
             recursive_query->as<UnionNode &>().computeProjectionColumns();
