@@ -56,13 +56,11 @@ Expression ((Project names + Projection))
           MinMax
             Keys:
               dt
-            Condition: not((dt in 1-element set))
+            Condition: (dt notIn 1-element set)
             Parts: 40/40
             Granules: 960/960
           Partition
-            Keys:
-              toDate(dt)
-            Condition: not((toDate(dt) in 1-element set))
+            Condition: true
             Parts: 40/40
             Granules: 960/960
           Ranges: 40

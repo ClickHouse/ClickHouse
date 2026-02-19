@@ -10,6 +10,8 @@
 
 #include <Core/Settings.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 namespace Setting
@@ -48,13 +50,14 @@ public:
         const auto & first_arg_type = has_function_arguments_nodes[0]->getResultType();
         if (!isArray(first_arg_type))
             return;
-        
+
+        /// The next few checks are to handle differences between has() and in()
+        /// Verify that none of the values in the constant array are NULLs, because has() and in() treat NULLs differently
         const auto & element_type = (typeid_cast<const DataTypeArray *>(first_arg_type.get()))->getNestedType();
         WhichDataType data_type(element_type);
-        if (data_type.isArray() || data_type.isTuple() || data_type.isObject())
+        if (data_type.isArray() || data_type.isTuple() || data_type.isObject() || data_type.isDynamic() || data_type.isNothing())
             return;
 
-        /// Verify that none of the values in the constant array are NULLs, because has() and in() treat NULLs differently
         const auto & array_field = first_arg_constant->getValue();
         const auto & array_value = array_field.safeGet<Array>();
         if (array_value.size() ==0)
@@ -66,7 +69,9 @@ public:
         }
         
         const auto second_arg_type = has_function_arguments_nodes[1]->getResultType();
-        if (second_arg_type->isNullable())
+        WhichDataType expr_data_type(second_arg_type);
+        if (second_arg_type->isNullable() ||
+                expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isNothing())
             return;
 
         /// Rewrite has(const_array, elem) -> in(elem, const_array)
