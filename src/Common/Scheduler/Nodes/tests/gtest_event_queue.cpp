@@ -171,11 +171,11 @@ TEST(SchedulerEventQueue, ActivationCancelRace)
             std::atomic<bool> & active;
             std::atomic<bool> & in_activate;
 
-            RaceDetectorNode(String & log_, EventQueue * eq,
+            RaceDetectorNode(String & log_, EventQueue & eq,
                              std::atomic<bool> & r, std::atomic<bool> & a, std::atomic<bool> & ia)
                 : FakeSchedulerNode(log_, eq), race(r), active(a), in_activate(ia) {}
 
-            void activateChild(ISchedulerNode *) override
+            void activateChild(ITimeSharedNode &) override
             {
                 in_activate.store(true, std::memory_order_release);
                 // Simulate some work to widen the race window
@@ -185,7 +185,7 @@ TEST(SchedulerEventQueue, ActivationCancelRace)
             }
         };
 
-        RaceDetectorNode root_node(log, &event_queue, race_detected, child_active, in_activate_child);
+        RaceDetectorNode root_node(log, event_queue, race_detected, child_active, in_activate_child);
 
         std::atomic<bool> stop{false};
 
@@ -203,14 +203,14 @@ TEST(SchedulerEventQueue, ActivationCancelRace)
         {
             child_active.store(false, std::memory_order_relaxed);
 
-            auto node = std::make_shared<FakeSchedulerNode>(log, &event_queue);
+            auto node = std::make_shared<FakeSchedulerNode>(log, event_queue);
             node->basename = std::to_string(j);
-            node->setParent(&root_node);
-            event_queue.enqueueActivation(node.get());
+            node->setParentNode(&root_node);
+            event_queue.enqueueActivation(*node);
 
             // Simulate what a correct removeChild should do:
             // 1. First cancel activation and wait for any in-progress activateChild
-            event_queue.cancelActivation(node.get());
+            event_queue.cancelActivation(*node);
 
             // 2. Now check if activateChild is still running - it shouldn't be!
             if (in_activate_child.load(std::memory_order_acquire))
@@ -219,7 +219,7 @@ TEST(SchedulerEventQueue, ActivationCancelRace)
             // 3. Now safe to modify child_active (like removeChild does)
             child_active.store(false, std::memory_order_relaxed);
 
-            node->setParent(nullptr); // detach (calls cancelActivation again, which is idempotent)
+            node->setParentNode(nullptr); // detach (calls cancelActivation again, which is idempotent)
         }
 
         stop.store(true, std::memory_order_relaxed);
