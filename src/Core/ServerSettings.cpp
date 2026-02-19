@@ -806,7 +806,7 @@ namespace
     ```
     )", 0) \
     DECLARE(UInt64, max_database_num_to_throw, 0lu, R"(If number of databases is greater than this value, server will throw an exception. 0 means no limitation.)", 0) \
-    DECLARE(UInt64, max_access_entities_num_to_throw, 0lu, R"(
+    DECLARE(UInt64, max_access_entity_num_to_throw, 0lu, R"(
     If number of access entities is greater than this value, the server will throw an exception.
 
     :::note
@@ -815,7 +815,7 @@ namespace
 
     **Example**
     ```xml
-    <max_access_entities_num_to_throw>400</max_access_entities_num_to_throw>
+    <max_access_entity_num_to_throw>400</max_access_entity_num_to_throw>
     ```
     )", 0) \
     DECLARE(UInt64, max_authentication_methods_per_user, 100, R"(

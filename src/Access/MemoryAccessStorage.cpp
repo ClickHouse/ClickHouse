@@ -343,7 +343,7 @@ void MemoryAccessStorage::throwTooManyEntities() const
     auto result_number = current_number + 1;
     throw Exception(ErrorCodes::TOO_MANY_ACCESS_ENTITIES,
                                     "Too many access entities. "
-                                    "The limit (server configuration parameter `max_access_entities_num_to_throw`) is set to {}, the current number is {}, the result number will be {}",
+                                    "The limit (server configuration parameter `max_access_entity_num_to_throw`) is set to {}, the current number is {}, the result number will be {}",
                                         access_entities_num_limit, current_number, result_number);
 }
 

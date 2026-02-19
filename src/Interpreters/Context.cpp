@@ -349,7 +349,7 @@ namespace ServerSetting
     extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
-    extern const ServerSettingsUInt64 max_access_entities_num_to_throw;
+    extern const ServerSettingsUInt64 max_access_entity_num_to_throw;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -1444,7 +1444,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
 
         if (access_entitites > static_cast<Int64>(shared->max_access_entity_num_to_warn))
         {
-            if (auto limit = shared->server_settings[ServerSetting::max_access_entities_num_to_throw]; limit > shared->max_access_entity_num_to_warn.load())
+            if (auto limit = shared->server_settings[ServerSetting::max_access_entity_num_to_throw]; limit > shared->max_access_entity_num_to_warn.load())
                 common_warnings[Context::WarningType::MAX_ACCESS_ENTITIES] = PreformattedMessage::create(
                     "The number of access entities ({}) exceeds the warning limit of {}. You will not be able to create new access entities once the limit of {} is reached.",
                     access_entitites, shared->max_access_entity_num_to_warn.load(), limit.value);
