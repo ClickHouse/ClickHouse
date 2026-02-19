@@ -20,7 +20,8 @@
         SETTINGS max_insert_threads = 2
     </create_query>
 
-    <!-- Complex circular polygons (Polygon, 180 vertices) — 100K rows -->
+    <!-- Complex circular polygons (Polygon, 180 vertices) — 10K rows -->
+    <!-- Reduced from 100K: 180-vertex polygons are very heavy and 100K rows took ~5s -->
     <create_query>CREATE TABLE perf_poly_complex (polygon Polygon) ENGINE = Memory</create_query>
     <create_query>
         INSERT INTO perf_poly_complex
@@ -29,7 +30,7 @@
                 toFloat64(number % 500) + cos(i / 90.0 * pi()) * (1 + number % 10),
                 toFloat64(intDiv(number, 500)) + sin(i / 90.0 * pi()) * (1 + number % 10)
             ), range(180))]
-        FROM numbers_mt(100000)
+        FROM numbers_mt(10000)
         SETTINGS max_insert_threads = 2
     </create_query>
 
@@ -86,6 +87,63 @@
         SETTINGS max_insert_threads = 2
     </create_query>
 
+    <!-- Larger tables for correct_geometry=0 benchmarks -->
+    <!-- Without geometry correction the operation is ~10-18x faster, so 100K rows                  -->
+    <!-- gives <0.06s which is too noisy. 500K rows brings the time to ~0.25-0.30s.                 -->
+
+    <!-- Simple overlapping squares (Polygon) — 500K rows, for correct_geometry=0 tests -->
+    <create_query>CREATE TABLE perf_poly_simple_large (polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_poly_simple_large
+        SELECT
+            [arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(500000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Ring input — 500K rows, for correct_geometry=0 tests -->
+    <create_query>CREATE TABLE perf_ring_large (ring Ring) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ring_large
+        SELECT
+            arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))
+        FROM numbers_mt(500000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- MultiPolygon input — 500K rows, for correct_geometry=0 tests -->
+    <create_query>CREATE TABLE perf_mpoly_large (mpoly MultiPolygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_mpoly_large
+        SELECT
+            [[arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]]
+        FROM numbers_mt(500000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- GROUP BY table — 500K rows, 1000 groups, for correct_geometry=0 tests -->
+    <create_query>CREATE TABLE perf_poly_grouped_large (grp UInt32, polygon Polygon) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_poly_grouped_large
+        SELECT
+            number % 1000 AS grp,
+            [arrayMap(i -> (
+                toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+            ), range(5))]
+        FROM numbers_mt(500000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
     <!-- ================================================================== -->
     <!-- Benchmark queries                                                    -->
     <!-- ================================================================== -->
@@ -113,7 +171,8 @@
     <!-- ================================================================== -->
 
     <!-- Q7: Simple polygons with correct_geometry=0 (correction disabled) -->
-    <query>SELECT groupPolygonUnion(polygon, 0) FROM perf_poly_simple FORMAT Null</query>
+    <!-- Uses larger table (500K rows) to avoid <0.06s measurement noise seen with 100K rows -->
+    <query>SELECT groupPolygonUnion(polygon, 0) FROM perf_poly_simple_large FORMAT Null</query>
 
     <!-- Q8: Simple polygons with correct_geometry=1 (correction enabled, explicit) -->
     <query>SELECT groupPolygonUnion(polygon, 1) FROM perf_poly_simple FORMAT Null</query>
@@ -122,13 +181,16 @@
     <query>SELECT groupPolygonUnion(polygon, 0) FROM perf_poly_complex FORMAT Null</query>
 
     <!-- Q10: Ring input with correct_geometry=0 -->
-    <query>SELECT groupPolygonUnion(ring, 0) FROM perf_ring FORMAT Null</query>
+    <!-- Uses larger table (500K rows) to avoid <0.05s measurement noise seen with 100K rows -->
+    <query>SELECT groupPolygonUnion(ring, 0) FROM perf_ring_large FORMAT Null</query>
 
     <!-- Q11: MultiPolygon input with correct_geometry=0 -->
-    <query>SELECT groupPolygonUnion(mpoly, 0) FROM perf_mpoly FORMAT Null</query>
+    <!-- Uses larger table (500K rows) to avoid <0.06s measurement noise seen with 100K rows -->
+    <query>SELECT groupPolygonUnion(mpoly, 0) FROM perf_mpoly_large FORMAT Null</query>
 
     <!-- Q12: Grouped aggregation with correct_geometry=0 -->
-    <query>SELECT grp, groupPolygonUnion(polygon, 0) FROM perf_poly_grouped GROUP BY grp FORMAT Null</query>
+    <!-- Uses larger table (500K rows) to avoid <0.06s measurement noise seen with 100K rows -->
+    <query>SELECT grp, groupPolygonUnion(polygon, 0) FROM perf_poly_grouped_large GROUP BY grp FORMAT Null</query>
 
     <!-- ================================================================== -->
     <!-- Teardown                                                             -->
@@ -140,4 +202,8 @@
     <drop_query>DROP TABLE IF EXISTS perf_ring</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_mpoly</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_poly_grouped</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_poly_simple_large</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ring_large</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_mpoly_large</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_poly_grouped_large</drop_query>
 </test>
