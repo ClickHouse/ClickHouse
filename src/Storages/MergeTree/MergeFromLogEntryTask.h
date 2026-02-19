@@ -1,9 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <utility>
 
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>

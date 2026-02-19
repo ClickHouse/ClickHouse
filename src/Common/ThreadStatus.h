@@ -177,12 +177,6 @@ public:
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
     ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
 
-    ThreadGroupSwitcher() = default;
-    ThreadGroupSwitcher(ThreadGroupSwitcher & other) = delete;
-    ThreadGroupSwitcher(ThreadGroupSwitcher && other) noexcept;
-    ThreadGroupSwitcher & operator=(ThreadGroupSwitcher & other) = delete;
-    ThreadGroupSwitcher & operator=(ThreadGroupSwitcher && other) noexcept;
-
     ~ThreadGroupSwitcher();
 
 private:
