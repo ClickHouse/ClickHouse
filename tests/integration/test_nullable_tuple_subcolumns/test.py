@@ -197,10 +197,20 @@ FORMAT TSV
     assert config_path.exists(), f"Missing config file: {config_path}"
 
     original_config = config_path.read_text(encoding="utf-8")
-    updated_config = original_config.replace(
-        "<allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>",
-        "<allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>",
-    )
+    if "<allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>" in original_config:
+        updated_config = original_config.replace(
+            "<allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>",
+            "<allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>",
+        )
+    elif "<allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>" in original_config:
+        updated_config = original_config.replace(
+            "<allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>",
+            "<allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>",
+        )
+    else:
+        raise AssertionError(
+            "Cannot find allow_nullable_tuple_in_extracted_subcolumns value in config"
+        )
     assert updated_config != original_config
 
     config_path.write_text(updated_config, encoding="utf-8")
@@ -214,3 +224,6 @@ FORMAT TSV
     # This server setting is expected to be restart-only.
     assert value_after == value_before
     assert probe_after == probe_before
+
+    config_path.write_text(original_config, encoding="utf-8")
+    node_reload.query("SYSTEM RELOAD CONFIG")
