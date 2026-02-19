@@ -445,12 +445,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
         for (const auto & where_ttl : global_ctx->metadata_snapshot->getRowsWhereTTLs())
             add_ttl_expression_columns(where_ttl);
-
-        for (const auto & move_ttl : global_ctx->metadata_snapshot->getMoveTTLs())
-            add_ttl_expression_columns(move_ttl);
-
-        for (const auto & recompression_ttl : global_ctx->metadata_snapshot->getRecompressionTTLs())
-            add_ttl_expression_columns(recompression_ttl);
     }
 
     for (const auto & column : global_ctx->storage_columns)
