@@ -373,6 +373,7 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
                     key,
                     std::move(*my_data),
                     std::move(global_context),
+                    thread_group,
                     flush_time_history_per_queue_shard[shard_num]);
             },
             priority);
@@ -932,7 +933,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 }
 
 void AsynchronousInsertQueue::processData(
-    InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
+    InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr flush_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
 try
 {
     if (!data)
@@ -982,14 +983,14 @@ try
     insert_context->setInitialQueryId(insert_query_id);
 
     DB::CurrentThread::QueryScope query_scope;
-    if (auto thread_group = CurrentThread::getGroup())
+    if (flush_query_thread_group)
     {
         /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE query,
         /// it is important to account profile events and other things correctly
-        query_scope = CurrentThread::QueryScope::createForFlushAsyncInsert(insert_context);
+        query_scope = CurrentThread::QueryScope::createForFlushAsyncInsert(insert_context, flush_query_thread_group);
 
         /// This log line is useful to understand if async insert is flushed in the context of some query and which one
-        if (auto query_context = thread_group->query_context.lock())
+        if (auto query_context = flush_query_thread_group->query_context.lock())
             LOG_DEBUG(log, "Processing async insert as a part of a query with query_id: {}", query_context->getCurrentQueryId());
     }
     else

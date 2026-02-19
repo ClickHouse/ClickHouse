@@ -121,7 +121,7 @@ public:
 
         static QueryScope create(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
         static QueryScope create(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
-        static QueryScope createForFlushAsyncInsert(ContextPtr insert_context);
+        static QueryScope createForFlushAsyncInsert(ContextPtr insert_context, ThreadGroupPtr flush_query_thread_group);
 
         ~QueryScope();
 

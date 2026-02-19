@@ -232,10 +232,10 @@ ThreadGroupPtr ThreadGroup::createForScope()
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQuery(ContextPtr query_context)
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group)
 {
     chassert(CurrentThread::getGroup());
-    auto res_group = std::make_shared<ThreadGroup>(query_context, CurrentThread::getGroup());
+    auto res_group = std::make_shared<ThreadGroup>(query_context, flush_query_thread_group);
     res_group->memory_tracker.setDescription("FlushAsyncInsertQuery");
     return res_group;
 }
@@ -836,9 +836,9 @@ CurrentThread::QueryScope CurrentThread::QueryScope::create(ContextMutablePtr qu
     return QueryScope(true);
 }
 
-CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsert(ContextPtr insert_context)
+CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsert(ContextPtr insert_context, ThreadGroupPtr flush_query_thread_group)
 {
-    auto group = ThreadGroup::createForFlushAsyncInsertQuery(insert_context);
+    auto group = ThreadGroup::createForFlushAsyncInsertQuery(insert_context, flush_query_thread_group);
     CurrentThread::attachToGroup(group);
     return QueryScope(true);
 }

@@ -125,7 +125,7 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr task_context);
 
     static ThreadGroupPtr createForScope();
-    static ThreadGroupPtr createForFlushAsyncInsertQuery(ContextPtr query_context);
+    static ThreadGroupPtr createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -166,7 +166,7 @@ private:
  *           ...
  *       });
  */
-class ThreadGroupSwitcher : private boost::noncopyable
+class ThreadGroupSwitcher
 {
 public:
     /// If thread_group_ is nullptr or equal to current thread group, does nothing.
@@ -176,6 +176,13 @@ public:
     ///  * If true, remembers the current group and restores it in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
     ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
+
+    ThreadGroupSwitcher() = default;
+    ThreadGroupSwitcher(ThreadGroupSwitcher & other) = delete;
+    ThreadGroupSwitcher(ThreadGroupSwitcher && other) noexcept;
+    ThreadGroupSwitcher & operator=(ThreadGroupSwitcher & other) = delete;
+    ThreadGroupSwitcher & operator=(ThreadGroupSwitcher && other) noexcept;
+
     ~ThreadGroupSwitcher();
 
 private:
