@@ -1,3 +1,4 @@
+#ifdef OS_LINUX
 #include <mutex>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/FutureConnection.h>
@@ -59,3 +60,4 @@ FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, 
 }
 
 }
+#endif

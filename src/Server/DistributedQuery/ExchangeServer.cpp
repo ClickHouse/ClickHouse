@@ -1,3 +1,4 @@
+#ifdef OS_LINUX
 #include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
@@ -115,3 +116,4 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
 }
 
 }
+#endif

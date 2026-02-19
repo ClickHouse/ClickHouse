@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef OS_LINUX
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Poco/Net/ServerSocket.h>
@@ -34,3 +35,4 @@ private:
 };
 
 }
+#endif
