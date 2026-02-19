@@ -767,8 +767,8 @@ namespace
             const std::vector<Instruction> instructions = parseFormat(format);
             const auto & time_zone = getTimeZone(arguments);
 
-            static_assert(sizeof(ParsedValue<error_handling, return_type>) == std::hardware_destructive_interference_size);
-            alignas(std::hardware_destructive_interference_size) ParsedValue<error_handling, return_type> datetime;
+            static_assert(sizeof(ParsedValue<error_handling, return_type>) == std::hardware_constructive_interference_size);
+            alignas(std::hardware_constructive_interference_size) ParsedValue<error_handling, return_type> datetime;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
