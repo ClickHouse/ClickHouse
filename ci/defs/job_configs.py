@@ -1251,4 +1251,5 @@ class JobConfigs:
             include_paths=["./ci/jobs/check_llvm_coverage.py"],
         ),
         timeout=3600,
+        enable_gh_auth=True
     )

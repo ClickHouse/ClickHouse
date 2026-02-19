@@ -42,9 +42,6 @@ cd ci/tmp
 
 mv llvm_coverage.info current_llvm_coverage.info
 
-CURRENT_COMMIT=${CURRENT_COMMIT}
-BASE_COMMIT=${BASE_COMMIT}
-
 # Try to find .info file from S3, checking up to 30 ancestor commits
 FOUND=0
 ATTEMPT=0
@@ -59,7 +56,7 @@ echo "Checking coverage file for commit ${TEST_COMMIT}..."
 if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
-BASE_COMMIT="${TEST_COMMIT}"
+BASELINE_COMMIT="${TEST_COMMIT}"
 FOUND=1
 break
 fi
@@ -72,12 +69,16 @@ echo "Skipping differential coverage analysis"
 exit 0
 fi
 
-# get diff between current commit and base commit
-# echo "Fetching commits ${BASE_COMMIT} and ${CURRENT_COMMIT} from origin..."
-# git status
-# git fetch origin ${BASE_COMMIT} ${CURRENT_COMMIT}
-git diff ${BASE_COMMIT}..${CURRENT_COMMIT} --unified=3 > changes.diff
-changed_files=$(git diff ${BASE_COMMIT}..${CURRENT_COMMIT} --name-only)
+export CURRENT_COMMIT
+export BASELINE_COMMIT
+export PR_NUMBER
+export REPO_NAME
+
+gh api \
+  -H "Accept: application/vnd.github.v3.diff" \
+  repos/ClickHouse/ClickHouse/compare/${BASELINE_COMMIT}...${CURRENT_COMMIT} \
+  > changes.diff
+changed_files=$(git diff ${BASELINE_COMMIT}..${CURRENT_COMMIT} --name-only)
 echo "Changed files:"
 echo "$changed_files"
 
@@ -104,8 +105,18 @@ lcov --extract base_llvm_coverage.info "${patterns[@]}" \
 
 echo Workspace path: $WORKSPACE_PATH
 
+# differential: PR link, current commit, current branch, baseline branch, baseline commit, ссылка на diff
+
+HEADER_TITLE="differential coverage report"
+if [ -n "${PR_NUMBER}" ]; then
+    PR_URL="https://github.com/ClickHouse/ClickHouse/pull/${PR_NUMBER}"
+    HEADER_TITLE="<a href=\"${PR_URL}\">${PR_URL}</a>"
+fi
 
 genhtml \
+  --header-title "${HEADER_TITLE}" \
+  --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
+  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASELINE_COMMIT}" \
   --baseline-file baseline.changed.info \
   --diff-file changes.diff \
   --output-directory llvm_coverage_diff_html_report \
@@ -123,7 +134,6 @@ genhtml \
   --flat \
   $include_args \
   current.changed.info 
-
 
 lcov --version
 base_line_coverage=$(lcov --ignore-errors inconsistent,corrupt --summary base_llvm_coverage.info 2>/dev/null | awk '/^  lines\.*:/{gsub(/%/,"",$2); print $2}')

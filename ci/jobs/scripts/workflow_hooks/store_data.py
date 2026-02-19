@@ -48,16 +48,8 @@ if __name__ == "__main__":
         ).strip()
         info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
 
-        # Get 30 previous commits from master after the base commit
-        master_commits = Shell.get_output(
-            "git rev-list origin/master --max-count=500", verbose=True
-        ).splitlines()
-        if merge_base_commit_sha in master_commits:
-            idx = master_commits.index(merge_base_commit_sha)
-            prev_30_commits = master_commits[max(0, idx-29):idx+1]
-        info.store_kv_data("master_commits_before_merge_base", prev_30_commits)
     except Exception as e:
-        print(f"Failed to get merge base or previous master commits via git: {e}")
+        print(f"Failed to get merge base via git: {e}")
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:

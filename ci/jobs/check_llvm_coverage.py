@@ -1,9 +1,10 @@
 import os
+import json
 from pathlib import Path
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-import subprocess, json
+from praktika._environment import _Environment
 
 current_directory = Utils.cwd()
 temp_dir = f"{current_directory}/ci/tmp/"
@@ -13,29 +14,54 @@ if __name__ == "__main__":
     os.environ["WORKSPACE_PATH"] = current_directory
 
     info = Info()
+
+    current_commit_sha = info.get_kv_data("current_commit_sha")
+    if current_commit_sha is None:
+        current_commit_sha = Shell.get_output(
+            "git rev-parse HEAD", verbose=True
+        ).strip()
+    os.environ["CURRENT_COMMIT"] = current_commit_sha
+
     merge_base_commit_sha = info.get_kv_data("merge_base_commit_sha")
     if merge_base_commit_sha is None:
+        # Use gh api to get the merge base commit between master and HEAD
         merge_base_commit_sha = Shell.get_output(
-            "git merge-base origin/master HEAD", verbose=True
+            f"gh api repos/ClickHouse/ClickHouse/compare/master...{current_commit_sha} -q .merge_base_commit.sha",
+            verbose=True,
         ).strip()
+        print(f"Merge base commit sha: {merge_base_commit_sha}")
     os.environ["BASE_COMMIT"] = merge_base_commit_sha
 
     prev_30_commits = info.get_kv_data("master_commits_before_merge_base")
     if prev_30_commits is None:
-        # Get merge base commit and next 30 newer commits in master (oldest to newest)
-        master_commits = Shell.get_output(
-            "git rev-list origin/master --max-count=500", verbose=True
-        ).splitlines()
-        if merge_base_commit_sha in master_commits:
-            idx = master_commits.index(merge_base_commit_sha)
-            # List: merge base + next 30 newer commits
-            prev_30_commits = master_commits[idx:idx+31]
+        # Get 30 commits starting from merge base commit and walking backwards.
+        raw = Shell.get_output(
+            f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base_commit_sha}&per_page=30' -q '.[].sha'",
+            verbose=True,
+        )
+        prev_30_commits = raw.splitlines()
     os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits or [])
 
-    current_commit_sha = info.get_kv_data("current_commit_sha")
-    if current_commit_sha is None:
-        current_commit_sha = Shell.get_output("git rev-parse HEAD", verbose=True).strip()
-    os.environ["CURRENT_COMMIT"] = current_commit_sha
+    branch = (
+        info.git_branch
+        or Shell.get_output("git branch --show-current", verbose=True).strip()
+    )
+    base_branch = info.base_branch or Shell.get_output(
+        "gh pr view --json baseRefName --template '{{.baseRefName}}'", verbose=True
+    ).strip().replace("origin/", "")
+    repo_name = (
+        info.repo_name
+        or Shell.get_output(
+            "basename -s .git `git config --get remote.origin.url`", verbose=True
+        ).strip()
+    )
+    pr_number = Shell.get_output(
+        "gh pr view --json number -q .number", verbose=True
+    ).strip()
+    os.environ["BRANCH"] = branch
+    os.environ["BASE_BRANCH"] = base_branch
+    os.environ["REPO_NAME"] = repo_name
+    os.environ["PR_NUMBER"] = str(pr_number)
 
     result = Result.from_commands_run(
         name="LLVM Coverage Check",
