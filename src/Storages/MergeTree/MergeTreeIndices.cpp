@@ -2,20 +2,33 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <Columns/IColumn.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Common/escapeForFileName.h>
 
 #include <numeric>
 
 namespace DB
 {
 
+constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+String getIndexFileName(const String & index_name, bool escape_filename)
+{
+    if (escape_filename)
+        return escapeForFileName(INDEX_FILE_PREFIX + index_name);
+    return INDEX_FILE_PREFIX + index_name;
+}
+
+String IMergeTreeIndex::getFileName() const
+{
+    return getIndexFileName(index.name, index.escape_filenames);
 }
 
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
@@ -85,29 +98,33 @@ MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescripti
     return result;
 }
 
+void MergeTreeIndexFactory::implicitValidation(const IndexDescription & index)
+{
+    if (index.expression->hasArrayJoin())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
+
+    try
+    {
+        index.expression->assertDeterministic();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("for secondary index '{}'", index.name));
+        throw;
+    }
+
+    for (const auto & elem : index.sample_block)
+        if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
+}
+
+
 void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
 {
     /// Do not allow constant and non-deterministic expressions.
     /// Do not throw on attach for compatibility.
     if (!attach)
-    {
-        if (index.expression->hasArrayJoin())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
-
-        try
-        {
-            index.expression->assertDeterministic();
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format("for secondary index '{}'", index.name));
-            throw;
-        }
-
-        for (const auto & elem : index.sample_block)
-            if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
-    }
+        implicitValidation(index);
 
     auto it = validators.find(index.type);
     if (it == validators.end())

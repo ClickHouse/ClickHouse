@@ -4,6 +4,7 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <functional>
 
@@ -136,13 +137,14 @@ public:
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
 
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
-    void addCompletedPipeline(QueryPipeline other);
+    void addCompletedPipeline(QueryPipeline && other);
+    void addCompletedPipeline(const QueryPipeline & other);
 
     const Processors & getProcessors() const { return *processors; }
 
     /// For pulling pipeline, convert structure to expected.
     /// Trash, need to remove later.
-    void convertStructureTo(const ColumnsWithTypeAndName & columns);
+    void convertStructureTo(const ColumnsWithTypeAndName & columns, const ContextPtr & context);
 
     void reset();
     void cancel() noexcept;

@@ -72,7 +72,7 @@ public:
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
-    StringRef getDataAt(size_t n) const override;
+    std::string_view getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
@@ -91,8 +91,8 @@ public:
 
     void insertDefault() override;
     void popBack(size_t n) override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
@@ -104,6 +104,7 @@ public:
 #endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;

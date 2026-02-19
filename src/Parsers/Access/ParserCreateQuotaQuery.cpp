@@ -1,4 +1,3 @@
-#include <optional>
 #include <IO/ReadHelpers.h>
 #include <Access/IAccessStorage.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -18,11 +17,6 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include "Access/Common/QuotaDefs.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "Parsers/IParser.h"
-#include "Parsers/IParserBase.h"
-#include "base/types.h"
 
 
 namespace DB
@@ -83,19 +77,21 @@ namespace
         });
     }
 
-    bool parseIpPrefixBits(IParserBase::Pos & pos, Expected & expected, MaskBits & ipv4_bits, MaskBits & ipv6_bits)
+    bool parseIpPrefixBits(IParserBase::Pos & pos, Expected & expected,
+                           std::optional<MaskBits> & ipv4_bits, std::optional<MaskBits> & ipv6_bits)
     {
-        auto try_parse_prefix = [&] (const char * keyword, MaskBits & prefix_bits, UInt8 max_bits) {
+        auto try_parse_prefix = [&](const char * keyword, std::optional<MaskBits> & prefix_bits, UInt8 max_bits)
+        {
             return IParserBase::wrapParseImpl(pos, [&]
             {
                 if (!ParserKeyword::createDeprecated(keyword).ignore(pos, expected))
                     return false;
-                
+
                 ASTPtr value_ast;
                 if (!ParserNumber{}.parse(pos, value_ast, expected))
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected integer prefix length for IP Address Masking");
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected integer prefix length for IP address masking");
 
-                UInt8 prefix = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value_ast->as<ASTLiteral &>().value);
+                UInt64 prefix = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value_ast->as<ASTLiteral &>().value);
 
                 if (prefix > max_bits)
                     throw Exception(
@@ -104,7 +100,7 @@ namespace
                         keyword,
                         static_cast<unsigned>(max_bits));
 
-                prefix_bits = prefix;
+                prefix_bits = static_cast<MaskBits>(prefix);
 
                 return true;
             });
@@ -151,7 +147,7 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>()));
+            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>())));
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
@@ -166,7 +162,7 @@ namespace
         if (type_info.output_denominator == 1)
             max_value = fieldToNumber<QuotaValue>(max_field);
         else
-            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * type_info.output_denominator);
+            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator));
         return true;
     }
 
@@ -261,7 +257,7 @@ namespace
         return true;
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -271,7 +267,7 @@ namespace
             if (!ParserKeyword{Keyword::TO}.ignore(pos, expected) || !roles_p.parse(pos, node, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(node);
+            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(node);
             return true;
         });
     }
@@ -342,29 +338,15 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             {
                 key_type = new_key_type;
                 if (new_key_type == QuotaKeyType::IP_ADDRESS || new_key_type == QuotaKeyType::FORWARDED_IP_ADDRESS)
-                {
-                    MaskBits ipv4_bits = 0;
-                    MaskBits ipv6_bits = 0;
-                    if(parseIpPrefixBits(pos, expected, ipv4_bits, ipv6_bits))
-                    {
-                        ipv4_prefix_bits = ipv4_bits;
-                        ipv6_prefix_bits = ipv6_bits;
-                    }
-                }
+                    parseIpPrefixBits(pos, expected, ipv4_prefix_bits, ipv6_prefix_bits);
                 continue;
             }
         }
 
         if (!ipv4_prefix_bits && !ipv6_prefix_bits)
         {
-            MaskBits ipv4_bits = 0;
-            MaskBits ipv6_bits = 0;
-            if (parseIpPrefixBits(pos, expected, ipv4_bits, ipv6_bits))
-            {
-                ipv4_prefix_bits = ipv4_bits;
-                ipv6_prefix_bits = ipv6_bits;
+            if (parseIpPrefixBits(pos, expected, ipv4_prefix_bits, ipv6_prefix_bits))
                 continue;
-            }
         }
 
         if (parseIntervalsWithLimits(pos, expected, all_limits))
@@ -379,22 +361,22 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         break;
     }
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
     /// Validate that prefix bits are only used with IP_ADDRESS or FORWARDED_IP_ADDRESS key type
-    if ((ipv4_prefix_bits || ipv6_prefix_bits) && key_type && 
-        *key_type != QuotaKeyType::IP_ADDRESS && *key_type != QuotaKeyType::FORWARDED_IP_ADDRESS)
+    if ((ipv4_prefix_bits || ipv6_prefix_bits) && key_type
+        && *key_type != QuotaKeyType::IP_ADDRESS && *key_type != QuotaKeyType::FORWARDED_IP_ADDRESS)
     {
         throw Exception(
             ErrorCodes::SYNTAX_ERROR,
             "IP prefix bits can only be specified for quotas KEYED BY ip_address or forwarded_ip_address");
     }
 
-    auto query = std::make_shared<ASTCreateQuotaQuery>();
+    auto query = make_intrusive<ASTCreateQuotaQuery>();
     node = query;
 
     query->alter = alter;

@@ -165,7 +165,7 @@ private:
 
         /// Expand the space.
         buf = reinterpret_cast<HashValue *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1ULL << new_size_degree) * sizeof(buf[0])));
-        size_degree = new_size_degree;
+        size_degree = static_cast<UInt8>(new_size_degree);
 
         /** Now some items may need to be moved to a new location.
           * The element can stay in place, or move to a new location "on the right",
@@ -334,6 +334,84 @@ public:
         shrinkIfNeed();
     }
 
+    /// This value is arbitrary. The optimal value might depend on the CPU pipeline depth, cache line size (64B = 8 UInt64s),
+    /// hash collision rate, instruction parallelism, etc.
+    /// We choose a value that is big enough to provide sufficient instruction level parallelism but not too big to bloat the code size.
+    static constexpr size_t insert_many_batch_size = 8;
+
+    template <typename SourceType, auto Transform>
+    requires std::is_invocable_r_v<Value, decltype(Transform), const SourceType &>
+    void insertMany(const SourceType * data, size_t size)
+    {
+        size_t i = 0;
+        while (i < size)
+        {
+            /// Check that we have enough capacity and enough values to insert in batch. If not, we will insert values one by one which
+            /// allows us to check the shrink condition after each insert and avoid inserting too many values before shrinking.
+            if ((max_fill() - m_size) >= insert_many_batch_size && ((size - i) >= insert_many_batch_size))
+            {
+                /// We read and transform multiple values at once which allows both the compiler and the CPU to better optimize the code.
+                /// We calculate place() even for !good() hashes to maximize data independence and enable better out-of-order execution.
+                /// The extra work is negligible compared to the instruction level parallelization benefits.
+                std::array<HashValue, insert_many_batch_size> hash_value;
+                for (size_t j = 0; j < insert_many_batch_size; ++j)
+                {
+                    hash_value[j] = hash(Transform(data[i + j]));
+                }
+                i += insert_many_batch_size;
+
+                std::array<size_t, insert_many_batch_size> place_value_batch;
+                for (size_t j = 0; j < insert_many_batch_size; ++j)
+                {
+                    place_value_batch[j] = place(hash_value[j]);
+                }
+
+                for (size_t j = 0; j < insert_many_batch_size; ++j)
+                {
+                    const HashValue & x = hash_value[j];
+                    if (!good(x))
+                        continue;
+
+                    if (x == 0)
+                    {
+                        m_size += !has_zero;
+                        has_zero = true;
+                        continue;
+                    }
+
+                    size_t place_value = place_value_batch[j];
+                    while (buf[place_value] && buf[place_value] != x)
+                    {
+                        ++place_value;
+                        place_value &= mask();
+
+#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
+                        ++collisions;
+#endif
+                    }
+
+                    if (buf[place_value] == x)
+                        continue;
+
+                    buf[place_value] = x;
+                    ++m_size;
+                }
+            }
+            else
+            {
+                const HashValue hash_value = hash(Transform(data[i]));
+                i++;
+                if (!good(hash_value))
+                    continue;
+
+                insertImpl(hash_value);
+            }
+
+            /// We need to check shrink condition after each batch or single insert
+            shrinkIfNeed();
+        }
+    }
+
     size_t size() const
     {
         if (0 == skip_degree)
@@ -353,7 +431,7 @@ public:
           *   filled buckets with average of res is obtained.
           */
         size_t p32 = 1ULL << 32;
-        size_t fixed_res = static_cast<size_t>(round(p32 * (log(p32) - log(p32 - res))));
+        size_t fixed_res = static_cast<size_t>(round(static_cast<double>(p32) * (log(p32) - log(p32 - res))));
         return fixed_res;
     }
 
@@ -414,8 +492,8 @@ public:
         free();
 
         UInt8 new_size_degree = m_size <= 1
-             ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
-             : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
+            ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
+            : static_cast<UInt8>(std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2));
 
         alloc(new_size_degree);
 
@@ -458,68 +536,6 @@ public:
             throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
 
         rb.ignore(sizeof(HashValue) * size);
-    }
-
-    void writeText(DB::WriteBuffer & wb) const
-    {
-        if (m_size > UNIQUES_HASH_MAX_SIZE)
-            throw Poco::Exception("Cannot write UniquesHashSet: too large size_degree.");
-
-        DB::writeIntText(skip_degree, wb);
-        wb.write(",", 1);
-        DB::writeIntText(m_size, wb);
-
-        if (has_zero)
-            wb.write(",0", 2);
-
-        for (size_t i = 0; i < buf_size(); ++i)
-        {
-            if (buf[i])
-            {
-                wb.write(",", 1);
-                DB::writeIntText(buf[i], wb);
-            }
-        }
-    }
-
-    void readText(DB::ReadBuffer & rb)
-    {
-        has_zero = false;
-
-        DB::readIntText(skip_degree, rb);
-        DB::assertChar(',', rb);
-        DB::readIntText(m_size, rb);
-
-        if (m_size > UNIQUES_HASH_MAX_SIZE)
-            throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
-
-        free();
-
-        UInt8 new_size_degree = m_size <= 1
-             ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
-             : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
-
-        alloc(new_size_degree);
-
-        for (size_t i = 0; i < m_size; ++i)
-        {
-            HashValue x = 0;
-            DB::assertChar(',', rb);
-            DB::readIntText(x, rb);
-            if (x == 0)
-                has_zero = true;
-            else
-                reinsertImpl(x);
-        }
-    }
-
-    void insertHash(HashValue hash_value)
-    {
-        if (!good(hash_value))
-            return;
-
-        insertImpl(hash_value);
-        shrinkIfNeed();
     }
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS

@@ -33,16 +33,7 @@ set(OPENSSLDIR "/etc/ssl" CACHE PATH "Set the default openssl directory")
 set(OPENSSL_ENGINESDIR "/usr/local/lib/engines-3" CACHE PATH "Set the default openssl directory for engines")
 set(OPENSSL_MODULESDIR "/usr/local/lib/ossl-modules" CACHE PATH "Set the default openssl directory for modules")
 
-# special type of build during cross-compilation
-if(OPENSSL_AUX_BUILD_FOR_CROSS_COMPILATION)
-    add_definitions(-DOPENSSL_NO_KTLS -DOPENSSLDIR="\\\"${OPENSSLDIR}\\\"" -DENGINESDIR="\\\"${OPENSSL_ENGINESDIR}\\\"" -DMODULESDIR="\\\"${OPENSSL_MODULESDIR}\\\"" -DOPENSSL_USE_NODELETE -DOPENSSL_PIC)
-    add_compile_options("-Wno-deprecated-declarations")
-    add_compile_options("-Wno-poison-system-directories")
-else()
-    add_definitions(-DOPENSSL_NO_KTLS -DOPENSSLDIR="${OPENSSLDIR}" -DENGINESDIR="${OPENSSL_ENGINESDIR}" -DMODULESDIR="${OPENSSL_MODULESDIR}" -DOPENSSL_USE_NODELETE -DOPENSSL_PIC)
-    target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
-    target_compile_options(global-group INTERFACE "-Wno-poison-system-directories")
-endif()
+add_definitions(-DOPENSSL_NO_KTLS -DOPENSSLDIR="${OPENSSLDIR}" -DENGINESDIR="${OPENSSL_ENGINESDIR}" -DMODULESDIR="${OPENSSL_MODULESDIR}" -DOPENSSL_USE_NODELETE -DOPENSSL_PIC)
 
 if(ARCH_AMD64)
     if(OS_DARWIN)
@@ -1087,12 +1078,12 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/record/methods/tls_pad.c
 )
 
-if(NOT ENABLE_OPENSSL_DYNAMIC)
-    set(CRYPTO_SRC ${CRYPTO_SRC}
-        ${OPENSSL_SOURCE_DIR}/providers/legacyprov.c
-        ${OPENSSL_SOURCE_DIR}/providers/defltprov.c
-    )
-endif()
+
+set(CRYPTO_SRC ${CRYPTO_SRC}
+    ${OPENSSL_SOURCE_DIR}/providers/legacyprov.c
+    ${OPENSSL_SOURCE_DIR}/providers/defltprov.c
+)
+
 
 if(ARCH_AMD64)
     if (OS_DARWIN)
@@ -1142,9 +1133,6 @@ if(ARCH_AMD64)
             asm/crypto/rc4/rc4-md5-x86_64.s
             asm/crypto/rc4/rc4-x86_64.s
             asm/crypto/sha/keccak1600-x86_64.s
-            asm/crypto/sha/keccak1600-avx2.s
-            asm/crypto/sha/keccak1600-avx512.s
-            asm/crypto/sha/keccak1600-avx512vl.s
             asm/crypto/sha/sha1-mb-x86_64.s
             asm/crypto/sha/sha1-x86_64.s
             asm/crypto/sha/sha256-mb-x86_64.s
@@ -1412,14 +1400,12 @@ if(ENABLE_OPENSSL_DYNAMIC)
     set_target_properties(ssl PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
     set_target_properties(ssl PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/programs)
 else()
-    # Enable legacy crypto support for OpenSSL 3.+
-    # to avoid `dlopen(legacy.so)`.
-    add_definitions(-DSTATIC_LEGACY)
-
     add_library(crypto ${CRYPTO_SRC})
     add_library(ssl ${SSL_SRC})
 endif()
-
+# Enable legacy crypto support for OpenSSL 3.+
+# to avoid runtime `dlopen(legacy.so)` in both static and dynamic builds.
+add_definitions(-DSTATIC_LEGACY)
 
 target_include_directories(crypto
     SYSTEM PUBLIC "common/include"
@@ -1445,9 +1431,4 @@ target_link_libraries(ssl crypto)
 add_library(OpenSSL::Crypto ALIAS crypto)
 add_library(OpenSSL::SSL ALIAS ssl)
 
-if(OPENSSL_AUX_BUILD_FOR_CROSS_COMPILATION)
-    install(DIRECTORY "common/include" DESTINATION "${CMAKE_BINARY_DIR}")
-    install(DIRECTORY "${OPENSSL_SOURCE_DIR}/include" DESTINATION "${CMAKE_BINARY_DIR}")
-else()
-    install(FILES openssl.conf fipsmodule.conf DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
-endif()
+install(FILES openssl.conf fipsmodule.conf DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)

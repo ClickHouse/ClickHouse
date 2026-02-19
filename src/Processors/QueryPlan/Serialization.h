@@ -8,14 +8,24 @@ namespace DB
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
+/// Serialization context passed to `IQueryPlanStep::serialize`.
+/// Settings are handled separately via `serializeSettings` method.
 struct IQueryPlanStep::Serialization
 {
     WriteBuffer & out;
     SerializedSetsRegistry & registry;
+
+    // A durty hack used by the automatic parallel replicas implementation:
+    // the `final` value differs for `AggregatingStep` in single-node and distributed query plans.
+    // This breaks matching by hash.
+    bool skip_final_flag = false;
+    // The same situation as above.
+    bool skip_cache_key = false;
 };
 
 struct SerializedSetsRegistry;
 
+/// Deserialization context passed to `IQueryPlanStep::deserialize`.
 struct IQueryPlanStep::Deserialization
 {
     ReadBuffer & in;

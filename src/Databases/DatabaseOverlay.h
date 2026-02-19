@@ -44,7 +44,6 @@ public:
         bool dictionary) override;
 
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
-    ASTPtr getCreateDatabaseQuery() const override;
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
@@ -102,6 +101,8 @@ public:
     void checkMetadataFilenameAvailability(const String & table_name) const override;
 
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
+
     std::vector<DatabasePtr> databases;
     LoggerPtr log;
 };

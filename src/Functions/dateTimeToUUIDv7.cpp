@@ -26,7 +26,7 @@ uint64_t dateTimeToMillisecond(UInt32 date_time)
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
@@ -110,8 +110,8 @@ public:
         selector.registerImplementation<TargetArch::Default, Parent>();
 
 #if USE_MULTITARGET_CODE
-        using ParentAVX2 = TargetSpecific::AVX2::FunctionDateTimeToUUIDv7Base;
-        selector.registerImplementation<TargetArch::AVX2, ParentAVX2>();
+        using ParentAVX2 = TargetSpecific::x86_64_v3::FunctionDateTimeToUUIDv7Base;
+        selector.registerImplementation<TargetArch::x86_64_v3, ParentAVX2>();
 #endif
     }
 
@@ -177,7 +177,7 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateTimeToUUIDv7 = {25, 9};
     FunctionDocumentation::Category category_dateTimeToUUIDv7 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_dateTimeToUUIDv7 = {description_dateTimeToUUIDv7, syntax_dateTimeToUUIDv7, arguments_dateTimeToUUIDv7, returned_value_dateTimeToUUIDv7, examples_dateTimeToUUIDv7, introduced_in_dateTimeToUUIDv7, category_dateTimeToUUIDv7};
+    FunctionDocumentation documentation_dateTimeToUUIDv7 = {description_dateTimeToUUIDv7, syntax_dateTimeToUUIDv7, arguments_dateTimeToUUIDv7, {}, returned_value_dateTimeToUUIDv7, examples_dateTimeToUUIDv7, introduced_in_dateTimeToUUIDv7, category_dateTimeToUUIDv7};
 
     factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation_dateTimeToUUIDv7);
 

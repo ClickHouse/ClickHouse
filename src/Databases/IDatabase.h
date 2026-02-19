@@ -4,12 +4,13 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/DDLGuard.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
-#include <Common/AsyncLoader.h>
+#include <Common/AsyncLoader_fwd.h>
 
 #include <ctime>
 #include <functional>
@@ -365,7 +366,11 @@ public:
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery() const = 0;
+    ASTPtr getCreateDatabaseQuery() const
+    {
+        std::lock_guard lock{mutex};
+        return getCreateDatabaseQueryImpl();
+    }
 
     String getDatabaseComment() const
     {
@@ -386,7 +391,7 @@ public:
     }
 
     // Alter comment of database.
-    virtual void alterDatabaseComment(const AlterCommand &);
+    virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
@@ -427,7 +432,7 @@ public:
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
 
-    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags);
+    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags, DDLGuardPtr && /*database_guard*/);
 
     /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.
     virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const;
@@ -441,6 +446,7 @@ public:
     virtual ~IDatabase();
 
 protected:
+    virtual ASTPtr getCreateDatabaseQueryImpl() const = 0;
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const;
 
     mutable std::mutex mutex;
@@ -450,6 +456,6 @@ protected:
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
-using Databases = std::map<String, DatabasePtr>;
+using Databases = std::map<String, DatabasePtr, std::less<>>;
 
 }

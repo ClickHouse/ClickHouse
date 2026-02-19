@@ -29,6 +29,9 @@ const auto highRange = [](RandomGenerator & rg, FuzzConfig &)
     return std::to_string(val == UINT32_C(0) ? UINT32_C(0) : (UINT32_C(1) << (val - UINT32_C(1))));
 };
 
+const auto columnsRange
+    = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10))); };
+
 const auto rowsRange
     = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(8192))); };
 
@@ -37,7 +40,7 @@ const auto bytesRange = [](RandomGenerator & rg, FuzzConfig &)
 
 const auto threadSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
-    {"0", "1", std::to_string(std::thread::hardware_concurrency())},
+    {"0", "1", "2", std::to_string(std::thread::hardware_concurrency())},
     false);
 
 const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
@@ -66,7 +69,11 @@ extern std::unordered_map<String, CHSetting> backupSettings;
 
 extern std::unordered_map<String, CHSetting> restoreSettings;
 
-extern std::unique_ptr<SQLType> size_tp, null_tp, string_tp;
+extern std::unique_ptr<SQLType> size_tp;
+
+extern std::unique_ptr<SQLType> null_tp;
+
+extern std::unique_ptr<SQLType> string_tp;
 
 extern std::vector<SystemTable> systemTables;
 

@@ -28,6 +28,7 @@
         <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
         <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+        <allow_impersonate_user>true</allow_impersonate_user>
         <role_cache_expiration_time_seconds>2</role_cache_expiration_time_seconds>
     </access_control_improvements>
 
@@ -48,4 +49,15 @@
 
     <jemalloc_flush_profile_interval_bytes>1073741824</jemalloc_flush_profile_interval_bytes>
     <jemalloc_flush_profile_on_memory_exceeded>1</jemalloc_flush_profile_on_memory_exceeded>
+
+    <background_schedule_pool_size>80</background_schedule_pool_size>
+    <background_pool_size>20</background_pool_size>
+    <max_thread_pool_size>1000</max_thread_pool_size>
+    <thread_pool_queue_size>1000</thread_pool_queue_size>
+
+    <opentelemetry_span_log remove="1"/>
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <processors_profile_log remove="1"/>
+    <query_thread_log remove="1"/>
 </clickhouse>

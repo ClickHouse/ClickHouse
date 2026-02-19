@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Types.h>
-#include "base/types.h"
 
 
 namespace DB
@@ -44,7 +43,7 @@ struct QuotaTypeInfo
     static const QuotaTypeInfo & get(QuotaType type);
 };
 
-// We are using UInt8 to count the number of prefix bits used in masking ip address
+/// Number of prefix bits used for IP address masking.
 using MaskBits = UInt8;
 
 /// Key to share quota consumption.

@@ -587,7 +587,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         if (!low_cardinality_state->index_type.need_global_dictionary && dictionary_type->isNullable())
         {
-            auto null_map = ColumnUInt8::create(num_keys, 0);
+            auto null_map = ColumnUInt8::create(num_keys, static_cast<UInt8>(0));
             if (num_keys)
                 null_map->getElement(0) = 1;
 
@@ -640,7 +640,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
                 if (dictionary_type->isNullable())
                 {
-                    ColumnPtr null_map = ColumnUInt8::create(used_add_keys->size(), 0);
+                    ColumnPtr null_map = ColumnUInt8::create(used_add_keys->size(), static_cast<UInt8>(0));
                     used_add_keys = ColumnNullable::create(used_add_keys, null_map);
                 }
 

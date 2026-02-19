@@ -1,6 +1,5 @@
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Columns/IColumn.h>
-#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 
 namespace DB

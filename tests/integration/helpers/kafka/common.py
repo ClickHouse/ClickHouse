@@ -1,5 +1,5 @@
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+from .common_direct import *
+from .common_direct import _VarintBytes
 
 
 def get_kafka_producer(port, serializer, retries):

@@ -20,10 +20,18 @@ class SettingsChanges;
 /// TODO: Try to move this checking to Credentials.
 struct Authentication
 {
+
+    enum class CredentialsCheckResult : UInt8
+    {
+        Fail,
+        NeedSecondFactor,
+        Success
+    };
+
     /// Checks the credentials (passwords, readiness, etc.)
     /// If necessary, makes a request to external authenticators and fills in the session settings if they were
     /// returned by the authentication server
-    static bool areCredentialsValid(
+    static CredentialsCheckResult areCredentialsValid(
         const Credentials & credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,

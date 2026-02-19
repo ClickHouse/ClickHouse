@@ -119,7 +119,7 @@ void WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfigu
 void WorkloadEntityKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
-    setThreadName("WrkldEntWatch");
+    DB::setThreadName(ThreadName::WORKLOAD_ENTRY_WATCH);
 
     UInt64 handled = 0;
     while (watching_flag)

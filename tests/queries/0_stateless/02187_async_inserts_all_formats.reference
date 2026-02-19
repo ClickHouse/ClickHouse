@@ -2,6 +2,7 @@ Arrow
 ArrowStream
 Avro
 BSONEachRow
+Buffers
 CSV
 CSVWithNames
 CSVWithNamesAndTypes

@@ -1,8 +1,10 @@
 #pragma once
+#include <optional>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Common/SettingsChanges.h>
+#include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
@@ -88,6 +90,9 @@ private:
     std::string storage_type_str;
 
     std::string bucket;
+    /// For Azure ABFSS URLs: stores the account with suffix (e.g., "account.dfs.core.windows.net")
+    /// This is extracted from URLs like: abfss://container@account.dfs.core.windows.net/path
+    std::string azure_account_with_suffix;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
     /// Also not all catalogs support non-AWS storages.
     std::string endpoint;
@@ -117,6 +122,8 @@ struct CatalogSettings
     String aws_access_key_id;
     String aws_secret_access_key;
     String region;
+    String aws_role_arn;
+    String aws_role_session_name;
 
     DB::SettingsChanges allChanged() const;
 };
@@ -127,6 +134,7 @@ class ICatalog
 {
 public:
     using Namespaces = std::vector<std::string>;
+    using CredentialsRefreshCallback = std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>>;
 
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
@@ -177,6 +185,11 @@ public:
     /// So the REST catalog is transactional.
     /// The Glue catalog does not support such operation.
     virtual bool isTransactional() const { return false; }
+
+    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    {
+        return std::nullopt;
+    }
 
 protected:
     /// Name of the warehouse,

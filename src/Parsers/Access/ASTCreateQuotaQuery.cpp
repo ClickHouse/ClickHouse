@@ -10,7 +10,7 @@ namespace DB
 {
 namespace
 {
-    void formatKeyType(const QuotaKeyType & key_type, const std::optional<MaskBits> & ipv4_prefix_bits, 
+    void formatKeyType(const QuotaKeyType & key_type, const std::optional<MaskBits> & ipv4_prefix_bits,
                        const std::optional<MaskBits> & ipv6_prefix_bits, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
         const auto & type_info = QuotaKeyTypeInfo::get(key_type);
@@ -36,8 +36,7 @@ namespace
 
         ostr << type_info.name;
 
-        // Format prefix bits for IP_ADDRESS key type
-        if (key_type == QuotaKeyType::IP_ADDRESS)
+        if (key_type == QuotaKeyType::IP_ADDRESS || key_type == QuotaKeyType::FORWARDED_IP_ADDRESS)
         {
             if (ipv4_prefix_bits)
                 ostr << " IPV4_PREFIX_BITS " << static_cast<UInt64>(*ipv4_prefix_bits);
@@ -143,10 +142,10 @@ String ASTCreateQuotaQuery::getID(char) const
 
 ASTPtr ASTCreateQuotaQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateQuotaQuery>(*this);
+    auto res = make_intrusive<ASTCreateQuotaQuery>(*this);
 
     if (roles)
-        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     return res;
 }

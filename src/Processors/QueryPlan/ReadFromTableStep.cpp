@@ -61,7 +61,7 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ReadFromTableStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
 {
     String table_name;
     readStringBinary(table_name, ctx.in);
@@ -84,6 +84,11 @@ std::unique_ptr<IQueryPlanStep> ReadFromTableStep::deserialize(Deserialization &
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
     return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers);
+}
+
+QueryPlanStepPtr ReadFromTableStep::clone() const
+{
+    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)

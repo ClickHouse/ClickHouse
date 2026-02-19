@@ -39,8 +39,8 @@ struct Quota : public IAccessEntity
     /// Users with the same key share the same amount of resource.
     QuotaKeyType key_type = QuotaKeyType::NONE;
 
-    std::optional<MaskBits> ipv4_prefix_bits = 0;
-    std::optional<MaskBits> ipv6_prefix_bits = 0;
+    std::optional<MaskBits> ipv4_prefix_bits;
+    std::optional<MaskBits> ipv6_prefix_bits;
 
     /// Which roles or users should use this quota.
     RolesOrUsersSet to_roles;

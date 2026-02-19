@@ -3,8 +3,9 @@
 #include <Common/SharedMutex.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
-#include <roaring.hh>
+#include <roaring/roaring.hh>
 
 namespace DB
 {
@@ -12,7 +13,12 @@ namespace DB
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
-using SkipIndexReadResult = std::vector<bool>;
+struct SkipIndexReadResult
+{
+    std::vector<bool> granules_selected; /// granules selected by skip index(es) at read time
+    std::shared_ptr<MergeTreeIndexBulkGranulesMinMax> min_max_index_for_top_k;
+    TopKThresholdTrackerPtr threshold_tracker;
+};
 using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 
 class MergeTreeSkipIndexReader
@@ -20,6 +26,8 @@ class MergeTreeSkipIndexReader
 public:
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,
+        std::optional<KeyCondition> & key_condition_rpn_template_,
+        bool use_for_disjunctions_,
         MarkCachePtr mark_cache_,
         UncompressedCachePtr uncompressed_cache_,
         VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
@@ -32,6 +40,8 @@ public:
 
 private:
     UsefulSkipIndexes skip_indexes;
+    std::optional<KeyCondition> key_condition_rpn_template;
+    bool use_for_disjunctions;
     MarkCachePtr mark_cache;
     UncompressedCachePtr uncompressed_cache;
     VectorSimilarityIndexCachePtr vector_similarity_index_cache;

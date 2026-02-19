@@ -52,7 +52,7 @@ public:
     };
     std::vector<Limits> all_limits;
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

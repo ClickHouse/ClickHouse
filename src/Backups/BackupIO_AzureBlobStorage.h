@@ -4,7 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 
 namespace DB

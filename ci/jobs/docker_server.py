@@ -166,6 +166,8 @@ def buildx_args(
     action_url: str,
 ) -> List[str]:
     args = [
+        "--provenance=true",
+        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
@@ -268,18 +270,11 @@ def build_and_push_image(
 
 def test_docker_library(test_results) -> None:
     """we test our images vs the official docker library repository to track integrity"""
-    check_images = [
-        tr.name
-        for tr in test_results
-        if (
-            tr.name.startswith("clickhouse/clickhouse-server")
-            and "alpine" not in tr.name
-        )
-    ]
+    arch = "amd64" if Utils.is_amd() else "arm64"
+    check_images = [tr.name for tr in test_results if tr.name.endswith(f"-{arch}")]
     if not check_images:
         return
     test_name = "docker library image test"
-    arch = "amd64" if Utils.is_amd() else "arm64"
     try:
         repo = "docker-library/official-images"
         logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
@@ -290,8 +285,6 @@ def test_docker_library(test_results) -> None:
         Shell.check(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
-            if not image.endswith(f"-{arch}"):
-                continue
             cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"
             test_results.append(
                 Result.from_commands_run(name=f"{test_name} ({image})", command=cmd)
@@ -306,6 +299,22 @@ def test_docker_library(test_results) -> None:
                 info=f"Exception while testing docker library: {traceback.format_exc()}",
             )
         )
+
+
+def check_server_readme(image_path: str) -> Result:
+    name = "Check README"
+    script = Path(f"{image_path}/README.sh")
+    if not script.is_file():
+        return Result(
+            name=name,
+            status=Result.Status.SKIPPED,
+            info="README.sh file is missing in the docker context",
+        )
+    # Regenerate README
+    Shell.check(script.as_posix())
+    return Result.from_commands_run(
+        name=name, command=f"git diff --exit-code {image_path}/README.md"
+    )
 
 
 def main():
@@ -415,6 +424,8 @@ def main():
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
         test_docker_library(test_results)
+
+    test_results.append(check_server_readme(image.path))
 
     Result.create_from(results=test_results, stopwatch=sw).complete_job()
 

@@ -3,10 +3,13 @@
 #include <Core/UUID.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/DDLGuard.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/escapeForFileName.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -33,49 +36,10 @@ class IDisk;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
-using Databases = std::map<String, std::shared_ptr<IDatabase>>;
+using Databases = std::map<String, std::shared_ptr<IDatabase>, std::less<>>;
 using DiskPtr = std::shared_ptr<IDisk>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
-/// Allows executing DDL query only in one thread.
-/// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table,
-/// when counter is 0 erases element in the destructor.
-/// If the element already exists in the map, waits when ddl query will be finished in other thread.
-class DDLGuard
-{
-public:
-    struct Entry
-    {
-        std::unique_ptr<std::mutex> mutex;
-        UInt32 counter;
-    };
-
-    /// Element name -> (mutex, counter).
-    /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
-    using Map = std::map<String, Entry>;
-
-    DDLGuard(
-        Map & map_,
-        SharedMutex & db_mutex_,
-        std::unique_lock<std::mutex> guards_lock_,
-        const String & elem,
-        const String & database_name);
-    ~DDLGuard();
-
-    /// Unlocks table name, keeps holding read lock for database name
-    void releaseTableLock() noexcept;
-
-private:
-    Map & map;
-    SharedMutex & db_mutex;
-    Map::iterator it;
-    std::unique_lock<std::mutex> guards_lock;
-    std::unique_lock<std::mutex> table_lock;
-    bool table_lock_removed = false;
-    bool is_database_guard = false;
-};
-
-using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
 class FutureSetFromSubquery;
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
@@ -126,7 +90,8 @@ struct GetDatabasesOptions
     bool with_datalake_catalogs{false};
 };
 
-/// For some reason Context is required to get Storage from Database object
+/// For some reason Context is required to get Storage from Database object.
+/// This must not hold the Database mutex.
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
@@ -140,6 +105,17 @@ public:
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
 
+    static fs::path getMetadataDirPath() { return fs::path("metadata"); }
+    static fs::path getMetadataDirPath(const String & database_name) { return getMetadataDirPath() / escapeForFileName(database_name); }
+    static fs::path getMetadataFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql"); }
+    static fs::path getMetadataTmpFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql.tmp"); }
+
+    static fs::path getDataDirPath() { return fs::path("data"); }
+    static fs::path getDataDirPath(const String & database_name) { return getDataDirPath() / escapeForFileName(database_name); }
+
+    static fs::path getStoreDirPath() { return fs::path("store"); }
+    static fs::path getStoreDirPath(const UUID & uuid) { return getStoreDirPath() / getPathForUUID(uuid); }
+
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
     static void shutdown(std::function<void()> shutdown_system_logs);
@@ -150,7 +126,7 @@ public:
     void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    DDLGuardPtr getDDLGuard(const String & database, const String & table);
+    DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 
@@ -171,11 +147,11 @@ public:
     void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
 
     /// database_name must be not empty
-    DatabasePtr getDatabase(const String & database_name) const;
-    DatabasePtr tryGetDatabase(const String & database_name) const;
+    DatabasePtr getDatabase(std::string_view database_name) const;
+    DatabasePtr tryGetDatabase(std::string_view database_name) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
-    bool isDatabaseExist(const String & database_name) const;
+    bool isDatabaseExist(std::string_view database_name) const;
     /// Datalake catalogs are implement at IDatabase level in ClickHouse.
     /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
     /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
@@ -282,7 +258,7 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
-    void updateMetadataFile(const DatabasePtr & database);
+    void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
     bool hasDatalakeCatalogs() const;
     bool isDatalakeCatalog(const String & database_name) const;
 

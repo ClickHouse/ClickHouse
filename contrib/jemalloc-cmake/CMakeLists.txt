@@ -1,5 +1,5 @@
 if (SANITIZE OR NOT (
-    ((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_RISCV64 OR ARCH_S390X)) OR
+    ((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_RISCV64 OR ARCH_S390X OR ARCH_E2K)) OR
     (OS_DARWIN AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
 ))
     if (ENABLE_JEMALLOC)
@@ -46,7 +46,17 @@ if (OS_LINUX)
     # https://github.com/jemalloc/jemalloc/pull/2842
     set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
 else()
-    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,lg_extent_max_active_fit:8")
+    # For non-Linux systems, percpu_arena and background_thread are assumed to be not supported by jemalloc.
+    # These two settings directly affect arena purging frequency and predictability:
+    # - percpu_arena:percpu restricts the number of created arenas to the number of CPUs
+    # - background_thread:true allows jemalloc to create its own background threads to trigger purging,
+    #   instead of relying on purging triggered by the allocations made by the application
+    #
+    # Without these settings, arena purging becomes less predictable and may not be triggered frequently
+    # enough, allowing the process to accumulate large RSS and causing MEMORY_LIMIT errors.
+    #
+    # To compensate it, dirty_decay_ms is set to zero, enabling immediate purging instead of the lazy one.
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:0,lg_extent_max_active_fit:8")
 endif()
 # CACHE variable is empty to allow changing defaults without the necessity
 # to purge cache
@@ -163,6 +173,8 @@ elseif (ARCH_RISCV64)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_riscv64")
 elseif (ARCH_S390X)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_s390x")
+elseif (ARCH_E2K)
+    set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_e2k")
 else ()
     message (FATAL_ERROR "internal jemalloc: This arch is not supported")
 endif ()

@@ -35,7 +35,7 @@ SELECT toFixedString('foo', 8) AS s;
     };
     FunctionDocumentation::IntroducedIn toFixedString_introduced_in = {1, 1};
     FunctionDocumentation::Category toFixedString_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toFixedString_documentation = {toFixedString_description, toFixedString_syntax, toFixedString_arguments, toFixedString_returned_value, toFixedString_examples, toFixedString_introduced_in, toFixedString_category};
+    FunctionDocumentation toFixedString_documentation = {toFixedString_description, toFixedString_syntax, toFixedString_arguments, {}, toFixedString_returned_value, toFixedString_examples, toFixedString_introduced_in, toFixedString_category};
 
     factory.registerFunction<FunctionToFixedString>(toFixedString_documentation);
 }

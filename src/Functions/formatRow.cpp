@@ -10,7 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Port.h>
 
 #include <memory>
 #include <ranges>
@@ -32,14 +31,13 @@ namespace
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
   * formatRowNoNewline(...) trims the newline character of each row.
   */
-template <bool no_newline>
 class FunctionFormatRow : public IFunction
 {
 public:
-    static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
-
-    FunctionFormatRow(String format_name_, Names arguments_column_names_, ContextPtr context_)
-        : format_name(std::move(format_name_))
+    FunctionFormatRow(const char * name_, bool no_newline_, String format_name_, Names arguments_column_names_, ContextPtr context_)
+        : function_name(name_)
+        , no_newline(no_newline_)
+        , format_name(std::move(format_name_))
         , arguments_column_names(std::move(arguments_column_names_))
         , context(std::move(context_))
         , format_settings(getFormatSettings(context))
@@ -52,7 +50,7 @@ public:
         format_settings.xml.valid_output_on_exception = false;
     }
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -93,7 +91,7 @@ public:
             row_output_format->writePrefixIfNeeded();
             row_output_format->writeRow(columns, i);
             row_output_format->finalize();
-            if constexpr (no_newline)
+            if (no_newline)
             {
                 if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
                     --buffer.position();
@@ -107,20 +105,26 @@ public:
     }
 
 private:
+    const char * function_name;
+    bool no_newline;
     String format_name;
     Names arguments_column_names;
     ContextPtr context;
     FormatSettings format_settings;
 };
 
-template <bool no_newline>
 class FormatRowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
-    static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
-    explicit FormatRowOverloadResolver(ContextPtr context_) : context(context_) { }
-    String getName() const override { return name; }
+    FormatRowOverloadResolver(const char * name_, bool no_newline_, ContextPtr context_)
+        : function_name(name_), no_newline(no_newline_), context(context_) {}
+
+    static FunctionOverloadResolverPtr create(const char * name, bool no_newline, ContextPtr context)
+    {
+        return std::make_unique<FormatRowOverloadResolver>(name, no_newline, std::move(context));
+    }
+
+    String getName() const override { return function_name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
@@ -139,7 +143,7 @@ public:
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), std::move(arguments_column_names), context),
+                std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), context),
                 DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
                 return_type);
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
@@ -148,6 +152,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
 private:
+    const char * function_name;
+    bool no_newline;
     ContextPtr context;
 };
 
@@ -214,7 +220,7 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
     };
     FunctionDocumentation::IntroducedIn formatRow_introduced_in = {20, 7};
     FunctionDocumentation::Category formatRow_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation formatRow_documentation = {formatRow_description, formatRow_syntax, formatRow_arguments, formatRow_returned_value, formatRow_examples, formatRow_introduced_in, formatRow_category};
+    FunctionDocumentation formatRow_documentation = {formatRow_description, formatRow_syntax, formatRow_arguments, {}, formatRow_returned_value, formatRow_examples, formatRow_introduced_in, formatRow_category};
 
     /// formatRowNoNewline documentation
     FunctionDocumentation::Description formatRowNoNewline_description = R"(
@@ -248,10 +254,14 @@ FROM numbers(3)
     };
     FunctionDocumentation::IntroducedIn formatRowNoNewline_introduced_in = {20, 7};
     FunctionDocumentation::Category formatRowNoNewline_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation formatRowNoNewline_documentation = {formatRowNoNewline_description, formatRowNoNewline_syntax, formatRowNoNewline_arguments, formatRowNoNewline_returned_value, formatRowNoNewline_examples, formatRowNoNewline_introduced_in, formatRowNoNewline_category};
+    FunctionDocumentation formatRowNoNewline_documentation = {formatRowNoNewline_description, formatRowNoNewline_syntax, formatRowNoNewline_arguments, {}, formatRowNoNewline_returned_value, formatRowNoNewline_examples, formatRowNoNewline_introduced_in, formatRowNoNewline_category};
 
-    factory.registerFunction<FormatRowOverloadResolver<false>>(formatRow_documentation);
-    factory.registerFunction<FormatRowOverloadResolver<true>>(formatRowNoNewline_documentation);
+    factory.registerFunction("formatRow",
+        [](ContextPtr ctx){ return FormatRowOverloadResolver::create("formatRow", false, std::move(ctx)); },
+        formatRow_documentation);
+    factory.registerFunction("formatRowNoNewline",
+        [](ContextPtr ctx){ return FormatRowOverloadResolver::create("formatRowNoNewline", true, std::move(ctx)); },
+        formatRowNoNewline_documentation);
 }
 
 }

@@ -31,6 +31,17 @@ public:
         bool oauth_server_use_request_body_,
         DB::ContextPtr context_);
 
+    explicit RestCatalog(
+        const std::string & warehouse_,
+        const std::string & base_url_,
+        const std::string & onelake_tenant_id,
+        const std::string & onelake_client_id,
+        const std::string & onelake_client_secret,
+        const std::string & auth_scope_,
+        const std::string & oauth_server_uri_,
+        bool oauth_server_use_request_body_,
+        DB::ContextPtr context_);
+
     ~RestCatalog() override = default;
 
     bool empty() const override;
@@ -53,7 +64,9 @@ public:
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
-        return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
+        if (tenant_id.empty())
+            return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
+        return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
 
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
@@ -63,6 +76,12 @@ public:
     bool isTransactional() const override { return true; }
 
     void dropTable(const String & namespace_name, const String & table_name) const override;
+
+    String getTenantId() const { return tenant_id; }
+    String getClientId() const { return client_id; }
+    String getClientSecret() const { return client_secret; }
+
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
 private:
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
@@ -90,6 +109,7 @@ private:
 
     /// Parameters for OAuth.
     bool update_token_if_expired = false;
+    std::string tenant_id;
     std::string client_id;
     std::string client_secret;
     std::string auth_scope;
@@ -138,6 +158,8 @@ private:
         Poco::JSON::Object::Ptr request_body,
         const String & method = Poco::Net::HTTPRequest::HTTP_POST,
         bool ignore_result = false) const;
+
+    std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 };
 
 }

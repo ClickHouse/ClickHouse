@@ -4,8 +4,10 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -17,7 +19,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-
+#include <Parsers/ASTIdentifier.h>
 
 #include "config.h" /// USE_DATASKETCHES
 
@@ -27,16 +29,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
+    V1 = 1, /// modify the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
 };
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -44,19 +46,14 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
     if (!data_type->isValueRepresentedByNumber())
         return {};
 
-    Field value_converted;
-    if (isInteger(data_type) && !isBool(data_type))
-        /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
-        value_converted = convertFieldToType(value, DataTypeFloat64());
-    else
-        /// We should convert value to the real column data type and then translate it to Float64.
-        /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
-        value_converted = convertFieldToType(value, *data_type);
+    auto column = data_type->createColumn();
+    column->insert(value);
+    ColumnsWithTypeAndName arguments({ColumnWithTypeAndName(std::move(column), data_type, "stats_const")});
 
-    if (value_converted.isNull())
-        return {};
-
-    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), value_converted);
+    auto cast_resolver = FunctionFactory::instance().get("toFloat64", nullptr);
+    auto cast_function = cast_resolver->build(arguments);
+    ColumnPtr result = cast_function->execute(arguments, std::make_shared<DataTypeFloat64>(), 1, false);
+    return result->getFloat64(0);
 }
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
@@ -64,8 +61,7 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
-    : stats_desc(stats_desc_), column_name(column_name_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_) : stats_desc(stats_desc_)
 {
 }
 
@@ -93,6 +89,28 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
             stats.insert(stat_it);
         }
     }
+}
+
+bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
+{
+    if (stats.size() != other.stats.size())
+        return false;
+
+    auto i = stats.begin();
+    auto j = other.stats.begin();
+
+    for (; i != stats.end(); ++i, ++j)
+    {
+        if (i->first != j->first)
+            return false;
+    }
+
+    return true;
+}
+
+std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
+{
+    return MergeTreeStatisticsFactory::instance().get(stats_desc);
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -133,12 +151,12 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
     if (stats.contains(StatisticsType::MinMax))
         return stats.at(StatisticsType::MinMax)->estimateLess(val);
-    return rows * ConditionSelectivityEstimator::default_cond_range_factor;
+    return static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
 Float64 ColumnStatistics::estimateGreater(const Field & val) const
 {
-    return rows - estimateLess(val);
+    return static_cast<Float64>(rows) - estimateLess(val);
 }
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
@@ -162,10 +180,10 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
-        return Float64(rows) / cardinality; /// assume uniform distribution
+        return static_cast<Float64>(rows) / static_cast<Float64>(cardinality); /// assume uniform distribution
     }
 
-    return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
+    return static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cond_equal_factor;
 }
 
 Float64 ColumnStatistics::estimateRange(const Range & range) const
@@ -177,7 +195,7 @@ Float64 ColumnStatistics::estimateRange(const Range & range) const
 
     if (range.isInfinite())
     {
-        return rows;
+        return static_cast<Float64>(rows);
     }
 
     if (range.left == range.right)
@@ -207,7 +225,7 @@ UInt64 ColumnStatistics::estimateCardinality() const
         return stats.at(StatisticsType::Uniq)->estimateCardinality();
     }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
-    return UInt64(rows * ConditionSelectivityEstimator::default_cardinality_ratio);
+    return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
 Estimate ColumnStatistics::getEstimate() const
@@ -231,64 +249,55 @@ Estimate ColumnStatistics::getEstimate() const
     return info;
 }
 
-/// -------------------------------------
-
-void ColumnStatistics::serialize(WriteBuffer & buf)
+void ColumnStatistics::serialize(WriteBuffer & buf) const
 {
-    writeIntBinary(V0, buf);
+    writeIntBinary(V1, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
-        stat_types_mask |= 1LL << UInt8(type);
+        stat_types_mask |= 1ULL << static_cast<UInt8>(type);
+
     writeIntBinary(stat_types_mask, buf);
 
-    /// as the column row count is always useful, save it in any case
+    /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
-    /// write the actual statistics object
+    /// Write the actual statistics object
     for (const auto & [type, stat_ptr] : stats)
         stat_ptr->serialize(buf);
 }
 
-void ColumnStatistics::deserialize(ReadBuffer &buf)
+std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
 {
     UInt16 version;
     readIntBinary(version, buf);
-    if (version != V0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}", version);
+
+    /// TODO: we should check the version of statistics format when we start clickhouse server, and do materialize statistics automatically.
+    if (version != V1)
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "We try to read stale file format version: {}. Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics", version);
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
 
-    readIntBinary(rows, buf);
-
-    for (auto it = stats.begin(); it != stats.end();)
+    std::vector<StatisticsType> stat_types;
+    for (size_t i = 0; i < static_cast<UInt8>(StatisticsType::Max); ++i)
     {
-        if (!(stat_types_mask & 1LL << UInt8(it->first)))
-        {
-            stats.erase(it++);
-        }
-        else
-        {
-            it->second->deserialize(buf);
-            ++it;
-        }
+        if (stat_types_mask & (1ULL << i))
+            stat_types.push_back(static_cast<StatisticsType>(i));
     }
-}
 
-String ColumnStatistics::getStatisticName() const
-{
-    return STATS_FILE_PREFIX + column_name;
-}
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+    stats_desc.types_to_desc = factory.get(stat_types, data_type);
 
-const String & ColumnStatistics::getColumnName() const
-{
-    return column_name;
-}
+    auto result = factory.get(stats_desc);
+    readIntBinary(result->rows, buf);
 
-UInt64 ColumnStatistics::rowCount() const
-{
-    return rows;
+    for (const auto & [_, desc] : result->stats)
+        desc->deserialize(buf);
+
+    return result;
 }
 
 String ColumnStatistics::getNameForLogs() const
@@ -301,6 +310,60 @@ String ColumnStatistics::getNameForLogs() const
     }
     ret += "rows: " + std::to_string(rows);
     return ret;
+}
+
+ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
+{
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty())
+            emplace(column.name, factory.get(column));
+    }
+}
+
+ColumnsStatistics ColumnsStatistics::cloneEmpty() const
+{
+    ColumnsStatistics result;
+    for (const auto & [column_name, stat] : *this)
+        result.emplace(column_name, stat->cloneEmpty());
+    return result;
+}
+
+void ColumnsStatistics::build(const Block & block)
+{
+    for (const auto & [column_name, stat] : *this)
+        stat->build(block.getByName(column_name).column);
+}
+
+void ColumnsStatistics::buildIfExists(const Block & block)
+{
+    for (const auto & [column_name, stat] : *this)
+    {
+        if (block.has(column_name))
+            stat->build(block.getByName(column_name).column);
+    }
+}
+
+void ColumnsStatistics::merge(const ColumnsStatistics & other)
+{
+    for (const auto & [column_name, stat] : other)
+    {
+        auto it = find(column_name);
+        if (it == end())
+            emplace(column_name, stat);
+        else
+            it->second->merge(stat);
+    }
+}
+
+Estimates ColumnsStatistics::getEstimates() const
+{
+    Estimates estimates;
+    for (const auto & [column_name, stat] : *this)
+        estimates.emplace(column_name, stat->getEstimate());
+    return estimates;
 }
 
 void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)
@@ -371,24 +434,43 @@ ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatis
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
-    for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
+    return get(column_desc.statistics);
+}
+
+ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats_desc) const
+{
+    auto column_stat = std::make_shared<ColumnStatistics>(stats_desc);
+
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
     {
         auto it = creators.find(type);
         if (it == creators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
-        auto stat_ptr = (it->second)(desc, column_desc.type);
+
+        auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
     }
+
     return column_stat;
 }
 
-ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription & columns) const
+ColumnStatisticsDescription::StatisticsTypeDescMap MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const
 {
-    ColumnsStatistics result;
-    for (const auto & col : columns)
-        if (!col.statistics.empty())
-            result.push_back(get(col));
+    ColumnStatisticsDescription::StatisticsTypeDescMap result;
+    for (const auto & type : stat_types)
+    {
+        auto it = validators.find(type);
+        if (it == validators.end())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+
+        auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
+        SingleStatisticsDescription desc(type, ast, false);
+
+        if (!it->second(desc, data_type))
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type {}", type, data_type->getName());
+
+        result.emplace(type, desc);
+    }
     return result;
 }
 

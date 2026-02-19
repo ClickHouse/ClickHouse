@@ -48,8 +48,8 @@ def has_jemalloc_sample_in_trace_log(extra_query_condition=""):
 
 def test_jemalloc_global_profiler(started_cluster):
     # default open
-    if node1.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
+    if node1.is_built_with_sanitizer() or node1.is_built_with_llvm_coverage():
+        pytest.skip("Disabled for sanitizers and llvm coverage builds")
 
     set_config("jemalloc_enable_global_profiler", "0")
     set_config("jemalloc_collect_global_profile_samples_in_trace_log", "0")
