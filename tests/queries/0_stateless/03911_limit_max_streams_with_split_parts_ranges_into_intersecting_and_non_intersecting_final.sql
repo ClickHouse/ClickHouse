@@ -1,5 +1,6 @@
--- Tags: long
+-- Tags: long, no-sanitizers
 -- long: times out in private
+-- no-sanitizers: sometimes times out in private :(
 
 DROP TABLE IF EXISTS t;
 

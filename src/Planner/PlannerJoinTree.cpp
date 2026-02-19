@@ -971,23 +971,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     const auto prewhere_column_name = prewhere_actions_clone.getOutputs().at(0)->result_name;
 
                     /// Add columns needed by other filters to prewhere outputs
-                    std::unordered_set<const ActionsDAG::Node *> nodes_to_add;
+                    auto & prewhere_outputs = prewhere_actions_clone.getOutputs();
+
+                    /// Build set of existing outputs for fast lookup
+                    std::unordered_set<const ActionsDAG::Node *> existing_outputs(
+                        prewhere_outputs.begin(), prewhere_outputs.end());
+
+                    /// Iterate inputs in deterministic order and add missing nodes
                     for (const auto * input : prewhere_actions_clone.getInputs())
                     {
-                        if (columns_needed_by_other_filters.contains(input->result_name))
-                            nodes_to_add.insert(input);
+                        if (columns_needed_by_other_filters.contains(input->result_name)
+                            && !existing_outputs.contains(input))
+                        {
+                            prewhere_outputs.push_back(input);
+                        }
                     }
-
-                    /// Remove column from nodes_to_add if it's already in prewhere output
-                    auto & prewhere_outputs = prewhere_actions_clone.getOutputs();
-                    for (const auto & output : prewhere_outputs)
-                    {
-                        auto it = nodes_to_add.find(output);
-                        if (it != nodes_to_add.end())
-                            nodes_to_add.erase(it);
-                    }
-
-                    prewhere_outputs.insert(prewhere_outputs.end(), nodes_to_add.begin(), nodes_to_add.end());
 
                     /// Check if prewhere filter column should be removed
                     const bool keep_for_query = std::ranges::contains(columns_names, prewhere_column_name);
