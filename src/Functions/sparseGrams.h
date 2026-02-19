@@ -50,8 +50,8 @@ private:
 
     CRC32CHasher hasher;
 
-    Pos pos = nullptr;
-    Pos end = nullptr;
+    Pos pos;
+    Pos end;
     UInt64 min_ngram_length = 3;
     UInt64 max_ngram_length = 100;
     std::optional<UInt64> min_cutoff_length;
@@ -117,9 +117,9 @@ private:
 
     private:
 
-        Pos data = nullptr;
-        Pos end = nullptr;
-        size_t n = 0;
+        Pos data;
+        Pos end;
+        size_t n;
         size_t right_iterator = 0;
         size_t left_iterator = 0;
         size_t num_increments = 0;
@@ -219,7 +219,7 @@ public:
     explicit SparseGramsImpl(UInt64 min_ngram_length_, UInt64 max_ngram_length_, std::optional<UInt64> min_cutoff_length_)
         : min_ngram_length(min_ngram_length_)
         , max_ngram_length(max_ngram_length_)
-        , min_cutoff_length(std::move(min_cutoff_length_))
+        , min_cutoff_length(min_cutoff_length_)
     {
     }
 
@@ -232,7 +232,6 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"min_ngram_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
             {"max_ngram_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
-            {"min_cutoff_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
         };
 
         validateFunctionArguments(func, arguments, mandatory_args, optional_args);
@@ -240,10 +239,10 @@ public:
 
     void init(const ColumnsWithTypeAndName & arguments, bool /*max_substrings_includes_remaining_string*/)
     {
-        if (arguments.size() > 4)
+        if (arguments.size() > 3)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, must be from 1 to 4",
+                "Number of arguments for function {} doesn't match: passed {}, must be from 1 to 3",
                 name,
                 arguments.size());
 
@@ -258,15 +257,6 @@ public:
 
         if (max_ngram_length < min_ngram_length)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'max_ngram_length' must be greater or equal to 'min_ngram_length'");
-
-        if (arguments.size() == 4)
-            min_cutoff_length = arguments[3].column->getUInt(0);
-
-        if (min_cutoff_length && *min_cutoff_length < min_ngram_length)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'min_cutoff_length' must be greater or equal to 'min_ngram_length'");
-
-        if (min_cutoff_length && *min_cutoff_length > max_ngram_length)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'min_cutoff_length' must be less or equal to 'max_ngram_length'");
     }
 
     /// Called for each next string.
@@ -297,10 +287,10 @@ public:
             auto iter_left = cur_result->left_index;
             auto iter_right = cur_result->right_index;
             auto length = cur_result->symbols_between;
-
             if (min_cutoff_length && *min_cutoff_length > length)
+            {
                 continue;
-
+            }
             token_begin = pos + iter_left;
             token_end = pos + iter_right;
             return true;
@@ -318,11 +308,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
-
     static FunctionPtr create(ContextPtr) { return std::make_shared<SparseGramsHashes>(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
@@ -366,7 +351,7 @@ public:
                 end = reinterpret_cast<Pos>(&src_data[current_src_offset]);
                 impl.set(start, end);
                 while (impl.get(start, end))
-                    res_data.push_back(static_cast<UInt32>(hasher(start, end - start)));
+                    res_data.push_back(hasher(start, end - start));
 
                 res_offsets_data.push_back(res_data.size());
             }

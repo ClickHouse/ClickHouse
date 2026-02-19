@@ -108,7 +108,7 @@ def test_zookeeper_connection_log(started_cluster):
                 logging.debug(
                     f"Checking for 8 rows in zookeeper_connection_log, got: {res}"
                 )
-                return int(res) >= 8
+                return res == "8\n"
 
             node1.query_with_retry(
                 f"SELECT count() FROM system.zookeeper_connection_log WHERE event_time_microseconds >= '{test_start_time}'",
@@ -123,44 +123,33 @@ def test_zookeeper_connection_log(started_cluster):
 
             logging.debug(
                 node1.query(
-                    """SELECT event_time_microseconds, client_id, hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason
+                    """SELECT event_time_microseconds, hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason
                                FROM system.zookeeper_connection_log  ORDER BY event_time_microseconds"""
                 )
             )
-            logging.debug(
-                node1.query(
-                    f"""SELECT hostname, type, name, host, port, reason, count() AS cnt,
-                               groupArray(client_id) AS client_ids
-                           FROM system.zookeeper_connection_log
-                          WHERE event_time_microseconds >= '{test_start_time}'
-                          GROUP BY hostname, type, name, host, port, reason
-                          ORDER BY min(event_time_microseconds)"""
-                )
-            )
-            normalized_rows = node1.query(
-                f"""SELECT hostname, type, name, host, port, index, keeper_api_version,
-                               arrayFilter(x -> has(enabled_feature_flags, x),
-                                           ['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']) AS enabled_feature_flags,
-                               reason
-                          FROM system.zookeeper_connection_log
-                         WHERE event_time_microseconds >= '{test_start_time}'
-                         ORDER BY event_time_microseconds
-                         LIMIT 1 BY hostname, type, name, host, port, reason"""
-            )
-            logging.debug("Normalized rows used in comparison:\n" + normalized_rows)
             expected = TSV(
-                """node1	Connected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Initialization
-node1	Connected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Initialization
-node1	Connected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Initialization
-node1	Disconnected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Config changed
-node1	Connected	default	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Config changed
-node1	Disconnected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Config changed
-node1	Connected	zk_conn_log_test_2	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Config changed
-node1	Disconnected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Removed from config
-node1	Connected	zk_conn_log_test_4	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES','LIST_WITH_STAT_AND_DATA']	Initialization"""
+                """node1	Connected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
+node1	Connected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
+node1	Connected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization
+node1	Disconnected	default	zoo1	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
+node1	Connected	default	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
+node1	Disconnected	zk_conn_log_test_2	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
+node1	Connected	zk_conn_log_test_2	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Config changed
+node1	Disconnected	zk_conn_log_test_3	zoo3	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Removed from config
+node1	Connected	zk_conn_log_test_4	zoo2	2181	0	0	['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS','REMOVE_RECURSIVE','MULTI_WATCHES']	Initialization"""
             )
 
-            assert TSV(normalized_rows) == expected
+            assert (
+                TSV(
+                    node1.query(
+                        f"""SELECT hostname, type, name, host, port, index, keeper_api_version, enabled_feature_flags, reason
+                               FROM system.zookeeper_connection_log
+                               WHERE event_time_microseconds >= '{test_start_time}'
+                               ORDER BY event_time_microseconds"""
+                    )
+                )
+                == expected
+            )
             assert (
                 int(
                     node1.query(

@@ -24,11 +24,10 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <Interpreters/Context.h>
-#include <Processors/ISource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/ISource.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
@@ -91,7 +90,7 @@ public:
     LogSource(
         size_t block_size_,
         const NamesAndTypesList & columns_,
-        std::shared_ptr<const StorageLog> storage_,
+        const StorageLog & storage_,
         size_t rows_limit_,
         const std::vector<size_t> & offsets_,
         const std::vector<size_t> & file_sizes_,
@@ -100,7 +99,7 @@ public:
         : ISource(std::make_shared<const Block>(getHeader(columns_)))
         , block_size(block_size_)
         , columns(columns_)
-        , storage(std::move(storage_))
+        , storage(storage_)
         , rows_limit(rows_limit_)
         , offsets(offsets_)
         , file_sizes(file_sizes_)
@@ -119,7 +118,7 @@ private:
 
     const size_t block_size;
     const NamesAndTypesList columns;
-    const std::shared_ptr<const StorageLog> storage;
+    const StorageLog & storage;
     const size_t rows_limit;      /// The maximum number of rows that can be read
     size_t rows_read = 0;
     bool is_finished = false;
@@ -165,7 +164,7 @@ private:
 
 NameAndTypePair LogSource::getColumnOnDisk(const NameAndTypePair & column) const
 {
-    const auto & storage_columns = storage->columns_with_collected_nested;
+    const auto & storage_columns = storage.columns_with_collected_nested;
 
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
@@ -217,7 +216,7 @@ Chunk LogSource::generate()
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type_on_disk.name + " at " + fullPath(storage->disk, storage->table_path));
+            e.addMessage("while reading column " + name_type_on_disk.name + " at " + fullPath(storage.disk, storage.table_path));
             throw;
         }
 
@@ -258,15 +257,15 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
 
-        const auto & data_file_it = storage->data_files_by_names.find(data_file_name);
-        if (data_file_it == storage->data_files_by_names.end())
+        const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
+        if (data_file_it == storage.data_files_by_names.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
         const auto & data_file = *data_file_it->second;
 
         size_t offset = 0;
         size_t file_size = file_sizes[data_file.index];
 
-        auto it = streams.try_emplace(data_file_name, storage->disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+        auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
         return &it->second.compressed.value();
     };
 
@@ -287,15 +286,15 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
 
-        const auto & data_file_it = storage->data_files_by_names.find(data_file_name);
-        if (data_file_it == storage->data_files_by_names.end())
+        const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
+        if (data_file_it == storage.data_files_by_names.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
         const auto & data_file = *data_file_it->second;
 
         size_t offset = offsets[data_file.index];
         size_t file_size = file_sizes[data_file.index];
 
-        auto it = streams.try_emplace(data_file_name, storage->disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+        auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
         return &it->second.compressed.value();
     };
 
@@ -305,7 +304,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected return type when reading column '{}' from {}. Expected {}. Got {}",
             name_and_type.name,
-            storage->getStorageID().getFullTableName(),
+            storage.getStorageID().getFullTableName(),
             name_and_type.type->getColumnType(),
             column->getDataType());
 }
@@ -889,11 +888,6 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     return std::chrono::seconds{lock_timeout};
 }
 
-void StorageLog::drop()
-{
-    disk->removeRecursive(table_path);
-}
-
 void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
@@ -928,14 +922,18 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     getContext()->clearMMappedFileCache();
 }
 
-Pipe StorageLog::createReadingPipe(
+
+Pipe StorageLog::read(
     const Names & column_names,
-    ContextPtr local_context,
     const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams
-)
+    size_t num_streams)
 {
+    storage_snapshot->check(column_names);
+
     auto lock_timeout = getLockTimeout(local_context);
     loadMarks(lock_timeout);
 
@@ -990,7 +988,7 @@ Pipe StorageLog::createReadingPipe(
         pipes.emplace_back(std::make_shared<LogSource>(
             max_block_size,
             all_columns,
-            std::static_pointer_cast<const StorageLog>(shared_from_this()),
+            *this,
             row_limit,
             offsets,
             file_sizes,
@@ -1000,27 +998,6 @@ Pipe StorageLog::createReadingPipe(
 
     /// No need to hold lock while reading because we read fixed range of data that does not change while appending more data.
     return Pipe::unitePipes(std::move(pipes));
-}
-
-void StorageLog::read(
-    QueryPlan & plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    storage_snapshot->check(column_names);
-
-    plan.addStep(std::make_unique<ReadFromStorageLogStep>(
-        column_names,
-        local_context,
-        std::static_pointer_cast<StorageLog>(shared_from_this()),
-        storage_snapshot,
-        max_block_size,
-        num_streams));
 }
 
 SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -1272,47 +1249,6 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
         removeUnsavedMarks(lock);
         throw;
     }
-}
-
-namespace
-{
-
-SharedHeader getHeader(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot
-)
-{
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
-    all_columns = Nested::convertToSubcolumns(all_columns);
-
-    return std::make_shared<const Block>(LogSource::getHeader(all_columns));
-}
-
-}
-
-ReadFromStorageLogStep::ReadFromStorageLogStep(
-        const Names & column_names_,
-        ContextPtr local_context_,
-        std::shared_ptr<StorageLog> storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        size_t max_block_size_,
-        size_t num_streams_
-)
-    : ISourceStep(getHeader(column_names_, storage_snapshot_))
-    , column_names(column_names_)
-    , local_context(local_context_)
-    , storage(std::move(storage_))
-    , storage_snapshot(storage_snapshot_)
-    , max_block_size(max_block_size_)
-    , num_streams(num_streams_)
-{
-}
-
-void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
-{
-    auto pipe = storage->createReadingPipe(column_names, local_context, storage_snapshot, max_block_size, num_streams);
-    pipeline.init(std::move(pipe));
 }
 
 void registerStorageLog(StorageFactory & factory)

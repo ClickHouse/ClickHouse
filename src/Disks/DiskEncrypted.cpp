@@ -68,7 +68,7 @@ namespace
             if ((config_key == "key") || config_key.starts_with("key["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key.plain = config.getString(key_path);
+                key.plain = toString(config.getString(key_path));
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -76,7 +76,7 @@ namespace
             else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key.plain = unhexKey(config.getString(key_path));
+                key.plain = unhexKey(toString(config.getString(key_path)));
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -151,12 +151,12 @@ namespace
 
         if (config.has(key_path))
         {
-            String current_key = config.getString(key_path);
+            String current_key = toString(config.getString(key_path));
             return check_current_key_found(current_key);
         }
         if (config.has(key_hex_path))
         {
-            String current_key = unhexKey(config.getString(key_hex_path));
+            String current_key = unhexKey(toString(config.getString(key_hex_path)));
             return check_current_key_found(current_key);
         }
         if (config.has(key_id_path))
@@ -345,14 +345,6 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 {
     auto reservation = delegate->reserve(bytes);
-    if (!reservation)
-        return {};
-    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
-}
-
-ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints & constraints)
-{
-    auto reservation = delegate->reserve(bytes, constraints);
     if (!reservation)
         return {};
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));

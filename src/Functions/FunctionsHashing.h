@@ -785,10 +785,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
@@ -1063,8 +1059,8 @@ private:
             ToType hash;
             if (type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             {
-                auto bytes = column->getDataAt(i);
-                hash = apply(key, bytes.data(), bytes.size());
+                StringRef bytes = column->getDataAt(i);
+                hash = apply(key, bytes.data, bytes.size);
             }
             else
             {
@@ -1425,10 +1421,6 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
@@ -1629,10 +1621,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

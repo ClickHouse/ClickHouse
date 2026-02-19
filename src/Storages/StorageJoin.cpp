@@ -525,37 +525,25 @@ void registerStorageJoin(StorageFactory & factory)
         });
 }
 
-namespace
-{
-
 template <typename T>
-const char * rawData(T & t)
+static const char * rawData(T & t)
 {
     return reinterpret_cast<const char *>(&t);
 }
-
 template <typename T>
-size_t rawSize(T &)
+static size_t rawSize(T &)
 {
     return sizeof(T);
 }
-
 template <>
-const char * rawData(const std::string_view & t)
+const char * rawData(const StringRef & t)
 {
-    /// We must return a non-null pointer for empty strings because ColumnNullable::insertData
-    /// treats nullptr as NULL. Empty string_views used as "zero keys" in hash tables have
-    /// data() == nullptr, but they represent empty strings, not NULLs.
-    static constexpr char empty_string[] = "";
-    return t.data() ? t.data() : empty_string;
+    return t.data;
 }
-
 template <>
-size_t rawSize(const std::string_view & t)
+size_t rawSize(const StringRef & t)
 {
-    return t.size();
-}
-
+    return t.size;
 }
 
 class JoinSource : public ISource

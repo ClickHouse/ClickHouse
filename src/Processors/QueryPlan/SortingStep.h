@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -42,8 +41,6 @@ public:
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
-        size_t temporary_files_buffer_size = 0;
-        String temporary_files_codec = {};
 
         explicit Settings(const DB::Settings & settings);
         explicit Settings(size_t max_block_size_);
@@ -116,17 +113,13 @@ public:
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
-        bool skip_partial_sort = false,
-        TopKThresholdTrackerPtr threshold_tracker = nullptr);
+        bool skip_partial_sort = false);
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
+    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
-    bool supportsDataflowStatisticsCollection() const override { return true; }
-    void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
@@ -136,7 +129,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
+        UInt64 limit_);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -167,8 +160,6 @@ private:
     bool always_read_till_end = false;
     bool use_buffering = false;
     bool apply_virtual_row_conversions = false;
-
-    TopKThresholdTrackerPtr threshold_tracker;
 
     Settings sort_settings;
 };

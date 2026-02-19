@@ -6,8 +6,7 @@
 #include <mutex>
 #include <Core/ServerUUID.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
-#include <Common/ObjectStorageKeyGenerator.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/ObjectStorageKey.h>
@@ -62,8 +61,7 @@ private:
         fs::create_directories(local_disk_metadata_dir);
 
         auto disk = active_disks[path] = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
-        auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
-        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator);
+        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path);
 
         return metadata;
     }

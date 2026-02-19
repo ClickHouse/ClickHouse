@@ -117,7 +117,7 @@ UInt64 ColumnReplicated::get64(size_t n) const
     return nested_column->get64(indexes.getIndexAt(n));
 }
 
-std::string_view ColumnReplicated::getDataAt(size_t n) const
+StringRef ColumnReplicated::getDataAt(size_t n) const
 {
     return nested_column->getDataAt(indexes.getIndexAt(n));
 }
@@ -133,7 +133,7 @@ void ColumnReplicated::insertData(const char * pos, size_t length)
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-std::string_view ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin, settings);
 }
@@ -307,17 +307,6 @@ ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint
     auto filtered_indexes = ColumnIndex(indexes.getIndexes()->filter(filt, result_size_hint));
     auto filtered_nested_column = filtered_indexes.removeUnusedRowsInIndexedData(nested_column);
     return create(filtered_nested_column, std::move(filtered_indexes));
-}
-
-void ColumnReplicated::filter(const Filter & filt)
-{
-    if (size() != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
-
-    indexes.getIndexesPtr()->filter(filt);
-    auto mutable_nested = nested_column->assumeMutable();
-    indexes.removeUnusedRowsInIndexedData(mutable_nested);
-    insertion_cache.clear();
 }
 
 void ColumnReplicated::expand(const Filter & mask, bool inverted)
@@ -669,7 +658,7 @@ ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets)
     auto & data = result->getData();
     data.reserve_exact(offsets.back());
     for (size_t i = 0; i != offsets.size(); ++i)
-        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(i));
+        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], i);
     return result;
 }
 

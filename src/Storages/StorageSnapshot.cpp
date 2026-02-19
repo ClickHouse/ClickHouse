@@ -4,7 +4,6 @@
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 
-#include <base/StringViewHash.h>
 #include <sparsehash/dense_hash_set>
 
 namespace DB
@@ -220,7 +219,7 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
 
 namespace
 {
-    using DenseHashSet = google::dense_hash_set<std::string_view, StringViewHash>;
+    using DenseHashSet = google::dense_hash_set<StringRef, StringRefHash>;
 }
 
 void StorageSnapshot::check(const Names & column_names) const
@@ -237,7 +236,7 @@ void StorageSnapshot::check(const Names & column_names) const
     }
 
     DenseHashSet unique_names;
-    unique_names.set_empty_key(std::string_view());
+    unique_names.set_empty_key(StringRef());
 
     for (const auto & name : column_names)
     {

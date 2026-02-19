@@ -50,7 +50,7 @@ public:
     {
     }
 
-    virtual void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *) { }
+    virtual void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *) { }
 
     virtual bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) { return false; }
 
@@ -58,7 +58,7 @@ public:
 
     virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
 
-    virtual bool performExternalCommand(uint64_t, bool, const String &, const String &, const String &) { return false; }
+    virtual bool performExternalCommand(uint64_t, bool, const String &, const String &) { return false; }
 
     virtual bool reRunCreateDatabase(const String &) { return false; }
 
@@ -353,7 +353,7 @@ public:
     {
     }
 
-    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *) override;
+    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *) override;
 
     bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) override;
 
@@ -361,7 +361,7 @@ public:
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
-    bool performExternalCommand(uint64_t, bool, const String &, const String &, const String &) override;
+    bool performExternalCommand(uint64_t, bool, const String &, const String &) override;
 
     bool reRunCreateDatabase(const String &) override;
 
@@ -446,10 +446,9 @@ public:
 
     void createExternalDatabaseTable(RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
-    void createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de);
+    void createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
 
-    bool performExternalCommand(
-        uint64_t seed, bool async, IntegrationCall ic, const String & engine, const String & cname, const String & tname);
+    bool performExternalCommand(uint64_t seed, bool async, IntegrationCall ic, const String & cname, const String & tname);
 
     bool reRunCreateDatabase(IntegrationCall ic, const String & body);
 

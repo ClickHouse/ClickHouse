@@ -16,7 +16,6 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 public:
     MergedBlockOutputStream(
         const MergeTreeMutableDataPartPtr & data_part,
-        MergeTreeSettingsPtr data_settings,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,

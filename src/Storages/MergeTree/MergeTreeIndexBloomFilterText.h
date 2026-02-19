@@ -73,9 +73,7 @@ public:
     ~MergeTreeConditionBloomFilterText() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    std::string getDescription() const override { return ""; }
-
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 private:
     struct KeyTuplePositionMapping
     {

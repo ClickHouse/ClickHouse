@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/defines.h>
 #include <base/types.h>
 
 /* This file contains macros and helpers for writing platform-dependent code.
@@ -93,12 +92,7 @@ enum class TargetArch : UInt32
 };
 
 /// Runtime detection.
-UInt32 getSupportedArchs();
-inline ALWAYS_INLINE bool isArchSupported(TargetArch arch)
-{
-    static UInt32 arches = getSupportedArchs();
-    return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
-}
+bool isArchSupported(TargetArch arch);
 
 String toString(TargetArch arch);
 
@@ -405,26 +399,6 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
     name \
     FUNCTION_BODY \
 
-/// NOLINTNEXTLINE
-/// Just extended vector operations above SSE4.2
-#define MULTITARGET_FUNCTION_AVX512BW_AVX2(FUNCTION_HEADER, name, FUNCTION_BODY) \
-FUNCTION_HEADER \
-\
-AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE \
-name##AVX512BW \
-FUNCTION_BODY \
-\
-FUNCTION_HEADER \
-\
-AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
-name##AVX2 \
-FUNCTION_BODY \
-\
-FUNCTION_HEADER \
-\
-name \
-FUNCTION_BODY \
-
 #else
 
     /// NOLINTNEXTLINE
@@ -437,12 +411,6 @@ FUNCTION_BODY \
 
 /// NOLINTNEXTLINE
 #define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
-    FUNCTION_HEADER \
-    \
-    name \
-    FUNCTION_BODY \
-
-#define MULTITARGET_FUNCTION_AVX512BW_AVX2(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

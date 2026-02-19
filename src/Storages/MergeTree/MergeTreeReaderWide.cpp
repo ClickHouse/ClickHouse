@@ -282,7 +282,7 @@ void MergeTreeReaderWide::addStreams(
 MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
 {
     auto context = data_part_info_for_read->getContext();
-    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
     size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
 
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
@@ -412,13 +412,6 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name && !streams.contains(*stream_name))
                 addStream(substream_path, *stream_name);
         };
-        deserialize_settings.release_stream_callback = [&](const ISerialization::SubstreamPath & substream_path)
-        {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-            if (stream_name)
-                streams.erase(*stream_name);
-        };
-        deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
 }

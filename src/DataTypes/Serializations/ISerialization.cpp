@@ -261,15 +261,14 @@ String getNameForSubstreamPath(
     SubstreamIterator end,
     bool escape_for_file_name,
     bool encode_sparse_stream,
-    bool escape_variant_substreams,
-    size_t initial_array_level = 0)
+    bool escape_variant_substreams)
 {
     using Substream = ISerialization::Substream;
 
-    size_t array_level = initial_array_level;
+    size_t array_level = 0;
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
+        if (it->type == Substream::NullMap)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);
@@ -420,14 +419,14 @@ String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair &
     return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream, size_t initial_array_level)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream)
 {
-    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream, initial_array_level);
+    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream, size_t initial_array_level)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false, initial_array_level);
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
@@ -534,11 +533,6 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
 
 }
 
-void ISerialization::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    serializeBinary(column, row_num, ostr, {});
-}
-
 bool ISerialization::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
     return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextCSV(my_column, istr, settings); }, column);
@@ -593,11 +587,11 @@ void ISerialization::serializeTextRaw(const IColumn & column, size_t row_num, Wr
     serializeText(column, row_num, ostr, settings);
 }
 
-size_t ISerialization::getArrayLevel(const SubstreamPath & path, size_t prefix_len)
+size_t ISerialization::getArrayLevel(const SubstreamPath & path)
 {
     size_t level = 0;
-    for (size_t i = 0; i < prefix_len; ++i)
-        level += path[i].type == Substream::ArrayElements;
+    for (const auto & elem : path)
+        level += elem.type == Substream::ArrayElements;
     return level;
 }
 
@@ -608,7 +602,6 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
 
     size_t last_elem = prefix_len - 1;
     return path[last_elem].type == Substream::NullMap
-            || path[last_elem].type == Substream::SparseNullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
             || path[last_elem].type == Substream::StringSizes
@@ -624,8 +617,7 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         return false;
 
     size_t last_elem = prefix_len - 1;
-    return path[last_elem].type == Substream::VariantElementNullMap || path[last_elem].type == Substream::InlinedStringSizes
-        || path[last_elem].type == Substream::SparseNullMap;
+    return path[last_elem].type == Substream::VariantElementNullMap || path[last_elem].type == Substream::InlinedStringSizes;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
@@ -734,11 +726,11 @@ bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache,
     if (!cached_column_with_num_read_rows)
         return false;
 
-    insertDataFromCachedColumn(settings, result_column, cached_column_with_num_read_rows->first, cached_column_with_num_read_rows->second, cache, /*update_cache_after_insert=*/ true);
+    insertDataFromCachedColumn(settings, result_column, cached_column_with_num_read_rows->first, cached_column_with_num_read_rows->second, cache);
     return true;
 }
 
-void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert)
+void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache)
 {
     /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
     /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
@@ -748,12 +740,9 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (result_column != cached_column && !result_column->empty() && cached_column->size() == num_read_rows))
     {
         result_column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-        if (update_cache_after_insert)
-        {
-            /// Replace column in the cache with the new column to avoid inserting into it again
-            /// from currently cached range if this substream will be read again in current range.
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, result_column, num_read_rows);
-        }
+        /// Replace column in the cache with the new column to avoid inserting into it again
+        /// from currently cached range if this substream will be read again in current range.
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, result_column, num_read_rows);
     }
     else
     {

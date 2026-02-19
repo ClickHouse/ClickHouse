@@ -71,7 +71,6 @@ def started_cluster():
                 "configs/schema_cache.xml",
                 "configs/blob_log.xml",
                 "configs/filesystem_caches.xml",
-                "configs/page_cache.xml",
                 "configs/text_log.xml",
             ],
             user_configs=[
@@ -1245,24 +1244,17 @@ def test_url_reconnect_in_the_middle(started_cluster):
 
     with PartitionManager() as pm:
         pm_rule_reject = {
-            "instance": instance,
-            "chain": "INPUT",
             "probability": 0.02,
             "destination": instance.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "REJECT --reject-with tcp-reset",
-            "protocol": "tcp",
         }
         pm_rule_drop_all = {
-            "instance": instance,
-            "chain": "INPUT",
             "destination": instance.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "DROP",
-            "protocol": "tcp",
         }
-
-        pm.add_rule(pm_rule_reject)
+        pm._add_rule(pm_rule_reject)
 
         def select():
             global result
@@ -1276,11 +1268,11 @@ def test_url_reconnect_in_the_middle(started_cluster):
         thread = threading.Thread(target=select)
         thread.start()
         time.sleep(4)
-        pm.add_rule(pm_rule_drop_all)
+        pm._add_rule(pm_rule_drop_all)
 
         time.sleep(2)
-        pm.delete_rule(pm_rule_drop_all)
-        pm.delete_rule(pm_rule_reject)
+        pm._delete_rule(pm_rule_drop_all)
+        pm._delete_rule(pm_rule_reject)
 
         thread.join()
 
@@ -2538,6 +2530,7 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
 
 
 def test_filesystem_cache(started_cluster):
+    id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
     table_name = f"test_filesystem_cache-{uuid.uuid4()}"
@@ -2606,66 +2599,6 @@ def test_filesystem_cache(started_cluster):
         )
     )
     assert count == total_count
-
-
-def test_page_cache(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-    table_name = f"test_page_cache-{uuid.uuid4()}"
-
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv', auto, 'x UInt64') select number from numbers(100) SETTINGS s3_truncate_on_insert=1"
-    )
-
-    query_id = f"{table_name}-{uuid.uuid4()}"
-    assert "100\n" == instance.query(
-        f"select sum(ignore(*) + 1) from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv') SETTINGS use_page_cache_for_object_storage=1",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    misses, gets = instance.query(
-        f"SELECT ProfileEvents['PageCacheMisses'], ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-    ).split('\t')
-    assert 0 < int(misses)
-    assert 0 < int(gets)
-
-    instance.query("SYSTEM DROP SCHEMA CACHE")
-
-    query_id = f"{table_name}-{uuid.uuid4()}"
-    assert "100\n" == instance.query(
-        f"select sum(ignore(*) + 1) from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv') SETTINGS use_page_cache_for_object_storage=1",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    misses, hits, gets = instance.query(
-        f"SELECT ProfileEvents['PageCacheMisses'], ProfileEvents['PageCacheHits'], ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-    ).split('\t')
-    assert 0 < int(hits)
-    assert 0 == int(misses)
-    assert 0 == int(gets)
-
-    # Overwrite the object to test cache invalidation (based on etag).
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv', auto, 'x UInt64') select number from numbers(50) SETTINGS s3_truncate_on_insert=1"
-    )
-
-    query_id = f"{table_name}-{uuid.uuid4()}"
-    assert "50\n" == instance.query(
-        f"select sum(ignore(*) + 1) from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv') SETTINGS use_page_cache_for_object_storage=1",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    misses, gets = instance.query(
-        f"SELECT ProfileEvents['PageCacheMisses'], ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-    ).split('\t')
-    assert 0 < int(misses)
-    assert 0 < int(gets)
 
 
 def test_archive(started_cluster):

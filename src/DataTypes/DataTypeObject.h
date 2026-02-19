@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <Core/Field.h>
+#include <Common/re2.h>
 
 
 namespace DB
@@ -16,18 +17,15 @@ public:
         JSON = 0,
     };
 
-    static constexpr size_t MAX_TYPED_PATHS = 1000;
-    static constexpr size_t MAX_DYNAMIC_PATHS_LIMIT = 10000;
     /// Don't change this constant, it can break backward compatibility.
-    static constexpr size_t DEFAULT_MAX_DYNAMIC_PATHS = 1024;
-    static constexpr const char * SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION = "__special_subcolumn_name_for_distinct_paths_calculation";
+    static constexpr size_t DEFAULT_MAX_SEPARATELY_STORED_PATHS = 1024;
 
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
         std::unordered_map<String, DataTypePtr> typed_paths_ = {},
         std::unordered_set<String> paths_to_skip_ = {},
         std::vector<String> path_regexps_to_skip_ = {},
-        size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
+        size_t max_dynamic_paths_ = DEFAULT_MAX_SEPARATELY_STORED_PATHS,
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
@@ -55,7 +53,7 @@ public:
     void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
-    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 

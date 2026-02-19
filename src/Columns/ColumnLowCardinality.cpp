@@ -276,7 +276,7 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertIndex(getDictionary().uniqueInsertData(pos, length));
 }
 
-std::string_view ColumnLowCardinality::serializeValueIntoArena(
+StringRef ColumnLowCardinality::serializeValueIntoArena(
     size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin, settings);

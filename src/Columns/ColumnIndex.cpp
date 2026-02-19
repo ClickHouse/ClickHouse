@@ -100,8 +100,9 @@ const typename ColumnVector<IndexType>::Container & ColumnIndex::getIndexesData(
 template <typename IndexType>
 void ColumnIndex::convertIndexes()
 {
-    auto convert = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    auto convert = [&](auto x)
     {
+        using CurIndexType = decltype(x);
         auto & data = getIndexesData<CurIndexType>();
 
         if (sizeof(CurIndexType) > sizeof(IndexType))
@@ -116,7 +117,7 @@ void ColumnIndex::convertIndexes()
 
             /// TODO: Optimize with SSE?
             for (size_t i = 0; i < size; ++i)
-                new_data[i] = static_cast<IndexType>(data[i]);
+                new_data[i] = static_cast<CurIndexType>(data[i]);
 
             indexes = std::move(new_indexes);
             size_of_type = sizeof(IndexType);
@@ -171,9 +172,9 @@ void ColumnIndex::insertIndex(size_t index)
     while (index > getMaxIndexForCurrentType())
         expandType();
 
-    auto insert = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    auto insert = [&](auto cur_type)
     {
-        getIndexesData<CurIndexType>().push_back(static_cast<CurIndexType>(index));
+        getIndexesData<decltype(cur_type)>().push_back(index);
     };
 
     callForType(std::move(insert), size_of_type);
@@ -186,10 +187,11 @@ void ColumnIndex::insertManyIndexes(size_t index, size_t length)
     while (index > getMaxIndexForCurrentType())
         expandType();
 
-    auto insert = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    auto insert = [&](auto cur_type)
     {
+        using CurIndexType = decltype(cur_type);
         auto & indexes_data = getIndexesData<CurIndexType>();
-        indexes_data.resize_fill(indexes_data.size() + length, static_cast<CurIndexType>(index));
+        indexes_data.resize_fill(indexes_data.size() + length, index);
     };
 
     callForType(std::move(insert), size_of_type);
@@ -248,15 +250,17 @@ void ColumnIndex::insertIndexesRangeWithShift(const IColumn & column, size_t off
     while (max_result_index > getMaxIndexForCurrentType())
         expandType();
 
-    auto insert_for_type = [&]<typename ColumnType>(ColumnType /*type_value*/)
+    auto insert_for_type = [&](auto type)
     {
+        using ColumnType = decltype(type);
         const auto * column_ptr = typeid_cast<const ColumnVector<ColumnType> *>(&column);
 
         if (!column_ptr)
             return false;
 
-        auto copy = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+        auto copy = [&](auto cur_type)
         {
+            using CurIndexType = decltype(cur_type);
             auto & indexes_data = getIndexesData<CurIndexType>();
             const auto & column_data = column_ptr->getData();
 
@@ -264,7 +268,7 @@ void ColumnIndex::insertIndexesRangeWithShift(const IColumn & column, size_t off
             indexes_data.resize(size + limit);
 
             for (size_t i = 0; i < limit; ++i)
-                indexes_data[size + i] = static_cast<CurIndexType>(static_cast<CurIndexType>(column_data[offset + i]) + shift);
+                indexes_data[size + i] = static_cast<CurIndexType>(column_data[offset + i]) + shift;
         };
 
         callForType(std::move(copy), size_of_type);
@@ -299,41 +303,6 @@ ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_d
 {
     /// First, create a filter for indexed data to filter out all unused rows.
     IColumn::Filter filter(indexed_data->size(), 0);
-    auto create_filter = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
-    {
-        const auto & data = getIndexesData<CurIndexType>();
-        for (size_t i = 0; i != data.size(); ++i)
-            filter[data[i]] = 1;
-    };
-
-    callForType(std::move(create_filter), size_of_type);
-
-    /// Second, adjust indexes.
-    size_t result_size_hint = 0;
-    auto adjust_indexes = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
-    {
-        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
-        size_t new_index = 0;
-        for (size_t i = 0; i != filter.size(); ++i)
-        {
-            if (filter[i])
-                indexes_remapping[i] = static_cast<CurIndexType>(new_index++);
-        }
-        auto & data = getIndexesData<CurIndexType>();
-        for (size_t i = 0; i != data.size(); ++i)
-            data[i] = indexes_remapping[data[i]];
-
-        result_size_hint = new_index;
-    };
-
-    callForType(std::move(adjust_indexes), size_of_type);
-    return indexed_data->filter(filter, result_size_hint);
-}
-
-void ColumnIndex::removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data)
-{
-    /// First, create a filter for indexed data to filter out all unused rows.
-    IColumn::Filter filter(indexed_data->size(), 0);
     auto create_filter = [&](auto cur_type)
     {
         using CurIndexType = decltype(cur_type);
@@ -345,25 +314,26 @@ void ColumnIndex::removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data)
     callForType(std::move(create_filter), size_of_type);
 
     /// Second, adjust indexes.
-    auto adjust_indexes = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    size_t result_size_hint = 0;
+    auto adjust_indexes = [&](auto cur_type)
     {
+        using CurIndexType = decltype(cur_type);
         PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
         size_t new_index = 0;
         for (size_t i = 0; i != filter.size(); ++i)
         {
             if (filter[i])
-            {
-                indexes_remapping[i] = static_cast<CurIndexType>(new_index);
-                ++new_index;
-            }
+                indexes_remapping[i] = new_index++;
         }
         auto & data = getIndexesData<CurIndexType>();
         for (size_t i = 0; i != data.size(); ++i)
             data[i] = indexes_remapping[data[i]];
+
+        result_size_hint = new_index;
     };
 
     callForType(std::move(adjust_indexes), size_of_type);
-    indexed_data->filter(filter);
+    return indexed_data->filter(filter, result_size_hint);
 }
 
 void ColumnIndex::getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const
@@ -389,13 +359,14 @@ void ColumnIndex::insertIndexesRange(size_t start, size_t length)
     while (max_index > getMaxIndexForCurrentType())
         expandType();
 
-    auto insert = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    auto insert = [&](auto cur_type)
     {
+        using CurIndexType = decltype(cur_type);
         auto & indexes_data = getIndexesData<CurIndexType>();
         indexes_data.reserve(indexes_data.size() + length);
         size_t end = start + length;
         for (size_t index = start; index != end; ++index)
-            indexes_data.push_back(static_cast<CurIndexType>(index));
+            indexes_data.push_back(index);
     };
 
     callForType(std::move(insert), size_of_type);
@@ -405,8 +376,9 @@ void ColumnIndex::insertIndexesRange(size_t start, size_t length)
 
 void ColumnIndex::resizeAssumeReserve(size_t n)
 {
-    auto resize = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    auto resize = [&](auto cur_type)
     {
+        using CurIndexType = decltype(cur_type);
         auto & indexes_data = getIndexesData<CurIndexType>();
         indexes_data.resize_assume_reserved(n);
     };
@@ -423,8 +395,9 @@ void ColumnIndex::checkSizeOfType()
 
 void ColumnIndex::countRowsInIndexedData(ColumnUInt64::Container & counts) const
 {
-    auto counter = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    auto counter = [&](auto x)
     {
+        using CurIndexType = decltype(x);
         auto & data = getIndexesData<CurIndexType>();
         for (auto pos : data)
             ++counts[pos];
