@@ -26,27 +26,31 @@ SETTINGS
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
+    merge_with_ttl_timeout = 0,
     ratio_of_defaults_for_sparse_serialization = 1.0;
 
+SYSTEM STOP TTL MERGES t_ttl_vert_1;
 SYSTEM STOP MERGES t_ttl_vert_1;
 
--- Part 1: expired rows, Part 2: non-expired rows
 INSERT INTO t_ttl_vert_1 SELECT number, '2000-01-01 00:00:00', number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
 INSERT INTO t_ttl_vert_1 SELECT number + 1000, now() + INTERVAL 1 YEAR, number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
 
 SELECT 'test1_before', count() FROM t_ttl_vert_1;
 
+SYSTEM START TTL MERGES t_ttl_vert_1;
 SYSTEM START MERGES t_ttl_vert_1;
 OPTIMIZE TABLE t_ttl_vert_1 FINAL;
 
 SELECT 'test1_after', count() FROM t_ttl_vert_1;
--- Verify data integrity of surviving rows
 SELECT 'test1_min_id', min(id) FROM t_ttl_vert_1;
 SELECT 'test1_max_id', max(id) FROM t_ttl_vert_1;
--- Verify non-key columns survived correctly via vertical gather
 SELECT 'test1_check_cols', sum(c1), sum(c2), sum(c3), sum(c4) FROM t_ttl_vert_1;
--- Verify single active part after merge
 SELECT 'test1_parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_ttl_vert_1' AND active;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT 'test1_algo', merge_algorithm FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_vert_1' AND event_type = 'MergeParts'
+    ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE IF EXISTS t_ttl_vert_1;
 
@@ -73,8 +77,10 @@ SETTINGS
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
+    merge_with_ttl_timeout = 0,
     ratio_of_defaults_for_sparse_serialization = 1.0;
 
+SYSTEM STOP TTL MERGES t_ttl_vert_2;
 SYSTEM STOP MERGES t_ttl_vert_2;
 
 INSERT INTO t_ttl_vert_2 SELECT number, '2000-01-01 00:00:00', rand(), rand(), rand(), rand() FROM numbers(1000);
@@ -82,10 +88,16 @@ INSERT INTO t_ttl_vert_2 SELECT number + 1000, '2000-01-02 00:00:00', rand(), ra
 
 SELECT 'test2_before', count() FROM t_ttl_vert_2;
 
+SYSTEM START TTL MERGES t_ttl_vert_2;
 SYSTEM START MERGES t_ttl_vert_2;
 OPTIMIZE TABLE t_ttl_vert_2 FINAL;
 
 SELECT 'test2_after', count() FROM t_ttl_vert_2;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT 'test2_algo', merge_algorithm FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_vert_2' AND event_type = 'MergeParts'
+    ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE IF EXISTS t_ttl_vert_2;
 
@@ -112,8 +124,10 @@ SETTINGS
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 0,
+    merge_with_ttl_timeout = 0,
     ratio_of_defaults_for_sparse_serialization = 1.0;
 
+SYSTEM STOP TTL MERGES t_ttl_vert_3;
 SYSTEM STOP MERGES t_ttl_vert_3;
 
 INSERT INTO t_ttl_vert_3 SELECT number, '2000-01-01 00:00:00', number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
@@ -121,11 +135,17 @@ INSERT INTO t_ttl_vert_3 SELECT number + 1000, now() + INTERVAL 1 YEAR, number *
 
 SELECT 'test3_before', count() FROM t_ttl_vert_3;
 
+SYSTEM START TTL MERGES t_ttl_vert_3;
 SYSTEM START MERGES t_ttl_vert_3;
 OPTIMIZE TABLE t_ttl_vert_3 FINAL;
 
 SELECT 'test3_after', count() FROM t_ttl_vert_3;
 SELECT 'test3_check_cols', sum(c1), sum(c2), sum(c3), sum(c4) FROM t_ttl_vert_3;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT 'test3_algo', merge_algorithm FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_vert_3' AND event_type = 'MergeParts'
+    ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE IF EXISTS t_ttl_vert_3;
 
@@ -152,24 +172,28 @@ SETTINGS
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
+    merge_with_ttl_timeout = 0,
     ratio_of_defaults_for_sparse_serialization = 1.0;
 
+SYSTEM STOP TTL MERGES t_ttl_vert_4;
 SYSTEM STOP MERGES t_ttl_vert_4;
 
--- All rows have expired TTL, but only category=1 should be deleted
 INSERT INTO t_ttl_vert_4 SELECT number, '2000-01-01 00:00:00', number % 2, number * 10, number * 100, number * 1000 FROM numbers(1000);
 INSERT INTO t_ttl_vert_4 SELECT number + 1000, '2000-01-01 00:00:00', number % 2, number * 10, number * 100, number * 1000 FROM numbers(1000);
 
 SELECT 'test4_before', count() FROM t_ttl_vert_4;
 
+SYSTEM START TTL MERGES t_ttl_vert_4;
 SYSTEM START MERGES t_ttl_vert_4;
 OPTIMIZE TABLE t_ttl_vert_4 FINAL;
 
--- Only rows with category=0 survive (50% of 2000)
 SELECT 'test4_after', count() FROM t_ttl_vert_4;
--- All surviving rows should have category=0
 SELECT 'test4_category', uniq(category) FROM t_ttl_vert_4;
--- Verify merge happened
 SELECT 'test4_parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_ttl_vert_4' AND active;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT 'test4_algo', merge_algorithm FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_vert_4' AND event_type = 'MergeParts'
+    ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE IF EXISTS t_ttl_vert_4;
