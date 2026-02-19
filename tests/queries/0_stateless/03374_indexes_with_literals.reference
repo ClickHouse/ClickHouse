@@ -7,7 +7,7 @@ Expression ((Project names + Projection))
         Description: bloom_filter GRANULARITY 1
         Parts: 1/1
         Granules: 33/1000
-      Ranges: 29
+        Ranges: 29
 Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test)
@@ -15,10 +15,9 @@ Expression ((Project names + Projection))
       Skip
         Name: idx1
         Description: set GRANULARITY 1
-        Condition: (CAST(x, \'String\') in [\'100\', \'100\'])
         Parts: 1/1
         Granules: 1/1000
-      Ranges: 1
+        Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test)
@@ -28,7 +27,7 @@ Expression ((Project names + Projection))
         Description: tokenbf_v1 GRANULARITY 1
         Parts: 1/1
         Granules: 1/1000
-      Ranges: 1
+        Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test)
@@ -38,7 +37,7 @@ Expression ((Project names + Projection))
         Description: ngrambf_v1 GRANULARITY 1
         Parts: 1/1
         Granules: 1000/1000
-      Ranges: 1
+        Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test)
@@ -46,7 +45,6 @@ Expression ((Project names + Projection))
       Skip
         Name: idx1
         Description: minmax GRANULARITY 1
-        Condition: (CAST(x, \'String\') in [\'100\', \'100\'])
         Parts: 1/1
         Granules: 1/1000
-      Ranges: 1
+        Ranges: 1

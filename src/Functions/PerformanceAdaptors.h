@@ -200,15 +200,12 @@ namespace detail
  * };
  */
 template <typename FunctionInterface>
-class ImplementationSelector
+class ImplementationSelector : WithContext
 {
 public:
     using ImplementationPtr = std::shared_ptr<FunctionInterface>;
 
-    explicit ImplementationSelector(ContextPtr context)
-        // TODO(dakovalkov): make this option better.
-        : function_implementation(context->getSettingsRef()[Setting::function_implementation])
-    {}
+    explicit ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
 
     /* Select the best implementation based on previous runs.
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
@@ -237,7 +234,7 @@ public:
         if (considerable)
         {
             // TODO(dakovalkov): Calculate something more informative than rows count.
-            statistics.complete(id, watch.elapsedSeconds(), static_cast<double>(input_rows_count));
+            statistics.complete(id, watch.elapsedSeconds(), input_rows_count);
         }
 
         return res;
@@ -257,7 +254,9 @@ public:
     {
         if (isArchSupported(Arch))
         {
-            if (function_implementation.empty() || function_implementation == detail::getImplementationTag<FunctionImpl>(Arch))
+            // TODO(dakovalkov): make this option better.
+            const auto & choose_impl = getContext()->getSettingsRef()[Setting::function_implementation].value;
+            if (choose_impl.empty() || choose_impl == detail::getImplementationTag<FunctionImpl>(Arch))
             {
                 implementations.emplace_back(std::make_shared<FunctionImpl>(std::forward<Args>(args)...));
                 statistics.emplace_back();
@@ -266,7 +265,6 @@ public:
     }
 
 private:
-    const std::string function_implementation;
     std::vector<ImplementationPtr> implementations;
     mutable detail::PerformanceStatistics statistics; /// It is protected by internal mutex.
 };

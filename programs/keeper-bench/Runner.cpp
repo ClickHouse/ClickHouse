@@ -12,7 +12,6 @@
 #include <Disks/DiskLocal.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadBuffer.h>
@@ -965,7 +964,7 @@ void dumpStats(std::string_view type, const RequestFromLogStats::Stats & stats_f
         type,
         stats_for_type.total.load(),
         stats_for_type.unexpected_results.load(),
-        stats_for_type.total != 0 ? static_cast<double>(stats_for_type.unexpected_results) / static_cast<double>(stats_for_type.total) * 100 : 0.0)
+        stats_for_type.total != 0 ? static_cast<double>(stats_for_type.unexpected_results) / stats_for_type.total * 100 : 0.0)
               << std::endl;
 };
 
@@ -1212,12 +1211,11 @@ void Runner::runBenchmarkWithGenerator()
             path = file_output->parent_path() / filename;
         }
 
-        std::cerr << "Storing output to " << fs::absolute(path) << std::endl;
+        std::cerr << "Storing output to " << path << std::endl;
 
         DB::WriteBufferFromFile file_output_buffer(path);
         DB::ReadBufferFromString read_buffer(output_string);
         DB::copyData(read_buffer, file_output_buffer);
-        file_output_buffer.finalize();
     }
 }
 
@@ -1266,7 +1264,7 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     args.operation_timeout_ms = connection_info.operation_timeout_ms;
     args.use_compression = connection_info.use_compression;
     args.use_xid_64 = connection_info.use_xid_64;
-    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr, nullptr);
+    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
 }
 
 std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections()
@@ -1320,7 +1318,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         children = response.names;
         promise->set_value();
     };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {}, false, false);
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, nullptr);
     future.get();
 
     std::span children_span(children);

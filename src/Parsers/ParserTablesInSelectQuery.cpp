@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto res = make_intrusive<ASTTableExpression>();
+    auto res = std::make_shared<ASTTableExpression>();
 
     if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), allow_alias_without_as_keyword).parse(pos, res->subquery, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(false, true), allow_alias_without_as_keyword).parse(pos, res->table_function, expected)
@@ -29,19 +29,6 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         && !ParserWithOptionalAlias(std::make_unique<ParserTableAsStringLiteralIdentifier>(), allow_alias_without_as_keyword)
                 .parse(pos, res->database_and_table_name, expected))
         return false;
-
-    /// parse column aliases `AS alias(col1, col2, ...)`, check for (col1, col2, ...)
-    if (pos->type == TokenType::OpeningRoundBracket)
-    {
-        ++pos;
-        ParserAliasesExpressionList column_aliases_parser;
-        if (!column_aliases_parser.parse(pos, res->column_aliases, expected))
-            return false;
-
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
-    }
 
     /// FINAL
     if (ParserKeyword(Keyword::FINAL).ignore(pos, expected))
@@ -73,8 +60,6 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)
         res->children.emplace_back(res->sample_offset);
-    if (res->column_aliases)
-        res->children.emplace_back(res->column_aliases);
 
     assert(res->database_and_table_name || res->table_function || res->subquery);
 
@@ -85,7 +70,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto res = make_intrusive<ASTArrayJoin>();
+    auto res = std::make_shared<ASTArrayJoin>();
 
     /// [LEFT] ARRAY JOIN expr list
     Pos saved_pos = pos;
@@ -140,7 +125,7 @@ static void parseJoinStrictness(IParser::Pos & pos, ASTTableJoin & table_join, E
 
 bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto res = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto res = std::make_shared<ASTTablesInSelectQueryElement>();
 
     if (is_first)
     {
@@ -152,7 +137,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
     }
     else
     {
-        auto table_join = make_intrusive<ASTTableJoin>();
+        auto table_join = std::make_shared<ASTTableJoin>();
 
         if (pos->type == TokenType::Comma)
         {
@@ -236,13 +221,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 if (!ParserExpressionList(false).parse(pos, table_join->using_expression_list, expected))
                     return false;
 
-                if (table_join->using_expression_list->children.empty())
-                {
-                    expected.variants.clear();
-                    expected.add(pos, "column identifier for USING");
-                    return false;
-                }
-
                 if (in_parens)
                 {
                     if (pos->type != TokenType::ClosingRoundBracket)
@@ -283,7 +261,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 
 bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto res = make_intrusive<ASTTablesInSelectQuery>();
+    auto res = std::make_shared<ASTTablesInSelectQuery>();
 
     ASTPtr child;
 

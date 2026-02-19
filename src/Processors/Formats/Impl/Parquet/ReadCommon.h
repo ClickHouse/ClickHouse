@@ -93,8 +93,11 @@ enum class ReadStage
     BloomFilterBlocksOrDictionary,
     ColumnIndexAndOffsetIndex,
 
-    OffsetIndex,
-    ColumnData,
+    PrewhereOffsetIndex,
+    PrewhereData,
+
+    MainOffsetIndex, // "main" means columns that are not in prewhere
+    MainData,
 
     Deliver,
 

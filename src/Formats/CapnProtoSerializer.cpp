@@ -12,8 +12,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
@@ -706,7 +704,7 @@ namespace
         capnp::Data::Reader getData(const ColumnPtr & column, size_t row_num)
         {
             auto data = column->getDataAt(row_num);
-            return capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data()), data.size());
+            return capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
         }
 
         void insertData(IColumn & column, capnp::Data::Reader data)
@@ -757,9 +755,9 @@ namespace
         {
             auto data = column->getDataAt(row_num);
             if constexpr (std::is_same_v<CapnpType, capnp::Data>)
-                return Reader(reinterpret_cast<const kj::byte *>(data.data()), data.size());
+                return Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
             else
-                return Reader(data.data(), data.size());
+                return Reader(data.data, data.size);
         }
 
         void insertData(IColumn & column, Reader data)
@@ -808,18 +806,18 @@ namespace
             auto data = column->getDataAt(row_num);
             if constexpr (std::is_same_v<CapnpType, capnp::Data>)
             {
-                return Reader(reinterpret_cast<const kj::byte *>(data.data()), data.size());
+                return Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
             }
             else
             {
-                if (data.back() == 0)
-                    return Reader(data.data(), data.size());
+                if (data.data[data.size - 1] == 0)
+                    return Reader(data.data, data.size);
 
                 /// In TEXT type data should be null-terminated, but ClickHouse FixedString data could not be.
                 /// To make data null-terminated we should copy it to temporary String object and use it in capnp::Text::Reader.
                 /// Note that capnp::Text::Reader works only with pointer to the data and it's size, so we should
                 /// guarantee that new String object life time is longer than capnp::Text::Reader life time.
-                tmp_string = data;
+                tmp_string = data.toString();
                 return Reader(tmp_string.data(), tmp_string.size());
             }
         }
@@ -1005,7 +1003,7 @@ namespace
             {
                 auto & nested_column = nullable_column.getNestedColumn();
                 nested_serializer->readRow(nested_column, struct_reader, nested_slot_offset);
-                nullable_column.getNullMapData().push_back(false);
+                nullable_column.getNullMapData().push_back(0);
             }
         }
 
@@ -1103,17 +1101,11 @@ namespace
             UInt32 size = list_reader.size();
             auto & column_array = assert_cast<ColumnArray &>(column);
             auto & offsets = column_array.getOffsets();
+            offsets.push_back(offsets.back() + list_reader.size());
+
             auto & nested_column = column_array.getData();
-
-            auto read_array = [&]()
-            {
-                for (UInt32 i = 0; i != size; ++i)
-                    nested_serializer->readRow(nested_column, list_reader, i);
-
-                offsets.push_back(offsets.back() + list_reader.size());
-            };
-
-            SerializationArray::readArraySafe(column, read_array);
+            for (UInt32 i = 0; i != size; ++i)
+                nested_serializer->readRow(nested_column, list_reader, i);
         }
 
         capnp::ListSchema list_schema;
@@ -1390,13 +1382,8 @@ namespace
         {
             if (auto * tuple_column = typeid_cast<ColumnTuple *>(&column))
             {
-                auto read_tuple = [&]()
-                {
-                    for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
-                        fields_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader, fields_offsets[i]);
-                };
-
-                SerializationTuple::readElementsSafe(column, read_tuple);
+                for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
+                    fields_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader, fields_offsets[i]);
             }
             else
                 fields_serializers[0]->readRow(column, struct_reader, fields_offsets[0]);

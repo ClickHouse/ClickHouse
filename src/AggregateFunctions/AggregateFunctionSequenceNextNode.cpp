@@ -15,7 +15,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/ArenaAllocator.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -123,11 +122,11 @@ struct NodeString : public NodeBase<NodeString<MaxEventsSize>, MaxEventsSize>
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        auto string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+        StringRef string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
 
-        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size(), alignof(Node)));
-        node->size = string.size();
-        memcpy(node->data(), string.data(), string.size());
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
+        node->size = string.size;
+        memcpy(node->data(), string.data, string.size);
 
         return node;
     }
@@ -207,7 +206,7 @@ public:
         , seq_direction(seq_direction_)
         , min_required_args(min_required_args_)
         , data_type(this->argument_types[0])
-        , events_size(static_cast<UInt8>(arguments.size() - min_required_args))
+        , events_size(arguments.size() - min_required_args)
         , max_elems(max_elems_)
     {
     }
@@ -430,7 +429,7 @@ public:
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             value[event_idx]->insertInto(to_concrete.getNestedColumn());
-            to_concrete.getNullMapData().push_back(false);
+            to_concrete.getNullMapData().push_back(0);
         }
         else
         {
@@ -467,7 +466,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function '{}' requires 'String' parameters", name);
 
     String param_dir = parameters.at(0).safeGet<String>();
-    UnorderedMapWithMemoryTracking<std::string, SequenceDirection> seq_dir_mapping{
+    std::unordered_map<std::string, SequenceDirection> seq_dir_mapping{
         {"forward", SequenceDirection::Forward},
         {"backward", SequenceDirection::Backward},
     };
@@ -476,7 +475,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     SequenceDirection direction = seq_dir_mapping[param_dir];
 
     String param_base = parameters.at(1).safeGet<String>();
-    UnorderedMapWithMemoryTracking<std::string, SequenceBase> seq_base_mapping{
+    std::unordered_map<std::string, SequenceBase> seq_base_mapping{
         {"head", SequenceBase::Head},
         {"tail", SequenceBase::Tail},
         {"first_match", SequenceBase::FirstMatch},

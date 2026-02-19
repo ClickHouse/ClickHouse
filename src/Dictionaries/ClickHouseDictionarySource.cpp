@@ -1,7 +1,6 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
-#include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -17,7 +16,6 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-#include <QueryPipeline/BlockIO.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Dictionaries/DictionarySourceFactory.h>
@@ -116,24 +114,24 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     return query_builder->composeLoadAllQuery();
 }
 
-BlockIO ClickHouseDictionarySource::loadAll()
+QueryPipeline ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
 }
 
-BlockIO ClickHouseDictionarySource::loadUpdatedAll()
+QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
     return createStreamForQuery(load_update_query);
 }
 
-BlockIO ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     return createStreamForQuery(query_builder->composeLoadIdsQuery(ids));
 }
 
 
-BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);
@@ -163,9 +161,9 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
+QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
-    BlockIO io;
+    QueryPipeline pipeline;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
@@ -184,22 +182,16 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     if (configuration.is_local)
     {
-        if (!CurrentThread::getGroup())
-            io.query_scope = CurrentThread::QueryScope::create(context_copy);
-
-        context_copy->setCurrentQueryId({});
-
-        io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
-
-        io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName(), context_copy);
+        pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
+        pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
     }
     else
     {
-        io.pipeline = QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, std::move(context_copy)), false, false, false));
+        pipeline = QueryPipeline(std::make_shared<RemoteSource>(
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
     }
 
-    return io;
+    return pipeline;
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
@@ -209,28 +201,17 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     /// Copy context because results of scalar subqueries potentially could be cached
     auto context_copy = Context::createCopy(context);
     context_copy->makeQueryContext();
-    context_copy->setCurrentQueryId("");
 
     if (configuration.is_local)
     {
-        CurrentThread::QueryScope query_scope;
-        if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(context_copy);
-
-        BlockIO io = executeQuery(request, context_copy, QueryFlags{ .internal = true }).second;
-        std::string result;
-        io.executeWithCallbacks([&]()
-        {
-            result = readInvalidateQuery(io.pipeline);
-        });
-        return result;
+        return readInvalidateQuery(executeQuery(request, context_copy, QueryFlags{ .internal = true }).second.pipeline);
     }
 
     /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
     auto invalidate_sample_block = std::make_shared<const Block>(Block{});
     QueryPipeline pipeline(std::make_shared<RemoteSource>(
         std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
-    return readInvalidateQuery(pipeline);
+    return readInvalidateQuery(std::move(pipeline));
 }
 
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)

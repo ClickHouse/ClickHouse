@@ -4,14 +4,13 @@ description: '`MergeTree`-family table engines are designed for high data ingest
 sidebar_label: 'MergeTree'
 sidebar_position: 11
 slug: /engines/table-engines/mergetree-family/mergetree
-title: 'MergeTree table engine'
-doc_type: 'reference'
+title: 'MergeTree'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# MergeTree table engine
+# MergeTree
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree` ) are the most commonly used and most robust table engines in ClickHouse.
 
@@ -74,7 +73,7 @@ A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID 
 If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the the sorting key as primary key.
 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
-Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY ()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
+Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY tuple()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
 
 #### PARTITION BY {#partition-by}
 
@@ -348,85 +347,44 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 
 ### Skip Index Types {#skip-index-types}
 
-The `MergeTree` table engine supports the following types of skip indexes.
-For more information on how skip indexes can be used for performance optimization
-see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexes).
+#### MinMax {#minmax}
 
-- [`MinMax`](#minmax) index
-- [`Set`](#set) index
-- [`bloom_filter`](#bloom-filter) index
-- [`ngrambf_v1`](#n-gram-bloom-filter) index
-- [`tokenbf_v1`](#token-bloom-filter) index
+Syntax: `minmax`
 
-#### MinMax skip index {#minmax}
-
-For each index granule, the minimum and maximum values of an expression are stored.
+Stores for each index granule the minimum and maximum values of an expression.
 (If the expression is of type `tuple`, it stores the minimum and maximum for each tuple element.)
-
-```text title="Syntax"
-minmax
-```
 
 #### Set {#set}
 
-For each index granule at most `max_rows` many unique values of the specified expression are stored.
-`max_rows = 0` means "store all unique values".
+Syntax: `set(max_rows)`
 
-```text title="Syntax"
-set(max_rows)
-```
+Stores for each index granule at most `max_rows` many unique values of the specified expression (`max_rows = 0` means "store all unique values").
 
 #### Bloom filter {#bloom-filter}
 
-For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+Syntax: `bloom_filter([false_positive_rate])`
 
-```text title="Syntax"
-bloom_filter([false_positive_rate])
-```
-
-The `false_positive_rate` parameter can take on a value between 0 and 1 (by default: `0.025`) and specifies the probability of generating a positive (which increases the amount of data to be read).
-
-The following data types are supported:
-- `(U)Int*`
-- `Float*`
-- `Enum`
-- `Date`
-- `DateTime`
-- `String`
-- `FixedString`
-- `Array`
-- `LowCardinality`
-- `Nullable`
-- `UUID`
-- `Map`
-
-:::note Map data type: specifying index creation with keys or values
-For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
-:::
+Stores for each index granule a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+Parameter `false_positive_rate` with a possible value between 0 and 1 (default: 0.025) specifies the probability of generating a positive (which increases the amount of data to be read).
+Supported data types: `(U)Int*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID` and `Map`.
+For the `Map` data type, the client can specify if the index should be created for keys or for values using [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues).
 
 #### N-gram bloom filter {#n-gram-bloom-filter}
 
-For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
+Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-```text title="Syntax"
-ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
-```
+Stores for each index granule a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
+Only works with datatypes: [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md) and [Map](/sql-reference/data-types/map.md).
 
-| Parameter                       | Description |
-|---------------------------------|-------------|
-| `n`                             | ngram size  |
-| `size_of_bloom_filter_in_bytes` | Bloom filter size in bytes. You can use a large value here, for example, `256` or `512`, because it can be compressed well).|
-|`number_of_hash_functions`       |The number of hash functions used in the bloom filter.|
-|`random_seed` |Seed for the bloom filter hash functions.|
+Parameters:
+- `n` - ngram size.
+- `size_of_bloom_filter_in_bytes` - Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
+- `number_of_hash_functions` - The number of hash functions used in the bloom filter.
+- `random_seed` - Seed for the bloom filter hash functions.
 
-This index only works with the following data types:
-- [`String`](/sql-reference/data-types/string.md)
-- [`FixedString`](/sql-reference/data-types/fixedstring.md)
-- [`Map`](/sql-reference/data-types/map.md)
+To estimate the parameters of `ngrambf_v1`, you can use the following [UDFs](/sql-reference/statements/create/function.md).
 
-To estimate the parameters of `ngrambf_v1`, you can use the following [User Defined Functions (UDFs)](/sql-reference/statements/create/function.md).
-
-```sql title="UDFs for ngrambf_v1"
+```sql
 CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
 AS
 (total_number_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_number_of_all_grams) * log(2));
@@ -442,14 +400,11 @@ AS
 CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
 AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
+
 ```
-
-To use these functions, you need to specify at least two parameters:
-- `total_number_of_all_grams`
-- `probability_of_false_positives`
-
-For example, there are `4300` ngrams in the granule and you expect false positives to be less than `0.0001`.
-The other parameters can then be estimated by executing the following queries:
+To use those functions, we need to specify two parameters at least.
+For example, if there are 4300 ngrams in the granule and we expect false positives to be less than 0.0001.
+The other parameters can be estimated by executing following queries:
 
 ```sql
 --- estimate number of bits in the filter
@@ -465,34 +420,25 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 ┌─number_of_hash_functions─┐
 │                       13 │
 └──────────────────────────┘
-```
 
-Of course, you can also use those functions to estimate parameters for other conditions.
-The functions above refer to the bloom filter calculator [here](https://hur.st/bloomfilter).
+```
+Of course, you can also use those functions to estimate parameters by other conditions.
+The functions refer to the content [here](https://hur.st/bloomfilter).
 
 #### Token bloom filter {#token-bloom-filter}
 
-The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences separated by non-alphanumeric characters) instead of ngrams.
+Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-```text title="Syntax"
-tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
-```
-
-#### Sparse grams bloom filter {#sparse-grams-bloom-filter}
-
-The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams tokens](/sql-reference/functions/string-functions.md/#sparseGrams) instead of ngrams.
-
-```text title="Syntax"
-sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
-```
-
-### Text index {#text}
-
-Supports full-text search, see [here](textindexes.md) for details.
+The same as `ngrambf_v1`, but stores tokens instead of ngrams.
+Tokens are sequences separated by non-alphanumeric characters.
 
 #### Vector similarity {#vector-similarity}
 
 Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
+
+### Text (experimental) {#text}
+
+Support full-text search, see [here](invertedindexes.md) for details.
 
 ### Functions support {#functions-support}
 
@@ -500,44 +446,40 @@ Conditions in the `WHERE` clause contains calls of the functions that operate wi
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
-|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
-| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [notLike](/sql-reference/functions/string-search-functions.md/#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✗    |
-| [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [empty](/sql-reference/functions/array-functions/#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✔            | ✗    |
-| [has](/sql-reference/functions/array-functions#has)                                                                            | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | text |
+|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|------|
+| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
+| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
+| [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
+| [notLike](/sql-reference/functions/string-search-functions.md/#notlike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
+| [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
+| [startsWith](/sql-reference/functions/string-functions.md/#startswith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
+| [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗    |
+| [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
+| [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
+| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
+| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
+| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
+| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
+| [empty](/sql-reference/functions/array-functions/#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
+| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |
+| [has](/sql-reference/functions/array-functions#has)                                                                            | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
+| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
+| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
+| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hastokencaseinsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hastokencaseinsensitiveornull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    |
+| [searchAny](/sql-reference/functions/string-search-functions.md/#searchany)                                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    |
+| [searchAll](/sql-reference/functions/string-search-functions.md/#searchall)                                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
 (*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
 :::note
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
 
 For example:
 
@@ -573,39 +515,6 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ```
 
 Projections can be modified or dropped with the [ALTER](/sql-reference/statements/alter/projection.md) statement.
-
-### Projection indexes {#projection-index}
-
-Projection indexes extend the projection subsystem by providing a lightweight, explicit way to define projection-level indexes. 
-Conceptually, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving as materialized data.
-
-#### Syntax {#projection-index-syntax}
-```sql
-PROJECTION <name> INDEX <index_expr> TYPE <index_type>
-````
-
-Example:
-
-```sql
-CREATE TABLE example
-(
-    id UInt64,
-    region String,
-    user_id UInt32,
-    PROJECTION region_proj INDEX region TYPE basic,
-    PROJECTION uid_proj INDEX user_id TYPE basic
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-#### Index types {#projection-index-types}
-
-Currently supported:
-
-* **basic**: equivalent to a normal MergeTree index on the expression.
-
-The framework allows adding more index types in the future.
 
 ### Projection storage {#projection-storage}
 Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
@@ -803,7 +712,7 @@ In addition to local block devices, ClickHouse supports these storage types:
 - [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
 - [`web` for read-only from web](/operations/storing-data#web-storage)
 - [`cache` for local caching](/operations/storing-data#using-local-cache)
-- [`s3_plain` for backups to S3](/operations/backup/disk)
+- [`s3_plain` for backups to S3](/operations/backup#backuprestore-using-an-s3-disk)
 - [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/operations/storing-data.md#s3-plain-rewritable-storage)
 
 ## Using multiple block devices for data storage {#table_engine-mergetree-multiple-volumes}
@@ -1103,7 +1012,7 @@ ALTER TABLE tab DROP STATISTICS a;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
-They can be used for prewhere optimization only if we enable `set use_statistics = 1`.
+They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 

@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -43,16 +42,13 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
-    stopwatch = std::make_unique<Stopwatch>();
-
-    const auto & mutation_ids = merge_mutate_entry->mutation_ids;
-    chassert(!mutation_ids.empty());
-
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids);
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
 
-    write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
+    stopwatch = std::make_unique<Stopwatch>();
+
+    write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
@@ -63,8 +59,7 @@ void MutatePlainMergeTreeTask::prepare()
             new_part,
             future_part->parts,
             merge_list_entry.get(),
-            std::move(profile_counters_snapshot),
-            mutation_ids);
+            std::move(profile_counters_snapshot));
     };
 
     if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
@@ -80,11 +75,6 @@ void MutatePlainMergeTreeTask::prepare()
             time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
-void MutatePlainMergeTreeTask::finish()
-{
-    if (merge_mutate_entry)
-        merge_mutate_entry->finalize();
-}
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
@@ -94,7 +84,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+        switcher.emplace((*merge_list_entry)->thread_group, "", /*allow_existing_group*/ true);
 
     switch (state)
     {
@@ -147,7 +137,6 @@ bool MutatePlainMergeTreeTask::executeStep()
         case State::NEED_FINISH:
         {
             // Nothing to do
-            finish();
             state = State::SUCCESS;
             return false;
         }
@@ -167,23 +156,16 @@ void MutatePlainMergeTreeTask::cancel() noexcept
 
     if (new_part)
         new_part->removeIfNeeded();
-
-    /// We need to destroy task here because it holds RAII wrapper for
-    /// temp directories which guards temporary dir from background removal which can
-    /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
-    mutate_task.reset();
-
-    if (merge_mutate_entry)
-        merge_mutate_entry->finalize();
 }
 
 
 ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    auto context = Context::createCopy(storage.getContext());
     context->makeQueryContextForMutate(*storage.getSettings());
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
+    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
     return context;
 }
 
