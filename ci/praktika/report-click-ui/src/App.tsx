@@ -586,17 +586,47 @@ function App() {
     return (
       <Container orientation='vertical' gap='sm' padding='md' style={{ maxWidth: '800px', maxHeight: '600px', overflow: 'auto' }}>
         {result.info && (
-          <Container orientation='vertical' gap='xs'>
-            <Text style={{ fontWeight: 600 }}>Info:</Text>
+          <Panel hasShadow padding='sm' orientation='vertical' gap='xs' alignItems='start' style={{ backgroundColor: 'rgba(0, 0, 0, 0.1)' }}>
             <Text style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '12px' }}>
               {result.info}
             </Text>
-          </Container>
+          </Panel>
+        )}
+        {result.results && result.results.length > 0 && (
+          <Table
+            headers={[
+              { label: 'Status' },
+              { label: 'Name' },
+            ]}
+            rows={(sortByStatus
+              ? [...result.results].sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status))
+              : result.results
+            ).map((subresult, subindex) => {
+              const subNameWithLabels = (
+                <>
+                  {subresult.name}
+                  {renderLabels(subresult.ext?.labels, subresult.ext?.hlabels)}
+                </>
+              )
+              return {
+                id: `sub-${subindex}`,
+                items: [
+                  { label: wrapWithPopover(getStatusBadge(subresult.status), subresult) },
+                  { label: wrapWithPopover(subNameWithLabels, subresult) },
+                ],
+              }
+            })}
+            size="sm"
+          />
         )}
         {result.links && result.links.length > 0 && (
-          <Container orientation='vertical' gap='xs'>
-            <Text style={{ fontWeight: 600 }}>Links:</Text>
-            <Container orientation='vertical' gap='xs'>
+          <Panel hasShadow padding='sm' fillWidth style={{ backgroundColor: 'rgba(0, 0, 0, 0.1)' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '8px',
+              width: '100%'
+            }}>
               {result.links.map((link, linkIndex) => (
                 <Link
                   key={linkIndex}
@@ -608,38 +638,8 @@ function App() {
                   {getLastPartOfUrl(link)}
                 </Link>
               ))}
-            </Container>
-          </Container>
-        )}
-        {result.results && result.results.length > 0 && (
-          <Container orientation='vertical' gap='xs'>
-            <Text style={{ fontWeight: 600 }}>Subresults ({result.results.length}):</Text>
-            <Table
-              headers={[
-                { label: 'Status' },
-                { label: 'Name' },
-              ]}
-              rows={(sortByStatus
-                ? [...result.results].sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status))
-                : result.results
-              ).map((subresult, subindex) => {
-                const subNameWithLabels = (
-                  <>
-                    {subresult.name}
-                    {renderLabels(subresult.ext?.labels, subresult.ext?.hlabels)}
-                  </>
-                )
-                return {
-                  id: `sub-${subindex}`,
-                  items: [
-                    { label: wrapWithPopover(getStatusBadge(subresult.status), subresult) },
-                    { label: wrapWithPopover(subNameWithLabels, subresult) },
-                  ],
-                }
-              })}
-              size="sm"
-            />
-          </Container>
+            </div>
+          </Panel>
         )}
         {navigateUrl && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
@@ -967,26 +967,31 @@ function App() {
               </div>
 
               {data.info && (
-                <Panel hasShadow padding='md' orientation='vertical' gap='xs' fillWidth style={{ marginBottom: '16px' }}>
-                  <Text style={{ fontWeight: 600 }}>Info:</Text>
+                <Panel hasShadow padding='md' orientation='vertical' gap='xs' fillWidth alignItems='start' style={{ marginBottom: '16px' }}>
                   <Text style={{ whiteSpace: 'pre-wrap', fontSize: '13px' }}>{data.info}</Text>
                 </Panel>
               )}
 
               {data.links && data.links.length > 0 && (
-                <Panel hasShadow padding='md' orientation='vertical' gap='xs' fillWidth style={{ marginBottom: '16px' }}>
-                  <Text style={{ fontWeight: 600 }}>Links:</Text>
-                  {data.links.map((link, index) => (
-                    <Link
-                      key={index}
-                      href={link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ fontSize: '13px' }}
-                    >
-                      {getLastPartOfUrl(link)}
-                    </Link>
-                  ))}
+                <Panel hasShadow padding='md' fillWidth style={{ marginBottom: '16px' }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                    gap: '8px',
+                    width: '100%'
+                  }}>
+                    {data.links.map((link, index) => (
+                      <Link
+                        key={index}
+                        href={link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: '13px' }}
+                      >
+                        {getLastPartOfUrl(link)}
+                      </Link>
+                    ))}
+                  </div>
                 </Panel>
               )}
 
