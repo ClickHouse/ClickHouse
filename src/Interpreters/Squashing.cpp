@@ -1,12 +1,9 @@
-#include <utility>
 #include <vector>
 #include <Interpreters/Squashing.h>
-#include <Interpreters/InsertDeduplication.h>
-#include <Core/Block.h>
-#include <Columns/ColumnSparse.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnSparse.h>
 #include <base/defines.h>
 
 namespace DB
@@ -17,11 +14,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Squashing::Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
+Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , header(header_)
 {
+    LOG_TEST(getLogger("Squashing"), "header columns {}", header.columns());
 }
 
 Chunk Squashing::flush()
@@ -34,56 +32,17 @@ Chunk Squashing::flush()
     return result;
 }
 
-Chunk Squashing::squash(Chunk && input_chunk, SharedHeader header)
+Chunk Squashing::squash(Chunk && input_chunk)
 {
     if (!input_chunk)
-        return std::move(input_chunk);
+        return Chunk();
 
     auto squash_info = input_chunk.getChunkInfos().extract<ChunksToSquash>();
 
     if (!squash_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
 
-    return squash(std::move(squash_info->chunks), std::move(input_chunk.getChunkInfos()), header);
-}
-
-Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos, SharedHeader header)
-{
-    auto input_chunks_size = input_chunks.size();
-    LOG_TEST(getLogger("squashing"), "input chunks count {}", input_chunks_size);
-
-    Chunk::ChunkInfoCollection result_info;
-    /// merge all infos before squashing the chunks in order to release original block in deduplication info
-    for (auto & chunk : input_chunks)
-    {
-        LOG_TEST(getLogger("squashing"), "merge deduplication info debug: {}",
-            chunk.getChunkInfos().get<DeduplicationInfo>() ? chunk.getChunkInfos().get<DeduplicationInfo>()->debug() : "null");
-        result_info.mergeWith(std::move(chunk.getChunkInfos()));
-    }
-    LOG_TEST(getLogger("squashing"), "merge deduplication info debug: {}",
-    infos.get<DeduplicationInfo>() ? infos.get<DeduplicationInfo>()->debug() : "null");
-    result_info.mergeWith(std::move(infos));
-
-    auto result = [](std::vector<Chunk> && input_chunks_) -> Chunk
-    {
-        if (input_chunks_.size() == 1)
-            /// this is just optimization, no logic changes
-            return std::move(input_chunks_.front());
-        return Squashing::squash(std::move(input_chunks_));
-    }(std::move(input_chunks));
-
-    // Update original block in deduplication info after squashing
-    if (auto deduplication_info = result_info.get<DeduplicationInfo>())
-    {
-        LOG_TEST(getLogger("squashing"), "Updating original block in deduplication info after squashing, rows: {}, input_chunks count {}, debug: {}",
-            result.getNumRows(), input_chunks_size, deduplication_info->debug());
-        deduplication_info->updateOriginalBlock(result, header);
-    }
-
-    result.setChunkInfos(std::move(result_info));
-
-    chassert(result);
-    return result;
+    return squash(std::move(squash_info->chunks), std::move(input_chunk.getChunkInfos()));
 }
 
 Chunk Squashing::add(Chunk && input_chunk, bool flush_if_enough_size)
@@ -137,19 +96,27 @@ Chunk Squashing::convertToChunk(CurrentData && data) const
     // It is imortant that chunk is not empty, it has to have columns even if they are empty
     // Sometimes there are could be no columns in header but not empty rows in chunks
     // That happens when we intend to add defaults for the missing columns after
-    auto aggr_chunk = Chunk(header->getColumns(), 0);
-    if (header->columns() == 0)
-        aggr_chunk = Chunk(header->getColumns(), data.getRows());
+    auto aggr_chunk = Chunk(header.getColumns(), 0);
+    if (header.columns() == 0)
+        aggr_chunk = Chunk(header.getColumns(), data.getRows());
 
     aggr_chunk.getChunkInfos().add(std::move(info));
     chassert(aggr_chunk);
     return aggr_chunk;
 }
 
-Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
+Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos)
 {
-    if (input_chunks.empty())
-        return {};
+    if (input_chunks.size() == 1)
+    {
+        /// this is just optimization, no logic changes
+        Chunk result = std::move(input_chunks.front());
+        infos.appendIfUniq(std::move(result.getChunkInfos()));
+        result.setChunkInfos(infos);
+
+        chassert(result);
+        return result;
+    }
 
     std::vector<IColumn::MutablePtr> mutable_columns;
     size_t rows = 0;
@@ -178,9 +145,19 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
         auto columns = input_chunks[i].detachColumns();
         for (size_t j = 0; j != num_columns; ++j)
         {
+            /// IColumn::structureEquals is not implemented for deprecated object type, ignore it and always convert to non-sparse.
+            bool has_object_deprecated = columns[j]->getDataType() == TypeIndex::ObjectDeprecated ||
+                mutable_columns[j]->getDataType() == TypeIndex::ObjectDeprecated;
+            auto has_object_deprecated_lambda = [&has_object_deprecated](const auto & subcolumn)
+            {
+                has_object_deprecated = has_object_deprecated || subcolumn.getDataType() == TypeIndex::ObjectDeprecated;
+            };
+            columns[j]->forEachSubcolumnRecursively(has_object_deprecated_lambda);
+            mutable_columns[j]->forEachSubcolumnRecursively(has_object_deprecated_lambda);
+
             /// Need to check if there are any sparse columns in subcolumns,
             /// since `IColumn::isSparse` is not recursive but sparse column can be inside a tuple, for example.
-            have_same_serialization[j] &= columns[j]->structureEquals(*mutable_columns[j]);
+            have_same_serialization[j] &= !has_object_deprecated && columns[j]->structureEquals(*mutable_columns[j]);
             source_columns_list[j].emplace_back(std::move(columns[j]));
         }
     }
@@ -189,13 +166,13 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
     {
         if (!have_same_serialization[i])
         {
-            mutable_columns[i] = removeSpecialRepresentations(mutable_columns[i]->convertToFullColumnIfConst())->assumeMutable();
+            mutable_columns[i] = recursiveRemoveSparse(std::move(mutable_columns[i]))->assumeMutable();
             for (auto & column : source_columns_list[i])
-                column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+                column = recursiveRemoveSparse(column);
         }
 
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.
-        mutable_columns[i]->prepareForSquashing(source_columns_list[i], /* factor */ 1);
+        mutable_columns[i]->prepareForSquashing(source_columns_list[i]);
         for (auto & source_column : source_columns_list[i])
         {
             auto column = std::move(source_column);
@@ -205,6 +182,8 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
 
     Chunk result;
     result.setColumns(std::move(mutable_columns), rows);
+    result.setChunkInfos(infos);
+    result.getChunkInfos().appendIfUniq(std::move(input_chunks.back().getChunkInfos()));
 
     chassert(result);
     return result;

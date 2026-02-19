@@ -24,7 +24,7 @@ struct MultiplyImpl
             return static_cast<Result>(static_cast<CastA>(a)) * static_cast<Result>(static_cast<CastB>(b));
         }
         else
-            return static_cast<Result>(a) * static_cast<Result>(b);
+            return static_cast<Result>(a) * b;
     }
 
     /// Apply operation and check overflow. It's used for Decimal operations. @returns true if overflowed, false otherwise.
@@ -55,20 +55,7 @@ using FunctionMultiply = BinaryArithmeticOverloadResolver<MultiplyImpl, NameMult
 
 REGISTER_FUNCTION(Multiply)
 {
-    FunctionDocumentation::Description description = "Calculates the product of two values `x` and `y`.";
-    FunctionDocumentation::Syntax syntax = "multiply(x, y)";
-    FunctionDocumentation::Arguments arguments =
-    {
-        {"x", "factor.", {"(U)Int*", "Float*", "Decimal"}},
-        {"y", "factor.", {"(U)Int*", "Float*", "Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the product of x and y"};
-    FunctionDocumentation::Examples examples = {{"Multiplying two numbers", "SELECT multiply(5,5)", "25"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
-
-    factory.registerFunction<FunctionMultiply>(documentation);
+    factory.registerFunction<FunctionMultiply>();
 }
 
 }

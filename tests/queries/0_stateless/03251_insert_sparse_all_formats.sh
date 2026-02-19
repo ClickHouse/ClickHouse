@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-azure-blob-storage
-# no-azure-blob-storage: too slow
-# no-msan: it is too slow
+# Tags: no-fasttest, long
 
 set -e
 

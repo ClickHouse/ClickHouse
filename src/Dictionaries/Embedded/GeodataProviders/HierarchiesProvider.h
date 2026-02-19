@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
+#include "IHierarchiesProvider.h"
 
 #include <unordered_map>
 #include <Common/FileUpdatesTracker.h>

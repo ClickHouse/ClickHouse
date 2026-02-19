@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Client/Connection.h>
-#include <Interpreters/Context_fwd.h>
+#include "Connection.h"
+#include <Interpreters/Context.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
@@ -62,7 +62,7 @@ struct LocalQueryState
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
 
-    CurrentThread::QueryScope query_scope_holder;
+    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 };
 
 
@@ -131,8 +131,6 @@ public:
         bool with_pending_data/* = false */,
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
-
-    void sendQueryPlan(const QueryPlan &) override;
 
     void sendCancel() override;
 

@@ -1,6 +1,6 @@
-#include <Generator.h>
-#include <Common/Exception.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include "Generator.h"
+#include "Common/Exception.h"
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include <Common/Config/ConfigProcessor.h>
 #include <random>
 #include <filesystem>
@@ -173,7 +173,7 @@ void PathGetter::initialize(Coordination::ZooKeeper & zookeeper)
             else
                 list_promise->set_value(response);
         };
-        zookeeper.list(parent_path, ListRequestType::ALL, std::move(callback), {}, false, false);
+        zookeeper.list(parent_path, ListRequestType::ALL, std::move(callback), {});
         auto list_response = list_future.get();
 
         for (const auto & child : list_response.names)

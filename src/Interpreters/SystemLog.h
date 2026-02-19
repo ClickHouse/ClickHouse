@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
 #include <Parsers/IAST.h>
@@ -12,12 +10,11 @@
     M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
     M(QueryThreadLog,        query_thread_log,     "Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.") \
     M(PartLog,               part_log,             "This table contains information about events that occurred with data parts in the MergeTree family tables, such as adding or merging data.") \
-    M(BackgroundSchedulePoolLog, background_schedule_pool_log, "Contains history of background schedule pool task executions.") \
     M(TraceLog,              trace_log,            "Contains stack traces collected by the sampling query profiler.") \
     M(CrashLog,              crash_log,            "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.") \
     M(TextLog,               text_log,             "Contains logging entries which are normally written to a log file or to stdout.") \
     M(MetricLog,             metric_log,           "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.") \
-    M(TransposedMetricLog,   transposed_metric_log,"Contains history of metrics values from tables system.metrics and system.events. Periodically flushed to disk. Transposed form of system.metric_log.") \
+    M(LatencyLog,            latency_log,          "Contains history of all latency buckets, periodically flushed to disk.") \
     M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
     M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
     M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.") \
@@ -34,15 +31,6 @@
     M(BackupLog,             backup_log,           "Contains logging entries with the information about BACKUP and RESTORE operations.") \
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
     M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
-    M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
-    M(ZooKeeperConnectionLog, zookeeper_connection_log, "Contains history of ZooKeeper connections.") \
-    M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
-    M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
-    M(DeltaMetadataLog,    delta_lake_metadata_log, "Contains content of Delta metadata files.") \
-
-#define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
-    M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
-    M(DistributedCacheServerLog, distributed_cache_server_log, "Contains the history of all interactions with distributed cache client.") \
 
 
 namespace DB
@@ -78,9 +66,6 @@ namespace DB
     class log_type; \
 
 LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
-#if CLICKHOUSE_CLOUD
-    LIST_OF_CLOUD_SYSTEM_LOGS(FORWARD_DECLARATION)
-#endif
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
 
@@ -93,7 +78,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(const std::vector<std::pair<String, String>> & names);
+    void flush(const Strings & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -102,15 +87,12 @@ public:
     std::shared_ptr<log_type> member; \
 
     LIST_OF_ALL_SYSTEM_LOGS(DECLARE_PUBLIC_MEMBERS)
-    #if CLICKHOUSE_CLOUD
-        LIST_OF_CLOUD_SYSTEM_LOGS(DECLARE_PUBLIC_MEMBERS)
-    #endif
 #undef DECLARE_PUBLIC_MEMBERS
 
 private:
     std::vector<ISystemLog *> getAllLogs() const;
 
-    void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
+    void flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
 
 struct SystemLogSettings

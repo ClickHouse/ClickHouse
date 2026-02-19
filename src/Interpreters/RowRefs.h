@@ -12,31 +12,18 @@ namespace DB
 {
 
 class Block;
-class ColumnReplicated;
-
-struct ColumnsInfo
-{
-    explicit ColumnsInfo(Columns && columns_);
-
-    Columns columns;
-    /// Sometimes we need to insert rows into a regular column from a Replicated column.
-    /// And to avoid virtual calls and casts per each row insertion we store pointer
-    /// to the replicated column for each column in the list above.
-    /// If columns is not Replicated, pointer will be nullptr.
-    std::vector<const ColumnReplicated *> replicated_columns;
-};
 
 /// Reference to the row in block.
 struct RowRef
 {
     using SizeT = uint32_t; /// Do not use size_t cause of memory economy
 
-    const ColumnsInfo * columns_info = nullptr;
+    const Block * block = nullptr;
     SizeT row_num = 0;
 
     RowRef() = default;
-    RowRef(const ColumnsInfo * columns_, size_t row_num_)
-        : columns_info(columns_)
+    RowRef(const Block * block_, size_t row_num_)
+        : block(block_)
         , row_num(static_cast<SizeT>(row_num_))
     {}
 };
@@ -128,32 +115,14 @@ struct RowRefList : RowRef
     };
 
     RowRefList() {} /// NOLINT
-    RowRefList(const ColumnsInfo * columns_, size_t row_num_) : RowRef(columns_, row_num_), rows(1) {}
-    RowRefList(const ColumnsInfo * columns_, size_t row_start_, size_t rows_) : RowRef(columns_, row_start_), rows(static_cast<SizeT>(rows_)) {}
+    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_), rows(1) {}
+    RowRefList(const Block * block_, size_t row_start_, size_t rows_) : RowRef(block_, row_start_), rows(static_cast<SizeT>(rows_)) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
-
-    /// Check that RowRefList represent a range of consecutive rows
-    /// In this case there must be no next element
-    void assertIsRange() const
-    {
-        chassert(rows >= 1, "RowRefList should have at least one row");
-        chassert(next == nullptr, "When RowRefList represent range, it should not have next element");
-    }
 
     /// insert element after current one
     void insert(RowRef && row_ref, Arena & pool)
     {
-        /// init the first element.
-        /// When you use the RowRefList() constructor and then insert data using the insert interface,
-        /// make sure to prevent the first element from being null to avoid a crash.
-        if (rows == 0)
-        {
-            columns_info = row_ref.columns_info;
-            row_num = row_ref.row_num;
-            ++rows;
-            return;
-        }
         if (!next)
         {
             next = pool.alloc<Batch>();
@@ -183,7 +152,7 @@ struct SortedLookupVectorBase
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
     // This will be synchronized by the rwlock mutex in Join.h
-    virtual void insert(const IColumn &, const ColumnsInfo *, size_t) = 0;
+    virtual void insert(const IColumn &, const Block *, size_t) = 0;
 
     // This needs to be synchronized internally
     virtual RowRef * findAsof(const IColumn &, size_t) = 0;

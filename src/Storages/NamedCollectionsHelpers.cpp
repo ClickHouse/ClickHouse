@@ -1,11 +1,9 @@
-#include <Storages/NamedCollectionsHelpers.h>
+#include "NamedCollectionsHelpers.h"
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -129,7 +127,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
 
-    for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
+    for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
         auto value_override = getKeyValueFromASTImpl(*it, /* fallback_to_ast_value */ complex_args != nullptr, context);
 
@@ -152,7 +150,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)), {});
     }
 
     return collection_copy;

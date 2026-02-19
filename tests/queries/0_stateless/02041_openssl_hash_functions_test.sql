@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-openssl-fips
+-- Tags: no-fasttest
 
 SELECT hex(halfMD5('test'));
 SELECT hex(MD4('test'));

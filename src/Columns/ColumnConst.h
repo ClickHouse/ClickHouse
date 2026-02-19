@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
@@ -76,12 +71,12 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        return data->getValueNameAndType(0);
     }
 
-    std::string_view getDataAt(size_t) const override
+    StringRef getDataAt(size_t) const override
     {
         return data->getDataAt(0);
     }
@@ -176,33 +171,30 @@ public:
 
     void popBack(size_t n) override
     {
-        if (n > s)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
         s -= n;
     }
 
-    std::string_view
-    serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
     {
-        return data->serializeValueIntoArena(0, arena, begin, settings);
+        return data->serializeValueIntoArena(0, arena, begin);
     }
 
-    char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override
+    char * serializeValueIntoMemory(size_t, char * memory) const override
     {
-        return data->serializeValueIntoMemory(0, memory, settings);
+        return data->serializeValueIntoMemory(0, memory);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
+    const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        data->deserializeAndInsertFromArena(in, settings);
+        const auto * res = data->deserializeAndInsertFromArena(pos);
         data->popBack(1);
         ++s;
+        return res;
     }
 
-    void skipSerializedInArena(ReadBuffer & in) const override
+    const char * skipSerializedInArena(const char * pos) const override
     {
-        data->skipSerializedInArena(in);
+        return data->skipSerializedInArena(pos);
     }
 
     void updateHashWithValue(size_t, SipHash & hash) const override
@@ -218,7 +210,6 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
@@ -259,7 +250,7 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 

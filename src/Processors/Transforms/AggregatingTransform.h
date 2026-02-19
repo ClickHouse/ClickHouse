@@ -28,14 +28,13 @@ public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
-    std::vector<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
 };
 
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
-class RuntimeDataflowStatisticsCacheUpdater;
-using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 struct AggregatingTransformParams
 {
@@ -50,10 +49,10 @@ struct AggregatingTransformParams
     Aggregator & aggregator;
     bool final;
 
-    AggregatingTransformParams(SharedHeader header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
         , final(final_)
     {
     }
@@ -110,7 +109,8 @@ struct ManyAggregatedData
                     pool->scheduleOrThrowOnError(
                         [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
                         {
-                            ThreadGroupSwitcher switcher(thread_group, ThreadName::AGGREGATOR_DESTRUCTION);
+                            ThreadGroupSwitcher switcher(thread_group, "AggregDestruct");
+
                             my_variant.reset();
                         });
                 }
@@ -146,20 +146,18 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
 
     /// For Parallel aggregating.
     AggregatingTransform(
-        SharedHeader header,
+        Block header,
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
         size_t max_threads,
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
-        bool skip_merging_ = false,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
-
+        bool skip_merging_ = false);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -193,8 +191,7 @@ private:
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
-    /// If we aggregate partitioned data merging is not needed.
-    bool skip_merging = false;
+    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
@@ -214,8 +211,6 @@ private:
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
     std::list<TemporaryBlockStreamHolder> tmp_files;
-
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     void initGenerate();
 };

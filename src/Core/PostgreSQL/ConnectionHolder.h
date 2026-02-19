@@ -7,7 +7,7 @@
 #include <pqxx/pqxx>
 #include <Core/Types.h>
 #include <base/BorrowedObjectPool.h>
-#include <Core/PostgreSQL/Connection.h>
+#include "Connection.h"
 
 
 namespace postgres

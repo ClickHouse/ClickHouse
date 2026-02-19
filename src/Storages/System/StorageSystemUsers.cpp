@@ -4,7 +4,6 @@
 #include <Access/User.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -20,6 +19,8 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSONString.h>
+
+#include <Access/Common/SSLCertificateSubjects.h>
 
 #include <base/types.h>
 #include <base/range.h>
@@ -56,9 +57,6 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
         },
         {"auth_params", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Authentication parameters in the JSON format depending on the auth_type."
-        },
-        {"valid_until", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()),
-            "The expiration date and time for user credentials."
         },
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "IP addresses of hosts that are allowed to connect to the ClickHouse server."
@@ -106,8 +104,6 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto & column_auth_type_offsets =  assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_auth_params = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_auth_params_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
-    auto & column_valid_until = assert_cast<ColumnUInt32 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
-    auto & column_valid_until_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_ip = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_host_ip_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_names = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
@@ -153,33 +149,21 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             {
                 auth_params_json.set("realm", auth_data.getKerberosRealm());
             }
-#if USE_SSL
             else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
             {
                 Poco::JSON::Array::Ptr common_names = new Poco::JSON::Array();
                 Poco::JSON::Array::Ptr subject_alt_names = new Poco::JSON::Array();
 
                 const auto & subjects = auth_data.getSSLCertificateSubjects();
-                for (const String & subject : subjects.at(X509Certificate::Subjects::Type::CN))
+                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::CN))
                     common_names->add(subject);
-                for (const String & subject : subjects.at(X509Certificate::Subjects::Type::SAN))
+                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::SAN))
                     subject_alt_names->add(subject);
 
                 if (common_names->size() > 0)
                     auth_params_json.set("common_names", common_names);
                 if (subject_alt_names->size() > 0)
                     auth_params_json.set("subject_alt_names", subject_alt_names);
-            }
-#endif
-            else if (const auto & otp_data = auth_data.getOneTimePassword(); otp_data.has_value())
-            {
-                auth_params_json.set("second_factor", "one_time_password");
-                if (otp_data->params != OneTimePasswordParams{})
-                {
-                    auth_params_json.set("otp_algorithm", toString(otp_data->params.algorithm));
-                    auth_params_json.set("otp_num_digits", toString(otp_data->params.num_digits));
-                    auth_params_json.set("otp_period", toString(otp_data->params.period));
-                }
             }
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -189,12 +173,10 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
 
             column_auth_params.insertData(authentication_params_str.data(), authentication_params_str.size());
             column_auth_type.insertValue(static_cast<Int8>(auth_data.getType()));
-            column_valid_until.insertValue(static_cast<UInt32>(auth_data.getValidUntil()));
         }
 
         column_auth_params_offsets.push_back(column_auth_params.size());
         column_auth_type_offsets.push_back(column_auth_type.size());
-        column_valid_until_offsets.push_back(column_valid_until.size());
 
         if (allowed_hosts.containsAnyHost())
         {

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 set -e
 
@@ -32,13 +31,11 @@ function insert_thread() {
     INSERT[0]="INSERT INTO TABLE src_a VALUES (1);"
     INSERT[1]="INSERT INTO TABLE src_b VALUES (2);"
 
-    local TIMELIMIT=$((SECONDS+120))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         # trigger 50 concurrent inserts at a time
         for _ in {0..50}; do
             # ignore `Possible deadlock avoided. Client should retry`
-            ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${INSERT[$RANDOM % 2]}" 2>/dev/null &
+            $CLICKHOUSE_CLIENT -q "${INSERT[$RANDOM % 2]}" 2>/dev/null &
         done
         wait
 
@@ -63,9 +60,7 @@ function alter_thread() {
     ALTER[$RANDOM % 2 + 4]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
 
     i=0
-    local TIMELIMIT=$((SECONDS+120))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTER[$i % 6]}"
         ((i=i+1))
 
@@ -79,8 +74,12 @@ function alter_thread() {
     done
 }
 
-insert_thread &
-alter_thread &
+export -f insert_thread;
+export -f alter_thread;
+
+# finishes much faster with all builds, except debug with coverage
+timeout 120 bash -c insert_thread &
+timeout 120 bash -c alter_thread &
 
 wait
 

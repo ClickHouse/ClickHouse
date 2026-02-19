@@ -4,6 +4,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <arrow/io/memory.h>
+#include <arrow/io/api.h>
 #include <arrow/api.h>
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
@@ -11,12 +12,14 @@
 #include <orc/Statistics.hh>
 
 #include <fmt/core.h>
+#include <Core/Types.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Interpreters/Context.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB
 {
@@ -166,7 +169,7 @@ void HiveORCFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), arrow::default_memory_pool());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), ArrowMemoryPool::instance());
     THROW_ARROW_NOT_OK(result.status());
     reader = std::move(result).ValueOrDie();
 }
@@ -285,7 +288,7 @@ void HiveParquetFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool(), &reader));
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance(), &reader));
 }
 
 void HiveParquetFile::loadSplitMinMaxIndexesImpl()

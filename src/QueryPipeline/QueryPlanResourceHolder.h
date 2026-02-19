@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/TableLockHolder.h>
-#include <memory>
 
 namespace DB
 {
@@ -12,9 +11,8 @@ using StoragePtr = std::shared_ptr<IStorage>;
 
 class QueryPlan;
 class Context;
+
 struct QueryIdHolder;
-class InsertDependenciesBuilder;
-using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
 struct QueryPlanResourceHolder
 {
@@ -26,7 +24,7 @@ struct QueryPlanResourceHolder
 
     /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
     QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&) noexcept;
-    QueryPlanResourceHolder & append(const QueryPlanResourceHolder & rhs) noexcept;
+    QueryPlanResourceHolder & append(QueryPlanResourceHolder &&) noexcept;
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
@@ -35,7 +33,6 @@ struct QueryPlanResourceHolder
     std::vector<StoragePtr> storage_holders;
     std::vector<TableLockHolder> table_locks;
     std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
-    std::vector<InsertDependenciesBuilderConstPtr> insert_dependencies_holders;
 };
 
 }

@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 #include <Poco/Exception.h>
-#include <base/StringViewHash.h>
+#include <base/StringRef.h>
 #include <base/types.h>
-#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
+#include "GeodataProviders/INamesProvider.h"
 
 namespace DB
 {
@@ -67,7 +67,8 @@ private:
 
     using Chars = std::vector<char>;
     using CharsForLanguageID = std::vector<Chars>;
-    using StringViewsForLanguageID = std::vector<StringViews>;
+    using StringRefs = std::vector<StringRef>; /// Lookup table RegionID -> StringRef
+    using StringRefsForLanguageID = std::vector<StringRefs>;
 
 
     NamesSources names_sources = NamesSources(total_languages);
@@ -76,23 +77,23 @@ private:
     CharsForLanguageID chars = CharsForLanguageID(total_languages);
 
     /// Mapping for each language from the region id into a pointer to the byte range of the name
-    StringViewsForLanguageID names_refs = StringViewsForLanguageID(total_languages);
+    StringRefsForLanguageID names_refs = StringRefsForLanguageID(total_languages);
 
     static std::string dumpSupportedLanguagesNames();
 public:
     explicit RegionsNames(IRegionsNamesDataProviderPtr data_provider);
 
-    std::string_view getRegionName(RegionID region_id, Language language) const
+    StringRef getRegionName(RegionID region_id, Language language) const
     {
         size_t language_id = static_cast<size_t>(language);
 
         if (region_id >= names_refs[language_id].size())
-            return std::string_view{};
+            return StringRef("", 0);
 
-        std::string_view ref = names_refs[language_id][region_id];
+        StringRef ref = names_refs[language_id][region_id];
 
         static constexpr size_t root_language = static_cast<size_t>(Language::ru);
-        while (ref.empty() && language_id != root_language)
+        while (ref.size == 0 && language_id != root_language)
         {
             language_id = static_cast<size_t>(fallbacks[language_id]);
             ref = names_refs[language_id][region_id];

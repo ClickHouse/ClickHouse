@@ -1,4 +1,4 @@
-#include <Dictionaries/ExecutablePoolDictionarySource.h>
+#include "ExecutablePoolDictionarySource.h"
 
 #include <filesystem>
 
@@ -77,34 +77,30 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-BlockIO ExecutablePoolDictionarySource::loadAll()
+QueryPipeline ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-BlockIO ExecutablePoolDictionarySource::loadUpdatedAll()
+QueryPipeline ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-BlockIO ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
-BlockIO ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
 QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
@@ -139,8 +135,7 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
         command = std::move(script_path);
     }
 
-    auto header = std::make_shared<const Block>(block);
-    auto source = std::make_shared<SourceFromSingleChunk>(header);
+    auto source = std::make_shared<SourceFromSingleChunk>(block);
     auto shell_input_pipe = Pipe(std::move(source));
 
     ShellCommandSourceConfiguration command_configuration;
@@ -159,7 +154,7 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
         command_configuration);
 
     if (configuration.implicit_key)
-        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(header, pipe.getSharedHeader()));
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
 
     return QueryPipeline(std::move(pipe));
 }
@@ -192,8 +187,7 @@ std::string ExecutablePoolDictionarySource::toString() const
 
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                 const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -250,7 +244,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
-            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "log_last")),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .pool_size = config.getUInt64(settings_config_prefix + ".pool_size", 16),
             .max_command_execution_time_seconds = max_command_execution_time,

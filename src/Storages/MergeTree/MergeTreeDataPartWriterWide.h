@@ -75,6 +75,7 @@ private:
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & name_and_type,
+        const ColumnPtr & column_sample,
         WrittenOffsetColumns & offset_columns);
 
     /// Write mark to disk using stream and rows count
@@ -94,6 +95,7 @@ private:
 
     void addStreams(
         const NameAndTypePair & name_and_type,
+        const ColumnPtr & column,
         const ASTPtr & effective_codec_desc) override;
 
     /// Method for self check (used in debug-build only). Checks that written
@@ -115,14 +117,8 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    void initColumnsSubstreamsIfNeeded(const Block & block);
-
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
-
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
-
-    ISerialization::EnumerateStreamsSettings getEnumerateSettings() const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;

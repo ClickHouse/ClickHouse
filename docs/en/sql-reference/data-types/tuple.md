@@ -4,7 +4,6 @@ sidebar_label: 'Tuple(T1, T2, ...)'
 sidebar_position: 34
 slug: /sql-reference/data-types/tuple
 title: 'Tuple(T1, T2, ...)'
-doc_type: 'reference'
 ---
 
 # Tuple(T1, T2, ...)
@@ -19,17 +18,17 @@ Tuples can be the result of a query. In this case, for text formats other than J
 
 You can use a function to create a tuple:
 
-```sql
+``` sql
 tuple(T1, T2, ...)
 ```
 
 Example of creating a tuple:
 
-```sql
+``` sql
 SELECT tuple(1, 'a') AS x, toTypeName(x)
 ```
 
-```text
+``` text
 ┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
 │ (1,'a') │ Tuple(UInt8, String)      │
 └─────────┴───────────────────────────┘
@@ -39,11 +38,11 @@ A Tuple can contain a single element
 
 Example:
 
-```sql
+``` sql
 SELECT tuple('a') AS x;
 ```
 
-```text
+``` text
 ┌─x─────┐
 │ ('a') │
 └───────┘
@@ -53,11 +52,11 @@ Syntax `(tuple_element1, tuple_element2)` may be used to create a tuple of sever
 
 Example:
 
-```sql
+``` sql
 SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple;
 ```
 
-```text
+``` text
 ┌─x───────┬─y──────────────────────────────────────┬─not_a_tuple─┐
 │ (1,'a') │ ('2022-09-21',2006973416,'someString') │ a           │
 └─────────┴────────────────────────────────────────┴─────────────┘
@@ -69,11 +68,11 @@ When creating tuples on the fly, ClickHouse interferes the type of the tuples ar
 
 Example of automatic data type detection:
 
-```sql
+``` sql
 SELECT tuple(1, NULL) AS x, toTypeName(x)
 ```
 
-```text
+``` text
 ┌─x─────────┬─toTypeName(tuple(1, NULL))──────┐
 │ (1, NULL) │ Tuple(UInt8, Nullable(Nothing)) │
 └───────────┴─────────────────────────────────┘
@@ -83,7 +82,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 
 Tuple elements can be referred to by name or by index:
 
-```sql
+``` sql
 CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
 INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
 
@@ -93,7 +92,7 @@ SELECT a.2 FROM named_tuples; -- by index
 
 Result:
 
-```text
+``` text
 ┌─a.s─┐
 │ y   │
 │ x   │
@@ -115,7 +114,7 @@ Example:
 SELECT (1, 'z') > (1, 'a') c1, (2022, 01, 02) > (2023, 04, 02) c2, (1,2,3) = (3,2,1) c3;
 ```
 
-```text
+``` text
 ┌─c1─┬─c2─┬─c3─┐
 │  1 │  0 │  0 │
 └────┴────┴────┘
@@ -148,6 +147,8 @@ WHERE (year, month, day) > (2010, 1, 1);
 ┌─year─┬─month─┬─day─┐
 │ 2022 │    12 │  31 │
 └──────┴───────┴─────┘
+
+
 CREATE TABLE test
 (
     `key` Int64,
@@ -181,39 +182,4 @@ ORDER BY key ASC;
 │   1 │            42 │                                    70 │
 │   2 │             2 │                                     0 │
 └─────┴───────────────┴───────────────────────────────────────┘
-```
-
-## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
-
-:::warning Experimental Feature
-Requires `SET allow_experimental_nullable_tuple_type = 1`
-This is an experimental feature and may change in future versions.
-:::
-
-Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
-
-| Type                                       | Tuple can be NULL | Elements can be NULL |
-| ------------------------------------------ | ----------------- | -------------------- |
-| `Nullable(Tuple(String, Int64))`           | ✅                | ❌                   |
-| `Tuple(Nullable(String), Nullable(Int64))` | ❌                | ✅                   |
-
-Example:
-
-```sql
-SET allow_experimental_nullable_tuple_type = 1;
-
-CREATE TABLE test (
-    id UInt32,
-    data Nullable(Tuple(String, Int64))
-) ENGINE = Memory;
-
-INSERT INTO test VALUES (1, ('hello', 42)), (2, NULL);
-
-SELECT * FROM test WHERE data IS NULL;
-```
-
-```txt
- ┌─id─┬─data─┐
- │  2 │ ᴺᵁᴸᴸ │
- └────┴──────┘
 ```

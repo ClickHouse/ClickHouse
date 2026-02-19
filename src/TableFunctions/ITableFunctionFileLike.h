@@ -1,9 +1,8 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <Core/Names.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/IAST_fwd.h>
+#include "Core/Names.h"
+#include "Parsers/IAST_fwd.h"
 
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -50,8 +49,8 @@ public:
         if (args.empty() || args.size() > getMaxNumberOfArguments())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
 
-        auto format_literal = make_intrusive<ASTLiteral>(format);
-        auto structure_literal = make_intrusive<ASTLiteral>(structure);
+        auto format_literal = std::make_shared<ASTLiteral>(format);
+        auto structure_literal = std::make_shared<ASTLiteral>(structure);
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);

@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#include <Functions/divide/divide.h>
+#include "divide/divide.h"
 
 
 namespace DB
@@ -56,37 +56,23 @@ struct DivideIntegralByConstantImpl
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
-        if constexpr (is_signed_v<B>)
+        if (unlikely(is_signed_v<B> && b == -1))
         {
-            if (b == -1) [[unlikely]]
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
-                return;
-            }
+            for (size_t i = 0; i < size; ++i)
+                c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
+            return;
         }
 
         /// Division with too large divisor.
-        if (b > std::numeric_limits<A>::max()) [[unlikely]]
+        if (unlikely(b > std::numeric_limits<A>::max()
+            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
         {
             for (size_t i = 0; i < size; ++i)
                 c_pos[i] = 0;
             return;
         }
-        else
-        {
-            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
-            {
-                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        c_pos[i] = 0;
-                    return;
-                }
-            }
-        }
 
-        if (static_cast<A>(b) == 0) [[unlikely]]
+        if (unlikely(static_cast<A>(b) == 0))
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         divideImpl(a_pos, b, c_pos, size);
@@ -137,73 +123,7 @@ using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, Name
 
 REGISTER_FUNCTION(IntDiv)
 {
-    FunctionDocumentation::Description description = R"(
-Performs an integer division of two values `x` by `y`. In other words it
-computes the quotient rounded down to the next smallest integer.
-
-The result has the same width as the dividend (the first parameter).
-
-An exception is thrown when dividing by zero, when the quotient does not fit
-in the range of the dividend, or when dividing a minimal negative number by minus one.
-    )";
-    FunctionDocumentation::Syntax syntax = "intDiv(x, y)";
-    FunctionDocumentation::Argument argument1 = {"x", "Left hand operand."};
-    FunctionDocumentation::Argument argument2 = {"y", "Right hand operand."};
-    FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = {"Result of integer division of `x` and `y`"};
-    FunctionDocumentation::Example example1 = {"Integer division of two floats", "SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)", R"(
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
-    )"};
-    FunctionDocumentation::Example example2 = {
-        "Quotient does not fit in the range of the dividend",
-        R"(
-SELECT
-intDiv(1, 0.001) AS res,
-toTypeName(res)
-        )",
-        R"(
-Received exception from server (version 23.2.1):
-Code: 153. DB::Exception: Received from localhost:9000. DB::Exception:
-Cannot perform integer division, because it will produce infinite or too
-large number: While processing intDiv(1, 0.001) AS res, toTypeName(res).
-(ILLEGAL_DIVISION)
-        )"
-    };
-    FunctionDocumentation::Examples examples = {example1, example2};
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
-
-    factory.registerFunction<FunctionIntDiv>(documentation);
+    factory.registerFunction<FunctionIntDiv>();
 }
 
-struct NameIntDivOrNull { static constexpr auto name = "intDivOrNull"; };
-using FunctionIntDivOrNull = BinaryArithmeticOverloadResolver<DivideIntegralOrNullImpl, NameIntDivOrNull, false>;
-
-REGISTER_FUNCTION(IntDivOrNull)
-{
-    FunctionDocumentation::Description description = R"(
-Same as `intDiv` but returns NULL when dividing by zero or when dividing a
-minimal negative number by minus one.
-    )";
-    FunctionDocumentation::Syntax syntax = "intDivOrNull(x, y)";
-    FunctionDocumentation::Arguments arguments =
-    {
-        {"x", "Left hand operand.", {"(U)Int*"}},
-        {"y", "Right hand operand.", {"(U)Int*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Result of integer division of `x` and `y`, or NULL."};
-    FunctionDocumentation::Examples examples =
-    {
-        {"Integer division by zero", "SELECT intDivOrNull(1, 0)", "\\N"},
-        {"Dividing a minimal negative number by minus 1", "SELECT intDivOrNull(-9223372036854775808, -1)", "\\N"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
-
-    factory.registerFunction<FunctionIntDivOrNull>(documentation);
-}
 }

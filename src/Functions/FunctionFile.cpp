@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <unistd.h>
 #include <filesystem>
 
 
@@ -26,11 +27,12 @@ namespace ErrorCodes
 }
 
 /// A function to read file as a string.
-class FunctionFile : public IFunction
+class FunctionFile : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFile>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionFile>(context_); }
+    explicit FunctionFile(ContextPtr context_) : WithContext(context_) {}
 
     bool isVariadic() const override { return true; }
     String getName() const override { return name; }
@@ -112,16 +114,15 @@ public:
 
         res_offsets.resize(input_rows_count);
 
-        const auto & context = Context::getGlobalContextInstance();
-        fs::path user_files_absolute_path = fs::canonical(fs::path(context->getUserFilesPath()));
+        fs::path user_files_absolute_path = fs::canonical(fs::path(getContext()->getUserFilesPath()));
         std::string user_files_absolute_path_string = user_files_absolute_path.string();
 
         // If run in Local mode, no need for path checking.
-        bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
+        bool need_check = getContext()->getApplicationType() != Context::ApplicationType::LOCAL;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            std::string_view filename = column_src->getDataAt(row);
+            std::string_view filename = column_src->getDataAt(row).toView();
             fs::path file_path(filename.data(), filename.data() + filename.size());
 
             if (file_path.is_relative())
@@ -151,6 +152,7 @@ public:
                     res_chars.insert(default_result.data(), default_result.data() + default_result.size());
             }
 
+            res_chars.push_back(0);
             res_offsets[row] = res_chars.size();
         }
 
@@ -164,33 +166,7 @@ public:
 
 REGISTER_FUNCTION(File)
 {
-    FunctionDocumentation::Description description = R"(
-Reads a file as a string and loads the data into the specified column.
-The file content is not interpreted.
-
-Also see the [`file`](../table-functions/file.md) table function.
-        )";
-    FunctionDocumentation::Syntax syntax = "file(path[, default])";
-    FunctionDocumentation::Arguments arguments = {
-        {"path", "The path of the file relative to the `user_files_path`. Supports wildcards `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` are numbers and `'abc', 'def'` are strings.", {"String"}},
-        {"default", "The value returned if the file does not exist or cannot be accessed.", {"String", "NULL"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the file content as a string.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-        {
-            "Insert files into a table",
-            R"(
-INSERT INTO table SELECT file('a.txt'), file('b.txt');
-            )",
-            R"(
-            )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionFile>(documentation);
+    factory.registerFunction<FunctionFile>();
 }
 
 }

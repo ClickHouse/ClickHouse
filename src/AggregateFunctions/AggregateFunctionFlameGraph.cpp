@@ -1,8 +1,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
+#include <Common/ArenaAllocator.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -10,7 +11,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <filesystem>
 
 namespace DB
 {
@@ -98,7 +101,7 @@ struct AggregateFunctionFlameGraphTree
         return node;
     }
 
-    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, VectorWithMemoryTracking<UInt64> & frame)
+    static void append(DB::PaddedPODArray<UInt64> & values, DB::PaddedPODArray<UInt64> & offsets, std::vector<UInt64> & frame)
     {
         UInt64 prev = offsets.empty() ? 0 : offsets.back();
         offsets.push_back(prev + frame.size());
@@ -108,7 +111,7 @@ struct AggregateFunctionFlameGraphTree
 
     struct Trace
     {
-        using Frames = VectorWithMemoryTracking<UInt64>;
+        using Frames = std::vector<UInt64>;
 
         Frames frames;
 
@@ -120,15 +123,15 @@ struct AggregateFunctionFlameGraphTree
         size_t allocated_self = 0;
     };
 
-    using Traces = VectorWithMemoryTracking<Trace>;
+    using Traces = std::vector<Trace>;
 
     Traces dump(size_t max_depth, size_t min_bytes) const
     {
         Traces traces;
         Trace::Frames frames;
-        VectorWithMemoryTracking<size_t> allocated_total;
-        VectorWithMemoryTracking<size_t> allocated_self;
-        VectorWithMemoryTracking<ListNode *> nodes;
+        std::vector<size_t> allocated_total;
+        std::vector<size_t> allocated_self;
+        std::vector<ListNode *> nodes;
 
         nodes.push_back(root.children);
         allocated_total.push_back(root.allocated);
@@ -180,19 +183,20 @@ struct AggregateFunctionFlameGraphTree
     }
 };
 
-static void insertData(PaddedPODArray<UInt8> & chars, PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
+static void insertData(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
 {
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + length;
+    const size_t new_size = old_size + length + 1;
 
     chars.resize(new_size);
     if (length)
         memcpy(chars.data() + old_size, pos, length);
+    chars[old_size + length] = 0;
     offsets.push_back(new_size);
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
-static void fillColumn(PaddedPODArray<UInt8> & chars, PaddedPODArray<UInt64> & offsets, const std::string & str)
+static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const std::string & str)
 {
     size_t start = 0;
     size_t end = 0;
@@ -213,17 +217,17 @@ static void fillColumn(PaddedPODArray<UInt8> & chars, PaddedPODArray<UInt64> & o
         insertData(chars, offsets, str.data() + start, end - start);
 }
 
-static void dumpFlameGraphImpl(
+static void dumpFlameGraph(
     const AggregateFunctionFlameGraphTree::Traces & traces,
-    PaddedPODArray<UInt8> & chars,
-    PaddedPODArray<UInt64> & offsets)
+    DB::PaddedPODArray<UInt8> & chars,
+    DB::PaddedPODArray<UInt64> & offsets)
 {
-    WriteBufferFromOwnString out;
+    DB::WriteBufferFromOwnString out;
 
-    UnorderedMapWithMemoryTracking<uintptr_t, size_t> mapping;
+    std::unordered_map<uintptr_t, size_t> mapping;
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    const SymbolIndex & symbol_index = SymbolIndex::instance();
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
 #endif
 
     for (const auto & trace : traces)
@@ -242,9 +246,9 @@ static void dumpFlameGraphImpl(
             if (const auto * symbol = symbol_index.findSymbol(ptr))
                 writeString(demangle(symbol->name), out);
             else
-                writePointerHex(ptr, out);
+                DB::writePointerHex(ptr, out);
 #else
-            writePointerHex(ptr, out);
+            DB::writePointerHex(ptr, out);
 #endif
         }
 
@@ -397,7 +401,7 @@ struct AggregateFunctionFlameGraphData
     void merge(const AggregateFunctionFlameGraphTree & other_tree, Arena * arena)
     {
         AggregateFunctionFlameGraphTree::Trace::Frames frames;
-        VectorWithMemoryTracking<AggregateFunctionFlameGraphTree::ListNode *> nodes;
+        std::vector<AggregateFunctionFlameGraphTree::ListNode *> nodes;
 
         nodes.push_back(other_tree.root.children);
 
@@ -461,11 +465,11 @@ struct AggregateFunctionFlameGraphData
     }
 
     void dumpFlameGraph(
-        PaddedPODArray<UInt8> & chars,
-        PaddedPODArray<UInt64> & offsets,
+        DB::PaddedPODArray<UInt8> & chars,
+        DB::PaddedPODArray<UInt64> & offsets,
         size_t max_depth, size_t min_bytes) const
     {
-        dumpFlameGraphImpl(tree.dump(max_depth, min_bytes), chars, offsets);
+        DB::dumpFlameGraph(tree.dump(max_depth, min_bytes), chars, offsets);
     }
 };
 
@@ -638,83 +642,9 @@ static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string 
 
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
-Builds a [flamegraph](https://www.brendangregg.com/flamegraphs.html) using the list of stacktraces.
-Outputs an array of strings which can be used by the [flamegraph.pl](https://github.com/brendangregg/FlameGraph) utility to render an SVG of the flamegraph.
-
-:::note
-In the case where `ptr != 0`, a flameGraph will map allocations (size > 0) and deallocations (size < 0) with the same size and ptr.
-Only allocations which were not freed are shown.
-Non mapped deallocations are ignored.
-:::
-    )";
-    FunctionDocumentation::Syntax syntax = "flameGraph(traces[, size[, ptr]])";
-    FunctionDocumentation::Arguments arguments = {
-        {"traces", "A stacktrace.", {"Array(UInt64)"}},
-        {"size", "Optional. An allocation size for memory profiling (default 1).", {"UInt64"}},
-        {"ptr", "Optional. An allocation address (default 0).", {"UInt64"}}
-    };
-    FunctionDocumentation::Parameters parameters = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of strings for use with flamegraph.pl utility.", {"Array(String)"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Building a flamegraph based on a CPU query profiler",
-        R"(
-SET query_profiler_cpu_time_period_ns=10000000;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-        )",
-        R"(
-clickhouse client --allow_introspection_functions=1 -q "select arrayJoin(flameGraph(arrayReverse(trace))) from system.trace_log where trace_type = 'CPU' and query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl  > flame_cpu.svg
-        )"
-    },
-    {
-        "Building a flamegraph based on a memory query profiler, showing all allocations",
-        R"(
-SET memory_profiler_sample_probability=1, max_untracked_memory=1;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-        )",
-        R"(
-clickhouse client --allow_introspection_functions=1 -q "select arrayJoin(flameGraph(trace, size)) from system.trace_log where trace_type = 'MemorySample' and query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
-        )"
-    },
-    {
-        "Building a flamegraph based on a memory query profiler, showing allocations which were not deallocated",
-        R"(
-SET memory_profiler_sample_probability=1, max_untracked_memory=1, use_uncompressed_cache=1, merge_tree_max_rows_to_use_cache=100000000000, merge_tree_max_bytes_to_use_cache=1000000000000;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-        )",
-        R"(
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_untracked.svg
-        )"
-    },
-    {
-        "Build a flamegraph based on memory query profiler, showing active allocations at a fixed point of time",
-        R"(
-SET memory_profiler_sample_probability=1, max_untracked_memory=1;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-
--- 1. Memory usage per second
-SELECT event_time, m, formatReadableSize(max(s) AS m) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample') GROUP BY event_time ORDER BY event_time;
-
--- 2. Find a time point with maximal memory usage
-SELECT argMax(event_time, s), max(s) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample');
-        )",
-        R"(
--- 3. Fix active allocations at fixed point of time
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time <= 'yyy' ORDER BY event_time\)\" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
-
--- 4. Find deallocations at fixed point of time
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, -size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time > 'yyy' ORDER BY event_time desc\)\" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
-    factory.registerFunction("flameGraph", { createAggregateFunctionFlameGraph, properties, documentation });
+    factory.registerFunction("flameGraph", { createAggregateFunctionFlameGraph, properties });
 }
 
 }
