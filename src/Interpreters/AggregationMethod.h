@@ -243,7 +243,7 @@ struct AggregationMethodOneNumber
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    ColumnBoundedHeap pqueue;
+    ColumnBoundedHeap top_n_heap;
 
     AggregationMethodOneNumber() = default;
 
@@ -287,7 +287,7 @@ struct AggregationMethodString
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    ColumnBoundedHeap pqueue;
+    ColumnBoundedHeap top_n_heap;
 
     AggregationMethodString() = default;
 
@@ -324,7 +324,7 @@ struct AggregationMethodStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    ColumnBoundedHeap pqueue;
+    ColumnBoundedHeap top_n_heap;
 
     AggregationMethodStringNoCache() = default;
 
@@ -358,7 +358,7 @@ struct AggregationMethodFixedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    ColumnBoundedHeap pqueue;
+    ColumnBoundedHeap top_n_heap;
 
     AggregationMethodFixedString() = default;
 
@@ -392,7 +392,7 @@ struct AggregationMethodFixedStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    ColumnBoundedHeap pqueue;
+    ColumnBoundedHeap top_n_heap;
 
     AggregationMethodFixedStringNoCache() = default;
 
@@ -427,7 +427,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
-    ColumnBoundedHeap pqueue;
+    ColumnBoundedHeap top_n_heap;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -465,7 +465,7 @@ struct AggregationMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
-    ColumnBoundedHeap pqueue;
+    ColumnBoundedHeap top_n_heap;
 
     AggregationMethodKeysFixed() = default;
 
@@ -513,7 +513,7 @@ struct AggregationMethodSerialized
     using Mapped = typename Data::mapped_type;
 
     Data data;
-    ColumnBoundedHeap pqueue;
+    ColumnBoundedHeap top_n_heap;
 
     AggregationMethodSerialized() = default;
 

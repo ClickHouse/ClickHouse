@@ -414,23 +414,11 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool prefetch, typename Method, typename State>
+    /// When top_n is true, the top-N GROUP BY limit pushdown heap logic is compiled in.
+    /// Using a template bool keeps the common path (top_n=false) free of heap code,
+    /// avoiding instruction cache pressure, while eliminating source duplication.
+    template <bool prefetch, bool top_n = false, typename Method, typename State>
     void executeImplBatch(
-        Method & method,
-        State & state,
-        Arena * aggregates_pool,
-        size_t row_begin,
-        size_t row_end,
-        AggregateFunctionInstruction * aggregate_instructions,
-        bool no_more_keys,
-        bool all_keys_are_const,
-        bool use_compiled_functions,
-        AggregateDataPtr overflow_row) const;
-
-    /// Separate NO_INLINE path for the top-N GROUP BY limit pushdown optimization.
-    /// Kept out of executeImplBatch to avoid inflating the code of the common (top_n_keys == 0) path.
-    template <bool prefetch, typename Method, typename State>
-    void NO_INLINE executeImplBatchTopN(
         Method & method,
         State & state,
         Arena * aggregates_pool,
