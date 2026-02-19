@@ -1085,10 +1085,11 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
         auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
 
+        auto self = std::static_pointer_cast<StorageKeeperMap>(shared_from_this());
         auto with_retries = std::make_shared<WithRetries>
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
-            [&] { return getClient(); },
+            [self] { return self->getClient(); },
             BackupKeeperSettings(backup_entries_collector.getContext()),
             backup_entries_collector.getContext()->getProcessListElement()
         );
