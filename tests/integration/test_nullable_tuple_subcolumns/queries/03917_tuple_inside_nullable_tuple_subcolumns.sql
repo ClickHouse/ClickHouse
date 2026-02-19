@@ -14,5 +14,13 @@ SELECT
     toTypeName(t.a), t.a,
     toTypeName(t.a.x), t.a.x,
     toTypeName(t.a.y), t.a.y
-FROM x
-FORMAT TSV;
+FROM x;
+
+SELECT
+    toTypeName(tupleElement(t, 'a')),
+    tupleElement(t, 'a'),
+    toTypeName(tupleElement(tupleElement(t, 'a'), 'x')),
+    tupleElement(tupleElement(t, 'a'), 'x'),
+    toTypeName(tupleElement(tupleElement(t, 'a'), 'y')),
+    tupleElement(tupleElement(t, 'a'), 'y')
+FROM x;
