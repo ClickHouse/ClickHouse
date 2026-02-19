@@ -6,9 +6,11 @@
 #include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 
 #include <base/getPageSize.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/TargetSpecific.h>
 
 #include <Poco/Unicode.h>
 
@@ -305,11 +307,105 @@ public:
 
 
 /// Case-insensitive UTF-8 searcher
+/// Uses StringZilla on x86_64_v4 (AVX-512) and ARM NEON, original Poco implementation otherwise.
+
+} // namespace impl
+
+/// Default (Poco-based) implementation for older x86_64 CPUs.
+/// Declared directly (not via DECLARE_DEFAULT_CODE) because the class uses #ifdef for SSE4.1 members.
+namespace TargetSpecific::Default
+{
+
+class UTF8CaseInsensitiveSearcherImpl
+{
+private:
+    using UTF8SequenceBuffer = uint8_t[6];
+
+    const uint8_t * const needle;
+    const size_t needle_size;
+    const uint8_t * const needle_end = needle + needle_size;
+    bool first_needle_symbol_is_ascii = false;
+    uint8_t l = 0;
+    uint8_t u = 0;
+
+#ifdef __SSE4_1__
+    __m128i patl;
+    __m128i patu;
+    __m128i cachel = _mm_setzero_si128();
+    __m128i cacheu = _mm_setzero_si128();
+    int cachemask = 0;
+    size_t cache_valid_len = 0;
+    size_t cache_actual_len = 0;
+#endif
+
+    bool force_fallback = false;
+
+public:
+    UTF8CaseInsensitiveSearcherImpl(const UInt8 * needle_, size_t needle_size_);
+
+    bool compareTrivial(const UInt8 * haystack_pos, const UInt8 * haystack_end, const uint8_t * needle_pos) const;
+    bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const;
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * haystack_end) const;
+};
+
+} // namespace TargetSpecific::Default
+
+/// StringZilla-based implementation (for x86_64_v4 with AVX-512)
+DECLARE_X86_64_V4_SPECIFIC_CODE(
+
+class UTF8CaseInsensitiveSearcherImpl
+{
+private:
+    sz_cptr_t const needle;
+    sz_cptr_t const needle_end;
+    mutable sz_utf8_case_insensitive_needle_metadata_t needle_metadata;
+
+public:
+    UTF8CaseInsensitiveSearcherImpl(const UInt8 * needle_, size_t needle_size)
+        : needle(reinterpret_cast<sz_cptr_t>(needle_))
+        , needle_end(needle + needle_size)
+        , needle_metadata{}
+    {
+    }
+
+    bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    {
+        sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
+        size_t needle_size = needle_end - needle;
+        sz_ordering_t result = sz_utf8_case_insensitive_order(pos_cptr, needle_size, needle, needle_size);
+        return result == sz_equal_k;
+    }
+
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    {
+        if (needle == needle_end)
+            return haystack;
+
+        sz_cptr_t haystack_cptr = reinterpret_cast<sz_cptr_t>(haystack);
+        size_t haystack_size = haystack_end - haystack;
+        size_t needle_size = needle_end - needle;
+
+        size_t matched_length = 0;
+        const char * res
+            = sz_utf8_case_insensitive_find(haystack_cptr, haystack_size, needle, needle_size, &needle_metadata, &matched_length);
+
+        if (!res)
+            return haystack_end;
+        return reinterpret_cast<const UInt8 *>(res);
+    }
+};
+
+) // DECLARE_X86_64_V4_SPECIFIC_CODE
+
+namespace impl
+{
+
+#if defined(__aarch64__)
+/// On ARM, always use StringZilla (NEON is fast)
 template <>
 class StringSearcher<false, false> final : public StringSearcherBase
 {
 private:
-    /// string to be searched for
     sz_cptr_t const needle;
     sz_cptr_t const needle_end;
     mutable sz_utf8_case_insensitive_needle_metadata_t needle_metadata;
@@ -326,8 +422,6 @@ public:
     {
         sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
         size_t needle_size = needle_end - needle;
-
-        /// Use order comparison and check for equality
         sz_ordering_t result = sz_utf8_case_insensitive_order(pos_cptr, needle_size, needle, needle_size);
         return result == sz_equal_k;
     }
@@ -352,6 +446,57 @@ public:
 
     const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
 };
+
+#else
+/// On x86_64: runtime dispatch between x86_64_v4 (StringZilla) and Default (Poco)
+template <>
+class StringSearcher<false, false> final : public StringSearcherBase
+{
+private:
+    std::unique_ptr<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl> impl_default;
+#if USE_MULTITARGET_CODE
+    std::unique_ptr<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl> impl_v4;
+#endif
+    bool use_v4 = false;
+
+public:
+    StringSearcher(const UInt8 * needle_, size_t needle_size)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl_v4 = std::make_unique<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
+            use_v4 = true;
+        }
+        else
+#endif
+        {
+            impl_default = std::make_unique<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
+        }
+    }
+
+    ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
+    {
+#if USE_MULTITARGET_CODE
+        if (use_v4)
+            return impl_v4->compare(haystack, haystack_end, pos);
+#endif
+        return impl_default->compare(haystack, haystack_end, pos);
+    }
+
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    {
+#if USE_MULTITARGET_CODE
+        if (use_v4)
+            return impl_v4->search(haystack, haystack_end);
+#endif
+        return impl_default->search(haystack, haystack_end);
+    }
+
+    const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
+};
+#endif
+
 }
 
 extern template class impl::StringSearcher<true, true>;
