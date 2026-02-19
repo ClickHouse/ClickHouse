@@ -13,6 +13,7 @@ from praktika.info import Info
 from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import Shell
+from praktika.subscriptions import GitHubSubscriptions
 
 
 class GH:
@@ -545,6 +546,52 @@ class GH:
             if temp_file_path and os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
         return None
+
+    @classmethod
+    def list_subscriptions(cls, config_path: Optional[str] = None) -> str:
+        """
+        List subscribed repositories.
+        
+        This method provides functionality for the '/github subscribe list' command.
+        
+        Args:
+            config_path: Optional path to subscriptions config file
+            
+        Returns:
+            Formatted string of subscribed repositories
+        """
+        manager = GitHubSubscriptions(config_path=config_path)
+        return manager.format_list()
+    
+    @classmethod
+    def add_subscription(cls, repo: str, config_path: Optional[str] = None) -> bool:
+        """
+        Add a repository to subscriptions.
+        
+        Args:
+            repo: Repository name in owner/repo format
+            config_path: Optional path to subscriptions config file
+            
+        Returns:
+            True if added successfully, False otherwise
+        """
+        manager = GitHubSubscriptions(config_path=config_path)
+        return manager.add_subscription(repo)
+    
+    @classmethod
+    def remove_subscription(cls, repo: str, config_path: Optional[str] = None) -> bool:
+        """
+        Remove a repository from subscriptions.
+        
+        Args:
+            repo: Repository name in owner/repo format
+            config_path: Optional path to subscriptions config file
+            
+        Returns:
+            True if removed successfully, False otherwise
+        """
+        manager = GitHubSubscriptions(config_path=config_path)
+        return manager.remove_subscription(repo)
 
     @classmethod
     def convert_to_gh_status(cls, status):

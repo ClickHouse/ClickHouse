@@ -1,0 +1,6 @@
+{
+  "repositories": [
+    "ClickHouse/ClickHouse"
+  ],
+  "version": "1.0"
+}
