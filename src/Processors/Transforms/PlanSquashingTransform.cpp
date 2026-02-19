@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PlanSquashingTransform::    PlanSquashingTransform(
+PlanSquashingTransform::PlanSquashingTransform(
         SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes,
         size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits)
     : ExceptionKeepingTransform(header_, header_, false)
