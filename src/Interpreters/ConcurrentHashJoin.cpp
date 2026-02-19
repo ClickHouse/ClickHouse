@@ -285,6 +285,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 auto [block, selector] = std::move(dispatched_block).detachData();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
 
+                cached_slot_sizes[i].row_count.store(hash_join->data->getTotalRowCount(), std::memory_order_relaxed);
+                cached_slot_sizes[i].byte_count.store(hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
+
                 dispatched_block = {};
                 blocks_left--;
 
@@ -408,22 +411,16 @@ const Block & ConcurrentHashJoin::getTotals() const
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
     size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalRowCount();
-    }
+    for (size_t i = 0; i < slots; ++i)
+        res += cached_slot_sizes[i].row_count.load(std::memory_order_relaxed);
     return res;
 }
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
     size_t res = 0;
-    for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalByteCount();
-    }
+    for (size_t i = 0; i < slots; ++i)
+        res += cached_slot_sizes[i].byte_count.load(std::memory_order_relaxed);
     return res;
 }
 
@@ -493,7 +490,6 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     }
 
     /// single-level maps - distribute slots round-robin across streams
-    /// each slot is independent HashJoin, no cross-slot coordination needed
     std::vector<IBlocksStreamPtr> per_slot_streams;
     for (size_t slot = stream_idx; slot < hash_joins.size(); slot += num_streams)
     {
@@ -509,6 +505,15 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     if (per_slot_streams.size() == 1)
         return per_slot_streams[0];
     return std::make_shared<ConcatStreams>(std::move(per_slot_streams));
+}
+
+void ConcurrentHashJoin::finalizeSlots()
+{
+    for (size_t i = 0; i < slots; ++i)
+    {
+        cached_slot_sizes[i].row_count.store(hash_joins[i]->data->getTotalRowCount(), std::memory_order_relaxed);
+        cached_slot_sizes[i].byte_count.store(hash_joins[i]->data->getTotalByteCount(), std::memory_order_relaxed);
+    }
 }
 
 template <typename HashTable>
@@ -856,6 +861,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         }
     }
 
+    finalizeSlots();
     build_phase_finished = true;
 }
 }
