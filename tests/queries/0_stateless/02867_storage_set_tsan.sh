@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: race, no-debug
+# Tags: race, no-debug, no-random-detach
+# no-random-detach: race condition test with concurrent SELECT and TRUNCATE on Set table
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
