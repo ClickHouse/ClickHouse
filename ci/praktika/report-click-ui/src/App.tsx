@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Flyout, Badge, Icon, Tooltip, Panel } from '@clickhouse/click-ui'
+import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Flyout, Badge, Icon, Tooltip, Panel, useToast } from '@clickhouse/click-ui'
 import './App.css'
 
 interface TestResult {
@@ -44,8 +44,7 @@ interface NestedTestResult extends TestResult {
   results?: NestedTestResult[]
 }
 
-function App() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (theme: 'dark' | 'light') => void }) {
   const [data, setData] = useState<PRResult | NestedTestResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -55,6 +54,7 @@ function App() {
   const [sortByStatus, setSortByStatus] = useState<boolean>(true)
   const [displayDuration, setDisplayDuration] = useState<number>(0)
   const [, setTick] = useState(0)
+  const { createToast } = useToast()
 
   // Initialize sortByStatus from localStorage
   useEffect(() => {
@@ -582,7 +582,42 @@ function App() {
     return () => clearTimeout(timer)
   }, [data, nameParams, theme])
 
-  const createPopoverContent = (result: TestResult, navigateUrl?: string) => {
+  const createPopoverContent = (result: TestResult, navigateUrl?: string, namesPath: string[] = [], showToast?: (options: any) => void) => {
+    const copyUrlToClipboard = () => {
+      const url = new URL(window.location.href)
+      const params = new URLSearchParams(url.search)
+
+      // Find the highest existing name_X index
+      let maxIndex = -1
+      params.forEach((_, key) => {
+        const match = key.match(/^name_(\d+)$/)
+        if (match) {
+          maxIndex = Math.max(maxIndex, parseInt(match[1]))
+        }
+      })
+
+      // Add new name parameters
+      namesPath.forEach((name, idx) => {
+        params.set(`name_${maxIndex + 1 + idx}`, name)
+      })
+
+      url.search = params.toString()
+      navigator.clipboard.writeText(url.toString())
+
+      if (showToast) {
+        try {
+          showToast({
+            title: 'URL copied to clipboard',
+            type: 'default'
+          })
+        } catch (e) {
+          console.error('Toast error:', e)
+        }
+      } else {
+        console.log('No toast function available')
+      }
+    }
+
     return (
       <Container orientation='vertical' gap='sm' padding='md' style={{ maxWidth: '800px', maxHeight: '600px', overflow: 'auto' }}>
         {result.info && (
@@ -611,8 +646,8 @@ function App() {
               return {
                 id: `sub-${subindex}`,
                 items: [
-                  { label: wrapWithPopover(getStatusBadge(subresult.status), subresult) },
-                  { label: wrapWithPopover(subNameWithLabels, subresult) },
+                  { label: wrapWithPopover(getStatusBadge(subresult.status), subresult, undefined, namesPath) },
+                  { label: wrapWithPopover(subNameWithLabels, subresult, undefined, namesPath) },
                 ],
               }
             })}
@@ -641,21 +676,33 @@ function App() {
             </div>
           </Panel>
         )}
-        {navigateUrl && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+          {navigateUrl && (
             <Link href={navigateUrl} style={{ textDecoration: 'none' }}>
               <Button
                 type="primary"
                 label="Open Result page"
               />
             </Link>
+          )}
+          <div
+            onClick={copyUrlToClipboard}
+            style={{
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Icon name="copy" size="md" />
           </div>
-        )}
+        </div>
       </Container>
     )
   }
 
-  const wrapWithPopover = (content: React.ReactNode, result: TestResult, navigateUrl?: string) => {
+  const wrapWithPopover = (content: React.ReactNode, result: TestResult, navigateUrl?: string, namesPath: string[] = []) => {
     const hasAdditionalInfo = result.info ||
                                (result.links && result.links.length > 0) ||
                                (result.results && result.results.length > 0) ||
@@ -664,6 +711,8 @@ function App() {
     if (!hasAdditionalInfo) {
       return <div style={{ width: '100%', height: '100%' }}>{content}</div>
     }
+
+    const currentPath = [...namesPath, result.name]
 
     return (
       <Popover>
@@ -681,7 +730,7 @@ function App() {
           </div>
         </Popover.Trigger>
         <Popover.Content side="right" showArrow style={{ zIndex: 1001 }}>
-          {createPopoverContent(result, navigateUrl)}
+          {createPopoverContent(result, navigateUrl, currentPath, createToast)}
         </Popover.Content>
       </Popover>
     )
@@ -728,8 +777,7 @@ function App() {
   }) || []
 
   return (
-    <ClickUIProvider theme={theme}>
-      <Container orientation='vertical' gap='none' style={{ minHeight: '100vh', alignItems: 'stretch' }}>
+    <Container orientation='vertical' gap='none' style={{ minHeight: '100vh', alignItems: 'stretch' }}>
         {/* Header Bar */}
         <div
           style={{
@@ -1004,6 +1052,15 @@ function App() {
           )}
         </Container>
       </Container>
+  )
+}
+
+function App() {
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+
+  return (
+    <ClickUIProvider theme={theme}>
+      <AppContent theme={theme} setTheme={setTheme} />
     </ClickUIProvider>
   )
 }
