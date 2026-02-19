@@ -116,6 +116,12 @@ class ResourceTestClass : public ResourceTestBase
         }
     };
 
+    EventQueue event_queue;
+    EventQueue::SchedulerThread scheduler_thread{&event_queue};
+    SchedulerNodePtr root_node;
+    std::unordered_map<String, ResourceCost> consumed_cost;
+    ResourceCost failed_cost = 0;
+
 public:
     ~ResourceTestClass()
     {
@@ -289,12 +295,6 @@ public:
     {
         return static_cast<ITimeSharedNode &>(*root_node);
     }
-
-private:
-    EventQueue event_queue;
-    SchedulerNodePtr root_node;
-    std::unordered_map<String, ResourceCost> consumed_cost;
-    ResourceCost failed_cost = 0;
 };
 
 enum EnqueueOnlyEnum { EnqueueOnly };

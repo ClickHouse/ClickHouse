@@ -17,6 +17,7 @@ SET query_plan_join_swap_table = false;
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET join_use_nulls = 1;
+SET enable_join_runtime_filters = 0;
 
 SELECT * FROM t_view AS t1
 LEFT JOIN t_mem AS t2

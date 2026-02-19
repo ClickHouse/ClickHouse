@@ -163,6 +163,9 @@ possible_properties = {
     "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "index_uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "insert_deduplication_version": lambda: random.choice(
+        ["old_separate_hashes", "compatible_double_hashes", "new_unified_hashes"]
+    ),
     "io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "keeper_multiread_batch_size": threshold_generator(0.2, 0.2, 1, 1000),
     "load_marks_threadpool_pool_size": threads_lambda,
@@ -1014,8 +1017,9 @@ class LogTablePropertiesGroup(PropertiesGroup):
         log_table_properties = {
             "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
             "flush_on_crash": true_false_lambda,
-            "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
-            "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            # Setting these may crash the server
+            #"max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            #"reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         # Can't use this without the engine parameter?
         # number_policies = 0

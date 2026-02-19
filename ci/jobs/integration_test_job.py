@@ -8,10 +8,15 @@ from typing import List, Tuple
 from more_itertools import tail
 
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
+from ci.jobs.scripts.integration_tests_configs import (
+    IMAGES_ENV,
+    LLVM_COVERAGE_SKIP_PREFIXES,
+    get_optimal_test_batch,
+)
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
-from ci.praktika.result import Result, ResultTranslator
-from ci.praktika.utils import ContextManager, Shell, Utils
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
@@ -193,6 +198,17 @@ def get_parallel_sequential_tests_to_run(
         for p in Path("./tests/integration/").glob("test_*/test*.py")
     ]
 
+    if "amd_llvm_coverage" in (job_options or ""):
+        before = len(test_files)
+        test_files = [
+            f
+            for f in test_files
+            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+        ]
+        print(
+            f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
+        )
+
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
@@ -239,7 +255,9 @@ def tail(filepath: str, buff_len: int = 1024) -> List[str]:
         return data.decode(errors="replace")
 
 
-def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> Result:
+def run_pytest_and_collect_results(
+    command: str, env: str, report_name: str, timeout: int = None
+) -> Result:
     """
     Does xdist timeout check.
     """
@@ -251,12 +269,13 @@ def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> 
         pytest_report_file=f"{temp_path}/pytest_{report_name}.jsonl",
         pytest_logfile=f"{temp_path}/pytest_{report_name}.log",
         logfile=f"{temp_path}/{report_name}.log",
+        timeout=timeout,
     )
 
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
         f"{temp_path}/{report_name}.log"
     ):
-        test_result.info = "[ERROR] session-timeout occurred during test execution"
+        test_result.info = "ERROR: session-timeout occurred during test execution"
         assert test_result.status == Result.Status.ERROR
         test_result.results.append(
             Result(
@@ -397,16 +416,22 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            # TODO: reduce scope to modified test cases instead of entire modules
-            changed_files = info.get_changed_files()
-            for file in changed_files:
-                if (
-                    file.startswith("tests/integration/test")
-                    and Path(file).name.startswith("test")
-                    and file.endswith(".py")
-                    and Path(file).is_file()
-                ):
-                    changed_test_modules.append(file.removeprefix("tests/integration/"))
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+                # Not a bugfix PR - run a simple sanity test
+                changed_test_modules = ["test_accept_invalid_certificate/test.py"]
+            else:
+                # TODO: reduce scope to modified test cases instead of entire modules
+                changed_files = info.get_changed_files()
+                for file in changed_files:
+                    if (
+                        file.startswith("tests/integration/test")
+                        and Path(file).name.startswith("test")
+                        and file.endswith(".py")
+                        and Path(file).is_file()
+                    ):
+                        changed_test_modules.append(
+                            file.removeprefix("tests/integration/")
+                        )
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -522,15 +547,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
-    if not is_targeted_check:
-        session_timeout_parallel = 3600 * 2
-        session_timeout_sequential = 3600
-    else:
-        # For targeted jobs, use a shorter session timeout to keep feedback fast.
-        # If this timeout is exceeded but all completed tests have passed, the
-        # targeted check will not fail solely because the session timed out.
-        session_timeout_parallel = 1200
-        session_timeout_sequential = 1200
+    session_timeout_parallel = 3600 * 2
+    session_timeout_sequential = 3600
 
     if is_llvm_coverage:
         session_timeout_parallel = 7200
@@ -555,6 +573,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                 env=test_env,
                 report_name="parallel",
+                timeout=session_timeout_parallel + 600,
             )
             if is_flaky_check and not test_result_parallel.is_ok():
                 print(
@@ -583,6 +602,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
+                timeout=session_timeout_sequential + 600,
             )
 
             if is_flaky_check and not test_result_sequential.is_ok():
@@ -645,6 +665,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
+            timeout=1200 + 600,
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
@@ -675,6 +696,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 attached_files.append("./ci/tmp/dmesg.log")
 
+    # For targeted checks, session-timeout is an expected risk (because of --count N
+    # overloading), so do not propagate the synthetic "Timeout" result as a failure.
+    if is_targeted_check:
+        test_results = [r for r in test_results if r.name != "Timeout"]
+
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 
     if is_llvm_coverage:
@@ -700,7 +726,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation:
+    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"

@@ -901,7 +901,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         else
         {
             /// Use a default catalog function
-            const CHFunction & func = rg.nextMediumNumber() < 6 ? rg.pickRandomly(CommonCHFuncs) : CHFuncs[nopt];
+            const CHFunction & func = rg.nextMediumNumber() < 10 ? rg.pickRandomly(CommonCHFuncs) : CHFuncs[nopt];
 
             n_lambda = ((func.min_lambda_param == func.max_lambda_param && func.max_lambda_param == 1)
                         || (func.max_lambda_param == 1 && rg.nextBool()))

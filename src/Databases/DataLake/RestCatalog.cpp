@@ -562,7 +562,7 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, buf);
 
-    LOG_DEBUG(log, "Received tables response: {}", json_str);
+    LOG_DEBUG(log, "Received tables response for namespace: {}", base_namespace);
 
     try
     {
@@ -660,7 +660,6 @@ bool RestCatalog::getTableMetadataImpl(
 
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
-    LOG_DEBUG(log, "Receiving table metadata {} {}", table_name, json_str);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// This log message might contain credentials,
@@ -935,7 +934,7 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
             if (object->has(storage_endpoint_str))
                 storage_endpoint = object->get(storage_endpoint_str).extract<String>();
 
-            LOG_DEBUG(log, "initial tokens {} {} {}", access_key_id, secret_access_key, session_token);
+            LOG_DEBUG(log, "get tokens for location {}", location);
             return {std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token), storage_endpoint};
         }
         case StorageType::Azure:
@@ -991,7 +990,6 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
 
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
-        LOG_DEBUG(log, "Receiving table metadata {} {}", table_name, json_str);
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(json_str);
