@@ -22,8 +22,8 @@ SpillingHashJoin::SpillingHashJoin(
     , max_num_buckets(max_num_buckets_)
     , limits(table_join->sizeLimits())
 {
-    /// Create a lightweight HashJoin for metadata operations (checkTypesOfKeys, initialize,
-    /// header computation via joinBlock with empty block). This join is NOT used for data.
+    /// Create a HashJoin that stores right-side blocks during COLLECTING phase.
+    /// Also used for metadata operations (checkTypesOfKeys, initialize, header computation).
     hash_join = std::make_shared<HashJoin>(table_join, right_sample_block_);
 
     if (!limits.hasLimits())
@@ -37,14 +37,12 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     if (state != State::COLLECTING)
         return inner_join->addBlockToJoin(block, check_limits);
 
-    buffered_blocks.push_back(block);
-    buffered_rows += block.rows();
-    buffered_bytes += block.allocatedBytes();
+    hash_join->addBlockToJoin(block, /*check_limits=*/ false);
 
-    if (!limits.softCheck(buffered_rows, buffered_bytes))
+    if (!limits.softCheck(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
     {
         LOG_DEBUG(log, "Memory limit exceeded ({} bytes, {} rows), switching to GraceHashJoin",
-            buffered_bytes, buffered_rows);
+            hash_join->getTotalByteCount(), hash_join->getTotalRowCount());
         switchToGraceHashJoin();
     }
 
@@ -53,6 +51,10 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 
 void SpillingHashJoin::switchToGraceHashJoin()
 {
+    /// Extract blocks from the HashJoin. The blocks are in savedBlockSample format,
+    /// which matches what GraceHashJoin expects (both are built from the same right_sample_block).
+    BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/ false);
+
     inner_join = std::make_shared<GraceHashJoin>(
         /*initial_num_buckets_=*/ 1,
         max_num_buckets,
@@ -63,15 +65,13 @@ void SpillingHashJoin::switchToGraceHashJoin()
 
     inner_join->initialize(*left_sample_block);
 
-    /// Drain buffered blocks into GraceHashJoin one by one,
+    /// Drain extracted blocks into GraceHashJoin one by one,
     /// freeing each after insertion to limit peak memory.
-    while (!buffered_blocks.empty())
+    while (!right_blocks.empty())
     {
-        inner_join->addBlockToJoin(buffered_blocks.front(), /*check_limits=*/ false);
-        buffered_blocks.pop_front();
+        inner_join->addBlockToJoin(right_blocks.front(), /*check_limits=*/ false);
+        right_blocks.pop_front();
     }
-    buffered_rows = 0;
-    buffered_bytes = 0;
 
     state = State::GRACE_HASH_JOIN;
 }
@@ -80,19 +80,10 @@ void SpillingHashJoin::onBuildPhaseFinish()
 {
     if (state == State::COLLECTING)
     {
-        LOG_DEBUG(log, "All blocks fit in memory ({} bytes, {} rows), creating HashJoin",
-            buffered_bytes, buffered_rows);
+        LOG_DEBUG(log, "All blocks fit in memory ({} bytes, {} rows), promoting HashJoin",
+            hash_join->getTotalByteCount(), hash_join->getTotalRowCount());
 
-        inner_join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(right_sample_block));
-
-        while (!buffered_blocks.empty())
-        {
-            inner_join->addBlockToJoin(buffered_blocks.front(), /*check_limits=*/ false);
-            buffered_blocks.pop_front();
-        }
-        buffered_rows = 0;
-        buffered_bytes = 0;
-
+        inner_join = hash_join;
         state = State::HASH_JOIN;
     }
 
@@ -137,14 +128,14 @@ const Block & SpillingHashJoin::getTotals() const
 size_t SpillingHashJoin::getTotalRowCount() const
 {
     if (state == State::COLLECTING)
-        return buffered_rows;
+        return hash_join->getTotalRowCount();
     return inner_join->getTotalRowCount();
 }
 
 size_t SpillingHashJoin::getTotalByteCount() const
 {
     if (state == State::COLLECTING)
-        return buffered_bytes;
+        return hash_join->getTotalByteCount();
     return inner_join->getTotalByteCount();
 }
 

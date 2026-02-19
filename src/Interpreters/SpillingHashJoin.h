@@ -18,10 +18,10 @@ class GraceHashJoin;
 
 /// An IJoin wrapper that automatically spills to disk when memory limits are exceeded.
 ///
-/// During the build phase (right table), blocks are buffered in memory without hashing.
-/// If the buffered data exceeds `max_bytes_in_join`, a `GraceHashJoin` is created and the
-/// buffered blocks are drained into it (most will be spilled to disk).
-/// If all blocks fit in memory, a regular `HashJoin` is created at `onBuildPhaseFinish` time.
+/// During the build phase (right table), blocks are fed directly into a `HashJoin` instance.
+/// If the data exceeds `max_bytes_in_join`, the blocks are extracted via `releaseJoinedBlocks`
+/// and drained into a new `GraceHashJoin` (most will be spilled to disk).
+/// If all blocks fit in memory, the `HashJoin` is promoted to `inner_join` with zero rework.
 ///
 /// `hasDelayedBlocks()` always returns true so that the pipeline includes the delayed block
 /// transforms needed by `GraceHashJoin`. When `HashJoin` is used, `getDelayedBlocks()` returns
@@ -83,13 +83,12 @@ private:
     SizeLimits limits;
 
     State state = State::COLLECTING;
-    BlocksList buffered_blocks;
-    size_t buffered_rows = 0;
-    size_t buffered_bytes = 0;
 
-    /// Lightweight HashJoin created in the constructor for metadata operations
-    /// (checkTypesOfKeys, initialize, header computation). NOT used for data storage.
-    JoinPtr hash_join;
+    /// HashJoin that stores right-side blocks during COLLECTING phase.
+    /// Also used for metadata operations (checkTypesOfKeys, initialize, header computation).
+    /// On success, promoted directly to inner_join. On overflow, blocks are extracted
+    /// via `releaseJoinedBlocks` and drained into a GraceHashJoin.
+    std::shared_ptr<HashJoin> hash_join;
 
     /// The real join, created when switching out of COLLECTING state.
     JoinPtr inner_join;
