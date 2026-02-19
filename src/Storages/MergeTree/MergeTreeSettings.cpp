@@ -2551,6 +2551,10 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
+        /// Certain merge tree settings are unconditionally read-only
+        if (isReadonlySetting(setting_name))
+            writability = SettingConstraintWritability::CONST;
+
         /// These two columns can accept strings only.
         if (!min.isNull())
             min = MergeTreeSettings::valueToStringUtil(setting_name, min);

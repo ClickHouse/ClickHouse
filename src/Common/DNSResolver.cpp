@@ -276,6 +276,16 @@ void DNSResolver::setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool d
     addressFilter->setSettings(dns_allow_resolve_names_to_ipv4, dns_allow_resolve_names_to_ipv6);
 }
 
+bool DNSResolver::getFilterIPv4() const
+{
+    return addressFilter->settings.get()->dns_allow_resolve_names_to_ipv4;
+}
+
+bool DNSResolver::getFilterIPv6() const
+{
+    return addressFilter->settings.get()->dns_allow_resolve_names_to_ipv6;
+}
+
 DNSResolver::IPAddresses DNSResolver::resolveHostAllInOriginOrder(const std::string & host)
 {
     if (impl->disable_cache)

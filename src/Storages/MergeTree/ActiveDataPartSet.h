@@ -52,6 +52,9 @@ public:
 
     AddPartOutcome tryAddPart(const MergeTreePartInfo & part_info, String * out_reason = nullptr);
 
+    /// Like add(const String &) but returns outcome instead of throwing on intersection.
+    AddPartOutcome tryAdd(const String & name, String * out_reason = nullptr);
+
     bool remove(const MergeTreePartInfo & part_info)
     {
         return part_info_to_name.erase(part_info) > 0;
