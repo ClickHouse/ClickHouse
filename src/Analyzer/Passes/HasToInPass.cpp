@@ -51,7 +51,7 @@ public:
         if (!isArray(first_arg_type))
             return;
 
-        /// The next few checks are to handle differences between has() and in()
+        /// The next few checks are to handle differences/quirks between has() and in()
         /// Verify that none of the values in the constant array are NULLs, because has() and in() treat NULLs differently
         const auto & element_type = (typeid_cast<const DataTypeArray *>(first_arg_type.get()))->getNestedType();
         WhichDataType data_type(element_type);
@@ -60,14 +60,14 @@ public:
 
         const auto & array_field = first_arg_constant->getValue();
         const auto & array_value = array_field.safeGet<Array>();
-        if (array_value.size() ==0)
+        if (array_value.empty())
             return;
         for (const auto & element : array_value)
         {
             if (element.isNull())
                 return;
         }
-        
+
         const auto second_arg_type = has_function_arguments_nodes[1]->getResultType();
         WhichDataType expr_data_type(second_arg_type);
         if (second_arg_type->isNullable() ||
