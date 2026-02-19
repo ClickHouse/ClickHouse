@@ -1538,23 +1538,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
             {
-                CSN mutation_csn = mutations_begin_it->second.csn;
-                if (mutation_csn == Tx::RolledBackCSN)
-                {
-                    /// Transaction was rolled back, mutation should be removed soon, skip it for now
-                    LOG_DEBUG(log, "Mutation {} was started by transaction {} that was rolled back, skipping part {}",
-                              mutations_begin_it->second.file_name, first_mutation_tid, part->name);
-                    continue;
-                }
-                if (mutation_csn == Tx::UnknownCSN)
-                {
-                    /// Transaction is not running but hasn't committed yet - this shouldn't happen
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
-                                    "that is going to be applied to part {}, and mutation CSN is still unknown",
-                                    first_mutation_tid, mutations_begin_it->second.file_name, part->name);
-                }
-                /// Transaction has committed, mutation can proceed without the transaction pointer
-                /// (txn is already null, which is fine for MergeMutateSelectedEntry)
+                /// Transaction is not running but hasn't committed yet - this shouldn't happen
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
+                                "that is going to be applied to part {}",
+                                first_mutation_tid, mutations_begin_it->second.file_name, part->name);
             }
         }
         else
@@ -2298,10 +2285,28 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         auto txn = query_context->getCurrentTransaction();
         if (txn)
         {
-            auto data_parts_lock = lockParts();
-            auto parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
-            removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
-            LOG_INFO(log, "Removed {} parts: [{}]", parts_to_remove.size(), fmt::join(getPartsNames(parts_to_remove), ", "));
+            MergeTreeData::Transaction transaction(*this, txn.get());
+
+            auto operation_data_parts_lock = lockOperationsWithParts();
+
+            auto parts = getVisibleDataPartsVector(query_context);
+
+            /// Create empty covering parts to prevent zombie parts resurrection after DETACH/ATTACH
+            auto future_parts = initCoverageWithNewEmptyParts(parts);
+
+            LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                     future_parts.size(), parts.size(),
+                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                     transaction.getTID());
+
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+            renameAndCommitEmptyParts(new_data_parts, transaction);
+
+            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+
+            LOG_INFO(log, "Truncated table with {} parts by replacing them with new empty {} parts. With txn {}",
+                     parts.size(), future_parts.size(),
+                     transaction.getTID());
         }
         else
         {
@@ -2350,8 +2355,39 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         auto txn = query_context->getCurrentTransaction();
         if (txn)
         {
-            if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
-                dropPartsImpl({part}, detach);
+            MergeTreeData::Transaction transaction(*this, txn.get());
+
+            auto operation_data_parts_lock = lockOperationsWithParts();
+
+            auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
+            if (!part)
+                throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
+
+            if (detach)
+            {
+                auto metadata_snapshot = getInMemoryMetadataPtr();
+                String part_dir = part->getDataPartStorage().getPartDirectory();
+                LOG_INFO(log, "Detaching {}", part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+            }
+
+            /// Create empty covering part to prevent zombie part resurrection after DETACH/ATTACH
+            auto future_parts = initCoverageWithNewEmptyParts({part});
+
+            LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
+                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
+                     transaction.getTID());
+
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+            renameAndCommitEmptyParts(new_data_parts, transaction);
+
+            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+
+            const auto * op = detach ? "Detached" : "Dropped";
+            LOG_INFO(log, "{} part {} by replacing it with {} new empty part(s). With txn {}",
+                     op, part_name, future_parts.size(),
+                     transaction.getTID());
         }
         else
         {
@@ -2414,19 +2450,51 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
         if (txn)
         {
-            DataPartsVector parts_to_remove;
+            MergeTreeData::Transaction transaction(*this, txn.get());
+
+            auto operation_data_parts_lock = lockOperationsWithParts();
+
+            DataPartsVector parts;
+
+            if (partition_ast && partition_ast->all)
             {
-                auto data_parts_lock = lockParts();
-                if (partition_ast && partition_ast->all)
-                    parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
-                else
-                {
-                    String partition_id = getPartitionIDFromQuery(partition, query_context, data_parts_lock);
-                    parts_to_remove = getVisibleDataPartsVectorInPartition(query_context, partition_id, data_parts_lock);
-                }
-                removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
+                parts = getVisibleDataPartsVector(query_context);
             }
-            dropPartsImpl(std::move(parts_to_remove), detach);
+            else
+            {
+                String partition_id = getPartitionIDFromQuery(partition, query_context);
+                parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
+            }
+
+            if (detach)
+            {
+                for (const auto & part : parts)
+                {
+                    auto metadata_snapshot = getInMemoryMetadataPtr();
+                    String part_dir = part->getDataPartStorage().getPartDirectory();
+                    LOG_INFO(log, "Detaching {}", part_dir);
+                    auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                    part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+                }
+            }
+
+            /// Create empty covering parts to prevent zombie parts resurrection after DETACH/ATTACH
+            auto future_parts = initCoverageWithNewEmptyParts(parts);
+
+            LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                     future_parts.size(), parts.size(),
+                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                     transaction.getTID());
+
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+            renameAndCommitEmptyParts(new_data_parts, transaction);
+
+            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+
+            const auto * op = detach ? "Detached" : "Dropped";
+            LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts. With txn {}",
+                     op, parts.size(), future_parts.size(),
+                     transaction.getTID());
         }
         else
         {

@@ -3743,6 +3743,14 @@ size_t MergeTreeData::clearEmptyParts()
     if (!(*getSettings())[MergeTreeSetting::remove_empty_parts])
         return 0;
 
+    /// If outdated parts have not been fully loaded yet (async loading is still in progress),
+    /// we cannot reliably determine which parts are covered by an empty part.
+    /// `getCoveredOutdatedParts` would return empty even when covered parts exist on disk,
+    /// causing premature removal of the empty covering part and zombie-part resurrection on
+    /// the next ATTACH.  Skip until the loading completes.
+    if (!outdated_data_parts_loading_finished)
+        return 0;
+
     std::vector<std::string> parts_names_to_drop;
 
     {
@@ -3756,6 +3764,16 @@ size_t MergeTreeData::clearEmptyParts()
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
             if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
                 continue;
+
+            /// Do not drop an empty covering part while it still has covered outdated parts on disk.
+            /// Removing the covering part first causes those outdated parts to resurrect as active
+            /// on ATTACH or crash recovery (zombie resurrection), because the covering part can no
+            /// longer suppress them during part loading.
+            {
+                auto parts_lock = lockParts();
+                if (!getCoveredOutdatedParts(part, parts_lock).empty())
+                    continue;
+            }
 
             parts_names_to_drop.emplace_back(part->name);
         }
