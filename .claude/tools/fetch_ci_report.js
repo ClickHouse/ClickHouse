@@ -10,6 +10,7 @@
  *   --failed         Show only failed tests
  *   --links          Show artifact links
  *   --download-logs  Download and extract logs.tar.gz
+ *   --credentials <user,password>  Only for ClickHouse_private repository: HTTP Basic Auth credentials (comma-separated)
  *
  * Examples:
  *   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&..."
@@ -41,7 +42,12 @@ const path = require('path');
 
 async function fetchReport(url, options = {}) {
   const browser = await chromium.launch();
-  const page = await browser.newPage();
+  const contextOptions = {};
+  if (options.credentials) {
+    contextOptions.httpCredentials = options.credentials;
+  }
+  const context = await browser.newContext(contextOptions);
+  const page = await context.newPage();
 
   console.log(`Fetching: ${url}\n`);
 
@@ -168,11 +174,13 @@ Options:
   --all            Show all test results (not just summary)
   --links          Show artifact links
   --download-logs  Download and extract logs.tar.gz
+  --credentials <user,password>  HTTP Basic Auth credentials
 
 Examples:
   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&sha=abc123&name_0=PR&name_1=Integration%20tests"
   node fetch_ci_report.js "<url>" --test peak_memory --links
   node fetch_ci_report.js "<url>" --failed --download-logs
+  node fetch_ci_report.js "<url>" --credentials "user,password" --failed
 `);
     process.exit(0);
   }
@@ -184,6 +192,7 @@ Examples:
     showAll: false,
     showLinks: false,
     downloadLogs: false,
+    credentials: null,
   };
 
   for (let i = 1; i < args.length; i++) {
@@ -203,6 +212,19 @@ Examples:
       case '--download-logs':
         options.downloadLogs = true;
         break;
+      case '--credentials': {
+        const cred = args[++i];
+        const commaIdx = cred.indexOf(',');
+        if (commaIdx === -1) {
+          console.error('Error: --credentials must be in "user,password" format');
+          process.exit(1);
+        }
+        options.credentials = {
+          username: cred.substring(0, commaIdx),
+          password: cred.substring(commaIdx + 1),
+        };
+        break;
+      }
     }
   }
 

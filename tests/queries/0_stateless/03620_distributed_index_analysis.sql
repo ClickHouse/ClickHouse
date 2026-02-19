@@ -2,7 +2,7 @@
 -- - no-random-merge-tree-settings -- may change number of parts
 
 drop table if exists test_10m;
-create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_size_to_activate=0;
+create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate=0;
 system stop merges test_10m;
 insert into test_10m select number, number*100 from numbers(10e6);
 
@@ -38,3 +38,5 @@ where
   and has(Settings, 'allow_experimental_parallel_reading_from_replicas')
   and endsWith(log_comment, '-' || currentDatabase())
 order by event_time_microseconds;
+
+drop table test_10m;

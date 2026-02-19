@@ -1127,12 +1127,6 @@ try
 
     auto finish_entries = [&](QueryPipeline && pileline_, size_t num_rows, size_t num_bytes)
     {
-        for (const auto & entry : data->entries)
-        {
-            if (!entry->isFinished())
-                entry->finish();
-        }
-
         if (!log_elements.empty())
         {
             auto flush_time = std::chrono::system_clock::now();
@@ -1144,6 +1138,15 @@ try
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
         logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
+
+        /// Finish entries (and notify waiting clients) after logging,
+        /// so that SYSTEM FLUSH LOGS issued right after the async insert
+        /// is guaranteed to include the QueryFinish entry.
+        for (const auto & entry : data->entries)
+        {
+            if (!entry->isFinished())
+                entry->finish();
+        }
     };
 
     try

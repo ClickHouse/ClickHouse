@@ -487,6 +487,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ostr << ' ';
+            print_identifier(delta_kernel_tracing_level);
+            break;
+        }
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
@@ -585,7 +591,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
-        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:

@@ -1637,6 +1637,8 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
         result = Chain::concat(std::move(result), createPreSink(view_id));
         ++it;
     }
+    else if (it == path.begin())
+        ++it;
 
     for (; it != path.end(); ++it)
     {

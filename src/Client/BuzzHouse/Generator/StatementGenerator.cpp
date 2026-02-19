@@ -7,91 +7,6 @@
 namespace BuzzHouse
 {
 
-const std::vector<std::vector<OutFormat>> StatementGenerator::outFormats
-    = {{OutFormat::OUT_Arrow},
-       {OutFormat::OUT_Avro},
-       {OutFormat::OUT_BSONEachRow},
-       {OutFormat::OUT_Buffers},
-       {OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
-       {OutFormat::OUT_CustomSeparated, OutFormat::OUT_CustomSeparatedWithNames, OutFormat::OUT_CustomSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_JSON,
-        OutFormat::OUT_JSONColumns,
-        OutFormat::OUT_JSONColumnsWithMetadata,
-        OutFormat::OUT_JSONCompact,
-        OutFormat::OUT_JSONCompactColumns,
-        OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactEachRowWithNames,
-        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
-        OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
-        OutFormat::OUT_JSONEachRow,
-        OutFormat::OUT_JSONLines,
-        OutFormat::OUT_JSONObjectEachRow,
-        OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_LineAsString},
-       {OutFormat::OUT_MsgPack},
-       {OutFormat::OUT_Native},
-       {OutFormat::OUT_ORC},
-       {OutFormat::OUT_Parquet},
-       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufSingle},
-       {OutFormat::OUT_RawBLOB},
-       {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparated,
-        OutFormat::OUT_TabSeparatedRaw,
-        OutFormat::OUT_TabSeparatedRawWithNames,
-        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
-        OutFormat::OUT_TabSeparatedWithNames,
-        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_TSKV},
-       {OutFormat::OUT_Values}};
-
-const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
-    = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-       {OutFormat::OUT_Avro, InFormat::IN_Avro},
-       {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-       {OutFormat::OUT_Buffers, InFormat::IN_Buffers},
-       {OutFormat::OUT_CSV, InFormat::IN_CSV},
-       {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
-       {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-       {OutFormat::OUT_CustomSeparated, InFormat::IN_CustomSeparated},
-       {OutFormat::OUT_CustomSeparatedWithNames, InFormat::IN_CustomSeparatedWithNames},
-       {OutFormat::OUT_CustomSeparatedWithNamesAndTypes, InFormat::IN_CustomSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_JSON, InFormat::IN_JSON},
-       {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
-       {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
-       {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
-       {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
-       {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
-       {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
-       {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
-       {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
-       {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-       {OutFormat::OUT_JSONLines, InFormat::IN_JSONLines},
-       {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-       {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-       {OutFormat::OUT_LineAsString, InFormat::IN_LineAsString},
-       {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
-       {OutFormat::OUT_Native, InFormat::IN_Native},
-       {OutFormat::OUT_ORC, InFormat::IN_ORC},
-       {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-       {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
-       {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-       {OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB},
-       {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
-       {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
-       {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparated, InFormat::IN_TabSeparated},
-       {OutFormat::OUT_TabSeparatedRaw, InFormat::IN_TabSeparatedRaw},
-       {OutFormat::OUT_TabSeparatedRawWithNames, InFormat::IN_TabSeparatedRawWithNames},
-       {OutFormat::OUT_TabSeparatedRawWithNamesAndTypes, InFormat::IN_TabSeparatedRawWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparatedWithNames, InFormat::IN_TabSeparatedWithNames},
-       {OutFormat::OUT_TabSeparatedWithNamesAndTypes, InFormat::IN_TabSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
-       {OutFormat::OUT_Values, InFormat::IN_Values}};
-
 const std::unordered_map<JoinType, std::vector<JoinConst>> StatementGenerator::joinMappings
     = {{J_LEFT, {J_ANY, J_ALL, J_SEMI, J_ANTI, J_ASOF}},
        {J_INNER, {J_ANY, J_ALL, J_ASOF}},
@@ -873,30 +788,33 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     }
 }
 
-void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const bool allow_parts, const SQLTable & t, PartitionExpr * pexpr)
+void StatementGenerator::generateNextTablePartition(
+    RandomGenerator & rg, const bool allow_parts, const bool detached, const bool supports_all, const SQLTable & t, PartitionExpr * pexpr)
 {
-    bool set_part = false;
+    bool table_has_partitions = false;
 
     if (t.isMergeTreeFamily())
     {
         const String dname = t.getDatabaseName();
         const String tname = t.getTableName();
-        const bool table_has_partitions = rg.nextSmallNumber() < 9 && fc.tableHasPartitions(false, dname, tname);
 
-        if (table_has_partitions)
+        if ((table_has_partitions = (rg.nextMediumNumber() < 76 && fc.tableHasPartitions(detached, dname, tname))))
         {
             if (allow_parts && rg.nextBool())
             {
-                pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
+                pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), detached, false, dname, tname));
             }
             else
             {
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
+                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), detached, true, dname, tname));
             }
-            set_part = true;
         }
     }
-    if (!set_part)
+    if (!table_has_partitions && supports_all && rg.nextBool())
+    {
+        pexpr->set_all(true);
+    }
+    else if (!table_has_partitions)
     {
         pexpr->set_tuple(true);
     }
@@ -907,7 +825,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
     t.setName(ot->mutable_est(), false);
     if (rg.nextBool())
     {
-        generateNextTablePartition(rg, false, t, ot->mutable_single_partition()->mutable_partition());
+        generateNextTablePartition(rg, false, rg.nextSmallNumber() < 3, false, t, ot->mutable_single_partition()->mutable_partition());
     }
     ot->set_cleanup(rg.nextSmallNumber() < 3);
     if (!strict && rg.nextSmallNumber() < 4)
@@ -983,7 +901,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
         t.setName(ct->mutable_est(), false);
         if (rg.nextBool())
         {
-            generateNextTablePartition(rg, true, t, ct->mutable_single_partition()->mutable_partition());
+            generateNextTablePartition(rg, true, rg.nextSmallNumber() < 3, false, t, ct->mutable_single_partition()->mutable_partition());
         }
     }
     else
@@ -1463,7 +1381,7 @@ void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable
 {
     if (rg.nextBool())
     {
-        generateNextTablePartition(rg, false, t, upt->mutable_single_partition()->mutable_partition());
+        generateNextTablePartition(rg, false, rg.nextSmallNumber() < 3, false, t, upt->mutable_single_partition()->mutable_partition());
     }
     flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
     if (this->entries.empty())
@@ -1533,7 +1451,7 @@ void StatementGenerator::generateNextDelete(RandomGenerator & rg, const SQLTable
 {
     if (rg.nextBool())
     {
-        generateNextTablePartition(rg, false, t, del->mutable_single_partition()->mutable_partition());
+        generateNextTablePartition(rg, false, rg.nextSmallNumber() < 3, false, t, del->mutable_single_partition()->mutable_partition());
     }
     generateUptDelWhere(rg, t, del->mutable_where()->mutable_expr()->mutable_expr());
 }
@@ -1717,9 +1635,6 @@ std::optional<String> StatementGenerator::alterSingleTable(
 {
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
-    const String dname = t.getDatabaseName();
-    const String tname = t.getTableName();
-    const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
     this->allow_not_deterministic = !t.is_deterministic;
     this->enforce_final = t.is_deterministic;
@@ -1763,14 +1678,14 @@ std::optional<String> StatementGenerator::alterSingleTable(
         const uint32_t detach_partition = 5 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily());
         const uint32_t drop_partition = 5 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily());
         const uint32_t drop_detached_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
-        const uint32_t forget_partition = 5 * static_cast<uint32_t>(no_oracle && table_has_partitions);
+        const uint32_t forget_partition = 5 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily());
         const uint32_t attach_partition = 5 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily());
-        const uint32_t move_partition_to = 5 * static_cast<uint32_t>(no_oracle && table_has_partitions);
-        const uint32_t clear_column_partition = 5 * static_cast<uint32_t>(table_has_partitions);
+        const uint32_t move_partition_to = 5 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily());
+        const uint32_t clear_column_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
         const uint32_t freeze_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
         const uint32_t unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty());
-        const uint32_t clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty());
-        const uint32_t move_partition = 5 * static_cast<uint32_t>(no_oracle && table_has_partitions && !fc.disks.empty());
+        const uint32_t clear_index_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.idxs.empty());
+        const uint32_t move_partition = 5 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily() && !fc.disks.empty());
         const uint32_t modify_ttl = 5 * static_cast<uint32_t>(!t.is_deterministic && t.can_run_merges);
         const uint32_t remove_ttl = 2 * static_cast<uint32_t>(!t.is_deterministic);
         const uint32_t attach_partition_from = 5 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily());
@@ -1868,7 +1783,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
             this->entries.clear();
             if (rg.nextBool())
             {
-                generateNextTablePartition(rg, false, t, mcol->mutable_single_partition()->mutable_partition());
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, mcol->mutable_single_partition()->mutable_partition());
             }
         }
         else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + 1))
@@ -1903,7 +1819,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
             this->entries.clear();
             if (rg.nextBool())
             {
-                generateNextTablePartition(rg, false, t, ccol->mutable_single_partition()->mutable_partition());
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, ccol->mutable_single_partition()->mutable_partition());
             }
         }
         else if (
@@ -1984,7 +1901,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
 
             if (rg.nextBool())
             {
-                generateNextTablePartition(rg, false, t, ope->mutable_single_partition()->mutable_partition());
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, ope->mutable_single_partition()->mutable_partition());
             }
         }
         else if (
@@ -2087,7 +2005,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
             iip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
             if (rg.nextBool())
             {
-                generateNextTablePartition(rg, false, t, iip->mutable_single_partition()->mutable_partition());
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, iip->mutable_single_partition()->mutable_partition());
             }
         }
         else if (
@@ -2102,7 +2021,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
             iip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
             if (rg.nextBool())
             {
-                generateNextTablePartition(rg, false, t, iip->mutable_single_partition()->mutable_partition());
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, iip->mutable_single_partition()->mutable_partition());
             }
         }
         else if (
@@ -2246,7 +2166,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
             pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(t.projs)));
             if (rg.nextBool())
             {
-                generateNextTablePartition(rg, false, t, pip->mutable_single_partition()->mutable_partition());
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, pip->mutable_single_partition()->mutable_partition());
             }
         }
         else if (
@@ -2263,7 +2184,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
             pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(t.projs)));
             if (rg.nextBool())
             {
-                generateNextTablePartition(rg, false, t, pip->mutable_single_partition()->mutable_partition());
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, pip->mutable_single_partition()->mutable_partition());
             }
         }
         else if (
@@ -2297,21 +2219,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                    + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + 1))
         {
-            const uint32_t nopt3 = rg.nextSmallNumber();
-            PartitionExpr * pexpr = ati->mutable_detach_partition()->mutable_partition();
-
-            if (table_has_partitions && nopt3 < 5)
-            {
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
-            }
-            else if (table_has_partitions && nopt3 < 9)
-            {
-                pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
-            }
-            else
-            {
-                pexpr->set_all(true);
-            }
+            generateNextTablePartition(rg, true, rg.nextSmallNumber() < 3, true, t, ati->mutable_detach_partition()->mutable_partition());
         }
         else if (
             drop_partition
@@ -2323,21 +2231,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                    + 1))
         {
-            const uint32_t nopt3 = rg.nextSmallNumber();
-            PartitionExpr * pexpr = ati->mutable_drop_partition()->mutable_partition();
-
-            if (table_has_partitions && nopt3 < 5)
-            {
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
-            }
-            else if (table_has_partitions && nopt3 < 9)
-            {
-                pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
-            }
-            else
-            {
-                pexpr->set_all(true);
-            }
+            generateNextTablePartition(rg, true, rg.nextSmallNumber() < 3, true, t, ati->mutable_drop_partition()->mutable_partition());
         }
         else if (
             drop_detached_partition
@@ -2349,22 +2243,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition
                    + drop_detached_partition + 1))
         {
-            const uint32_t nopt3 = rg.nextSmallNumber();
-            PartitionExpr * pexpr = ati->mutable_drop_detached_partition()->mutable_partition();
-            const bool table_has_detached_partitions = fc.tableHasPartitions(true, dname, tname);
-
-            if (table_has_detached_partitions && nopt3 < 5)
-            {
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), true, true, dname, tname));
-            }
-            else if (table_has_detached_partitions && nopt3 < 9)
-            {
-                pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), true, false, dname, tname));
-            }
-            else
-            {
-                pexpr->set_all(true);
-            }
+            generateNextTablePartition(
+                rg, true, rg.nextSmallNumber() < 9, true, t, ati->mutable_drop_detached_partition()->mutable_partition());
         }
         else if (
             forget_partition
@@ -2376,9 +2256,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                    + drop_detached_partition + forget_partition + 1))
         {
-            PartitionExpr * pexpr = ati->mutable_forget_partition()->mutable_partition();
-
-            pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
+            generateNextTablePartition(rg, false, rg.nextBool(), false, t, ati->mutable_forget_partition()->mutable_partition());
         }
         else if (
             attach_partition
@@ -2390,22 +2268,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                    + drop_detached_partition + forget_partition + attach_partition + 1))
         {
-            const uint32_t nopt3 = rg.nextSmallNumber();
-            PartitionExpr * pexpr = ati->mutable_attach_partition()->mutable_partition();
-            const bool table_has_detached_partitions = fc.tableHasPartitions(true, dname, tname);
-
-            if (table_has_detached_partitions && nopt3 < 5)
-            {
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), true, true, dname, tname));
-            }
-            else if (table_has_detached_partitions && nopt3 < 9)
-            {
-                pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), true, false, dname, tname));
-            }
-            else
-            {
-                pexpr->set_all(true);
-            }
+            generateNextTablePartition(rg, true, rg.nextSmallNumber() < 9, true, t, ati->mutable_attach_partition()->mutable_partition());
         }
         else if (
             move_partition_to
@@ -2418,10 +2281,9 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + drop_detached_partition + forget_partition + attach_partition + move_partition_to + 1))
         {
             AttachPartitionFrom * apf = ati->mutable_move_partition_to();
-            PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
             const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
-            pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
+            generateNextTablePartition(rg, false, rg.nextSmallNumber() < 3, false, t, apf->mutable_single_partition()->mutable_partition());
             t2.setName(apf->mutable_est(), false);
         }
         else if (
@@ -2435,9 +2297,9 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition + 1))
         {
             ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
-            PartitionExpr * pexpr = ccip->mutable_single_partition()->mutable_partition();
 
-            pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
+            generateNextTablePartition(
+                rg, false, rg.nextSmallNumber() < 3, false, t, ccip->mutable_single_partition()->mutable_partition());
             flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
             columnPathRef(rg.pickRandomly(this->entries), ccip->mutable_col());
             this->entries.clear();
@@ -2455,10 +2317,10 @@ std::optional<String> StatementGenerator::alterSingleTable(
         {
             FreezePartition * fp = ati->mutable_freeze_partition();
 
-            if (table_has_partitions && rg.nextSmallNumber() < 9)
+            if (rg.nextSmallNumber() < 9)
             {
-                fp->mutable_single_partition()->mutable_partition()->set_partition_id(
-                    fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, fp->mutable_single_partition()->mutable_partition());
             }
             fp->set_fname(t.freeze_counter++);
         }
@@ -2495,9 +2357,9 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + freeze_partition + unfreeze_partition + clear_index_partition + 1))
         {
             ClearIndexInPartition * ccip = ati->mutable_clear_index_partition();
-            PartitionExpr * pexpr = ccip->mutable_single_partition()->mutable_partition();
 
-            pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
+            generateNextTablePartition(
+                rg, false, rg.nextSmallNumber() < 3, false, t, ccip->mutable_single_partition()->mutable_partition());
             ccip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
         }
         else if (
@@ -2512,9 +2374,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + 1))
         {
             MovePartition * mp = ati->mutable_move_partition();
-            PartitionExpr * pexpr = mp->mutable_single_partition()->mutable_partition();
 
-            pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
+            generateNextTablePartition(rg, true, rg.nextSmallNumber() < 3, true, t, mp->mutable_single_partition()->mutable_partition());
             generateStorage(rg, mp->mutable_storage());
         }
         else if (
@@ -2558,14 +2419,9 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + attach_partition_from + 1))
         {
             AttachPartitionFrom * apf = ati->mutable_attach_partition_from();
-            PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
             const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-            const String dname2 = t2.getDatabaseName();
-            const String tname2 = t2.getTableName();
-            const bool table_has_partitions2 = t2.isMergeTreeFamily() && fc.tableHasPartitions(false, dname2, tname2);
 
-            pexpr->set_partition_id(
-                table_has_partitions2 ? fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname2, tname2) : "0");
+            generateNextTablePartition(rg, false, rg.nextSmallNumber() < 3, true, t2, apf->mutable_single_partition()->mutable_partition());
             t2.setName(apf->mutable_est(), false);
         }
         else if (
@@ -2581,14 +2437,10 @@ std::optional<String> StatementGenerator::alterSingleTable(
                    + attach_partition_from + replace_partition_from + 1))
         {
             AttachPartitionFrom * apf = ati->mutable_replace_partition_from();
-            PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
             const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
-            const String dname2 = t2.getDatabaseName();
-            const String tname2 = t2.getTableName();
-            const bool table_has_partitions2 = t2.isMergeTreeFamily() && fc.tableHasPartitions(false, dname2, tname2);
 
-            pexpr->set_partition_id(
-                table_has_partitions2 ? fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname2, tname2) : "0");
+            generateNextTablePartition(
+                rg, false, rg.nextSmallNumber() < 3, false, t2, apf->mutable_single_partition()->mutable_partition());
             t2.setName(apf->mutable_est(), false);
         }
         else if (
@@ -2621,7 +2473,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
 
             if (rg.nextBool())
             {
-                generateNextTablePartition(rg, false, t, ope->mutable_single_partition()->mutable_partition());
+                generateNextTablePartition(
+                    rg, false, rg.nextSmallNumber() < 3, false, t, ope->mutable_single_partition()->mutable_partition());
             }
         }
         else
@@ -2951,8 +2804,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t stop_distributed_sends = 8 * has_distributed_table;
     const uint32_t start_distributed_sends = 8 * has_distributed_table;
     const uint32_t drop_query_condition_cache = 3;
-    const uint32_t enable_failpoint = 20;
-    const uint32_t disable_failpoint = 5;
+    const uint32_t enable_failpoint = 20 * static_cast<uint32_t>(!fc.failpoints.empty());
+    const uint32_t disable_failpoint = 5 * static_cast<uint32_t>(!fc.failpoints.empty());
     const uint32_t reconnect_keeper = 5;
     const uint32_t drop_text_index_dictionary_cache = 3;
     const uint32_t drop_text_index_header_cache = 3;
@@ -2960,7 +2813,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t drop_text_index_caches = 3;
     const uint32_t iceberg_metadata_cache = 3;
     const uint32_t reset_ddl_worker = 3;
-    const uint32_t drop_parquet_metadata_cache = 3;
+    const uint32_t wait_failpoint = 5 * static_cast<uint32_t>(!fc.failpoints.empty());
+    const uint32_t notify_failpoint = 5 * static_cast<uint32_t>(!fc.failpoints.empty());
     const uint32_t prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
         + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
         + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
@@ -2973,7 +2827,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         + drop_schema_cache + drop_s3_client_cache + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache
         + reload_dictionary + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache
         + enable_failpoint + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
-        + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + drop_parquet_metadata_cache;
+        + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
+        + notify_failpoint;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::optional<String> cluster;
@@ -3802,9 +3657,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint + 1))
     {
-        std::uniform_int_distribution<uint32_t> fail_range(1, static_cast<uint32_t>(FailPoint_MAX));
-
-        sc->set_enable_failpoint(static_cast<FailPoint>(fail_range(rg.generator)));
+        sc->set_enable_failpoint(rg.pickRandomly(fc.failpoints));
     }
     else if (
         disable_failpoint
@@ -3823,9 +3676,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
                + disable_failpoint + 1))
     {
-        std::uniform_int_distribution<uint32_t> fail_range(1, static_cast<uint32_t>(FailPoint_MAX));
-
-        sc->set_disable_failpoint(static_cast<FailPoint>(fail_range(rg.generator)));
+        sc->set_disable_failpoint(rg.pickRandomly(fc.failpoints));
     }
     else if (
         reconnect_keeper
@@ -3965,7 +3816,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         sc->set_reset_ddl_worker(true);
     }
     else if (
-        drop_parquet_metadata_cache
+        wait_failpoint
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
@@ -3980,10 +3831,30 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
                + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
-               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker
-               + drop_parquet_metadata_cache + 1))
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint + 1))
     {
-        sc->set_drop_parquet_metadata_cache(true);
+        sc->set_wait_failpoint(rg.pickRandomly(fc.failpoints));
+    }
+    else if (
+        notify_failpoint
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
+               + notify_failpoint + 1))
+    {
+        sc->set_notify_failpoint(rg.pickRandomly(fc.failpoints));
     }
     else
     {

@@ -424,7 +424,15 @@ DeduplicationHash DeduplicationInfo::getBlockHash(size_t offset, const std::stri
             continue; // source id is already included in by_data
 
         extension.append(":");
-        extension.append(extra.toString());
+        if (is_async_insert && extra.type == TokenDefinition::Extra::SOURCE_NUMBER)
+        {
+            // do not include source number for async inserts,
+            // they are not relevant as data hash is used or user token
+            // a token describes only the data in one block
+            extension.append(TokenDefinition::Extra::asSourceNumber(0).toString());
+        }
+        else
+            extension.append(extra.toString());
     }
 
     LOG_TEST(logger, "getBlockHash {} debug: {}", extension, debug());
@@ -657,7 +665,7 @@ void DeduplicationInfo::redefineTokensWithDataHash()
 {
     LOG_TEST(logger, "redefineTokensWithDataHash, debug: {}", debug());
 
-    if (level != Level::SOURCE)
+    if (disabled || level != Level::SOURCE)
         return;
 
     for (size_t i = 0; i < tokens.size(); ++i)
@@ -787,11 +795,6 @@ void DeduplicationInfo::truncateTokensForRetry()
                 ErrorCodes::LOGICAL_ERROR,
                 "Invalid deduplication token structure during retry, expected source/view number after source/view id, debug: {}",
                 debug());
-        if (std::get<TokenDefinition::Extra::Range>(next->value_variant).first > 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid deduplication token structure during retry, expected source/view number to be zero, debug: {}",
-                debug());
         ++next;
         token.extra_tokens.erase(next, token.extra_tokens.end());
     }
@@ -869,14 +872,14 @@ void DeduplicationInfo::updateOriginalBlock(const Chunk & chunk, SharedHeader he
 {
     chassert(!visited_views.empty());
 
-    LOG_TEST(
-        logger,
-        "updateOriginalBlock with chunk rows/col {}/{} debug: {}",
-        chunk.getNumRows(), chunk.getNumColumns(),
-        debug());
-
     if (!original_block)
         original_block_view_id = visited_views.back();
+
+    if (disabled)
+    {
+        chassert(!original_block);
+        return;
+    }
 
     original_block = std::make_shared<Block>(header->cloneWithColumns(chunk.getColumns()));
 }
@@ -910,7 +913,10 @@ void DeduplicationInfo::setViewID(const StorageID & id)
     chassert(level == Level::VIEW);
 
     if (!insert_dependencies || !insert_dependencies->deduplicate_blocks_in_dependent_materialized_views)
+    {
         disabled = true;
+        original_block.reset(); // do not hold original block if deduplication is disabled, to save memory
+    }
 
     addExtraPart(TokenDefinition::Extra::asViewID(id));
     visited_views.push_back(id);
