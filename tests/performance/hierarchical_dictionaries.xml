@@ -15,14 +15,6 @@
                 <value>16</value>
             </values>
         </substitution>
-
-        <substitution>
-            <name>func</name>
-            <values>
-                <value>dictGetHierarchy</value>
-                <value>dictGetDescendants</value>
-            </values>
-        </substitution>
     </substitutions>
 
     <create_query>
@@ -70,10 +62,16 @@
     </fill_query>
 
     <query>
-        SELECT {func}('hierarchical_flat_dictionary', number + 1) FROM numbers(900000) FORMAT Null;
+        SELECT dictGetHierarchy('hierarchical_flat_dictionary', number + 1) FROM numbers(2500000) FORMAT Null;
     </query>
     <query>
-        SELECT {func}('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(830000) FORMAT Null;
+        SELECT dictGetDescendants('hierarchical_flat_dictionary', number + 1) FROM numbers(500000) FORMAT Null;
+    </query>
+    <query>
+        SELECT dictGetHierarchy('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(2200000) FORMAT Null;
+    </query>
+    <query>
+        SELECT dictGetDescendants('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(470000) FORMAT Null;
     </query>
 
     <drop_query>DROP DICTIONARY IF EXISTS hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary;</drop_query>

@@ -14,7 +14,7 @@
         <substitution>
             <name>numbers_threshold_value</name>
             <values>
-                <value>5000000</value>
+                <value>8000000</value>
                 <value>10000000</value>
             </values>
         </substitution>
