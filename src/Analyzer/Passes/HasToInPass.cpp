@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/HasToInPass.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeArray.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -46,6 +47,26 @@ public:
         /// Verify that the first argument is actually an array type
         const auto & first_arg_type = has_function_arguments_nodes[0]->getResultType();
         if (!isArray(first_arg_type))
+            return;
+        
+        const auto & element_type = (typeid_cast<const DataTypeArray *>(first_arg_type.get()))->getNestedType();
+        WhichDataType data_type(element_type);
+        if (data_type.isArray() || data_type.isTuple() || data_type.isObject())
+            return;
+
+        /// Verify that none of the values in the constant array are NULLs, because has() and in() treat NULLs differently
+        const auto & array_field = first_arg_constant->getValue();
+        const auto & array_value = array_field.safeGet<Array>();
+        if (array_value.size() ==0)
+            return;
+        for (const auto & element : array_value)
+        {
+            if (element.isNull())
+                return;
+        }
+        
+        const auto second_arg_type = has_function_arguments_nodes[1]->getResultType();
+        if (second_arg_type->isNullable())
             return;
 
         /// Rewrite has(const_array, elem) -> in(elem, const_array)
