@@ -80,6 +80,7 @@ public:
         RELOAD_CONFIG,
         RELOAD_USERS,
         RELOAD_ASYNCHRONOUS_METRICS,
+        RELOAD_DELTA_KERNEL_TRACING,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -156,8 +157,6 @@ public:
     String target_function;
     String replica;
     String shard;
-    String zk_name;
-    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
@@ -191,6 +190,8 @@ public:
         RESUME
     };
     FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
+
+    String delta_kernel_tracing_level;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 

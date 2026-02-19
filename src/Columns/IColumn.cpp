@@ -45,6 +45,11 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
+bool IColumn::Options::notFull(WriteBufferFromOwnString & buf) const
+{
+    return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
+}
+
 std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString name_buf;
@@ -854,6 +859,7 @@ void IColumnHelper<Derived, Parent>::updateInplaceFrom(const IColumn::Patch & pa
     else
         updateInplaceFrom<false>(dst, patch);
 }
+
 
 template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UInt16>, ColumnFixedSizeHelper>;

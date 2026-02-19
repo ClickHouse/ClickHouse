@@ -120,6 +120,7 @@ protected:
     void runNonInteractive();
 
     char * argv0 = nullptr;
+    String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
     void runLibFuzzer();
 
     /// This is the analogue of Poco::Application::config()
@@ -468,7 +469,7 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
-    ClientInfo::QueryKind query_kind;
+    ClientInfo::QueryKind query_kind{ClientInfo::QueryKind::INITIAL_QUERY};
 
     struct HostAndPort
     {

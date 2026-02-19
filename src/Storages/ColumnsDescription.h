@@ -11,8 +11,6 @@
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
 
-#include <Parsers/IAST.h>
-
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -25,6 +23,8 @@
 
 namespace DB
 {
+
+struct IASTFormatState;
 
 namespace ErrorCodes
 {
@@ -107,7 +107,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
+    void writeText(WriteBuffer & buf, IASTFormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
 };
 

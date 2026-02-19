@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/Types_fwd.h>
-#include <Core/SettingsEnums.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool_fwd.h>
@@ -322,6 +322,9 @@ public:
         size_t object_shared_data_buckets = 1;
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Current level of array. Needed to differentiate stream names of nested array offsets.
+        size_t array_level = 0;
     };
 
     virtual void enumerateStreams(
@@ -441,6 +444,9 @@ public:
         /// Callback used to update avg_value_size_hint for each substream.
         std::function<void(const SubstreamPath &, const IColumn &)> update_avg_value_size_hint_callback;
 
+        /// Callback used to mark a specific stream as unneeded indicating that it won't be used anymore.
+        std::function<void(const SubstreamPath &)> release_stream_callback;
+
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
@@ -450,6 +456,10 @@ public:
         /// with rows only from current range. If this flag is true and
         /// there is a column in cache, insert only rows from current range from it.
         bool insert_only_rows_in_current_range_from_substreams_cache = false;
+
+        /// If true, call release_stream on all streams used in the prefixes deserialization
+        /// even for streams that will be used later for data deserialization.
+        bool release_all_prefixes_streams = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -532,10 +542,7 @@ public:
 
     /// Method that is used to serialize value for generic hash calculation of a value in the column.
     /// Note that this method should respect compatibility.
-    virtual void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-    {
-        serializeBinary(column, row_num, ostr, {});
-    }
+    virtual void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const;
 
     /** Text serialization with escaping but without quoting.
       */
@@ -609,8 +616,8 @@ public:
     static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 
-    static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false);
-    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false, size_t initial_array_level = 0);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false, size_t initial_array_level = 0);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
@@ -622,7 +629,8 @@ public:
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 
-    static size_t getArrayLevel(const SubstreamPath & path);
+    static size_t getArrayLevel(const SubstreamPath & path, size_t prefix_len);
+    static size_t getArrayLevel(const SubstreamPath & path) { return getArrayLevel(path, path.size()); }
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
 

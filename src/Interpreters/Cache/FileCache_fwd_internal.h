@@ -8,7 +8,7 @@ class FileCache;
 using FileCachePtr = std::shared_ptr<FileCache>;
 
 class IFileCachePriority;
-using FileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
+using FileCachePriorityPtr = std::shared_ptr<IFileCachePriority>;
 
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
