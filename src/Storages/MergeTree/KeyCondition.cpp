@@ -30,7 +30,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -881,34 +880,19 @@ KeyCondition::KeyCondition(
     ContextPtr context,
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
-    bool single_point_,
-    bool skip_analysis_)
+    bool single_point_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
+    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
     {
         key_columns.try_emplace(name, key_index);
         ++key_index;
     }
-
-    /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
-    /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
-    /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomFromTree` calls can lead to
-    /// unexpected exceptions.
-    /// This will lead to reading all granules with no primary key skipping.
-    if (skip_analysis_)
-    {
-        has_filter = (filter_dag.predicate != nullptr);
-        relaxed = true;
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-        return;
-    }
-
-    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -1515,27 +1499,6 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     auto set_columns = prepared_set->getSetElements();
 
     auto set_types = future_set->getTypes();
-
-    chassert(set_types.size() == set_columns.size());
-
-    /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
-    /// `key_tuple IN ((a, b), (c, d), ...)`.
-    ///
-    /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
-    /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
-    /// the key column type when preparing index conditions
-    if (left_args_count == 1 && data_types.size() == 1 && set_columns.size() > 1)
-    {
-        DataTypePtr key_type = removeNullable(data_types[0]);
-        if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
-        {
-            if (key_tuple_type->getElements().size() == set_types.size())
-            {
-                set_columns = {ColumnTuple::create(set_columns)};
-                set_types = {std::make_shared<DataTypeTuple>(set_types)};
-            }
-        }
-    }
 
     bool is_constant_transformed = false;
     if (!tryPrepareSetColumnsForIndex(
@@ -2515,11 +2478,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
     {
         /// For cases where it says, for example, `WHERE 0 AND something`
 
-        if (const_value.isNull())
-        {
-            out.function = RPNElement::ALWAYS_FALSE;
-            return true;
-        }
         if (const_value.getType() == Field::Types::UInt64)
         {
             out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
@@ -3110,11 +3068,11 @@ bool KeyCondition::matchesExactContinuousRange() const
             if (!func || !func->hasInformationAboutMonotonicity())
                 return {false, false};
 
-            auto arg_type = getArgumentTypeOfMonotonicFunction(*func);
-            if (!arg_type)
+            const auto & types = func->getArgumentTypes();
+            if (types.empty() || !types.front())
                 return {false, false};
 
-            const auto monotonicity = func->getMonotonicityForRange(*arg_type, field, field);
+            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
             all_always_monotonic &= monotonicity.is_always_monotonic;
             all_strict &= monotonicity.is_strict;
 
@@ -3379,65 +3337,6 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 
     ranges = std::move(rpn_stack.top().ranges);
     return true;
-}
-
-/// Extract a conservative union of ranges implied by this condition for the only key column.
-///
-/// We want to extract useful bounds even when the whole predicate cannot be represented as "plain ranges".
-/// Example: `x % 2 = 0 AND x < 100` is not fully plain due to `%`, but the conjunct `x < 100` still provides
-/// a finite upper bound. To support this, we:
-///  - split the condition into top-level conjuncts (A AND B AND ...),
-///  - run `extractPlainRanges()` on each conjunct independently,
-///  - intersect all successfully extracted conjunct ranges (because the whole condition is AND),
-///  - ignore conjuncts that cannot be converted to plain ranges.
-///
-/// We return `Ranges` (a union of intervals), because bounds may be disjoint:
-/// `x != 5` => (-Inf, 4] OR [6, +Inf). See `KeyCondition::extractBounds()` docs in `KeyCondition.h` for examples.
-Ranges KeyCondition::extractBounds() const
-{
-    /// We only support single column
-    if (key_columns.size() != 1)
-        return {Range::createWholeUniverseWithoutNull()};
-
-    if (!has_filter)
-        return {Range::createWholeUniverseWithoutNull()};
-
-    PlainRanges bounds = PlainRanges::makeUniverse();
-
-    /// Track whether we extracted at least one conjunct into plain ranges.
-    bool extracted_any = false;
-
-    for (const auto & [start, end] : topLevelConjunction())
-    {
-        /// Evaluate a single top-level conjunct in isolation, because `extractPlainRanges()` requires
-        /// the whole RPN to be representable by plain range operations.
-        KeyCondition one_conjunct(ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
-        one_conjunct.rpn.assign(rpn.begin() + start, rpn.begin() + end);
-
-        Ranges conjunct_ranges;
-
-        /// Unsupported conjunct: ignore it (it provides no safely extractable bounds).
-        if (!one_conjunct.extractPlainRanges(conjunct_ranges))
-            continue;
-
-        extracted_any = true;
-
-        /// If any conjunct is unsatisfiable, the whole AND is unsatisfiable.
-        if (conjunct_ranges.empty())
-            return {};
-
-        bounds = bounds.intersectWith(PlainRanges(conjunct_ranges));
-
-        /// Contradictory bounds between conjuncts (e.g. `x < 5 AND x > 10`).
-        if (bounds.ranges.empty())
-            return {};
-    }
-
-    /// No useful information could be extracted from any conjunct.
-    if (!extracted_any)
-        return {Range::createWholeUniverseWithoutNull()};
-
-    return std::move(bounds.ranges);
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(

@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVariant.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
 #include <Common/WeakHash.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 
 namespace DB
@@ -63,6 +62,9 @@ public:
     using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
+private:
+    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
+
     struct VariantInfo
     {
         DataTypePtr variant_type;
@@ -74,9 +76,6 @@ public:
         /// It's used during variant extension.
         std::unordered_map<String, UInt8> variant_name_to_discriminator;
     };
-
-private:
-    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
 
     explicit ColumnDynamic(size_t max_dynamic_types_);
     ColumnDynamic(MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {});
@@ -465,7 +464,7 @@ public:
 
     String getTypeNameAt(size_t row_num) const;
     DataTypePtr getTypeAt(size_t row_num) const;
-    void getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> & names) const;
+    void getAllTypeNamesInto(std::unordered_set<String> & names) const;
 
 private:
     void createVariantInfo(const DataTypePtr & variant_type);

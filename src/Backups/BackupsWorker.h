@@ -6,8 +6,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
-
-#include <mutex>
 #include <unordered_map>
 
 
@@ -74,10 +72,6 @@ public:
     BackupOperationInfo getInfo(const BackupOperationID & id) const;
     std::vector<BackupOperationInfo> getAllInfos() const;
 
-#if CLICKHOUSE_CLOUD
-    void unlockSnapshot(ASTPtr unlock_query, ContextPtr context);
-#endif
-
 private:
     std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     struct BackupStarter;
@@ -90,7 +84,7 @@ private:
 
     void doBackup(
         BackupMutablePtr backup,
-        const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
+        const std::shared_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
@@ -114,7 +108,7 @@ private:
 #endif
 
     void doRestore(
-        const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
+        const std::shared_ptr<ASTBackupQuery> & restore_query,
         const BackupOperationID & restore_id,
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,

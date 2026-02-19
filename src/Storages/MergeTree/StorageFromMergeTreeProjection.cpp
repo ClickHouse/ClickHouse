@@ -1,9 +1,7 @@
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 
-#include <Access/Common/AccessFlags.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
@@ -32,8 +30,6 @@ void StorageFromMergeTreeProjection::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
-
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
 
@@ -66,9 +62,10 @@ void StorageFromMergeTreeProjection::read(
     }
     else
     {
-        auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(projection->sample_block));
-        read_nothing->setStepDescription("Read from NullSource (Projection)");
-        query_plan.addStep(std::move(read_nothing));
+        Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(projection->sample_block)));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Projection)");
+        query_plan.addStep(std::move(read_from_pipe));
     }
 }
 

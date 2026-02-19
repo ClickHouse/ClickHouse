@@ -2,6 +2,9 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
@@ -199,7 +202,7 @@ Chunk DistributedQueryStatusSource::generate()
             return stopWaitingOfflineHosts();
         }
 
-        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > static_cast<double>(timeout_seconds)))
+        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds))
         {
             return handleTimeoutExceeded();
         }

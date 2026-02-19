@@ -1,14 +1,14 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
-#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -31,6 +31,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_REQUEST_PARAMETER;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
@@ -48,7 +49,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
     const Params & params)
 {
-    auto query_tree = std::make_shared<PrometheusQueryTree>();
+    auto query_tree = std::make_unique<PrometheusQueryTree>();
     query_tree->parse(params.promql_query);
     if (!query_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse PromQL query");
@@ -56,43 +57,53 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
     // Create TimeSeriesTableInfo structure
-    PrometheusQueryEvaluationSettings evaluation_settings;
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr();
-    evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
-    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
-    evaluation_settings.timestamp_data_type = timestamp_data_type;
-    evaluation_settings.scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
+    PrometheusQueryToSQLConverter::TimeSeriesTableInfo table_info;
+    table_info.storage_id = time_series_storage->getStorageID();
+    table_info.timestamp_data_type = std::make_shared<DataTypeDateTime64>(0);
+    table_info.value_data_type = std::make_shared<DataTypeFloat64>();
+
+    Field start_time;
+    Field end_time;
+    Field step;
+    Field evaluation_time;
+    Field lookback_delta;
 
     if (params.type == Type::Instant)
     {
-        evaluation_settings.mode = PrometheusQueryEvaluationMode::QUERY;
-        if (params.time_param.empty())
-        {
-            evaluation_settings.use_current_time = true;
-        }
-        else
-        {
-            evaluation_settings.start_time = parseTimeSeriesTimestamp(params.time_param, timestamp_scale);
-            evaluation_settings.end_time = evaluation_settings.start_time;
-            evaluation_settings.step = 0;
-        }
+        evaluation_time = parseTimestamp(params.time_param);
+        lookback_delta = Field(300.0);
+        step = Field(15.0);
     }
     else if (params.type == Type::Range)
     {
-        evaluation_settings.mode = PrometheusQueryEvaluationMode::QUERY_RANGE;
-        evaluation_settings.start_time = parseTimeSeriesTimestamp(params.start_param, timestamp_scale);
-        evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, timestamp_scale);
-        evaluation_settings.step = parseTimeSeriesDuration(params.step_param, timestamp_scale);
+        start_time = parseTimestamp(params.start_param);
+        end_time = parseTimestamp(params.end_param);
+        step = parseStep(params.step_param);
+        lookback_delta = Field(end_time.safeGet<Float64>() - start_time.safeGet<Float64>());
     }
 
-    PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
+    PrometheusQueryToSQLConverter converter(
+        *query_tree,
+        table_info,
+        lookback_delta,
+        step
+    );
+
+    if (params.type == Type::Instant)
+        converter.setEvaluationTime(evaluation_time);
+    else if (params.type == Type::Range)
+        converter.setEvaluationRange({start_time, end_time, step});
 
     auto sql_query = converter.getSQL();
     if (!sql_query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to convert PromQL to SQL");
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto query_context = getContext();
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(toString(thread_local_rng()));
+    query_context->setSetting("allow_experimental_time_series_aggregate_functions", Field(1));
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     PullingPipelineExecutor executor(io.pipeline);
     Block result_block;
@@ -158,6 +169,58 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
 {
     UNUSED(response);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The label values endpoint is not implemented");
+}
+
+Field PrometheusHTTPProtocolAPI::parseTimestamp(const String & time_param)
+{
+    if (time_param.empty())
+        return Field(static_cast<Float64>(time(nullptr))); // Current time as default
+
+    // Try to parse as Unix timestamp
+    try
+    {
+        Float64 timestamp = std::stod(time_param);
+        return Field(timestamp);
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Invalid timestamp format: {}", time_param);
+    }
+}
+
+Field PrometheusHTTPProtocolAPI::parseStep(const String & step_param)
+{
+    if (step_param.empty())
+        return Field(15.0); // Default 15 seconds
+
+    try
+    {
+        // Parse step parameter (e.g., "15s", "1m", "1h")
+        if (step_param.ends_with("s"))
+        {
+            String num_str = step_param.substr(0, step_param.length() - 1);
+            return Field(std::stod(num_str));
+        }
+        else if (step_param.ends_with("m"))
+        {
+            String num_str = step_param.substr(0, step_param.length() - 1);
+            return Field(std::stod(num_str) * 60);
+        }
+        else if (step_param.ends_with("h"))
+        {
+            String num_str = step_param.substr(0, step_param.length() - 1);
+            return Field(std::stod(num_str) * 3600);
+        }
+        else
+        {
+            // Assume seconds if no unit
+            return Field(std::stod(step_param));
+        }
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Invalid step format: {}", step_param);
+    }
 }
 
 void DB::PrometheusHTTPProtocolAPI::writeInstantQueryHeader(WriteBuffer & response)
@@ -254,7 +317,7 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
             }
             else
             {
-                writeFloatText(std::round(static_cast<double>(time(nullptr)) * 100.0) / 100.0, response);
+                writeFloatText(std::round(time(nullptr) * 100.0) / 100.0, response);
             }
 
             writeString(",", response);

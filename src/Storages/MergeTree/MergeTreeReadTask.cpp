@@ -5,11 +5,12 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
-#include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Processors/Transforms/LazilyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -99,7 +100,7 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     }
 
     String index_for_step;
-    bool has_non_index_columns = false;
+    String non_index_column;
 
     for (const auto & column : columns_to_read)
     {
@@ -107,7 +108,7 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
 
         if (it == column_to_index.end())
         {
-            has_non_index_columns = true;
+            non_index_column = column.name;
         }
         else if (index_for_step.empty())
         {
@@ -119,12 +120,8 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
         }
     }
 
-    /// Allow mixing index columns with regular columns when the regular columns are dependencies
-    /// for evaluating default expressions of text index virtual columns (e.g., for partially materialized text indexes).
-    /// In this case, don't return an index task - let the main reader handle all columns.
-    /// The main reader will evaluate the default expression and fill the virtual column.
-    if (!index_for_step.empty() && has_non_index_columns)
-        return nullptr;
+    if (!index_for_step.empty() && !non_index_column.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Found non-index column {} in read step for index {}", non_index_column, index_for_step);
 
     return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step);
 }
@@ -334,7 +331,7 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
 
         double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
         auto rows_to_read_for_max_size_column_with_filtration
-            = static_cast<size_t>(static_cast<double>(rows_to_read_for_max_size_column) / filtration_ratio);
+            = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
 
         /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than current_index_granularity.
         rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
@@ -384,24 +381,18 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     Block block;
     if (read_result.num_rows != 0)
     {
-        for (auto & column : read_result.columns)
+        for (const auto & column : read_result.columns)
         {
-            /// We may have columns that have other references, usually it is a constant column that has been created during analysis
-            /// (that will not be const here anymore, i.e. after materialize()). The contract is - not to shrink if column is shared.
-            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink
+            /// We may have columns that has other references, usually it is a constant column that has been created during analysis
+            /// (that will not be const here anymore, i.e. after materialize()), and we do not need to shrink it anyway.
             if (column->use_count() == 1)
-            {
-                auto mutable_column = IColumn::mutate(std::move(column));
-                mutable_column->shrinkToFit();
-                column = std::move(mutable_column);
-            }
+                column->assumeMutableRef().shrinkToFit();
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
 
     if (updater)
-        updater->recordInputColumns(
-            block.getColumnsWithTypeAndName(), info->data_part->getColumns(), info->data_part->getColumnSizes(), num_read_bytes);
+        updater->recordInputColumns(block.getColumnsWithTypeAndName(), info->data_part->getColumnSizes(), num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),

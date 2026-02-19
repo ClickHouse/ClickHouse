@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <iterator>
-#include <Common/Logger.h>
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>

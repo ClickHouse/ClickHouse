@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -36,20 +37,30 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-enum class ArraySetMode { Intersect, Union, SymmetricDifference };
+struct ArrayModeIntersect
+{
+    static constexpr auto name = "arrayIntersect";
+};
 
+struct ArrayModeUnion
+{
+    static constexpr auto name = "arrayUnion";
+};
+
+struct ArrayModeSymmetricDifference
+{
+    static constexpr auto name = "arraySymmetricDifference";
+};
+
+template <typename Mode>
 class FunctionArrayIntersect : public IFunction
 {
 public:
-    FunctionArrayIntersect(const char * name_, ArraySetMode mode_, ContextPtr context_)
-        : function_name(name_), mode(mode_), context(context_) {}
+    static constexpr auto name = Mode::name;
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayIntersect>(context); }
+    explicit FunctionArrayIntersect(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(const char * name, ArraySetMode mode, ContextPtr context)
-    {
-        return std::make_shared<FunctionArrayIntersect>(name, mode, std::move(context));
-    }
-
-    String getName() const override { return function_name; }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -62,8 +73,6 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
-    const char * function_name;
-    const ArraySetMode mode;
     ContextPtr context;
 
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -104,7 +113,7 @@ private:
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
     template <typename Map, typename ColumnType, bool is_numeric_column>
-    static ColumnPtr execute(const UnpackedArrays & arrays, MutableColumnPtr result_data, ArraySetMode mode);
+    static ColumnPtr execute(const UnpackedArrays & arrays, MutableColumnPtr result_data);
 
     template <typename Map, typename ColumnType, bool is_numeric_column>
     static void insertElement(typename Map::LookupResult & pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, const bool & use_null_map);
@@ -114,10 +123,9 @@ private:
         const UnpackedArrays & arrays;
         const DataTypePtr & data_type;
         ColumnPtr & result;
-        ArraySetMode mode;
 
-        NumberExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_, ArraySetMode mode_)
-            : arrays(arrays_), data_type(data_type_), result(result_), mode(mode_) {}
+        NumberExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
+            : arrays(arrays_), data_type(data_type_), result(result_) {}
 
         template <class T>
         void operator()(TypeList<T>);
@@ -128,17 +136,17 @@ private:
         const UnpackedArrays & arrays;
         const DataTypePtr & data_type;
         ColumnPtr & result;
-        ArraySetMode mode;
 
-        DecimalExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_, ArraySetMode mode_)
-            : arrays(arrays_), data_type(data_type_), result(result_), mode(mode_) {}
+        DecimalExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
+            : arrays(arrays_), data_type(data_type_), result(result_) {}
 
         template <class T>
         void operator()(TypeList<T>);
     };
 };
 
-DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & arguments) const
+template <typename Mode>
+DataTypePtr FunctionArrayIntersect<Mode>::getReturnTypeImpl(const DataTypes & arguments) const
 {
     DataTypes nested_types;
     nested_types.reserve(arguments.size());
@@ -162,7 +170,7 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
 
         if (typeid_cast<const DataTypeNothing *>(nested_type.get()))
         {
-            if (mode == ArraySetMode::Intersect)
+            if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
             {
                 has_nothing = true;
                 break;
@@ -175,7 +183,7 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
             /// Throw exception if have a decimal and another type (e.g int/date type)
             /// This is the same behavior as the arrayIntersect and notEquals functions
             /// This case is not covered by getLeastSupertype() and results in crashing the program if left out
-            if (mode == ArraySetMode::Union)
+            if constexpr (std::is_same_v<Mode, ArrayModeUnion>)
             {
                 if (WhichDataType(nested_type).isDecimal())
                     has_decimal_type = nested_type;
@@ -194,7 +202,7 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
     // If any DataTypeNothing in ArrayModeIntersect or all arrays in ArrayModeUnion are DataTypeNothing
     if (has_nothing || nested_types.empty())
         result_type = std::make_shared<DataTypeNothing>();
-    else if (mode == ArraySetMode::Intersect)
+    else if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
         result_type = getMostSubtype(nested_types, true);
     else
         result_type = getLeastSupertype(nested_types);
@@ -202,7 +210,8 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
     return std::make_shared<DataTypeArray>(result_type);
 }
 
-ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const
+template <typename Mode>
+ColumnPtr FunctionArrayIntersect<Mode>::castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const
 {
     if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
     {
@@ -256,7 +265,8 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
     return column;
 }
 
-FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
+template <typename Mode>
+FunctionArrayIntersect<Mode>::CastArgumentsResult FunctionArrayIntersect<Mode>::castColumns(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls)
 {
     size_t num_args = arguments.size();
@@ -342,7 +352,8 @@ static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTy
     return eq_func->execute(args, eq_func->getResultType(), args.front().column->size(), /* dry_run = */ false);
 }
 
-FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
+template <typename Mode>
+FunctionArrayIntersect<Mode>::UnpackedArrays FunctionArrayIntersect<Mode>::prepareArrays(
     const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const
 {
     UnpackedArrays arrays;
@@ -432,7 +443,8 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     return arrays;
 }
 
-ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+template <typename Mode>
+ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
@@ -451,7 +463,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
         data_types.push_back(arguments[i].type);
 
     DataTypePtr return_type_with_nulls;
-    if (mode == ArraySetMode::Intersect)
+    if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
         return_type_with_nulls = getMostSubtype(data_types, true, true);
     else
         return_type_with_nulls = getLeastSupertype(data_types);
@@ -462,8 +474,8 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
-    TypeListUtils::forEach(TypeListIntAndFloat{}, NumberExecutor(arrays, not_nullable_nested_return_type, result_column, mode));
-    TypeListUtils::forEach(TypeListDecimal{}, DecimalExecutor(arrays, not_nullable_nested_return_type, result_column, mode));
+    TypeListUtils::forEach(TypeListIntAndFloat{}, NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListUtils::forEach(TypeListDecimal{}, DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
 
     using DateMap = ClearableHashMapWithStackMemory<DataTypeDate::FieldType,
         size_t, DefaultHash<DataTypeDate::FieldType>, INITIAL_SIZE_DEGREE>;
@@ -484,48 +496,51 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
         WhichDataType which(not_nullable_nested_return_type);
 
         if (which.isDate())
-            result_column = execute<DateMap, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column), mode);
+            result_column = execute<DateMap, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column));
         else if (which.isDate32())
-            result_column = execute<Date32Map, ColumnVector<DataTypeDate32::FieldType>, true>(arrays, std::move(column), mode);
+            result_column = execute<Date32Map, ColumnVector<DataTypeDate32::FieldType>, true>(arrays, std::move(column));
         else if (which.isDateTime())
-            result_column = execute<DateTimeMap, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column), mode);
+            result_column = execute<DateTimeMap, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
         else if (which.isString())
-            result_column = execute<StringMap, ColumnString, false>(arrays, std::move(column), mode);
+            result_column = execute<StringMap, ColumnString, false>(arrays, std::move(column));
         else if (which.isFixedString())
-            result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column), mode);
+            result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column));
         else
         {
             column = assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
-            result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column), mode), result_type);
+            result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column)), result_type);
         }
     }
 
     return result_column;
 }
 
+template <typename Mode>
 template <class T>
-void FunctionArrayIntersect::NumberExecutor::operator()(TypeList<T>)
+void FunctionArrayIntersect<Mode>::NumberExecutor::operator()(TypeList<T>)
 {
     using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
 
     if (!result && typeid_cast<const DataTypeNumber<T> *>(data_type.get()))
-        result = execute<Container, ColumnVector<T>, true>(arrays, ColumnVector<T>::create(), mode);
+        result = execute<Container, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
 }
 
+template <typename Mode>
 template <class T>
-void FunctionArrayIntersect::DecimalExecutor::operator()(TypeList<T>)
+void FunctionArrayIntersect<Mode>::DecimalExecutor::operator()(TypeList<T>)
 {
     using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
 
     if (!result)
         if (auto * decimal = typeid_cast<const DataTypeDecimal<T> *>(data_type.get()))
-            result = execute<Container, ColumnDecimal<T>, true>(arrays, ColumnDecimal<T>::create(0, decimal->getScale()), mode);
+            result = execute<Container, ColumnDecimal<T>, true>(arrays, ColumnDecimal<T>::create(0, decimal->getScale()));
 }
 
+template <typename Mode>
 template <typename Map, typename ColumnType, bool is_numeric_column>
-ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr, ArraySetMode mode)
+ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr)
 {
     auto args = arrays.args.size();
     auto rows = arrays.base_rows;
@@ -634,7 +649,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         else
             off = (*arg.offsets)[row];
 
-        if (mode == ArraySetMode::Union)
+        if constexpr (std::is_same_v<Mode, ArrayModeUnion>)
         {
             use_null_map = has_nullable;
             for (auto & p : map)
@@ -647,11 +662,11 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             {
                 ++result_offset;
                 result_data.insertDefault();
-                null_map.push_back(true);
+                null_map.push_back(1);
                 null_added = true;
             }
         }
-        else if (mode == ArraySetMode::SymmetricDifference)
+        else if constexpr (std::is_same_v<Mode, ArrayModeSymmetricDifference>)
         {
             use_null_map = has_nullable;
             for (auto & p : map)
@@ -664,11 +679,11 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             {
                 ++result_offset;
                 result_data.insertDefault();
-                null_map.push_back(true);
+                null_map.push_back(1);
                 null_added = true;
             }
         }
-        else if (mode == ArraySetMode::Intersect)
+        else if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
         {
             use_null_map = all_nullable;
 
@@ -684,7 +699,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     {
                         ++result_offset;
                         result_data.insertDefault();
-                        null_map.push_back(true);
+                        null_map.push_back(1);
                         null_added = true;
                     }
                     if (null_added)
@@ -723,8 +738,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
 }
 
+template <typename Mode>
 template <typename Map, typename ColumnType, bool is_numeric_column>
-void FunctionArrayIntersect::insertElement(typename Map::LookupResult & pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, const bool & use_null_map)
+void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, const bool & use_null_map)
 {
     pair->getMapped() = -1;
     ++result_offset;
@@ -742,9 +758,13 @@ void FunctionArrayIntersect::insertElement(typename Map::LookupResult & pair, si
         result_data.deserializeAndInsertFromArena(in, /*settings=*/nullptr);
     }
     if (use_null_map)
-        null_map.push_back(false);
+        null_map.push_back(0);
 }
 
+
+using ArrayIntersect = FunctionArrayIntersect<ArrayModeIntersect>;
+using ArrayUnion = FunctionArrayIntersect<ArrayModeUnion>;
+using ArraySymmetricDifference = FunctionArrayIntersect<ArrayModeSymmetricDifference>;
 
 REGISTER_FUNCTION(ArrayIntersect)
 {
@@ -764,9 +784,7 @@ arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
     FunctionDocumentation::Category intersect_category = FunctionDocumentation::Category::Array;
     FunctionDocumentation intersect_documentation = {intersect_description, intersect_syntax, intersect_argument, {}, intersect_returned_value, intersect_example, intersect_introduced_in, intersect_category};
 
-    factory.registerFunction("arrayIntersect",
-        [](ContextPtr ctx){ return FunctionArrayIntersect::create("arrayIntersect", ArraySetMode::Intersect, std::move(ctx)); },
-        intersect_documentation);
+    factory.registerFunction<ArrayIntersect>(intersect_documentation);
 
     FunctionDocumentation::Description union_description = "Takes multiple arrays and returns an array which contains all elements that are present in one of the source arrays.The result contains only unique values.";
     FunctionDocumentation::Syntax union_syntax = "arrayUnion(arr1, arr2, ..., arrN)";
@@ -785,9 +803,7 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
     FunctionDocumentation::Category union_category = FunctionDocumentation::Category::Array;
     FunctionDocumentation union_documentation = {union_description, union_syntax, union_argument, {}, union_returned_value, union_example, union_introduced_in, union_category};
 
-    factory.registerFunction("arrayUnion",
-        [](ContextPtr ctx){ return FunctionArrayIntersect::create("arrayUnion", ArraySetMode::Union, std::move(ctx)); },
-        union_documentation);
+    factory.registerFunction<ArrayUnion>(union_documentation);
 
     FunctionDocumentation::Description symdiff_description = R"(Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
 
@@ -811,9 +827,7 @@ arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_differen
     FunctionDocumentation::Category symdiff_category = FunctionDocumentation::Category::Array;
     FunctionDocumentation symdiff_documentation = {symdiff_description, symdiff_syntax, symdiff_argument, {}, symdiff_returned_value, symdiff_example, symdiff_introduced_in, symdiff_category};
 
-    factory.registerFunction("arraySymmetricDifference",
-        [](ContextPtr ctx){ return FunctionArrayIntersect::create("arraySymmetricDifference", ArraySetMode::SymmetricDifference, std::move(ctx)); },
-        symdiff_documentation);
+    factory.registerFunction<ArraySymmetricDifference>(symdiff_documentation);
 }
 
 }

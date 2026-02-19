@@ -48,7 +48,7 @@ struct Decimal
     constexpr Decimal(const T & value_): value(value_) {} // NOLINT(google-explicit-constructor)
 
     template <typename U>
-    constexpr Decimal(const Decimal<U> & x): value(static_cast<T>(x.value)) {} // NOLINT(google-explicit-constructor)
+    constexpr Decimal(const Decimal<U> & x): value(x.value) {} // NOLINT(google-explicit-constructor)
 
     constexpr Decimal<T> & operator=(Decimal<T> &&) noexcept = default;
     constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
@@ -183,8 +183,8 @@ namespace std
     {
         size_t operator()(const DB::Decimal128 & x) const
         {
-            return std::hash<Int64>()(static_cast<Int64>(x.value >> 64))
-                ^ std::hash<Int64>()(static_cast<Int64>(x.value & max_uint_mask));
+            return std::hash<Int64>()(x.value >> 64)
+                ^ std::hash<Int64>()(x.value & max_uint_mask);
         }
     };
 
