@@ -53,6 +53,8 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hoveredTask, setHoveredTask] = useState<{ name: string; x: number; y: number } | null>(null)
   const [sortByStatus, setSortByStatus] = useState<boolean>(true)
+  const [displayDuration, setDisplayDuration] = useState<number>(0)
+  const [, setTick] = useState(0)
 
   // Initialize sortByStatus from localStorage
   useEffect(() => {
@@ -64,6 +66,53 @@ function App() {
       setSortByStatus(savedSort === 'true')
     }
   }, [])
+
+  // Update duration for running status or calculate from start_time if duration is 0
+  useEffect(() => {
+    if (!data) return
+
+    const isRunning = data.status.toLowerCase() === 'running'
+    const shouldCalculate = isRunning || data.duration === 0
+
+    if (shouldCalculate && data.start_time) {
+      const startTime = typeof data.start_time === 'number'
+        ? data.start_time * 1000
+        : new Date(data.start_time).getTime()
+
+      const updateDuration = () => {
+        const now = Date.now()
+        const elapsed = (now - startTime) / 1000 // seconds
+        setDisplayDuration(elapsed)
+      }
+
+      // Initial update
+      updateDuration()
+
+      // Update every second for running status
+      if (isRunning) {
+        const interval = setInterval(updateDuration, 1000)
+        return () => clearInterval(interval)
+      }
+    } else {
+      // Use the provided duration for finished statuses
+      setDisplayDuration(data.duration)
+    }
+  }, [data])
+
+  // Tick every second to update running job durations in table
+  useEffect(() => {
+    if (!data?.results) return
+
+    // Check if any jobs are running
+    const hasRunningJobs = data.results.some(r => r.status.toLowerCase() === 'running')
+
+    if (hasRunningJobs) {
+      const interval = setInterval(() => {
+        setTick(t => t + 1)
+      }, 1000)
+      return () => clearInterval(interval)
+    }
+  }, [data])
 
   const toggleTheme = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark')
@@ -289,7 +338,29 @@ function App() {
   const formatDuration = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = Math.floor(seconds % 60)
-    return `${minutes}m ${remainingSeconds}s`
+    return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`
+  }
+
+  const getJobDuration = (result: TestResult): string => {
+    const isRunning = result.status.toLowerCase() === 'running'
+
+    // If no start_time and no duration, return empty
+    if (!result.start_time && (!result.duration || result.duration === 0)) {
+      return ''
+    }
+
+    // For running jobs or jobs with duration 0, calculate from start_time
+    if ((isRunning || result.duration === 0) && result.start_time) {
+      const startTime = typeof result.start_time === 'number'
+        ? result.start_time * 1000
+        : new Date(result.start_time).getTime()
+      const now = Date.now()
+      const elapsed = (now - startTime) / 1000 // seconds
+      return formatDuration(elapsed)
+    }
+
+    // Use provided duration for finished jobs
+    return formatDuration(result.duration)
   }
 
   const formatTime = (timestamp: string | number): string => {
@@ -650,7 +721,7 @@ function App() {
       items: [
         { label: wrapWithPopover(getStatusBadge(result.status), result, navigateUrl), align: 'center' as const },
         { label: wrapWithPopover(nameWithLabels, result, navigateUrl), align: 'left' as const },
-        { label: wrapWithPopover(formatDuration(result.duration), result, navigateUrl), align: 'center' as const },
+        { label: wrapWithPopover(getJobDuration(result), result, navigateUrl), align: 'center' as const },
         { label: wrapWithPopover(formatTime(result.start_time), result, navigateUrl), align: 'center' as const },
       ],
     }
@@ -892,7 +963,7 @@ function App() {
                 <Text>|</Text>
                 <Text>Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong></Text>
                 <Text>|</Text>
-                <Text>Duration: <strong>{formatDuration(data.duration)}</strong></Text>
+                <Text>Duration: <strong>{formatDuration(displayDuration)}</strong></Text>
               </div>
 
               {data.info && (
