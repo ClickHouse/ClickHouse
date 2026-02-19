@@ -5,6 +5,7 @@
 #include <jemalloc/jemalloc.h>
 
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -43,26 +44,6 @@ unsigned createArena()
     return arena_index;
 }
 
-/// MIB-cached purge command for the cache arena.
-/// We can't use Jemalloc::MibCache here because the arena index is dynamic
-/// (determined at runtime), so we format the mallctl name once and cache the MIB.
-struct PurgeMib
-{
-    size_t mib[3];
-    size_t mib_length = 3;
-
-    explicit PurgeMib(unsigned arena_index)
-    {
-        std::string name = fmt::format("arena.{}.purge", arena_index);
-        mallctlnametomib(name.c_str(), mib, &mib_length);
-    }
-
-    void run() const
-    {
-        mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
-    }
-};
-
 }
 
 unsigned getArenaIndex()
@@ -73,7 +54,7 @@ unsigned getArenaIndex()
 
 void purge()
 {
-    static PurgeMib purge_mib(getArenaIndex());
+    static Jemalloc::MibCache<unsigned> purge_mib(fmt::format("arena.{}.purge", getArenaIndex()).c_str());
 
     Stopwatch watch;
     purge_mib.run();

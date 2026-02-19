@@ -6,10 +6,26 @@
 
 #include <cstddef>
 
-/// Allocator that directs all allocations to a dedicated jemalloc arena for cache data.
-/// Interface matches Allocator<false, false> for use as a drop-in PODArray / Memory<> template parameter.
-/// Uses MALLOCX_TCACHE_NONE to ensure strict arena affinity (no thread-cache cross-pollution).
-/// Cache allocations are infrequent (per mark-file, not per-row), so tcache bypass has no perf impact.
+/// Allocator for long-lived cache data (mark cache, uncompressed cache, page cache).
+///
+/// Without arena isolation, jemalloc places cache allocations on the same pages as short-lived
+/// query temporaries. When cache entries are evicted, their pages can't be returned to the OS
+/// because other live objects pin them — causing unbounded RSS growth.
+///
+/// This allocator directs all allocations to a dedicated jemalloc arena via mallocx/sdallocx
+/// with MALLOCX_ARENA(N) | MALLOCX_TCACHE_NONE flags. Cache pages never mix with query-processing
+/// allocations, so evicted entries produce fully-reclaimable pages.
+///
+/// When to use this allocator:
+///   1. The data is long-lived and cache-managed (stays resident until LRU/SLRU eviction)
+///   2. The container supports a custom allocator template parameter
+///      (PODArray<T, N, Allocator>, Memory<Allocator>, or direct alloc()/free() calls)
+///
+/// When NOT to use:
+///   - Short-lived per-query data (e.g. ReverseLookupCache) — same lifetime as query temporaries
+///   - Containers with hardcoded allocators (e.g. ColumnPtr, std::string, std::vector)
+///
+/// Falls back to Allocator<false, false> when jemalloc is not available.
 class JemallocCacheAllocator
 {
 public:
