@@ -6,6 +6,8 @@
 -- because during query plan optimization, the IN function was called in dry-run mode
 -- but the Set was not ready yet.
 
+set ignore_format_null_for_explain = 0;
+
 EXPLAIN PIPELINE
 WITH cte AS (SELECT number FROM numbers(10))
 SELECT * FROM cte WHERE number GLOBAL NOT IN (SELECT number FROM cte)

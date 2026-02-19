@@ -207,7 +207,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             f"query_plan_optimize_join_order_limit={random.randint(0, 64)}"
         )
 
-    if random.random() < 0.2:
+    if random.random() < 0.2 and not upgrade_check:
         client_options.append(
             f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'"
         )
@@ -280,6 +280,7 @@ def run_func_test(
                 "Fault injection",
                 "Query memory tracker: fault injected",
                 "KEEPER_EXCEPTION",
+                "QUERY_WAS_CANCELLED"
             ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(

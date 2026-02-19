@@ -78,7 +78,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
-    String preprocessor;
+    ASTPtr preprocessor;
 };
 
 using PostingList = roaring::Roaring;
@@ -335,14 +335,14 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     LoggerPtr logger;
 };
 
-struct ITokenExtractor;
-using TokenExtractorPtr = const ITokenExtractor *;
+struct ITokenizer;
+using TokenizerPtr = const ITokenizer *;
 
 struct MergeTreeIndexTextGranuleBuilder
 {
     MergeTreeIndexTextGranuleBuilder(
         MergeTreeIndexTextParams params_,
-        TokenExtractorPtr token_extractor_,
+        TokenizerPtr tokenizer_,
         PostingListCodecPtr posting_list_codec_);
 
     /// Extracts tokens from the document and adds them to the granule.
@@ -355,7 +355,7 @@ struct MergeTreeIndexTextGranuleBuilder
     void reset();
 
     MergeTreeIndexTextParams params;
-    TokenExtractorPtr token_extractor;
+    TokenizerPtr tokenizer;
     PostingListCodecPtr posting_list_codec;
 
     bool is_empty = true;
@@ -377,7 +377,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexAggregatorText(
         String index_column_name_,
         MergeTreeIndexTextParams params_,
-        TokenExtractorPtr token_extractor_,
+        TokenizerPtr tokenizer_,
         PostingListCodecPtr posting_list_codec_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
@@ -391,7 +391,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 
     String index_column_name;
     MergeTreeIndexTextParams params;
-    TokenExtractorPtr token_extractor;
+    TokenizerPtr tokenizer;
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
@@ -403,7 +403,7 @@ public:
     MergeTreeIndexText(
         const IndexDescription & index_,
         MergeTreeIndexTextParams params_,
-        std::unique_ptr<ITokenExtractor> token_extractor_,
+        std::unique_ptr<ITokenizer> tokenizer_,
         std::unique_ptr<IPostingListCodec> posting_list_codec_);
 
     ~MergeTreeIndexText() override = default;
@@ -418,16 +418,10 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
-    /// 1. Arguments are named, e.g.: argument = value
-    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
-    /// 3. The preprocessor argument is a generic expression, e.g. lower(extractTextFromHTML(col))
-    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
-
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec.get(); }
 
     MergeTreeIndexTextParams params;
-    std::unique_ptr<ITokenExtractor> token_extractor;
+    std::unique_ptr<ITokenizer> tokenizer;
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
 };

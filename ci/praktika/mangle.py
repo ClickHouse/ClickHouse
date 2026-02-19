@@ -51,7 +51,7 @@ def _get_workflows(
                 continue
         elif py_file.name != Settings.DEFAULT_LOCAL_TEST_WORKFLOW:
             print(
-                f"--workflow is not set. Default workflow is [{Settings.DEFAULT_LOCAL_TEST_WORKFLOW}]. Skip [{py_file.name}]"
+                f"Skip [{py_file.name}]"
             )
             continue
         module_name = py_file.name.removeprefix(".py")

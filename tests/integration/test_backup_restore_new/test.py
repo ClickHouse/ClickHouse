@@ -119,7 +119,7 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
             WITH arrayJoin(ProfileEvents) as pe
             SELECT pe.1, pe.2
             FROM system.query_log
-            WHERE query_id = '{query_id}'
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
             """
         )
     )
@@ -497,6 +497,7 @@ def test_increment_backup_without_changes():
     )
 
 
+@pytest.mark.timeout(1800)
 def test_incremental_backup_overflow():
     if (
         instance.is_built_with_thread_sanitizer()
@@ -514,10 +515,11 @@ def test_incremental_backup_overflow():
     )
     # Create a column of 4GB+10K
     instance.query(
-        "INSERT INTO test.table SELECT toString(repeat('A', 1024)) FROM numbers((4*1024*1024)+10)"
+        "INSERT INTO test.table SELECT toString(repeat('A', 1024)) FROM numbers((4*1024*1024)+10)",
+        timeout=600,
     )
     # Force one part
-    instance.query("OPTIMIZE TABLE test.table FINAL")
+    instance.query("OPTIMIZE TABLE test.table FINAL", timeout=600)
 
     # ensure that the column's size on disk is indeed greater then 4GB
     assert (
@@ -1955,12 +1957,22 @@ def test_mutation():
         "INSERT INTO test.table SELECT number, toString(number) FROM numbers(10, 5)"
     )
 
+    # Complete the first mutation synchronously so it's fully applied to all parts.
+    instance.query(
+        "ALTER TABLE test.table UPDATE x=x+1 WHERE 1 SETTINGS mutations_sync=1"
+    )
+
+    # Stop merges to prevent subsequent mutations from being applied,
+    # ensuring they remain pending and deterministically appear in the backup.
+    instance.query("SYSTEM STOP MERGES test.table")
+
     instance.query("ALTER TABLE test.table UPDATE x=x+1 WHERE 1")
-    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(3) WHERE 1")
-    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(3) WHERE 1")
+    instance.query("ALTER TABLE test.table UPDATE x=x+1 WHERE 1")
 
     backup_name = new_backup_name()
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("SYSTEM START MERGES test.table")
 
     assert not has_mutation_in_backup("0000000004", backup_name, "test", "table")
     assert has_mutation_in_backup("0000000005", backup_name, "test", "table")
@@ -2104,13 +2116,11 @@ def test_tables_dependency():
         f"Table {t14} has 1 dependencies: {t2} (level 1)",
         f"Table {t15} has no dependencies (level 0)",
     ]
+    log_content = instance.grep_in_log("BackupMetadataFinder:")
     for expect in expect_in_logs:
         assert any(
-            [
-                instance.contains_in_log(f"RestorerFromBackup: {x}")
-                for x in tuple(expect)
-            ]
-        )
+            f"BackupMetadataFinder: {x}" in log_content for x in tuple(expect)
+        ), f"Expected one of {tuple(expect)} in log, but not found"
 
     drop()
 

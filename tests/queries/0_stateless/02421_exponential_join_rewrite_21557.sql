@@ -332,6 +332,8 @@ CREATE TABLE item
 )
 ENGINE = MergeTree ORDER BY i_item_sk;
 
+set ignore_format_null_for_explain = 0;
+
 -- `parallel_hash` uses two-level hash tables (that have 256 tables internally).
 -- it preallocates too much data as the result and memory exception occurs.
 SET join_algorithm = 'hash';
