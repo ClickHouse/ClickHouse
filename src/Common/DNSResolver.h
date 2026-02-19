@@ -72,6 +72,9 @@ public:
 
     void setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6);
 
+    bool getFilterIPv4() const;
+    bool getFilterIPv6() const;
+
     /// Returns a copy of cache entries
     std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
 

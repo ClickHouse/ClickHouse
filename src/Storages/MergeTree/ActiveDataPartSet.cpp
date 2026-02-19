@@ -86,6 +86,12 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     return outcome == AddPartOutcome::Added;
 }
 
+ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::tryAdd(const String & name, String * out_reason)
+{
+    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
+    return addImpl(part_info, name, nullptr, out_reason);
+}
+
 
 ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::addImpl(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts, String * out_reason)
 {
