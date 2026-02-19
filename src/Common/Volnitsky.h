@@ -11,10 +11,6 @@
 #include <Common/UTF8Helpers.h>
 #include <base/unaligned.h>
 
-#ifdef __SSE4_1__
-    #include <smmintrin.h>
-#endif
-
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
   *
@@ -379,7 +375,7 @@ protected:
     size_t needle_size;
     const UInt8 * needle_end = needle + needle_size;
     /// For how long we move, if the n-gram from haystack is not found in the hash table.
-    size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
+    const size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
 
     /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
       *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
@@ -400,7 +396,8 @@ public:
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
         , fallback_searcher{needle, needle_size}
     {
-        if (fallback || fallback_searcher.getForceFallback())
+#if !(USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON)))
+        if (fallback)
             return;
 
         hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
@@ -418,11 +415,12 @@ public:
               */
             if (!ok)
             {
-                fallback_searcher.setForceFallback(true);
+                fallback = true;
                 hash = nullptr;
                 return;
             }
         }
+#endif
     }
 
 
@@ -434,11 +432,11 @@ public:
 
         const auto * haystack_end = haystack + haystack_size;
 
-#ifdef __SSE4_1__
+#if USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
         return fallback_searcher.search(haystack, haystack_end);
-#endif
+#else
 
-        if (fallback || haystack_size <= needle_size || fallback_searcher.getForceFallback())
+        if (fallback || haystack_size <= needle_size)
             return fallback_searcher.search(haystack, haystack_end);
 
         /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
@@ -459,6 +457,7 @@ public:
         }
 
         return fallback_searcher.search(pos - step + 1, haystack_end);
+#endif
     }
 
     const char * search(const char * haystack, size_t haystack_size) const
