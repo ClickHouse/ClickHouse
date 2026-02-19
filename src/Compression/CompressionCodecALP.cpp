@@ -202,7 +202,7 @@ struct ALPFloatTraits<Float32>
     static constexpr Float32 UPPER = 9223371487098961920.0f;
     static constexpr Float32 LOWER = -9223371487098961920.0f;
 
-    static constexpr Float32 ROUND_MAGIC = 12582912.0; // 2^22 + 2^23
+    static constexpr Float32 ROUND_MAGIC = 12582912.0f; // 2^22 + 2^23
 };
 
 template<FLOAT T>
