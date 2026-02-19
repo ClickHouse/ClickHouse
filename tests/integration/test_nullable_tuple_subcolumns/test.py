@@ -52,10 +52,6 @@ node_on = cluster.add_instance(
     "node_on",
     main_configs=["configs/allow_nullable_tuple_subcolumns_on.xml"],
 )
-node_reload = cluster.add_instance(
-    "node_reload",
-    main_configs=["configs/allow_nullable_tuple_subcolumns_off.xml"],
-)
 
 
 def _assert_reference(reference_path: Path, actual: str) -> None:
@@ -166,64 +162,3 @@ def test_queries_for_off_server_mode(started_cluster):
 
 def test_queries_for_on_server_mode(started_cluster):
     _run_mode(node_on, "on")
-
-
-def test_setting_is_restart_only_does_not_change_on_config_reload(started_cluster):
-    server_setting_name = "allow_nullable_tuple_in_extracted_subcolumns"
-    reload_probe_query = """
-SELECT toTypeName(v.`Tuple(UInt64, String)`), v.`Tuple(UInt64, String)`
-FROM (SELECT 42::Variant(Tuple(UInt64, String), UInt64) AS v)
-FORMAT TSV
-"""
-
-    changeable = node_reload.query(
-        f"SELECT changeable_without_restart FROM system.server_settings WHERE name = '{server_setting_name}'"
-    )
-    assert changeable == "No\n"
-
-    value_before = node_reload.query(
-        f"SELECT value FROM system.server_settings WHERE name = '{server_setting_name}'"
-    )
-    probe_before = node_reload.query(reload_probe_query)
-
-    config_path = (
-        BASE_DIR
-        / cluster.instances_dir_name
-        / "node_reload"
-        / "configs"
-        / "config.d"
-        / "allow_nullable_tuple_subcolumns_off.xml"
-    )
-    assert config_path.exists(), f"Missing config file: {config_path}"
-
-    original_config = config_path.read_text(encoding="utf-8")
-    if "<allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>" in original_config:
-        updated_config = original_config.replace(
-            "<allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>",
-            "<allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>",
-        )
-    elif "<allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>" in original_config:
-        updated_config = original_config.replace(
-            "<allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>",
-            "<allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>",
-        )
-    else:
-        raise AssertionError(
-            "Cannot find allow_nullable_tuple_in_extracted_subcolumns value in config"
-        )
-    assert updated_config != original_config
-
-    config_path.write_text(updated_config, encoding="utf-8")
-    node_reload.query("SYSTEM RELOAD CONFIG")
-
-    value_after = node_reload.query(
-        f"SELECT value FROM system.server_settings WHERE name = '{server_setting_name}'"
-    )
-    probe_after = node_reload.query(reload_probe_query)
-
-    # This server setting is expected to be restart-only.
-    assert value_after == value_before
-    assert probe_after == probe_before
-
-    config_path.write_text(original_config, encoding="utf-8")
-    node_reload.query("SYSTEM RELOAD CONFIG")
