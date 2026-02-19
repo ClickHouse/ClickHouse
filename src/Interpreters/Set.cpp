@@ -437,7 +437,16 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        if (!transform_null_in && data_types[i]->canBeInsideNullable())
+        /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
+        /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
+        /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
+        /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
+        auto target_type_without_nullable = removeNullable(data_types[i]);
+        bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
+
+        bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
+
+        if (use_cast_accurate_or_null)
         {
             result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "Common/setThreadName.h"
+#include <Common/setThreadName.h>
 #include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 

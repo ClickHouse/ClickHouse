@@ -19,7 +19,7 @@
 namespace DB
 {
 
-[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
     /// Better form for user: SYSTEM <ACTION> table ON CLUSTER cluster
@@ -73,7 +73,7 @@ enum class SystemQueryTargetType : uint8_t
     Disk,
 };
 
-[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
+[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
 {
     /// Better form for user: SYSTEM <ACTION> target_name ON CLUSTER cluster
     /// Query rewritten form + form while executing on cluster: SYSTEM <ACTION> ON CLUSTER cluster target_name
@@ -138,7 +138,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnCluster(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                     Expected & expected)
 {
     String cluster_str;
@@ -152,7 +152,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseDropReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
+[[nodiscard]] static bool parseDropReplica(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
 {
     if (!parseQueryWithOnCluster(res, pos, expected))
         return false;
@@ -206,7 +206,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseDropCatalogReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
+[[nodiscard]] static bool parseDropCatalogReplica(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr ast;
     if (!ParserStringLiteral{}.parse(pos, ast, expected))
@@ -222,7 +222,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     using Type = ASTSystemQuery::Type;
 
-    auto res = std::make_shared<ASTSystemQuery>();
+    auto res = make_intrusive<ASTSystemQuery>();
 
     bool found = false;
 
@@ -321,6 +321,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::ALLOCATE_MEMORY:
+        {
+            ASTPtr ast;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+
+            res->untracked_memory_size = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            break;
+        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
@@ -346,6 +355,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
                 res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
 
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->delta_kernel_tracing_level = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
             break;
         }
 
@@ -529,6 +547,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::FREE_MEMORY:
             break;
 
         case Type::TEST_VIEW:
@@ -686,7 +705,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             if (ParserKeyword{Keyword::FROM}.ignore(pos, expected) && ParserIdentifierWithOptionalParameters{}.parse(pos, ast, expected))
             {
-                ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+                ast->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
                 res->backup_source = ast;
                 res->children.push_back(res->backup_source);
             }
@@ -920,7 +939,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 #endif
-
+        case Type::RESET_DDL_WORKER: {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))

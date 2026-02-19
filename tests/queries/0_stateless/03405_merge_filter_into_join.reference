@@ -1,7 +1,7 @@
 -- { echoOn }
 
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -90,7 +90,7 @@ SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.a
 6666	Ksenia	48	6666	Ksenia	48
 8888	Alice	50	8888	Alice	50
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL;
+SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -179,7 +179,7 @@ SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age OR
 6666	Ksenia	48	6666	Ksenia	48
 8888	Alice	50	8888	Alice	50
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 SEMI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+SELECT * FROM (SELECT * FROM users u1 SEMI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -276,7 +276,7 @@ Positions: 6 0 1 2 3 4
                 Parts: 3
                 Granules: 3
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 FULL JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+SELECT * FROM (SELECT * FROM users u1 FULL JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -373,7 +373,7 @@ Positions: 6 0 1 2 3 4
                 Parts: 3
                 Granules: 3
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 ANTI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+SELECT * FROM (SELECT * FROM users u1 ANTI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1

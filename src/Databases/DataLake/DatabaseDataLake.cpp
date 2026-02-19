@@ -36,6 +36,7 @@
 
 #include <Formats/FormatFactory.h>
 
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -57,6 +58,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
     extern const DatabaseDataLakeSettingsString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
+    extern const DatabaseDataLakeSettingsString aws_role_arn;
+    extern const DatabaseDataLakeSettingsString aws_role_session_name;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
@@ -74,6 +77,7 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool database_datalake_require_metadata_access;
 
 }
 
@@ -140,6 +144,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
         .aws_secret_access_key = settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
         .region = settings[DatabaseDataLakeSetting::region].value,
+        .aws_role_arn = settings[DatabaseDataLakeSetting::aws_role_arn].value,
+        .aws_role_session_name = settings[DatabaseDataLakeSetting::aws_role_session_name].value,
     };
 
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)
@@ -449,7 +455,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
-
     if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
 
@@ -470,9 +475,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
             table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
         if (args.empty())
-            args.emplace_back(std::make_shared<ASTLiteral>(table_endpoint));
+            args.emplace_back(make_intrusive<ASTLiteral>(table_endpoint));
         else
-            args[0] = std::make_shared<ASTLiteral>(table_endpoint);
+            args[0] = make_intrusive<ASTLiteral>(table_endpoint);
     }
 
     /// We either fetch storage credentials from catalog
@@ -580,11 +585,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     if (can_use_parallel_replicas && !is_secondary_query)
     {
+        auto storage_id = StorageID(getDatabaseName(), name);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
-            configuration->createObjectStorage(context_copy, /* is_readonly */ false),
-            StorageID(getDatabaseName(), name),
+            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
+            storage_id,
             columns,
             ConstraintsDescription{},
             nullptr,
@@ -603,7 +609,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
         context_copy,
         StorageID(getDatabaseName(), name),
         /* columns */columns,
@@ -761,7 +767,23 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
+                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access])
+                        {
+                            auto error_code = getCurrentExceptionCode();
+                            auto error_message = getCurrentExceptionMessage(true, false, true, true);
+                            auto enhanced_message = fmt::format(
+                                "Received error {} while fetching table metadata for existing table '{}'. "
+                                "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
+                                error_code,
+                                table_name,
+                                error_message);
+                            promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
+                                error_code,
+                                enhanced_message)));
+                            return;
+                        }
+                        else
+                            tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                     }
                     promise->set_value(storage);
                 });
@@ -795,7 +817,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
 
 ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
-    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_definition);
     create_query->uuid = db_uuid;
@@ -819,11 +841,11 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
         return {};
     }
 
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
+    auto create_table_query = make_intrusive<ASTCreateQuery>();
     auto table_storage_define = table_engine_definition->clone();
 
     auto * storage = table_storage_define->as<ASTStorage>();
-    storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+    storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     if (!table_metadata.isDefaultReadableTable())
         storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
 
@@ -831,8 +853,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     create_table_query->set(create_table_query->storage, table_storage_define);
 
-    auto columns_declare_list = std::make_shared<ASTColumns>();
-    auto columns_expression_list = std::make_shared<ASTExpressionList>();
+    auto columns_declare_list = make_intrusive<ASTColumns>();
+    auto columns_expression_list = make_intrusive<ASTExpressionList>();
 
     columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
     create_table_query->set(create_table_query->columns_list, columns_declare_list);
@@ -843,9 +865,9 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     for (const auto & column_type_and_name : table_metadata.getSchema())
     {
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
-        column_declaration->type = makeASTDataType(column_type_and_name.type->getName());
+        column_declaration->setType(makeASTDataType(column_type_and_name.type->getName()));
         columns_expression_list->children.emplace_back(column_declaration);
     }
 
@@ -860,7 +882,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
         if (storage_engine_arguments->children.empty())
             storage_engine_arguments->children.emplace_back();
 
-        storage_engine_arguments->children[0] = std::make_shared<ASTLiteral>(table_endpoint);
+        storage_engine_arguments->children[0] = make_intrusive<ASTLiteral>(table_endpoint);
     }
     else
     {
@@ -916,7 +938,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
         if (engine_func->arguments == nullptr)
         {
-            engine_func->arguments = std::make_shared<ASTExpressionList>();
+            engine_func->arguments = make_intrusive<ASTExpressionList>();
         }
 
         switch (catalog_type)

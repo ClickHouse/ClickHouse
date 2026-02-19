@@ -96,7 +96,7 @@ struct MutationCommand
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
     void readText(ReadBuffer & in, bool with_pure_metadata_commands);

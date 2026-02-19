@@ -35,8 +35,9 @@ def start_cluster():
 
 
 def test_replicated_detach_table(start_cluster):
+    replica1.query("DROP DATABASE IF EXISTS db ON CLUSTER test_cluster SYNC")
     replica1.query(
-        "CREATE DATABASE IF NOT EXISTS db ON CLUSTER test_cluster ENGINE=Replicated('/clickhouse/tables/db/test_replicated_table', '{shard}', '{replica}');"
+        "CREATE DATABASE db ON CLUSTER test_cluster ENGINE=Replicated('/clickhouse/tables/db/test_replicated_table', '{shard}', '{replica}');"
     )
 
     replica1.query_with_retry(

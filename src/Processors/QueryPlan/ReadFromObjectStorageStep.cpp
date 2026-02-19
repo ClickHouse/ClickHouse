@@ -96,6 +96,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
+    // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
@@ -176,7 +177,7 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     SortDescription sort_description_for_merging;
     for (size_t i = 0; i < key_description.column_names.size(); ++i)
         sort_description_for_merging.push_back(
-            SortColumnDescription(key_description.column_names[i], key_description.reverse_flags[i] ? -1 : 1));
+            SortColumnDescription(key_description.column_names[i], (!key_description.reverse_flags.empty() && key_description.reverse_flags[i]) ? -1 : 1));
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 

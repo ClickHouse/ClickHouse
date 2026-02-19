@@ -104,7 +104,7 @@ public:
         , total_tables(tables->size())
         , access(context->getAccess())
         , query_id(context->getCurrentQueryId())
-        , lock_acquire_timeout(context->getSettingsRef()[Setting::lock_acquire_timeout])
+        , lock_acquire_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()))
     {
         need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
     }
@@ -136,7 +136,7 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableLockHolder table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
+                TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
 
                 if (table_lock == nullptr)
                 {
@@ -445,12 +445,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue; /// We don't want to show the internal database for temporary tables in system.columns
-
-            /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
-            /// This should be documented.
-
-            if (database->getEngineName() != "Lazy")
-                database_column_mut->insert(database_name);
+            database_column_mut->insert(database_name);
         }
 
         Tables external_tables;

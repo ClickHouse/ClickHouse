@@ -25,13 +25,13 @@ struct CramersVBiasCorrectedData : CrossTabData
 
         Float64 phi = getPhiSquared();
 
-        Float64 a_size_adjusted = count_a.size() - 1;
-        Float64 b_size_adjusted = count_b.size() - 1;
-        Float64 count_adjusted = count - 1;
+        Float64 a_size_adjusted = static_cast<Float64>(count_a.size() - 1);
+        Float64 b_size_adjusted = static_cast<Float64>(count_b.size() - 1);
+        Float64 count_adjusted = static_cast<Float64>(count - 1);
 
         Float64 res = std::max(0.0, phi - a_size_adjusted * b_size_adjusted / count_adjusted);
-        Float64 correction_a = count_a.size() - a_size_adjusted * a_size_adjusted / count_adjusted;
-        Float64 correction_b = count_b.size() - b_size_adjusted * b_size_adjusted / count_adjusted;
+        Float64 correction_a = static_cast<Float64>(count_a.size()) - a_size_adjusted * a_size_adjusted / count_adjusted;
+        Float64 correction_b = static_cast<Float64>(count_b.size()) - b_size_adjusted * b_size_adjusted / count_adjusted;
 
         res /= std::min(correction_a, correction_b) - 1;
         return sqrt(res);
@@ -44,7 +44,7 @@ void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory & f
 {
     FunctionDocumentation::Description description = R"(
 Cramer's V is a measure of association between two columns in a table.
-The result of the [`cramersV` function](./cramersv.md) ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other.
+The result of the [`cramersV` function](/sql-reference/aggregate-functions/reference/cramersV) ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other.
 The function can be heavily biased, so this version of Cramer's V uses the [bias correction](https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V#Bias_correction).
     )";
     FunctionDocumentation::Syntax syntax = "cramersVBiasCorrected(column1, column2)";

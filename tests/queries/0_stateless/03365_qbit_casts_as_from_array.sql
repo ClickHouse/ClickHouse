@@ -1,5 +1,3 @@
-SET enable_qbit_type = 1;
-
 SELECT 'Test Array → QBit CAST AS: Float64';
 
 SELECT CAST((SELECT groupArray(number + 0.1) FROM numbers(2)) AS QBit(Float64, 2));

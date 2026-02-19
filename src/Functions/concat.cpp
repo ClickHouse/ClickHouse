@@ -25,21 +25,24 @@ using namespace GatherUtils;
 namespace
 {
 
-template <typename Name, bool is_injective>
 class ConcatImpl : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    explicit ConcatImpl(ContextPtr context_) : context(context_) { }
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatImpl>(context); }
+    ConcatImpl(ContextPtr context_, const char * name_, bool is_injective_)
+        : context(context_), function_name(name_), injective(is_injective_) {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr context, const char * name = "concat", bool is_injective = false)
+    {
+        return std::make_shared<ConcatImpl>(context, name, is_injective);
+    }
+
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return injective; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -79,6 +82,8 @@ public:
 
 private:
     ContextWeakPtr context;
+    const char * function_name;
+    bool injective;
 
     ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
@@ -188,19 +193,6 @@ private:
 };
 
 
-struct NameConcat
-{
-    static constexpr auto name = "concat";
-};
-struct NameConcatAssumeInjective
-{
-    static constexpr auto name = "concatAssumeInjective";
-};
-
-using FunctionConcat = ConcatImpl<NameConcat, false>;
-using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true>;
-
-
 /// Works with arrays via `arrayConcat`, maps via `mapConcat`, and tuples via `tupleConcat`.
 /// Additionally, allows concatenation of arbitrary types that can be cast to string using the corresponding default serialization.
 class ConcatOverloadResolver : public IFunctionOverloadResolver
@@ -226,7 +218,7 @@ public:
         if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(elem.type); }))
             return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            FunctionConcat::create(context),
+            ConcatImpl::create(context),
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
@@ -318,7 +310,7 @@ Can be used for optimization of `GROUP BY`.
     FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, {}, returned_value_injective, examples_injective, introduced_in, category};
 
     factory.registerFunction<ConcatOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionConcatAssumeInjective>(documentation_injective);
+    factory.registerFunction("concatAssumeInjective", [](ContextPtr ctx){ return ConcatImpl::create(ctx, "concatAssumeInjective", true); }, documentation_injective);
 }
 
 }

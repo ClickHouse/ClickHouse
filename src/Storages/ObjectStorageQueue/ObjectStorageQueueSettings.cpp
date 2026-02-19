@@ -33,6 +33,8 @@ namespace ErrorCodes
     DECLARE(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
     DECLARE(UInt64, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
     DECLARE(UInt64, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
+    DECLARE(UInt64, metadata_cache_size_bytes, 1_GiB, "Size in bytes for the in-memory cache for metadata received from ZooKeeper", 0) \
+    DECLARE(UInt64, metadata_cache_size_elements, 10000, "Size in elements for the in-memory cache for metadata received from ZooKeeper", 0) \
     DECLARE(UInt64, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
     DECLARE(UInt64, polling_max_timeout_ms, 10 * 60 * 1000, "Maximum timeout before next polling", 0) \
     DECLARE(UInt64, polling_backoff_ms, 30 * 1000, "Polling backoff", 0) \
@@ -40,6 +42,7 @@ namespace ErrorCodes
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     DECLARE(Bool, use_persistent_processing_nodes, true, "This setting is deprecated", 0) \
     DECLARE(Bool, commit_on_select, false, "Whether SELECT query from queue table (not materialized view, but direct select from a queue table) needs to commit data and apply after_processing action. See also profile level setting stream_like_engine_allow_direct_select, which needs to be enabled if you want to use direct SELECT queries", 0) \
+    DECLARE(Bool, deduplication_v2, true, "Deduplicate blocks in dependent materialized views using user token set as object_etag:chunk_offset", 0) \
     DECLARE(UInt32, persistent_processing_node_ttl_seconds, 60 * 60, "Cleanup period for abandoned processing nodes", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
     DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batch in object storage", 0) \
@@ -53,6 +56,7 @@ namespace ErrorCodes
     DECLARE(ObjectStorageQueuePartitioningMode, partitioning_mode, ObjectStorageQueuePartitioningMode::NONE, "Partitioning strategy: NONE (no partitioning, default), HIVE (path-based like date=2025-01-01/city=NY), or REGEX (extract from filename using partition_regex)", 0) \
     DECLARE(String, partition_regex, "", "Regex to extract named capture groups from filename. All named groups are captured. Use partition_component to specify which group is the partition key. Example: '(?P<hostname>[^_]+)_(?P<timestamp>[^_]+)_(?P<sequence>\\d+)'", 0) \
     DECLARE(String, partition_component, "", "Name of the capture group from partition_regex to use as partition key. Required when using partitioning_mode='regex'. Example: 'hostname'", 0) \
+    DECLARE(ObjectStorageQueueBucketingMode, bucketing_mode, ObjectStorageQueueBucketingMode::PATH, "Bucketing strategy for Ordered mode parallel processing: PATH (hash full file path, default), PARTITION (hash partition key, requires partitioning_mode != NONE)", 0) \
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
@@ -235,7 +239,7 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

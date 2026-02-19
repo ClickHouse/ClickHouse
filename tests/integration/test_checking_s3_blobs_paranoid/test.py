@@ -559,6 +559,11 @@ def test_when_s3_timeout_at_listing(
 ):
     node = cluster.instances["node_with_inf_s3_retries"]
 
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip(
+            "Memory Sanitizer is too slow for precise resource measurement in this test"
+        )
+
     insert_query_id = randomize_query_id(
         f"TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
     )
