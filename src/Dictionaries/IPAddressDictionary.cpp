@@ -159,7 +159,7 @@ static void validateKeyTypes(const DataTypes & key_types)
 }
 
 template <typename T, typename Comp>
-size_t sortAndUnique(std::vector<T> & vec, Comp comp)
+size_t sortAndUnique(VectorWithMemoryTracking<T> & vec, Comp comp)
 {
     ::sort(vec.begin(), vec.end(),
               [&](const auto & a, const auto & b) { return comp(a, b) < 0; });
@@ -380,7 +380,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 
 void IPAddressDictionary::createAttributes()
 {
-    auto create_attributes_from_dictionary_attributes = [this](const std::vector<DictionaryAttribute> & dict_attrs)
+    auto create_attributes_from_dictionary_attributes = [this](const VectorWithMemoryTracking<DictionaryAttribute> & dict_attrs)
     {
         attributes.reserve(attributes.size() + dict_attrs.size());
 
@@ -410,7 +410,7 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    std::vector<IPRecord> ip_records;
+    VectorWithMemoryTracking<IPRecord> ip_records;
     bool has_ipv6 = false;
     {
         BlockIO io = source_ptr->loadAll();
@@ -1047,7 +1047,7 @@ Columns IPAddressDictionary::getKeyColumns() const
 template <typename KeyColumnType, bool IsIPv4>
 static auto keyViewGetter()
 {
-    return [](const Columns & columns, const std::vector<DictionaryAttribute> & dictonary_key_attributes)
+    return [](const Columns & columns, const VectorWithMemoryTracking<DictionaryAttribute> & dictonary_key_attributes)
     {
         auto column = ColumnString::create();
         const auto & key_ip_column = assert_cast<const KeyColumnType &>(*columns.front());

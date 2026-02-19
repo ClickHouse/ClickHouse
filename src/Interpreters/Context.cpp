@@ -6,7 +6,6 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -402,7 +401,6 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
-    extern const int TYPE_MISMATCH;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -875,6 +873,17 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down object storage queue streaming");
         ObjectStorageQueueFactory::instance().shutdown();
 
+        /// Stop all MergeTree background executors before shutting down databases.
+        /// This ensures no background tasks (merges, mutations, moves, part cleanup)
+        /// are running when storage objects are shut down or destroyed.
+        /// Without this, a background task could be accessing a storage's data_parts_indexes
+        /// while DatabaseCatalog::shutdown is destroying that storage, causing a SIGBUS.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/85433
+        SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
+        SHUTDOWN(log, "fetches executor", fetch_executor, wait());
+        SHUTDOWN(log, "moves executor", moves_executor, wait());
+        SHUTDOWN(log, "common executor", common_executor, wait());
+
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown([this]()
         {
@@ -884,11 +893,6 @@ struct ContextSharedPart : boost::noncopyable
         NamedCollectionFactory::instance().shutdown();
 
         delete_async_insert_queue.reset();
-
-        SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
-        SHUTDOWN(log, "fetches executor", fetch_executor, wait());
-        SHUTDOWN(log, "moves executor", moves_executor, wait());
-        SHUTDOWN(log, "common executor", common_executor, wait());
 
         TransactionLog::shutdownIfAny();
 
@@ -2862,32 +2866,9 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
-
-    /* Check that the actual schema matches the defined one (if any) */
-    auto actual_names_and_types = sample_block->getNamesAndTypesList();
-    const auto original_defined_columns = original_view_metadata->getColumns();
-    if (!original_defined_columns.empty())
-    {
-        auto throw_schema_mismatch = [table_name]()
-        {
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
-                backQuote(table_name));
-        };
-        if (original_defined_columns.size() != actual_names_and_types.size())
-            throw_schema_mismatch();
-
-        for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
-        {
-            if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
-                throw_schema_mismatch();
-        }
-    }
-
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
-                                                ColumnsDescription(actual_names_and_types),
+                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
             /* comment */ "",
             /* is_parameterized_view */ true);
     res->startup();

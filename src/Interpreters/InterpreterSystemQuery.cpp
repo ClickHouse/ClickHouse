@@ -1166,7 +1166,16 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
+    /// After the table is detached, we must re-create and re-attach it.
+    /// If table creation fails (e.g. due to memory allocation failure from fault injection),
+    /// the table is left permanently detached from the database while still existing in ZooKeeper
+    /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
+    /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
+    /// should always eventually succeed for transient errors.
+
     StoragePtr new_table;
+    size_t non_zk_retries = 0;
+    constexpr size_t max_non_zk_retries = 10;
     while (true)
     {
         try
@@ -1192,6 +1201,21 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
                 fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
 
             /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
+        }
+        catch (...)
+        {
+            if (++non_zk_retries > max_non_zk_retries)
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                    replica.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
             if (auto process_list_element = getContext()->getProcessListElementSafe())
                 process_list_element->checkTimeLimit();
 
