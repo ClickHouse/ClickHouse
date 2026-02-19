@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/Regexps.h>
 #include <Interpreters/misc.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -36,6 +37,17 @@ TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mo
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
+    , patterns()
+{
+    std::sort(tokens.begin(), tokens.end());
+}
+
+TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
+    : function_name(std::move(function_name_))
+    , search_mode(search_mode_)
+    , direct_read_mode(direct_read_mode_)
+    , tokens(std::move(tokens_))
+    , patterns(std::move(patterns_))
 {
     std::sort(tokens.begin(), tokens.end());
 }
@@ -615,8 +627,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         std::vector<String> tokens = stringLikeToTokens(value_field);
 
+        const String pattern = preprocessor->processConstant(value_field.safeGet<String>());
+        std::vector<OptimizedRegularExpression> patterns;
+        patterns.push_back(OptimizedRegularExpression(Regexps::createRegexp<true, true, false>(pattern)));
+
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), std::move(patterns)));
         return true;
     }
     if (function_name == "notLike" && tokenizer->supportsStringLike())

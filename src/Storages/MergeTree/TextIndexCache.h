@@ -51,6 +51,8 @@ public:
         return {};
     }
 
+    auto getAllTokenInfos() const { return token_infos; }
+
     size_t approximateMemoryUsage() const
     {
         static constexpr size_t embedded_posting_lists_size = 8; /// Assuming each embedded posting list has 8 entries.

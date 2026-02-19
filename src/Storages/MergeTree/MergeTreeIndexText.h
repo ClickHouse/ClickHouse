@@ -215,6 +215,20 @@ struct DictionarySparseIndex : public DictionaryBlockBase
     ColumnPtr offsets_in_file;
 };
 
+struct DictionarySparseIndexV2 : public DictionaryBlockBase
+{
+    DictionarySparseIndexV2() = default;
+    DictionarySparseIndexV2(UInt64 num_tokens_, UInt64 block_size_, ColumnPtr tokens_, ColumnPtr tokens_offsets_in_file_, ColumnPtr token_infos_offsets_in_file_);
+    UInt64 getOffsetInFile(size_t idx) const;
+    UInt64 getTokenInfoOffsetInFile(size_t idx) const;
+    size_t memoryUsageBytes() const;
+
+    UInt64 num_tokens;
+    UInt64 block_size;
+    ColumnPtr tokens_offsets_in_file;
+    ColumnPtr token_infos_offsets_in_file;
+};
+
 using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
 
 struct TextIndexSerialization
@@ -222,6 +236,7 @@ struct TextIndexSerialization
     enum class SparseIndexVersion
     {
         Initial = 0,
+        TokensFirst = 1,
     };
 
     enum class TokensFormat : UInt64
@@ -243,6 +258,10 @@ struct TextIndexSerialization
     static DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr);
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingListCodecPtr posting_list_codec);
     static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, PostingListCodecPtr posting_list_codec);
+
+    static void serializeSparseIndexV2(const DictionarySparseIndexV2 & sparse_index, WriteBuffer & ostr);
+
+    static DictionarySparseIndexV2 deserializeSparseIndexV2(ReadBuffer & istr);
 };
 
 
@@ -284,9 +303,20 @@ public:
 
 private:
     void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void readDictionaryHeader(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForExactTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForRegexTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+
+    struct DictionaryHeader {
+        UInt64 num_tokens;
+        UInt64 block_size;
+        UInt64 tokens_start_offset;
+        UInt64 token_infos_start_offset;
+    };
+
+    DictionaryHeader dictionary_header;
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
