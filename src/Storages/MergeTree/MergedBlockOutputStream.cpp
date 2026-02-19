@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -143,13 +142,6 @@ void MergedBlockOutputStream::Finalizer::cancel() noexcept
 void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
     writer.finish(sync);
-
-    /// For constant granularity parts (non-adaptive marks), the writer's in-memory
-    /// granularity has all marks at the constant value. Now that the writer's
-    /// validation is complete, fix the last mark granularity to match the actual
-    /// row count, same as done when loading parts from disk.
-    if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(part->index_granularity.get()))
-        constant_granularity->fixFromRowsCount(part->rows_count);
 
     for (auto & file : written_files)
     {
