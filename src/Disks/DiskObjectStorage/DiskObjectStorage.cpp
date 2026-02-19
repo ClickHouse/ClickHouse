@@ -3,9 +3,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/Stopwatch.h>
 #include <Common/checkStackSize.h>
 #include <Common/formatReadable.h>
-#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
@@ -15,16 +15,20 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
+#include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
+#include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+
 #include <Parsers/ASTCreateResourceQuery.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/Utils.h>
 #endif
 #include <Core/Settings.h>
+#include <base/sleep.h>
 
 
 namespace DB
@@ -46,50 +50,48 @@ DiskTransactionPtr DiskObjectStorage::createTransaction()
 
 ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 {
-    return object_storage;
+    return object_storages->takePointingTo(cluster->getLocalLocation());
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(
-        *object_storage,
-        *metadata_storage);
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages);
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
-    return std::make_shared<MultipleDisksObjectStorageTransaction>(
-        *object_storage,
-        *metadata_storage,
-        *to_disk.getObjectStorage(),
-        *to_disk.getMetadataStorage());
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages);
 }
-
 
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
+    ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
-    ObjectStoragePtr object_storage_,
+    ObjectStorageRouterPtr object_storages_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
     , log(getLogger("DiskObjectStorage(" + name + ")"))
+    , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
-    , object_storage(std::move(object_storage_))
+    , object_storages(std::move(object_storages_))
+    , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
+    , blob_copier(std::make_shared<BlobCopierThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
     , use_fake_transaction(use_fake_transaction_)
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
+    /// TODO: change description to cover multiple object storages
     data_source_description = DataSourceDescription{
         .type = DataSourceType::ObjectStorage,
-        .object_storage_type = object_storage->getType(),
+        .object_storage_type = object_storages->takePointingTo(cluster->getLocalLocation())->getType(),
         .metadata_type = metadata_storage->getType(),
-        .description = object_storage->getDescription(),
+        .description = object_storages->takePointingTo(cluster->getLocalLocation())->getDescription(),
         .is_encrypted = false,
-        .is_cached = object_storage->supportsCache(),
+        .is_cached = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache(),
         .zookeeper_name = metadata_storage->getZooKeeperName(),
     };
     resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
@@ -186,13 +188,19 @@ DiskObjectStorage::DiskObjectStorage(
             if (old_write_resource != new_write_resource)
                 LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
         });
+    blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
+    blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
+}
+
+DiskObjectStorage::~DiskObjectStorage()
+{
+    LOG_INFO(log, "Destroying disk {}", name);
 }
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
 {
     return metadata_storage->getStorageObjects(local_path);
 }
-
 
 bool DiskObjectStorage::existsFile(const String & path) const
 {
@@ -208,7 +216,6 @@ bool DiskObjectStorage::existsFileOrDirectory(const String & path) const
 {
     return metadata_storage->existsFileOrDirectory(path);
 }
-
 
 void DiskObjectStorage::createFile(const String & path)
 {
@@ -250,16 +257,15 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const String & to_file_path,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook
-    )
+    const std::function<void()> & cancellation_hook)
 {
     if (getDataSourceDescription() == to_disk.getDataSourceDescription())
     {
-            /// It may use s3-server-side copy
-            auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
-            auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
-            transaction->copyFile(from_file_path, to_file_path, /*read_settings*/ {}, /*write_settings*/ {});
-            transaction->commit();
+        /// It may use s3-server-side copy
+        auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
+        auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
+        transaction->copyFile(from_file_path, to_file_path, /*read_settings*/ {}, /*write_settings*/ {});
+        transaction->commit();
     }
     else
     {
@@ -300,7 +306,6 @@ bool DiskObjectStorage::renameExchangeIfSupported(const std::string &, const std
     return false;
 }
 
-
 void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
     auto transaction = createObjectStorageTransaction();
@@ -337,7 +342,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
     auto object = StoredObject(id);
-    return object_storage->exists(object);
+    return object_storages->takePointingTo(cluster->getLocalLocation())->exists(object);
 }
 
 void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path)
@@ -356,14 +361,12 @@ void DiskObjectStorage::setReadOnly(const String & path)
     transaction->commit();
 }
 
-
 void DiskObjectStorage::createDirectory(const String & path)
 {
     auto transaction = createObjectStorageTransaction();
     transaction->createDirectory(path);
     transaction->commit();
 }
-
 
 void DiskObjectStorage::createDirectories(const String & path)
 {
@@ -453,16 +456,39 @@ void DiskObjectStorage::chmod(const String & path, mode_t mode)
 void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
-    object_storage->shutdown();
+
+    blob_killer->shutdown();
+    blob_copier->shutdown();
+
     metadata_storage->shutdown();
+    for (const auto & [location, _] : cluster->getConfiguration())
+        object_storages->takePointingTo(location)->shutdown();
+
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
 void DiskObjectStorage::startupImpl()
 {
     LOG_INFO(log, "Starting up disk {}", name);
+
     metadata_storage->startup();
-    object_storage->startup();
+    for (const auto & [location, _] : cluster->getConfiguration())
+        object_storages->takePointingTo(location)->startup();
+
+    blob_killer->startup();
+    blob_copier->startup();
+
+    LOG_INFO(log, "Waiting until all expected blobs are replicated to local location");
+    Stopwatch wait_round;
+    while (metadata_storage->hasUnreplicatedBlobs(cluster->getLocalLocation()))
+    {
+        wait_round.restart();
+
+        blob_copier->triggerAndWait();
+
+        if (auto elapsed = wait_round.elapsedMilliseconds(); elapsed < 1000)
+            sleepForMilliseconds(1000 - elapsed);
+    }
 
     LOG_INFO(log, "Disk {} started up", name);
 }
@@ -585,7 +611,6 @@ void DiskObjectStorage::removeSharedRecursiveWithLimit(
         return;
     }
 
-
     RemoveBatchRequest local_paths;
     std::vector<std::string> directories;
 
@@ -637,12 +662,12 @@ void DiskObjectStorage::removeSharedRecursiveWithLimit(
 
 bool DiskObjectStorage::supportsCache() const
 {
-    return object_storage->supportsCache();
+    return object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache();
 }
 
 bool DiskObjectStorage::isReadOnly() const
 {
-    return object_storage->isReadOnly();
+    return object_storages->takePointingTo(cluster->getLocalLocation())->isReadOnly();
 }
 
 bool DiskObjectStorage::isPlain() const
@@ -657,7 +682,7 @@ bool DiskObjectStorage::isWriteOnce() const
 
 bool DiskObjectStorage::isSharedCompatible() const
 {
-    switch (object_storage->getType())
+    switch (object_storages->takePointingTo(cluster->getLocalLocation())->getType())
     {
         case ObjectStorageType::S3:
         case ObjectStorageType::Azure:
@@ -681,18 +706,6 @@ bool DiskObjectStorage::isSharedCompatible() const
 bool DiskObjectStorage::supportsHardLinks() const
 {
     return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
-}
-
-DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
-{
-    const auto config_prefix = "storage_configuration.disks." + name;
-    return std::make_shared<DiskObjectStorage>(
-        getName(),
-        metadata_storage,
-        object_storage,
-        Context::getGlobalContextInstance()->getConfigRef(),
-        config_prefix,
-        use_fake_transaction);
 }
 
 template <class Settings>
@@ -774,13 +787,13 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
     read_settings = read_settings.withNestedBuffer();
 
+
     bool use_distributed_cache = false;
 #if ENABLE_DISTRIBUTED_CACHE
-    use_distributed_cache = enable_distributed_cache && DistributedCache::canUseDistributedCacheForRead(read_settings, *object_storage);
+    use_distributed_cache = enable_distributed_cache && DistributedCache::canUseDistributedCacheForRead(read_settings, *object_storages->takePointingTo(cluster->getLocalLocation()));
 #endif
-
     const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-    const bool file_cache_enabled = object_storage->supportsCache() && read_settings.enable_filesystem_cache;
+    const bool file_cache_enabled = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache() && read_settings.enable_filesystem_cache;
     const bool use_page_cache =
         read_settings.page_cache
         && (use_distributed_cache ? read_settings.use_page_cache_with_distributed_cache
@@ -793,14 +806,14 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
     {
         read_settings.remote_read_buffer_restrict_seek = restricted_seek;
-        return object_storage->readObject(object_, read_settings, read_hint);
+        return object_storages->takePointingTo(cluster->getLocalLocation())->readObject(object_, read_settings, read_hint);
     };
 
     /// Avoid cache fragmentation by choosing a bigger buffer size.
     /// But don't use it if the cache is used passively (only for reading if data is already cached, such as during merges).
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
         && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-        && object_storage->supportsCache()
+        && object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache()
         && read_settings.enable_filesystem_cache
         && !use_distributed_cache;
 
@@ -831,7 +844,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
                     path,
                     storage_objects,
                     read_settings,
-                    *object_storage,
+                    *object_storages->takePointingTo(cluster->getLocalLocation()),
                     /*use_external_buffer*/use_page_cache || use_async_buffer,
                     read_from_object_storage_gather);
     }
@@ -844,8 +857,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     {
         /// We identify the file by its first object, with the assumption that an object can't
         /// belong to more than one file.
-        auto cache_path_prefix = fmt::format("{}:{}:", /*disk*/ name, magic_enum::enum_name(object_storage->getType()));
-        const auto object_namespace = object_storage->getObjectsNamespace();
+        auto cache_path_prefix = fmt::format("{}:{}:", /*disk*/ name, magic_enum::enum_name(object_storages->takePointingTo(cluster->getLocalLocation())->getType()));
+        const auto object_namespace = object_storages->takePointingTo(cluster->getLocalLocation())->getObjectsNamespace();
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
         const auto cache_key = PageCacheKey { .path = cache_path_prefix + storage_objects.at(0).remote_path };
@@ -905,7 +918,7 @@ Strings DiskObjectStorage::getBlobPath(const String & path) const
     res.reserve(objects.size() + 1);
     for (const auto & object : objects)
         res.emplace_back(object.remote_path);
-    String objects_namespace = object_storage->getObjectsNamespace();
+    String objects_namespace = object_storages->takePointingTo(cluster->getLocalLocation())->getObjectsNamespace();
     if (!objects_namespace.empty())
         res.emplace_back(objects_namespace);
     return res;
@@ -924,12 +937,17 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
     transaction->commit();
 }
 
-void DiskObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String & /*config_prefix*/, const DisksMap & disk_map)
+void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
 {
+    IDisk::applyNewSettings(config, context, config_prefix, map);
+
+    cluster->applyNewSettings(config, config_prefix);
+
+    metadata_storage->applyNewSettings(config, config_prefix, context);
+
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
-    const auto config_prefix = "storage_configuration.disks." + name;
-    object_storage->applyNewSettings(config, config_prefix, context_, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
+    for (const auto & [location, info] : cluster->getConfiguration())
+        object_storages->takePointingTo(location)->applyNewSettings(config, info.config_prefix, context, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
 
     {
         std::unique_lock lock(resource_mutex);
@@ -941,20 +959,19 @@ void DiskObjectStorage::applyNewSettings(
     }
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
-
-    IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
-    metadata_storage->applyNewSettings(config, config_prefix, context_);
+    blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
+    blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
 }
 
 #if USE_AWS_S3
 std::shared_ptr<const S3::Client> DiskObjectStorage::getS3StorageClient() const
 {
-    return object_storage->getS3StorageClient();
+    return object_storages->takePointingTo(cluster->getLocalLocation())->getS3StorageClient();
 }
 
 std::shared_ptr<const S3::Client> DiskObjectStorage::tryGetS3StorageClient() const
 {
-    return object_storage->tryGetS3StorageClient();
+    return object_storages->takePointingTo(cluster->getLocalLocation())->tryGetS3StorageClient();
 }
 #endif
 

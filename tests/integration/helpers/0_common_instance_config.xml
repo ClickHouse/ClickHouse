@@ -28,6 +28,7 @@
         <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
         <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+        <allow_impersonate_user>true</allow_impersonate_user>
         <role_cache_expiration_time_seconds>2</role_cache_expiration_time_seconds>
     </access_control_improvements>
 

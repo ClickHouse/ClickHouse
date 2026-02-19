@@ -348,7 +348,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"lru", FileCachePolicy::LRU},
      {"LRU", FileCachePolicy::LRU},
      {"slru", FileCachePolicy::SLRU},
-     {"SLRU", FileCachePolicy::SLRU}})
+     {"SLRU", FileCachePolicy::SLRU},
+     {"lru_overcommit", FileCachePolicy::LRU_OVERCOMMIT},
+     {"LRU_OVERCOMMIT", FileCachePolicy::LRU_OVERCOMMIT},
+     {"slru_overcommit", FileCachePolicy::SLRU_OVERCOMMIT},
+     {"SLRU_OVERCOMMIT", FileCachePolicy::SLRU_OVERCOMMIT}})
 
 IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
@@ -446,4 +450,8 @@ IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
      {"enable", DeduplicateInsertMode::ENABLE},
      {"disable", DeduplicateInsertMode::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
+    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
+     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
+     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
 }

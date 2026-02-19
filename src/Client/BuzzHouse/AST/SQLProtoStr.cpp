@@ -1188,6 +1188,10 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kTuple: {
             const TupleTypeDef & tt = ttn.tuple();
 
+            if (tt.is_nullable())
+            {
+                ret += "Nullable(";
+            }
             ret += "Tuple";
             if (tt.has_with_names())
             {
@@ -1200,6 +1204,10 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             else
             {
                 ret += "()";
+            }
+            if (tt.is_nullable())
+            {
+                ret += ")";
             }
         }
         break;
@@ -2014,9 +2022,9 @@ CONV_FN(FormatFunc, ff)
     ret += "$$)";
 }
 
-CONV_FN(GenerateSeriesFunc, gsf)
+CONV_FN(NumbersFunc, gsf)
 {
-    ret += GenerateSeriesFunc_GSName_Name(gsf.fname());
+    ret += NumbersFunc_NumbersName_Name(gsf.fname());
     ret += "(";
     ExprToString(ret, gsf.expr1());
     if (gsf.has_expr2())
@@ -2432,8 +2440,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kFormat:
             FormatFuncToString(ret, tf.format());
             break;
-        case TableFunctionType::kGseries:
-            GenerateSeriesFuncToString(ret, tf.gseries());
+        case TableFunctionType::kNumbers:
+            NumbersFuncToString(ret, tf.numbers());
             break;
         case TableFunctionType::kRemote:
             RemoteFuncToString(ret, tf.remote());
@@ -3165,8 +3173,11 @@ CONV_FN(ColumnDef, cdf)
 CONV_FN(IndexDef, idef)
 {
     ret += "INDEX ";
-    IndexToString(ret, idef.idx());
-    ret += " ";
+    if (idef.has_idx())
+    {
+        IndexToString(ret, idef.idx());
+        ret += " ";
+    }
     ExprToString(ret, idef.expr());
     ret += " TYPE ";
     ret += IndexType_Name(idef.type()).substr(4);
@@ -3190,18 +3201,35 @@ CONV_FN(IndexDef, idef)
     }
 }
 
+CONV_FN(ProjectionSelectDef, psdef)
+{
+    ret += "(";
+    SelectToString(ret, psdef.select());
+    ret += ")";
+    if (psdef.has_setting_values())
+    {
+        ret += " WITH SETTINGS (";
+        SettingValuesToString(ret, psdef.setting_values());
+        ret += ")";
+    }
+}
+
 CONV_FN(ProjectionDef, proj_def)
 {
     ret += "PROJECTION ";
     ProjectionToString(ret, proj_def.proj());
-    ret += " (";
-    SelectToString(ret, proj_def.select());
-    ret += ")";
-    if (proj_def.has_setting_values())
+    ret += " ";
+    using ProjectionDefType = ProjectionDef::ProjectionOneofCase;
+    switch (proj_def.projection_oneof_case())
     {
-        ret += " WITH SETTINGS (";
-        SettingValuesToString(ret, proj_def.setting_values());
-        ret += ")";
+        case ProjectionDefType::kSelDef:
+            ProjectionSelectDefToString(ret, proj_def.sel_def());
+            break;
+        case ProjectionDefType::kIdxDef:
+            IndexDefToString(ret, proj_def.idx_def());
+            break;
+        default:
+            ret += "(SELECT c0 ORDER BY c0)";
     }
 }
 
@@ -5106,6 +5134,14 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kDropTextIndexCaches:
             ret += "DROP TEXT INDEX CACHES";
+            can_set_cluster = true;
+            break;
+        case CmdType::kResetDdlWorker:
+            ret += "RESET DDL WORKER";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropParquetMetadataCache:
+            ret += "DROP PARQUET METADATA CACHE";
             can_set_cluster = true;
             break;
         default:

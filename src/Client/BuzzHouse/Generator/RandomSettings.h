@@ -40,7 +40,7 @@ const auto bytesRange = [](RandomGenerator & rg, FuzzConfig &)
 
 const auto threadSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
-    {"0", "1", std::to_string(std::thread::hardware_concurrency())},
+    {"0", "1", "2", std::to_string(std::thread::hardware_concurrency())},
     false);
 
 const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);

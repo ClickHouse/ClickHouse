@@ -1,9 +1,22 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
+from ci.defs.defs import (
+    BASE_BRANCH,
+    BINARIES_WITH_LONG_RETENTION,
+    DOCKERS,
+    SECRETS,
+    ArtifactConfigs,
+)
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.workflows.pull_request import REGULAR_BUILD_NAMES
+
+# Add long retention tags to subset of artifacts
+clickhouse_binaries_with_tags = []
+for artifact in ArtifactConfigs.clickhouse_binaries:
+    if artifact.name in BINARIES_WITH_LONG_RETENTION:
+        artifact = artifact.add_tags({"retention": "long"})
+    clickhouse_binaries_with_tags.append(artifact)
 
 workflow = Workflow.Config(
     name="MasterCI",
@@ -20,6 +33,7 @@ workflow = Workflow.Config(
             )
             for job in JobConfigs.special_build_jobs
         ],
+        JobConfigs.smoke_tests_macos,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
@@ -47,7 +61,7 @@ workflow = Workflow.Config(
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
-        *ArtifactConfigs.clickhouse_binaries,
+        *clickhouse_binaries_with_tags,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
@@ -56,6 +70,7 @@ workflow = Workflow.Config(
         ArtifactConfigs.parser_memory_profiler,
         *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_html_report,
+        ArtifactConfigs.llvm_coverage_info_file,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,

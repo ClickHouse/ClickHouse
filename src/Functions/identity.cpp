@@ -20,17 +20,17 @@ This function returns the argument you pass to it, which is useful for debugging
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionIdentity>(documentation);
+    factory.registerFunction("identity", [](ContextPtr){ return FunctionIdentityBase::create({}, "identity", true); }, documentation);
 }
 
 REGISTER_FUNCTION(ScalarSubqueryResult)
 {
-    factory.registerFunction<FunctionScalarSubqueryResult>();
+    factory.registerFunction("__scalarSubqueryResult", [](ContextPtr){ return FunctionIdentityBase::create({}, "__scalarSubqueryResult", false); });
 }
 
 REGISTER_FUNCTION(ActionName)
 {
-    factory.registerFunction<FunctionActionName>();
+    factory.registerFunction("__actionName", [](ContextPtr){ return FunctionActionName::create({}); });
 }
 
 }
