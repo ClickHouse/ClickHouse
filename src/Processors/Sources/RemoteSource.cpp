@@ -239,7 +239,14 @@ void RemoteSource::onCancel() noexcept
 {
     try
     {
-        query_executor->cancel();
+        /// Use finish() instead of cancel() to drain remaining packets from the connection.
+        /// This ensures that Progress packets sent by replicas after data blocks are still
+        /// processed and accumulated in read_progress, so that the coordinator pipeline
+        /// can report accurate rows_read statistics.
+        /// Without this, fast queries with LIMIT and parallel replicas may show rows_read=0
+        /// because the replicas send Progress packets after all data blocks, and cancel()
+        /// would close the connection before they are received.
+        query_executor->finish();
     }
     catch (...)
     {

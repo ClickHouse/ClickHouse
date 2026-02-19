@@ -245,12 +245,15 @@ void PipelineExecutor::finalizeExecution()
             /// Single thread, do not hold mutex
             all_processors_finished = false;
 
-            /// When cancelled, keep iterating to collect remaining progress from finished processors.
             /// When not cancelled, we will throw below, so no need to continue.
             if (!is_cancelled)
                 break;
-            continue;
+
+            /// When cancelled, fall through to also collect remaining progress from
+            /// non-finished processors. This is safe because all execution threads
+            /// have stopped by this point, so no concurrent access to processor state.
         }
+
         if (node->processor && read_progress_callback)
         {
             /// Some executors might have reported progress as part of their finish() call
