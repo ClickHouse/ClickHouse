@@ -76,8 +76,11 @@ public:
     /// Add an activation `event` for immediate processing. Activations use a separate queue for performance reasons.
     void enqueueActivation(ISchedulerNode & node);
 
-    /// Removes an activation from queue
+    /// Removes an activation from queue and waits for any in-progress activation to complete
     void cancelActivation(ISchedulerNode & node);
+
+    /// Returns true if the current thread is the scheduler thread attached to this EventQueue
+    bool isSchedulerThread() const { return current_thread_queue == this; }
 
     /// Process single event if it exists
     /// Note that postponing constraint are ignored, use it to empty the queue including postponed events on shutdown
@@ -109,6 +112,7 @@ private:
     void processPostponed(std::unique_lock<std::mutex> && lock);
 
     std::mutex mutex;
+    std::mutex activation_mutex; // Serializes activation processing with cancelActivation()
     std::condition_variable pending;
 
     // `events` and `activations` logically represent one ordered queue. To preserve the common order we use `EventId`
@@ -120,6 +124,32 @@ private:
     EventId last_event_id = 0;
 
     std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
+
+    /// Thread-local pointer to the EventQueue attached to the current scheduler thread.
+    static inline thread_local EventQueue * current_thread_queue = nullptr;
+
+public:
+    /// RAII struct to attach the current thread to this EventQueue.
+    /// Must be created at the start of the scheduler thread.
+    struct SchedulerThread
+    {
+        explicit SchedulerThread(EventQueue * queue_) : queue(queue_)
+        {
+            chassert(current_thread_queue == nullptr);
+            current_thread_queue = queue;
+        }
+
+        ~SchedulerThread()
+        {
+            current_thread_queue = nullptr;
+        }
+
+        SchedulerThread(const SchedulerThread &) = delete;
+        SchedulerThread & operator=(const SchedulerThread &) = delete;
+
+    private:
+        EventQueue * queue;
+    };
 };
 
 }
