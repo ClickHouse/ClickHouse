@@ -330,7 +330,7 @@ public:
     }
 };
 
-static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == std::hardware_destructive_interference_size);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
