@@ -2508,7 +2508,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
             if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
             {
                 definer_name = user->getName() + ":definer";
-                sql_security.definer = make_intrusive<ASTUserNameWithHost>(definer_name);
+                sql_security.definer = std::make_shared<ASTUserNameWithHost>(definer_name);
                 auto new_user = typeid_cast<std::shared_ptr<User>>(user->clone());
                 new_user->setName(definer_name);
                 new_user->authentication_methods.clear();
