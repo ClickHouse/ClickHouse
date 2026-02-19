@@ -107,9 +107,9 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
         )
     )
 
-def test_defining_columns_with_special_character(started_cluster_iceberg):
-    instance = started_cluster_iceberg.instances["node1"]
-    spark = started_cluster_iceberg.spark_session
+def test_defining_columns_with_special_character(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
 
     spark.conf.set("spark.sql.iceberg.commit.sync", "true")
 
