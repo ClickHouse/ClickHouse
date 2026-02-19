@@ -291,7 +291,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     for (auto & current_block : part_blocks)
     {
-        auto thread_group = ThreadGroup::createForScope(context);
+        auto thread_group = ThreadGroup::createForScope();
         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         auto current_deduplication_info = deduplication_info->cloneSelf();

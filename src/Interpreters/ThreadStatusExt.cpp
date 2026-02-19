@@ -25,6 +25,7 @@
 #include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 #include <base/errnoToString.h>
 #include <Core/ServerSettings.h>
 
@@ -186,12 +187,15 @@ ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::funct
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_value)
+ThreadGroupPtr ThreadGroup::create(ContextPtr query_context)
 {
-    auto group = std::make_shared<ThreadGroup>(context, os_threads_nice_value);
+    chassert(query_context);
+    const auto & settings = query_context->getSettingsRef();
+    const auto & server_settings = query_context->getServerSettings();
+
+    auto group = std::make_shared<ThreadGroup>(query_context, server_settings[ServerSetting::os_threads_nice_value_merge_mutate]);
 
     /// However settings from storage context have to be applied
-    const Settings & settings = context->getSettingsRef();
     group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
     group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
     group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
@@ -203,16 +207,15 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
+ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr task_context)
 {
-    const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
-    auto group = create(storage_context, os_threads_nice_value);
+    auto group = create(task_context);
     group->memory_tracker.setDescription("Background process (mutate/merge)");
     group->memory_tracker.setParent(&background_memory_tracker);
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForScope(ContextPtr context)
+ThreadGroupPtr ThreadGroup::createForScope()
 {
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
@@ -221,17 +224,19 @@ ThreadGroupPtr ThreadGroup::createForScope(ContextPtr context)
     }
     else
     {
-        const Int32 os_threads_nice_value = context->getSettingsRef()[Setting::os_threads_nice_value_materialized_view];
-        res_group = create(context, os_threads_nice_value);
+        auto query_context =  Context::createCopy(Context::getGlobalContextInstance());
+        query_context->makeQueryContext();
+        res_group = create(query_context);
     }
     res_group->memory_tracker.setDescription("ThreadGroupScope");
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQuery(ContextPtr query_context)
 {
-    auto res_group = std::make_shared<ThreadGroup>(context, parent);
-    res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
+    chassert(CurrentThread::getGroup());
+    auto res_group = std::make_shared<ThreadGroup>(query_context, CurrentThread::getGroup());
+    res_group->memory_tracker.setDescription("FlushAsyncInsertQuery");
     return res_group;
 }
 
@@ -831,12 +836,9 @@ CurrentThread::QueryScope CurrentThread::QueryScope::create(ContextMutablePtr qu
     return QueryScope(true);
 }
 
-CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent)
+CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsert(ContextPtr insert_context)
 {
-    if (!query_context->hasQueryContext())
-        query_context->makeQueryContext();
-
-    auto group = ThreadGroup::createForFlushAsyncInsertQueue(query_context, parent);
+    auto group = ThreadGroup::createForFlushAsyncInsertQuery(insert_context);
     CurrentThread::attachToGroup(group);
     return QueryScope(true);
 }

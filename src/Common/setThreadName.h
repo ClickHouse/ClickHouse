@@ -15,6 +15,7 @@ namespace DB
     M(ARROW_FLIGHT_SERVER, "ArrowFlightSrv") \
     M(ASYNC_COPY, "AsyncCopy") \
     M(ASYNC_INSERT_QUEUE, "AsyncInsertQue") \
+    M(ASYNC_INSERT_FLUSH, "AsyncInsertFlu") \
     M(ASYNC_LOGGER, "AsyncLogger") \
     M(ASYNC_METRICS, "AsyncMetrics") \
     M(ASYNC_TABLE_LOADER, "AsyncTblLoader") \

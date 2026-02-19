@@ -44,6 +44,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <base/scope_guard.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -349,7 +350,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 }
 
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
-    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group)
+    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num)
 {
     /// Intuitively it seems reasonable to process first inserted blocks first.
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
@@ -361,14 +362,17 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     auto data_shared = std::make_shared<InsertDataPtr>(std::move(data));
     try
     {
+        // ThreadGroupSwitcher
         pool.scheduleOrThrowOnError(
-            [this, key, global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
+            [this, key, global_context, thread_group = CurrentThread::getGroup(), shard_num, my_data = data_shared]() mutable
             {
+                /// attach to the thread group of the query that flushes async insert queue to account profile events in it
+                /// when async insert is flushed by timeout, there is no such query and thread will not be attached to a thread group, which is also fine
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::ASYNC_INSERT_FLUSH);
                 processData(
                     key,
                     std::move(*my_data),
                     std::move(global_context),
-                    std::move(current_query_thread_group),
                     flush_time_history_per_queue_shard[shard_num]);
             },
             priority);
@@ -753,7 +757,7 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
                 // that call is blocking when pool is full
                 // and we are under flush_mutex lock so other flushes are blocked too
                 // but other pending inserts are not blocked and can be processed concurrently
-                scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i, CurrentThread::getGroup());
+                scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i);
             }
         }
 
@@ -928,7 +932,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 }
 
 void AsynchronousInsertQueue::processData(
-    InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
+    InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
 try
 {
     if (!data)
@@ -978,14 +982,14 @@ try
     insert_context->setInitialQueryId(insert_query_id);
 
     DB::CurrentThread::QueryScope query_scope;
-    if (current_query_thread_group)
+    if (auto thread_group = CurrentThread::getGroup())
     {
-        /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE,
+        /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE query,
         /// it is important to account profile events and other things correctly
-        query_scope = CurrentThread::QueryScope::createForFlushAsyncInsert(insert_context, current_query_thread_group);
+        query_scope = CurrentThread::QueryScope::createForFlushAsyncInsert(insert_context);
 
         /// This log line is useful to understand if async insert is flushed in the context of some query and which one
-        if (auto query_context = current_query_thread_group->query_context.lock())
+        if (auto query_context = thread_group->query_context.lock())
             LOG_DEBUG(log, "Processing async insert as a part of a query with query_id: {}", query_context->getCurrentQueryId());
     }
     else

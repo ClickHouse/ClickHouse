@@ -122,10 +122,10 @@ public:
 
     /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
     /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
+    static ThreadGroupPtr createForMergeMutate(ContextPtr task_context);
 
-    static ThreadGroupPtr createForScope(ContextPtr context);
-    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+    static ThreadGroupPtr createForScope();
+    static ThreadGroupPtr createForFlushAsyncInsertQuery(ContextPtr query_context);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -153,7 +153,7 @@ private:
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
-    static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
+    static ThreadGroupPtr create(ContextPtr query_context);
 };
 
 /**
