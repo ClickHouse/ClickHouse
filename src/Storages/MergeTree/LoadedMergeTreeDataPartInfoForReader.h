@@ -18,6 +18,16 @@ public:
     {
     }
 
+    /// Constructor with an explicit context, used when the storage might no longer be alive
+    /// (e.g. during read task creation in a query pipeline after the table could have been dropped).
+    LoadedMergeTreeDataPartInfoForReader(
+        MergeTreeData::DataPartPtr data_part_, AlterConversionsPtr alter_conversions_, ContextPtr context_)
+        : IMergeTreeDataPartInfoForReader(std::move(context_))
+        , data_part(std::move(data_part_))
+        , alter_conversions(std::move(alter_conversions_))
+    {
+    }
+
     bool isCompactPart() const override { return DB::isCompactPart(data_part); }
 
     bool isWidePart() const override { return DB::isWidePart(data_part); }

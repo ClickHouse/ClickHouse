@@ -77,6 +77,7 @@ protected:
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
     const PatchJoinCachePtr patch_join_cache;
+    const MergeTreeSettingsPtr storage_settings;
     const Block header;
 
     MergeTreeReadTaskInfo buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const;
