@@ -2,6 +2,7 @@
 
 #include <string>
 #include <base/types.h>
+#include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -42,7 +43,7 @@ struct DelayedPartInPartition
     DeduplicationInfo::Ptr deduplication_info;
     TemporaryPartPtr temp_part;
     UInt64 elapsed_ns;
-    ProfileEvents::Counters part_counters;
+    ProfileEventsScopePtr part_counters;
 };
 
 

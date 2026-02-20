@@ -1,6 +1,7 @@
 #include <memory>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Common/CurrentThread.h>
 
 #if USE_PARQUET
 
@@ -68,7 +69,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             {
                 if (format_settings.parquet.enable_row_group_prefetch && parser_shared_resources->max_io_threads > 0)
                     parser_shared_resources->io_runner.initThreadPool(
-                        getFormatParsingThreadPool().get(), parser_shared_resources->max_io_threads, ThreadName::PARQUET_PREFETCH, CurrentThread::getGroup());
+                        getFormatParsingThreadPool().get(), parser_shared_resources->max_io_threads, ThreadName::PARQUET_PREFETCH, CurrentThread::getGroup(), CurrentThread::getCountersScopes());
 
                 /// Unfortunately max_parsing_threads setting doesn't have a value for
                 /// "do parsing in the same thread as the rest of query processing
@@ -81,7 +82,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                     parser_shared_resources->parsing_runner.initManual();
                 else
                     parser_shared_resources->parsing_runner.initThreadPool(
-                        getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, ThreadName::PARQUET_DECODER, CurrentThread::getGroup());
+                        getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, ThreadName::PARQUET_DECODER, CurrentThread::getGroup(), CurrentThread::getCountersScopes());
 
                 auto ext = std::make_shared<Parquet::SharedResourcesExt>();
 

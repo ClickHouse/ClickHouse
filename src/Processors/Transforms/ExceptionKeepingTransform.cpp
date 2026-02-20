@@ -94,9 +94,9 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     return Status::Ready;
 }
 
-static std::exception_ptr runStep(std::function<void()> step, ThreadGroupPtr & thread_group)
+static std::exception_ptr runStep(std::function<void()> step, ThreadGroupPtr & thread_group, ProfileEvents::CountersSeq profile_counters_scopes)
 {
-    ThreadGroupSwitcher switcher(thread_group, ThreadName::RUNTIME_DATA, /*allow_existing_group*/ true);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::RUNTIME_DATA, profile_counters_scopes, /*allow_existing_group*/ true);
 
     std::exception_ptr res;
 
@@ -118,7 +118,7 @@ void ExceptionKeepingTransform::work()
     {
         stage = Stage::Consume;
 
-        if (auto exception = runStep([this] { onStart(); }, thread_group))
+        if (auto exception = runStep([this] { onStart(); }, thread_group, profile_counters_scopes))
         {
             stage = Stage::Exception;
             ready_output = true;
@@ -133,7 +133,7 @@ void ExceptionKeepingTransform::work()
         {
             ready_input = false;
 
-            if (auto exception = runStep([this] { onConsume(std::move(data.chunk)); }, thread_group))
+            if (auto exception = runStep([this] { onConsume(std::move(data.chunk)); }, thread_group, profile_counters_scopes))
             {
                 stage = Stage::Exception;
                 ready_output = true;
@@ -148,7 +148,7 @@ void ExceptionKeepingTransform::work()
         if (stage == Stage::Generate)
         {
             GenerateResult res;
-            if (auto exception = runStep([this, &res] { res = onGenerate(); }, thread_group))
+            if (auto exception = runStep([this, &res] { res = onGenerate(); }, thread_group, profile_counters_scopes))
             {
                 stage = Stage::Exception;
                 ready_output = true;
@@ -172,7 +172,7 @@ void ExceptionKeepingTransform::work()
     else if (stage == Stage::Finish)
     {
         GenerateResult res;
-        if (auto exception = runStep([this, &res] { res = getRemaining(); }, thread_group))
+        if (auto exception = runStep([this, &res] { res = getRemaining(); }, thread_group, profile_counters_scopes))
         {
             stage = Stage::Exception;
             ready_output = true;
@@ -185,7 +185,7 @@ void ExceptionKeepingTransform::work()
             data.chunk = std::move(res.chunk);
             ready_output = true;
         }
-        else if (auto finish_exception = runStep([this] { onFinish(); }, thread_group))
+        else if (auto finish_exception = runStep([this] { onFinish(); }, thread_group, profile_counters_scopes))
         {
             stage = Stage::Exception;
             ready_output = true;
@@ -196,9 +196,10 @@ void ExceptionKeepingTransform::work()
     }
 }
 
-void ExceptionKeepingTransform::setRuntimeData(ThreadGroupPtr thread_group_)
+void ExceptionKeepingTransform::setRuntimeData(ThreadGroupPtr thread_group_, ProfileEvents::CountersSeq profile_counters_scopes_)
 {
     thread_group = thread_group_;
+    profile_counters_scopes = profile_counters_scopes_;
 }
 
 }

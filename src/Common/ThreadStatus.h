@@ -174,12 +174,14 @@ public:
     ///    Use this when running a task in a thread pool.
     ///  * If true, remembers the current group and restores it in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
+    /// If counters_scope is empty - additional maybe configured profile events will not be populated by switched thread.
+    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, ProfileEvents::CountersSeq counters_scope, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
 private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
+    ProfileEvents::CountersSeq prev_counters_scopes;
     ThreadGroupPtr thread_group;
 };
 
@@ -209,9 +211,8 @@ public:
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
-    /// Points to performance_counters by default.
-    /// Could be changed to point to another object to calculate performance counters for some narrow scope.
-    ProfileEvents::Counters * current_performance_counters{&performance_counters};
+    /// Points to current scope counters if it exists. For example single part write during insert.
+    ProfileEvents::CountersSeq performance_counters_scopes;
 
     MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
@@ -302,9 +303,10 @@ public:
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachFromGroup();
 
-    /// Returns pointer to the current profile counters to restore them back.
-    /// Note: consequent call with new scope will detach previous scope.
-    ProfileEvents::Counters * attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope);
+    ProfileEvents::CountersSeq getProfileCountersScopes() const;
+    ProfileEvents::CountersSeq exchangeProfileCountersScopes(ProfileEvents::CountersSeq scopes);
+    void attachProfileCountersScope(ProfileEvents::CountersPtr scope);
+    ProfileEvents::CountersPtr detachProfileCountersScope();
 
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
                                      LogsLevel client_logs_level);

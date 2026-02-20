@@ -9,6 +9,7 @@
 #include <atomic>
 #include <memory>
 #include <cstddef>
+#include <deque>
 
 
 /** Implements global counters for various events happening in the application
@@ -125,7 +126,7 @@ namespace ProfileEvents
         void reset();
 
         /// Get parent (thread unsafe)
-        Counters * getParent()
+        Counters * getParent() const
         {
             return parent.load(std::memory_order_relaxed);
         }
@@ -186,6 +187,8 @@ namespace ProfileEvents
 
         static const Event num_counters;
     };
+    using CountersPtr = std::shared_ptr<Counters>;
+    using CountersSeq = std::deque<ProfileEvents::CountersPtr>;
 
     enum class ValueType : uint8_t
     {

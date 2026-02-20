@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 ThreadPoolCallbackRunnerFast::ThreadPoolCallbackRunnerFast() = default;
 
-void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_)
+void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_, ProfileEvents::CountersSeq profile_counters_scopes_)
 {
     chassert(!pool);
     mode = Mode::ThreadPool;
@@ -21,6 +21,7 @@ void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max
     max_threads = max_threads_;
     thread_name = thread_name_;
     thread_group = thread_group_;
+    profile_counters_scopes = profile_counters_scopes_;
 }
 
 ThreadPoolCallbackRunnerFast::ThreadPoolCallbackRunnerFast(Mode mode_) : mode(mode_)
@@ -148,7 +149,7 @@ bool ThreadPoolCallbackRunnerFast::runTaskInline()
 void ThreadPoolCallbackRunnerFast::threadFunction()
 {
     std::optional<ThreadGroupSwitcher> switcher;
-    switcher.emplace(thread_group, thread_name);
+    switcher.emplace(thread_group, thread_name, profile_counters_scopes);
 
     while (true)
     {

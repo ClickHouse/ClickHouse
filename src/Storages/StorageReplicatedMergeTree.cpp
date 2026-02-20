@@ -2409,7 +2409,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     if (entry.type == LogEntry::ATTACH_PART)
     {
-        ProfileEventsScope profile_events_scope;
+        auto profile_events_scope = ProfileEventsScope::construct();
+        auto counters_scope_extension = profile_events_scope->startCollecting();
 
         PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry, renamed_parts))
@@ -2428,7 +2429,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
-                profile_events_scope.getSnapshot());
+                profile_events_scope->getSnapshot());
 
             return true;
         }
@@ -2854,7 +2855,8 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 {
     Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto profile_events_scope = ProfileEventsScope::construct();
+    auto counters_scope_extension = profile_events_scope->startCollecting();
 
     auto & entry_replace = *entry.replace_range_entry;
     LOG_DEBUG(log, "Executing log entry {} to replace parts range {} with {} parts from {}.{}",
@@ -3291,7 +3293,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             }
         }
 
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(res_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(res_parts, watch.elapsed(), profile_events_scope->getSnapshot()));
     }
     catch (...)
     {
@@ -5332,14 +5334,15 @@ bool StorageReplicatedMergeTree::fetchPart(
     Stopwatch stopwatch;
     MutableDataPartPtr part;
     DataPartsVector replaced_parts;
-    ProfileEventsScope profile_events_scope;
+    auto profile_events_scope = ProfileEventsScope::construct();
+    auto counters_scope_extension = profile_events_scope->startCollecting();
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
             part_name, part, replaced_parts, nullptr,
-            profile_events_scope.getSnapshot());
+            profile_events_scope->getSnapshot());
     };
 
     auto is_zero_copy_part = [&settings_ptr](const auto & data_part)
@@ -5609,14 +5612,15 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
     Stopwatch stopwatch;
     MutableDataPartPtr part;
     DataPartsVector replaced_parts;
-    ProfileEventsScope profile_events_scope;
+    auto profile_events_scope = ProfileEventsScope::construct();
+    auto counters_scope_extension = profile_events_scope->startCollecting();
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
             part_name, part, replaced_parts, nullptr,
-            profile_events_scope.getSnapshot());
+            profile_events_scope->getSnapshot());
     };
 
     std::function<MutableDataPartPtr()> get_part;
@@ -8750,7 +8754,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         return;
 
     const Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto profile_events_scope = ProfileEventsScope::construct();
+    auto counters_scope_extension = profile_events_scope->startCollecting();
     const auto zookeeper = getZooKeeper();
 
     const bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
@@ -8784,7 +8789,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
 std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::replacePartitionFromImpl(
     const Stopwatch & watch,
-    ProfileEventsScope & profile_events_scope,
+    const ProfileEventsScopePtr & profile_events_scope,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & src_data,
     const String & partition_id,
@@ -9031,7 +9036,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 }
             }
 
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope->getSnapshot()));
         }
         catch (...)
         {
@@ -9089,7 +9094,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto profile_events_scope = ProfileEventsScope::construct();
+    auto counters_scope_extension = profile_events_scope->startCollecting();
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     auto src_data_id = src_data.getStorageID();
@@ -9295,7 +9301,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 transaction.commit(src_data_parts_lock);
             }
 
-            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope->getSnapshot()));
         }
         catch (...)
         {

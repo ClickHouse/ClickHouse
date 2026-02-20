@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
@@ -29,11 +30,11 @@ using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callbac
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_name, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
-        auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, my_callback = std::move(callback)]() mutable -> Result
+        auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, profile_counters_scopes, my_callback = std::move(callback)]() mutable -> Result
         {
-            ThreadGroupSwitcher switcher(thread_group, thread_name);
+            ThreadGroupSwitcher switcher(thread_group, thread_name, profile_counters_scopes);
 
             SCOPE_EXIT_SAFE(
             {
@@ -123,7 +124,7 @@ private:
 
     /// Set promise result for non-void callbacks
     template <typename Function, typename FunctionResult>
-    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name)
+    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name, ProfileEvents::CountersSeq profile_counters_scopes)
     {
         /// Release callback before setting value to the promise to avoid
         /// destruction of captured resources after waitForAllToFinish returns.
@@ -131,7 +132,7 @@ private:
         {
             FunctionResult res;
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ThreadGroupSwitcher switcher(thread_group, thread_name, profile_counters_scopes);
                 res = callback();
                 callback = {};
             }
@@ -146,14 +147,14 @@ private:
 
     /// Set promise result for void callbacks
     template <typename Function>
-    static void executeCallback(std::promise<void> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name)
+    static void executeCallback(std::promise<void> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name, ProfileEvents::CountersSeq profile_counters_scopes)
     {
         /// Release callback before setting value to the promise to avoid
         /// destruction of captured resources after waitForAllToFinish returns.
         try
         {
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ThreadGroupSwitcher switcher(thread_group, thread_name, profile_counters_scopes);
                 callback();
                 callback = {};
             }
@@ -201,7 +202,7 @@ public:
         auto task = std::make_shared<Task>();
         task->future = promise->get_future();
 
-        auto task_func = [this, task, thread_group = CurrentThread::getGroup(), my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = [this, task, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes(), my_callback = std::move(callback), promise]() mutable -> void
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))
@@ -218,7 +219,7 @@ public:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, thread_name);
             });
 
-            executeCallback(*promise, std::move(my_callback), std::move(thread_group), thread_name);
+            executeCallback(*promise, std::move(my_callback), std::move(thread_group), thread_name, profile_counters_scopes);
         };
 
         try
@@ -305,7 +306,7 @@ public:
         mode = Mode::Manual;
     }
 
-    void initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_);
+    void initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_, ProfileEvents::CountersSeq profile_counters_scopes_);
 
     /// Manual or Disabled.
     explicit ThreadPoolCallbackRunnerFast(Mode mode_);
@@ -337,6 +338,7 @@ private:
     size_t max_threads = 0;
     ThreadName thread_name;
     ThreadGroupPtr thread_group;
+    ProfileEvents::CountersSeq profile_counters_scopes;
 
     std::mutex mutex;
     size_t threads = 0;

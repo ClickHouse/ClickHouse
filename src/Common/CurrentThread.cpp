@@ -46,7 +46,10 @@ ThreadStatus & CurrentThread::get()
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
-    return current_thread ? *current_thread->current_performance_counters : ProfileEvents::global_counters;
+    if (current_thread)
+        return current_thread->performance_counters;
+
+    return ProfileEvents::global_counters;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)

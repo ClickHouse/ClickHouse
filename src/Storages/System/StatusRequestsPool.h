@@ -172,9 +172,9 @@ public:
                 requests_to_schedule.pop_front();
             }
 
-            auto get_status_task = [this, req, thread_group = CurrentThread::getGroup()]() mutable
+            auto get_status_task = [this, req, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]() mutable
             {
-                ThreadGroupSwitcher switcher(thread_group, get_thread_name());
+                ThreadGroupSwitcher switcher(thread_group, get_thread_name(), profile_counters_scopes);
 
                 try
                 {

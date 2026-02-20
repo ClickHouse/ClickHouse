@@ -167,9 +167,9 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         {
             if (format_settings.pretty.squash_consecutive_ms && !mono_block && !thread)
             {
-                thread.emplace([this, thread_group = CurrentThread::getGroup()]
+                thread.emplace([this, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PRETTY_WRITER);
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PRETTY_WRITER, profile_counters_scopes);
 
                     writingThread();
                 });

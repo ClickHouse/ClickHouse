@@ -9,6 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -935,7 +936,7 @@ private:
             ThreadFromGlobalPool thread;
             try
             {
-                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup(), CurrentThread::getCountersScopes()};
             }
             catch (...)
             {
@@ -986,9 +987,9 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
+    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {}, ProfileEvents::CountersSeq profile_counters_scopes = {})
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER, profile_counters_scopes);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
         MemoryTrackerBlockerInThread memory_blocker;

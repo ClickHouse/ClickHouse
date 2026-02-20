@@ -8,9 +8,9 @@
 namespace DB
 {
 
-void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
+void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group, ProfileEvents::CountersSeq profile_counters_scopes)
 {
-    ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_PARSING_SEGMENTATOR);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_PARSING_SEGMENTATOR, profile_counters_scopes);
 
     try
     {
@@ -156,7 +156,7 @@ Chunk ParallelParsingInputFormat::read()
             return {};
 
         segmentator_thread = ThreadFromGlobalPool(
-            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
+            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup(), CurrentThread::getCountersScopes());
     }
 
     if (isCancelled() || parsing_finished)

@@ -97,11 +97,11 @@ struct PushingAsyncPipelineExecutor::Data
 };
 
 static void threadFunction(
-    PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
+    PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, ProfileEvents::CountersSeq profile_counters_scopes, size_t num_threads, bool concurrency_control)
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR, profile_counters_scopes);
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -161,9 +161,9 @@ void PushingAsyncPipelineExecutor::start()
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     data->source = pushing_source.get();
 
-    auto func = [&, thread_group = CurrentThread::getGroup()]()
+    auto func = [&, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]()
     {
-        threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        threadFunction(*data, thread_group, profile_counters_scopes, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     };
 
     data->thread = ThreadFromGlobalPool(std::move(func));

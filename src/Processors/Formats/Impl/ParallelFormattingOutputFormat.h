@@ -104,9 +104,9 @@ public:
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
         /// Also some race condition is possible, because collector_thread runs in parallel with
         /// the destruction of the objects already created in this scope.
-        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
+        collector_thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]
         {
-            collectorThreadFunction(thread_group);
+            collectorThreadFunction(thread_group, profile_counters_scopes);
         });
     }
 
@@ -293,17 +293,17 @@ private:
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
     {
-        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number, first_row_num]
+        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes(), ticket_number, first_row_num]
         {
-            formatterThreadFunction(ticket_number, first_row_num, thread_group);
+            formatterThreadFunction(ticket_number, first_row_num, thread_group, profile_counters_scopes);
         });
     }
 
     /// Collects all temporary buffers into main WriteBuffer.
-    void collectorThreadFunction(const ThreadGroupPtr & thread_group);
+    void collectorThreadFunction(const ThreadGroupPtr & thread_group, ProfileEvents::CountersSeq profile_counters_scopes);
 
     /// This function is executed in ThreadPool and the only purpose of it is to format one Chunk into a continuous buffer in memory.
-    void formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group);
+    void formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group, ProfileEvents::CountersSeq profile_counters_scopes);
 
     void setRowsBeforeLimit(size_t rows_before_limit) override
     {

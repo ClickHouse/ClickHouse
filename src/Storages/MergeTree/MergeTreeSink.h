@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Processors/Sinks/SinkToStorage.h>
+
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
-#include <Common/ProfileEvents.h>
 #include <Interpreters/InsertDeduplication.h>
 
+#include <Common/ProfileEventsScope.h>
 
 namespace DB
 {
@@ -32,7 +33,7 @@ struct MergeTreeDelayedChunk
         DeduplicationInfo::Ptr deduplication_info;
         TemporaryPartPtr temp_part;
         UInt64 elapsed_ns;
-        ProfileEvents::Counters part_counters;
+        ProfileEventsScopePtr part_counters;
     };
 
     std::vector<Partition> partitions;

@@ -46,9 +46,9 @@ void ParallelCompressedWriteBuffer::nextImpl()
     current_buffer->sequence_num = current_sequence_num;
     ++current_sequence_num;
     current_buffer->uncompressed_size = offset();
-    pool.scheduleOrThrowOnError([this, my_current_buffer = current_buffer, thread_group = CurrentThread::getGroup()]
+    pool.scheduleOrThrowOnError([this, my_current_buffer = current_buffer, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_COMPRESSORS_POOL);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_COMPRESSORS_POOL, profile_counters_scopes);
 
         compress(my_current_buffer);
     });

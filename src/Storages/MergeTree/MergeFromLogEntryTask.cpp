@@ -8,7 +8,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/FailPoint.h>
 
 #include <Common/DateLUTImpl.h>
@@ -77,7 +76,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     stopwatch_ptr = std::make_unique<Stopwatch>();
     auto part_log_writer = [this, stopwatch = *stopwatch_ptr](const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = profile_counters->getSnapshot();
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
             entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));

@@ -1058,9 +1058,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
             {
                 pool.scheduleOrThrow(
-                    [&, part_index, thread_group = CurrentThread::getGroup()]
+                    [&, part_index, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX, profile_counters_scopes);
 
                         process_part(part_index);
                     },

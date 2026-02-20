@@ -78,6 +78,12 @@ public:
     /// Is useful for a ThreadPool tasks
     static void attachToGroupIfDetached(const ThreadGroupPtr & thread_group);
 
+    /// Updates additional profile events sink.
+    static ProfileEvents::CountersSeq getCountersScopes();
+    static ProfileEvents::CountersSeq exchangeCountersScopes(ProfileEvents::CountersSeq scopes);
+    static void attachCountersScope(ProfileEvents::CountersPtr scope);
+    static ProfileEvents::CountersPtr detachCountersScope();
+
     /// Non-master threads call this method in destructor automatically
     static void detachFromGroupIfNotDetached();
 

@@ -127,9 +127,9 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
+    void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group, ProfileEvents::CountersSeq profile_counters_scopes)
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER_COLLECTOR);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER_COLLECTOR, profile_counters_scopes);
 
         try
         {
@@ -192,9 +192,9 @@ namespace DB
         }
     }
 
-    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
+    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group, ProfileEvents::CountersSeq profile_counters_scopes)
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER, profile_counters_scopes);
 
         try
         {

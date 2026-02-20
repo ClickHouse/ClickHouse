@@ -66,9 +66,9 @@ public:
 
             try
             {
-                pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD, profile_counters_scopes);
 
                     WorkerStatistic statistic;
                     SCOPE_EXIT_SAFE(

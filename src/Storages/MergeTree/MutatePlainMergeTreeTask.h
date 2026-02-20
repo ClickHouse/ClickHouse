@@ -9,6 +9,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
 
+#include <Common/ProfileEventsScope.h>
 
 namespace DB
 {
@@ -79,7 +80,7 @@ private:
     IExecutableTask::TaskResultCallback task_result_callback;
     MutateTaskPtr mutate_task;
 
-    ProfileEvents::Counters profile_counters;
+    ProfileEventsScopePtr profile_counters;
 
     ContextMutablePtr task_context;
 

@@ -441,15 +441,13 @@ namespace
             context_for_reading->setSetting("input_format_custom_detect_header", false);
             context = context_for_reading;
 
-            auto thread_group = CurrentThread::getGroup();
-
             try
             {
                 for (auto && send_data_task : send_data_tasks)
                 {
-                    send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
+                    send_data_threads.emplace_back([thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes(), task = std::move(send_data_task), this]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD);
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD, profile_counters_scopes);
 
                         try
                         {

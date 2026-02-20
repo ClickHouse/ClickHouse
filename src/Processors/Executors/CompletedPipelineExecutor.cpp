@@ -3,6 +3,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
+#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
@@ -33,11 +34,11 @@ struct CompletedPipelineExecutor::Data
 };
 
 static void threadFunction(
-    CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
+    CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, ProfileEvents::CountersSeq profile_counters_scopes, size_t num_threads, bool concurrency_control)
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR, profile_counters_scopes);
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -77,9 +78,10 @@ void CompletedPipelineExecutor::execute()
             data_ptr = data.get(),
             num_threads = pipeline.getNumThreads(),
             thread_group = CurrentThread::getGroup(),
+            profile_counters_scopes = CurrentThread::getCountersScopes(),
             concurrency_control = pipeline.getConcurrencyControl()]
         {
-            threadFunction(*data_ptr, thread_group, num_threads, concurrency_control);
+            threadFunction(*data_ptr, thread_group, profile_counters_scopes, num_threads, concurrency_control);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));

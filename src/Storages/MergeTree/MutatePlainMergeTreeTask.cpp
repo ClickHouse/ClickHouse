@@ -42,6 +42,7 @@ void MutatePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context);
+    profile_counters = ProfileEventsScope::construct();
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -54,7 +55,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = profile_counters->getSnapshot();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -88,13 +89,16 @@ void MutatePlainMergeTreeTask::finish()
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
-    /// Metrics will be saved in the local profile_counters.
-    ProfileEventsScope profile_events_scope(&profile_counters);
-
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
+    std::optional<ProfileEventScopeExtension> extension;
+    std::optional<scope_guard> finalize_counters;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    {
+        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, ProfileEvents::CountersSeq{}, /*allow_existing_group*/ true);
+        extension.emplace(profile_counters);
+        finalize_counters.emplace([]() { CurrentThread::finalizePerformanceCounters(); });
+    }
 
     switch (state)
     {

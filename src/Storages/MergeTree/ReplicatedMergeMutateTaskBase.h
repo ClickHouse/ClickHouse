@@ -1,12 +1,12 @@
 #pragma once
 
-
-#include <pcg_random.hpp>
-
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+
+#include <Common/ProfileEventsScope.h>
 #include <Common/randomSeed.h>
 
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -30,6 +30,7 @@ public:
         , log(log_)
         /// This is needed to ask an asssignee to assign a new merge/mutate operation
         /// It takes bool argument and true means that current task is successfully executed.
+        , profile_counters(ProfileEventsScope::construct())
         , task_result_callback(task_result_callback_)
         , rng(randomSeed())
     {
@@ -74,7 +75,7 @@ protected:
     MergeList::EntryPtr merge_mutate_entry{nullptr};
     LoggerPtr log;
     /// ProfileEvents for current part will be stored here
-    ProfileEvents::Counters profile_counters;
+    ProfileEventsScopePtr profile_counters;
     ContextMutablePtr task_context;
 
 private:

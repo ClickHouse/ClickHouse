@@ -2293,7 +2293,8 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         auto merge_blocker = stopMergesAndWait();
 
         Stopwatch watch;
-        ProfileEventsScope profile_events_scope;
+        auto profile_events_scope = ProfileEventsScope::construct();
+        auto counters_scope_extension = profile_events_scope->startCollecting();
 
         auto txn = query_context->getCurrentTransaction();
         if (txn)
@@ -2321,7 +2322,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
-            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope->getSnapshot()));
 
             LOG_INFO(log, "Truncated table with {} parts by replacing them with new empty {} parts. With txn {}",
                      parts.size(), future_parts.size(),
@@ -2343,7 +2344,8 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         auto merge_blocker = stopMergesAndWait();
 
         Stopwatch watch;
-        ProfileEventsScope profile_events_scope;
+        auto profile_events_scope = ProfileEventsScope::construct();
+        auto counters_scope_extension = profile_events_scope->startCollecting();
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -2382,7 +2384,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
                 renameAndCommitEmptyParts(new_data_parts, transaction);
 
-                PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+                PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope->getSnapshot()));
 
                 const auto * op = detach ? "Detached" : "Dropped";
                 LOG_INFO(log, "{} {} part by replacing it with new empty {} part. With txn {}",
@@ -2406,7 +2408,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         auto merge_blocker = stopMergesAndWait();
 
         Stopwatch watch;
-        ProfileEventsScope profile_events_scope;
+        auto profile_events_scope = ProfileEventsScope::construct();
+        auto counters_scope_extension = profile_events_scope->startCollecting();
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -2469,7 +2472,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
-            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope->getSnapshot()));
 
             const auto * op = detach ? "Detached" : "Dropped";
             LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts. With txn {}",
@@ -2586,7 +2589,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
 
     Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto profile_events_scope = ProfileEventsScope::construct();
+    auto counters_scope_extension = profile_events_scope->startCollecting();
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     DataPartsVector src_parts;
@@ -2693,7 +2697,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         }
 
         /// Note: same elapsed time and profile events for all parts is used
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope->getSnapshot()));
     }
     catch (...)
     {
@@ -2735,7 +2739,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
     Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto profile_events_scope = ProfileEventsScope::construct();
+    auto counters_scope_extension = profile_events_scope->startCollecting();
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
@@ -2832,7 +2837,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         clearOldPartsFromFilesystem();
 
         /// Note: same elapsed time and profile events for all parts is used
-        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+        PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope->getSnapshot()));
     }
     catch (...)
     {

@@ -42,7 +42,6 @@
 #include <base/defines.h>
 
 #include <atomic>
-#include <expected>
 #include <pcg_random.hpp>
 
 
@@ -1048,7 +1047,7 @@ private:
     const String TMP_PREFIX_REPLACE_PARTITION_FROM = "tmp_replace_from_";
     std::unique_ptr<ReplicatedMergeTreeLogEntryData> replacePartitionFromImpl(
         const Stopwatch & watch,
-        ProfileEventsScope & profile_events_scope,
+        const ProfileEventsScopePtr & profile_events_scope,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & src_data,
         const String & partition_id,

@@ -170,9 +170,9 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         for (size_t i = 0; i < slots; ++i)
         {
             pool->scheduleOrThrow(
-                [&, i, thread_group = CurrentThread::getGroup()]()
+                [&, i, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN, profile_counters_scopes);
 
                     /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
                     const size_t reserve_size = 0;
@@ -215,9 +215,9 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
             // Hash tables destruction may be very time-consuming.
             // Without the following code, they would be destroyed in the current thread (i.e. sequentially).
             pool->scheduleOrThrow(
-                [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup()]()
+                [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN, profile_counters_scopes);
 
                     auto clear_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
                     {

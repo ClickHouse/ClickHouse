@@ -496,11 +496,11 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     size_t to_add = std::min(task_queue.size(), format_settings.max_threads - threads_running);
     for (size_t i = 0; i < to_add; ++i)
     {
-        auto job = [this, thread_group = CurrentThread::getGroup()]()
+        auto job = [this, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]()
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_ENCODER);
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_ENCODER, profile_counters_scopes);
 
                 threadFunction();
             }

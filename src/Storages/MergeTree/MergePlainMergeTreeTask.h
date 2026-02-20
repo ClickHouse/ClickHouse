@@ -4,8 +4,10 @@
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
+
 #include <Interpreters/MergeTreeTransactionHolder.h>
 
+#include <Common/ProfileEventsScope.h>
 
 namespace DB
 {
@@ -32,6 +34,7 @@ public:
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
         , task_result_callback(task_result_callback_)
+        , profile_counters(ProfileEventsScope::construct())
     {
         for (auto & item : merge_mutate_entry->future_part->parts)
             priority.value += item->getBytesOnDisk();
@@ -90,7 +93,7 @@ private:
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
 
-    ProfileEvents::Counters profile_counters;
+    ProfileEventsScopePtr profile_counters;
 
     ContextMutablePtr task_context;
 

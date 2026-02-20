@@ -325,14 +325,13 @@ void DistributedSink::waitForJobs()
 ThreadPool::Job
 DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, size_t num_shards)
 {
-    auto thread_group = CurrentThread::getGroup();
-    return [this, thread_group, &job, &current_block, num_shards]()
+    return [this, &job, &current_block, num_shards, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]()
     {
         /// Avoid Logical error: 'Pipeline for PushingPipelineExecutor was finished before all data was inserted' (whatever it means)
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK, profile_counters_scopes);
 
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
@@ -592,9 +591,9 @@ void DistributedSink::onFinish()
                 {
                     if (job.executor)
                     {
-                        pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
+                        pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup(), profile_counters_scopes = CurrentThread::getCountersScopes()]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
+                            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK, profile_counters_scopes);
 
                             job.executor->finish();
                         });

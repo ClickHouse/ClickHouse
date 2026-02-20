@@ -9,6 +9,7 @@ enum class VariableContext : uint8_t
     Global = 0,
     User,           /// Group of processes
     Process,        /// For example, a query or a merge
+    Scope,          /// Logical part of a process
     Thread,         /// A thread of a process
 
     Max, /// size of the enum, not a real level

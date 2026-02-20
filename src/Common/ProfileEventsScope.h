@@ -2,35 +2,43 @@
 
 #include <Common/ProfileEvents.h>
 
-#include <boost/noncopyable.hpp>
+#include <memory>
 
 namespace DB
 {
 
-/// Use specific performance counters for current thread in the current scope.
-class ProfileEventsScope : private boost::noncopyable
+class ProfileEventsScope;
+using ProfileEventsScopePtr = std::shared_ptr<ProfileEventsScope>;
+
+class ProfileEventScopeExtension
 {
 public:
-    /// Counters are owned by this object.
-    ProfileEventsScope();
+    explicit ProfileEventScopeExtension(ProfileEventsScopePtr to);
+    ~ProfileEventScopeExtension();
 
-    /// Shared counters are stored outside.
-    /// Useful when we calculate metrics entering into some scope several times.
-    explicit ProfileEventsScope(ProfileEvents::Counters * performance_counters_scope_);
-
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> getSnapshot();
-
-    ~ProfileEventsScope();
+    void attach();
+    void detach();
 
 private:
-    /// If set, then performance_counters_scope is owned by this object.
-    /// Otherwise, counters are passed to the constructor from outside.
-    std::unique_ptr<ProfileEvents::Counters> performance_counters_holder;
-
-    ProfileEvents::Counters * performance_counters_scope;
-    ProfileEvents::Counters * previous_counters_scope;
+    ProfileEventsScopePtr scope;
+    bool attached = false;
 };
 
+/// Use specific performance counters for current thread in the current scope.
+class ProfileEventsScope : public std::enable_shared_from_this<ProfileEventsScope>
+{
+    explicit ProfileEventsScope();
+
+public:
+    static std::shared_ptr<ProfileEventsScope> construct();
+
+    ProfileEventScopeExtension startCollecting();
+    ProfileEvents::CountersPtr getCounters();
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> getSnapshot() const;
+
+private:
+    ProfileEvents::Counters performance_counters_holder;
+};
 
 }
 

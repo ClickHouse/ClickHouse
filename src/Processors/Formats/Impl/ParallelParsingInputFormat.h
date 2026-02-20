@@ -333,7 +333,7 @@ private:
         }
     }
 
-    void segmentatorThreadFunction(ThreadGroupPtr thread_group);
+    void segmentatorThreadFunction(ThreadGroupPtr thread_group, ProfileEvents::CountersSeq profile_counters_scopes);
     void parserThreadFunction(size_t current_ticket_number);
 
     /// Save/log a background exception, set termination flag, wake up all

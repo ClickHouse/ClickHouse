@@ -1,4 +1,5 @@
 #include <Server/ArrowFlightHandler.h>
+#include <Common/ProfileEvents.h>
 
 #if USE_ARROWFLIGHT
 
@@ -1194,7 +1195,7 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
         return *info->status;
     }
 
-    ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), ThreadName::ARROW_FLIGHT};
+    ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), ThreadName::ARROW_FLIGHT, ProfileEvents::CountersSeq{}};
     auto ch_to_arrow_converter = poll_session->getCHToArrowConverter();
     bool last = false;
 

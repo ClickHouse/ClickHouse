@@ -24,6 +24,7 @@
 #include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 #include <base/errnoToString.h>
 #include <Core/ServerSettings.h>
 
@@ -255,7 +256,7 @@ void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQu
     shared_data.profile_queue_ptr = profile_queue;
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, ProfileEvents::CountersSeq counters_scope, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
     try
@@ -285,6 +286,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         CurrentThread::attachToGroup(thread_group);
+        prev_counters_scopes = CurrentThread::exchangeCountersScopes(counters_scope);
         setThreadName(thread_name);
     }
     catch (...)
@@ -318,6 +320,8 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
             CurrentThread::attachToGroup(prev_thread_group);
         }
+
+        CurrentThread::exchangeCountersScopes(prev_counters_scopes);
     }
     catch (...)
     {
@@ -474,21 +478,63 @@ void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool chec
     attachToGroupImpl(thread_group_);
 }
 
-ProfileEvents::Counters * ThreadStatus::attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope)
+ProfileEvents::CountersSeq ThreadStatus::getProfileCountersScopes() const
 {
-    ProfileEvents::Counters * prev_counters = current_performance_counters;
+    if (!performance_counters_scopes.empty())
+    {
+        chassert(performance_counters.getParent() == performance_counters_scopes.back().get());
+        chassert(performance_counters_scopes.front()->getParent() != nullptr);
+    }
 
-    if (current_performance_counters == performance_counters_scope)
-        /// Allow to attach the same scope multiple times
-        return prev_counters;
+    return performance_counters_scopes;
+}
 
-    /// Avoid cycles when exiting local scope and attaching back to current thread counters
-    if (performance_counters_scope != &performance_counters)
-        performance_counters_scope->setParent(&performance_counters);
+ProfileEvents::CountersSeq ThreadStatus::exchangeProfileCountersScopes(ProfileEvents::CountersSeq scopes)
+{
+    auto prev_scopes = std::exchange(performance_counters_scopes, std::move(scopes));
 
-    current_performance_counters = performance_counters_scope;
+    if (!prev_scopes.empty())
+    {
+        /// Prev scopes should be already unlinked here.
+        chassert(performance_counters.getParent() != prev_scopes.back().get());
+    }
 
-    return prev_counters;
+    if (!performance_counters_scopes.empty())
+    {
+        /// New scopes should point to the same thread group.
+        chassert(performance_counters_scopes.front()->getParent() == performance_counters.getParent());
+        performance_counters.setParent(performance_counters_scopes.back().get());
+    }
+
+    return prev_scopes;
+}
+
+void ThreadStatus::attachProfileCountersScope(ProfileEvents::CountersPtr scope)
+{
+    if (!performance_counters_scopes.empty())
+        chassert(performance_counters.getParent() == performance_counters_scopes.back().get());
+
+    if (scope->getParent() == nullptr)
+        scope->setParent(performance_counters.getParent());
+
+    chassert(scope->getParent() == performance_counters.getParent());
+    performance_counters.setParent(scope.get());
+    performance_counters_scopes.push_back(scope);
+}
+
+ProfileEvents::CountersPtr ThreadStatus::detachProfileCountersScope()
+{
+    chassert(!performance_counters_scopes.empty());
+    chassert(performance_counters.getParent() == performance_counters_scopes.back().get());
+
+    auto outer_scope = performance_counters_scopes.back();
+    performance_counters_scopes.pop_back();
+
+    if (!performance_counters_scopes.empty())
+        chassert(outer_scope->getParent() == performance_counters_scopes.back().get());
+
+    performance_counters.setParent(outer_scope->getParent());
+    return outer_scope;
 }
 
 void ThreadStatus::TimePoint::setUp()
@@ -759,6 +805,34 @@ void CurrentThread::attachToGroupIfDetached(const ThreadGroupPtr & thread_group)
     if (unlikely(!current_thread))
         return;
     current_thread->attachToGroup(thread_group, false);
+}
+
+ProfileEvents::CountersSeq CurrentThread::getCountersScopes()
+{
+    if (unlikely(!current_thread))
+        return {};
+    return current_thread->getProfileCountersScopes();
+}
+
+ProfileEvents::CountersSeq CurrentThread::exchangeCountersScopes(ProfileEvents::CountersSeq scopes)
+{
+    if (unlikely(!current_thread))
+        return {};
+    return current_thread->exchangeProfileCountersScopes(scopes);
+}
+
+void CurrentThread::attachCountersScope(ProfileEvents::CountersPtr scope)
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->attachProfileCountersScope(scope);
+}
+
+ProfileEvents::CountersPtr CurrentThread::detachCountersScope()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+    return current_thread->detachProfileCountersScope();
 }
 
 void CurrentThread::finalizePerformanceCounters()

@@ -4,11 +4,13 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionLog.h>
-#include <Common/setThreadName.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
 #include <Interpreters/Context.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -33,15 +35,15 @@ void MergePlainMergeTreeTask::onCompleted()
 
 bool MergePlainMergeTreeTask::executeStep()
 {
-    /// All metrics will be saved in the thread_group, including all scheduled tasks.
-    /// In profile_counters only metrics from this thread will be saved.
-    ProfileEventsScope profile_events_scope(&profile_counters);
-
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
+    std::optional<ProfileEventScopeExtension> extension;
+    std::optional<scope_guard> finalize_counters;
     if (merge_list_entry)
     {
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, ProfileEvents::CountersSeq{}, /*allow_existing_group*/ true);
+        extension.emplace(profile_counters);
+        finalize_counters.emplace([]() { CurrentThread::finalizePerformanceCounters(); });
     }
 
     switch (state)
@@ -101,7 +103,7 @@ void MergePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = profile_counters->getSnapshot();
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
             execution_status,
