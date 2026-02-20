@@ -1,4 +1,10 @@
-add_executable(lexer_test main.c)
+# When USE_MUSL is set, global link flags include -nostartfiles so we need
+# to provide musl CRT objects explicitly (same as clickhouse_add_executable does)
+if (USE_MUSL)
+    add_executable(lexer_test main.c $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn>)
+else ()
+    add_executable(lexer_test main.c)
+endif ()
 target_include_directories(lexer_test PRIVATE ${CMAKE_SOURCE_DIR}/src/Parsers)
 target_compile_options(lexer_test PRIVATE -std=c99 -Wno-vla -Wno-declaration-after-statement)
 target_link_libraries(lexer_test PRIVATE lexer-c)
