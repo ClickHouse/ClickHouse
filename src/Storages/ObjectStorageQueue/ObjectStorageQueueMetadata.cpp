@@ -279,6 +279,10 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
         auto partition_key = ObjectStorageQueueOrderedFileMetadata::getPartitionKey(
             path, partitioning_mode, filename_parser.get());
 
+        // Use full path when regex doesn't match
+        if (partition_key.empty())
+            partition_key = path;
+
         return findOrClaimBucketForPartition(partition_key);
     }
 
@@ -297,66 +301,144 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::findOrClaimBucketForPartition(const std::string & partition_key) const
 {
+    /// Optimal bucket assignment with linear probing
+    ///
+    /// When num_partitions <= num_buckets, assign each partition to a unique bucket
+    /// to avoid hash collisions. This is critical for partition-based bucketing where we want
+    /// perfect distribution when possible.
+    ///
+    /// Algorithm:
+    /// 1. Check local cache first for performance
+    /// 2. Use linear probing starting from hash(partition_key) to find/claim a bucket
+    /// 3. Each bucket has a single `/claimed/owner` node storing the partition_key as data
+    /// 4. Atomic ZooKeeper create guarantees only one partition can claim a bucket
+    /// 5. If all buckets occupied, fall back to hash-based assignment.
+    ///
+    /// Race safety: When ZNODEEXISTS occurs, re-read the owner node to check if the stored
+    /// value matches partition_key (concurrent instance of same table claimed it), avoiding
+    /// unnecessary bucket consumption.
+
+    /// Check cache first to avoid ZooKeeper round trips
     {
         std::lock_guard lock(partition_bucket_cache_mutex);
         if (auto it = partition_bucket_cache.find(partition_key); it != partition_bucket_cache.end())
             return it->second;
     }
 
-    Bucket result_bucket = buckets_num;
+    /// Caller guarantees non-empty (uses full path as fallback when regex doesn't match)
+    chassert(!partition_key.empty());
+
+    Bucket result_bucket = buckets_num; /// Sentinel value meaning "not found"
     auto retry_ctrl = getKeeperRetriesControl(log);
 
-    retry_ctrl.retryLoop([&]
-    {
-        auto zk = getZooKeeper();
+    /// Linear probing starting point. Deterministic but spreads load across buckets
+    const Bucket start_bucket = sipHash64(partition_key) % buckets_num;
+    static constexpr auto OWNER_NODE = "owner";
 
-        for (Bucket bucket_id = 0; bucket_id < buckets_num; ++bucket_id)
+    retry_ctrl.retryLoop(
+        [&]
         {
-            const auto claimed_dir = zookeeper_path / "buckets" / toString(bucket_id) / "claimed";
+            const auto zk = getZooKeeper();
 
-            Strings claimed_children;
-            auto code = zk->tryGetChildren(claimed_dir, claimed_children);
-
-            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                throw zkutil::KeeperException::fromPath(code, claimed_dir);
-
-            if (code == Coordination::Error::ZNONODE)
-                claimed_children.clear();
-
-            if (std::find(claimed_children.begin(), claimed_children.end(), partition_key) != claimed_children.end())
+            /// Linear probe buckets in order (start_bucket, start_bucket+1, ..., start_bucket-1)
+            for (size_t probe = 0; probe < buckets_num; ++probe)
             {
-                result_bucket = bucket_id;
-                return;
+                const Bucket bucket_id = (start_bucket + probe) % buckets_num;
+                const auto owner_path = zookeeper_path / "buckets" / toString(bucket_id) / "claimed" / OWNER_NODE;
+
+                /// Step 1: Check if bucket is already claimed
+                std::string owner;
+                auto get_code = Coordination::Error::ZOK;
+                const bool owner_exists = zk->tryGet(owner_path, owner, /*stat*/ nullptr, /*watch*/ nullptr, &get_code);
+
+                if (owner_exists)
+                {
+                    /// Bucket is claimed - check if the owner matches the partition_key
+                    if (owner == partition_key)
+                    {
+                        /// Found the bucket for this partition_key (already claimed by this or another instance)
+                        result_bucket = bucket_id;
+                        return;
+                    }
+                    /// Bucket owned by different partition - try next bucket
+                    continue;
+                }
+
+                /// Node doesn't exist - verify it's ZNONODE (not a ZK error)
+                if (get_code != Coordination::Error::ZNONODE)
+                    throw zkutil::KeeperException::fromPath(get_code, owner_path);
+
+                /// Step 2: Bucket is free - try to claim it atomically
+                Coordination::Error create_code = zk->tryCreate(owner_path, partition_key, zkutil::CreateMode::Persistent);
+
+                if (create_code == Coordination::Error::ZOK)
+                {
+                    /// Successfully claimed the bucket
+                    result_bucket = bucket_id;
+                    return;
+                }
+
+                if (create_code == Coordination::Error::ZNONODE)
+                {
+                    /// Parent directory missing - can happen during upgrades or if metadata
+                    /// initialization was incomplete. Create ancestors and retry.
+                    zk->createAncestors(owner_path);
+
+                    create_code = zk->tryCreate(owner_path, partition_key, zkutil::CreateMode::Persistent);
+                    if (create_code == Coordination::Error::ZOK)
+                    {
+                        result_bucket = bucket_id;
+                        return;
+                    }
+                }
+
+                if (create_code == Coordination::Error::ZNODEEXISTS)
+                {
+                    /// Race condition scenario: likely another process claimed the bucket between tryGet and tryCreate.
+                    /// Re-read to check if it was another instance claiming for the same partition_key.
+                    owner.clear();
+                    get_code = Coordination::Error::ZOK;
+                    const bool exists_after_race = zk->tryGet(owner_path, owner, nullptr, nullptr, &get_code);
+
+                    if (exists_after_race && owner == partition_key)
+                    {
+                        /// The partition_key matches (claimed by concurrent instance) - success!
+                        result_bucket = bucket_id;
+                        return;
+                    }
+
+                    if (get_code != Coordination::Error::ZOK && get_code != Coordination::Error::ZNONODE)
+                        throw zkutil::KeeperException::fromPath(get_code, owner_path);
+
+                    /// Different partition won the race - continue probing
+                    continue;
+                }
+
+                /// Unexpected error - throw to trigger retry loop
+                throw zkutil::KeeperException::fromPath(create_code, owner_path);
             }
+        });
 
-            if (!claimed_children.empty())
-                continue;
-
-            code = zk->tryCreate(claimed_dir / partition_key, "", zkutil::CreateMode::Persistent);
-
-            if (code == Coordination::Error::ZOK)
-            {
-                result_bucket = bucket_id;
-                return;
-            }
-
-            if (code != Coordination::Error::ZNODEEXISTS)
-                throw zkutil::KeeperException::fromPath(code, claimed_dir / partition_key);
-        }
-    });
-
+    /// Determine final bucket assignment
+    Bucket bucket_id;
     if (result_bucket < buckets_num)
     {
-        std::lock_guard lock(partition_bucket_cache_mutex);
-        partition_bucket_cache[partition_key] = result_bucket;
-        return result_bucket;
+        /// Successfully found or claimed a bucket
+        bucket_id = result_bucket;
+    }
+    else
+    {
+        /// All buckets occupied (num_partitions > num_buckets) - fall back to hash
+        bucket_id = sipHash64(partition_key) % buckets_num;
+        LOG_WARNING(log, "All buckets occupied, using hash fallback for partition '{}'", partition_key);
     }
 
-    Bucket bucket_id = sipHash64(partition_key) % buckets_num;
-    LOG_WARNING(log, "All buckets occupied, using hash fallback for partition '{}'", partition_key);
+    /// Cache the result to avoid ZooKeeper round trips on subsequent calls
+    {
+        std::lock_guard lock(partition_bucket_cache_mutex);
+        partition_bucket_cache[partition_key] = bucket_id;
+    }
 
-    std::lock_guard lock(partition_bucket_cache_mutex);
-    partition_bucket_cache[partition_key] = bucket_id;
     return bucket_id;
 }
 
