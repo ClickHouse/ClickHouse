@@ -151,7 +151,7 @@ private:
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
-    UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
+    UInt64 elapsed_group_ns TSA_GUARDED_BY(mutex) = 0;
 
     static ThreadGroupPtr create(ContextPtr query_context);
 };

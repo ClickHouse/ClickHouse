@@ -146,15 +146,15 @@ size_t ThreadGroup::getPeakThreadsUsage() const
     return peak_threads_usage;
 }
 
-UInt64 ThreadGroup::getGroupElapsedMs() const
-{
-    std::lock_guard lock(mutex);
-    return elapsed_group_ms + effective_group_stopwatch.elapsedMilliseconds();
-}
-
 UInt64 ThreadGroup::getGroupElapsedNs() const
 {
-    return getGroupElapsedMs() * 1000;
+    std::lock_guard lock(mutex);
+    return elapsed_group_ns + effective_group_stopwatch.elapsedNanoseconds();
+}
+
+UInt64 ThreadGroup::getGroupElapsedMs() const
+{
+    return getGroupElapsedNs() / 1000000;
 }
 
 void ThreadGroup::linkThread(UInt64 thread_id)
@@ -177,7 +177,7 @@ void ThreadGroup::unlinkThread()
 
     if (active_thread_count == 0)
     {
-        elapsed_group_ms += effective_group_stopwatch.elapsedMilliseconds();
+        elapsed_group_ns += effective_group_stopwatch.elapsedNanoseconds();
         effective_group_stopwatch.stop();
     }
 }

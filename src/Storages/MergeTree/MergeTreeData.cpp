@@ -7733,11 +7733,12 @@ void MergeTreeData::optimizeDryRun(
     MergeTreeDataMergerMutator merger_mutator(*this);
     auto task_context = Context::createCopy(local_context);
     task_context->makeQueryContextForMerge(*getSettings());
+    auto thread_group = ThreadGroup::createForMergeMutate(task_context);
 
     auto merge_list_entry = getContext()->getMergeList().insert(
         getStorageID(),
         future_part,
-        task_context);
+        thread_group);
 
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
