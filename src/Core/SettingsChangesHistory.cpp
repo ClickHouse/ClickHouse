@@ -62,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_insert_into_iceberg", false, true, "Insert into iceberg was moved to Beta"},
             {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
+            {"materialize_statistics_on_insert", true, false, "Disable materialization of statistics on insert after enabling auto statistics"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -1063,6 +1064,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
