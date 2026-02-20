@@ -56,7 +56,6 @@ echo "Checking coverage file for commit ${TEST_COMMIT}..."
 if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
-BASELINE_COMMIT="${TEST_COMMIT}"
 FOUND=1
 break
 fi
@@ -70,17 +69,26 @@ exit 0
 fi
 
 export CURRENT_COMMIT
-export BASELINE_COMMIT
+export BASE_COMMIT
 export PR_NUMBER
 export REPO_NAME
 
 gh api \
   -H "Accept: application/vnd.github.v3.diff" \
-  repos/ClickHouse/ClickHouse/compare/${BASELINE_COMMIT}...${CURRENT_COMMIT} \
+  repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
   > changes.diff
-changed_files=$(git diff ${BASELINE_COMMIT}..${CURRENT_COMMIT} --name-only)
+changed_files=$(gh api \
+  repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
+  --jq '.files[].filename'
+)
 echo "Changed files:"
 echo "$changed_files"
+
+if [ -z "$changed_files" ]; then
+  echo "Warning: no changed files reported by GitHub compare API"
+  echo "Skipping differential coverage analysis"
+  exit 0
+fi
 
 # Build --include args
 include_args=""
@@ -116,7 +124,7 @@ fi
 genhtml \
   --header-title "${HEADER_TITLE}" \
   --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
-  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASELINE_COMMIT}" \
+  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
   --baseline-file baseline.changed.info \
   --diff-file changes.diff \
   --output-directory llvm_coverage_diff_html_report \

@@ -15,22 +15,14 @@ if __name__ == "__main__":
 
     info = Info()
 
-    current_commit_sha = info.get_kv_data("current_commit_sha")
-    if current_commit_sha is None:
-        current_commit_sha = Shell.get_output(
-            "git rev-parse HEAD", verbose=True
-        ).strip()
-    os.environ["CURRENT_COMMIT"] = current_commit_sha
-
-    merge_base_commit_sha = info.get_kv_data("merge_base_commit_sha")
-    if merge_base_commit_sha is None:
-        # Use gh api to get the merge base commit between master and HEAD
-        merge_base_commit_sha = Shell.get_output(
-            f"gh api repos/ClickHouse/ClickHouse/compare/master...{current_commit_sha} -q .merge_base_commit.sha",
-            verbose=True,
-        ).strip()
-        print(f"Merge base commit sha: {merge_base_commit_sha}")
-    os.environ["BASE_COMMIT"] = merge_base_commit_sha
+    (
+        current_commit_sha,
+        merge_base_commit_sha,
+        branch,
+        base_branch,
+        repo_name,
+        pr_number,
+    ) = Utils.get_git_info()
 
     prev_30_commits = info.get_kv_data("master_commits_before_merge_base")
     if prev_30_commits is None:
@@ -40,28 +32,14 @@ if __name__ == "__main__":
             verbose=True,
         )
         prev_30_commits = raw.splitlines()
-    os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits or [])
 
-    branch = (
-        info.git_branch
-        or Shell.get_output("git branch --show-current", verbose=True).strip()
-    )
-    base_branch = info.base_branch or Shell.get_output(
-        "gh pr view --json baseRefName --template '{{.baseRefName}}'", verbose=True
-    ).strip().replace("origin/", "")
-    repo_name = (
-        info.repo_name
-        or Shell.get_output(
-            "basename -s .git `git config --get remote.origin.url`", verbose=True
-        ).strip()
-    )
-    pr_number = Shell.get_output(
-        "gh pr view --json number -q .number", verbose=True
-    ).strip()
     os.environ["BRANCH"] = branch
+    os.environ["CURRENT_COMMIT"] = current_commit_sha
     os.environ["BASE_BRANCH"] = base_branch
+    os.environ["BASE_COMMIT"] = merge_base_commit_sha
     os.environ["REPO_NAME"] = repo_name
     os.environ["PR_NUMBER"] = str(pr_number)
+    os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits or [])
 
     results = []
     results.append(
@@ -78,7 +56,7 @@ if __name__ == "__main__":
             command=["python3 ci/jobs/scripts/print_uncovered_code.py"],
             with_log=True,
             with_info=True,
-            with_info_on_failure=True
+            with_info_on_failure=True,
         )
     )
 
@@ -87,7 +65,7 @@ if __name__ == "__main__":
         f"{temp_dir}/llvm_coverage_diff_html_report.tar.gz",
     )
 
-    files_to_attach = []
+    files_to_attach = [f"{temp_dir}/llvm_coverage_diff_html_report.tar.gz"]
     assets_to_attach = []
     # Attach all HTML report files preserving directory structure
     html_diff_report_dir = Path(temp_dir) / "llvm_coverage_diff_html_report"

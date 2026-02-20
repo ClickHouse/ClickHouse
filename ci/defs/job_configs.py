@@ -1221,7 +1221,7 @@ class JobConfigs:
     )
     llvm_coverage_merge_job = Job.Config(
         name=JobNames.LLVM_COVERAGE_MERGE,
-        runs_on=RunnerLabels.AMD_MEDIUM,
+        runs_on=RunnerLabels.AMD_SMALL,
         run_in_docker="clickhouse/test-base",
         requires=[
             ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
@@ -1240,17 +1240,15 @@ class JobConfigs:
     )
     llvm_coverage_check_job = Job.Config(
         name=JobNames.LLVM_COVERAGE_CHECK,
-        runs_on=RunnerLabels.AMD_MEDIUM,
+        runs_on=RunnerLabels.AMD_SMALL,
         run_in_docker="clickhouse/test-base",
         requires=[
             ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         ],
-        provides=[ArtifactNames.LLVM_COVERAGE_DIFF_HTML_REPORT],
-        provides_artifacts_on_failure=True,
         command="python3 ./ci/jobs/check_llvm_coverage.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/check_llvm_coverage.py"],
         ),
         timeout=3600,
-        enable_gh_auth=True
+        enable_gh_auth=True,
     )

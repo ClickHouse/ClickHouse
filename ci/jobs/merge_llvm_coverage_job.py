@@ -12,6 +12,22 @@ if __name__ == "__main__":
     # Pass workspace path to the shell script via environment variable
     os.environ["WORKSPACE_PATH"] = current_directory
 
+    (
+        current_commit_sha,
+        merge_base_commit_sha,
+        branch,
+        base_branch,
+        repo_name,
+        pr_number,
+    ) = Utils.get_git_info()
+
+    os.environ["BRANCH"] = branch
+    os.environ["CURRENT_COMMIT"] = current_commit_sha
+    os.environ["BASE_BRANCH"] = base_branch
+    os.environ["BASE_COMMIT"] = merge_base_commit_sha
+    os.environ["REPO_NAME"] = repo_name
+    os.environ["PR_NUMBER"] = str(pr_number)
+
     result = Result.from_commands_run(
         name="Merge LLVM Coverage",
         command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],

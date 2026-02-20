@@ -329,7 +329,7 @@ class Runner:
             )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
-                gh_mount = "--volume ~/.config/gh:/ghconfig:ro -e GH_CONFIG_DIR=/ghconfig -e GH_TOKEN=\"$(gh auth token)\""
+                gh_mount = '--volume ~/.config/gh:/ghconfig:ro -e GH_CONFIG_DIR=/ghconfig -e GH_TOKEN="$(gh auth token)"'
             else:
                 gh_mount = ""
             # enable tty mode & interactive for docker if we have real tty
@@ -524,7 +524,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0 or (job.provides_artifacts_on_failure and job.provides):
+        if run_exit_code == 0:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:

@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Optional
 
 from .settings import Settings
-from .utils import Utils
-
 
 class Info:
 
