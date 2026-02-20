@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <typeinfo>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
@@ -52,7 +51,7 @@ public:
     {
         SipHash hash;
         hash.update("Enum");
-        hash.update(typeid(Type).name(), strlen(typeid(Type).name()));
+        hash.update(TypeName<Type>);
         for (const auto & [name, value] : ref_enum_values.getValues())
         {
             hash.update(name);

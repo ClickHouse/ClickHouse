@@ -24,6 +24,7 @@ UInt128 SerializationBool::getHash() const
 {
     SipHash hash;
     hash.update("Bool");
+    hash.update(nested_serialization->getHash());
     return hash.get128();
 }
 

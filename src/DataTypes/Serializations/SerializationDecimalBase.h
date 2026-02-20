@@ -1,7 +1,7 @@
 #pragma once
 
-#include <typeinfo>
 #include <Common/SipHash.h>
+#include <base/TypeName.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -25,7 +25,7 @@ public:
     UInt128 getHash() const override
     {
         SipHash hash;
-        hash.update(typeid(T).name(), strlen(typeid(T).name()));
+        hash.update(TypeName<T>);
         hash.update(precision);
         hash.update(scale);
         return hash.get128();

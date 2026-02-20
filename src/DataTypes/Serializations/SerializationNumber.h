@@ -1,6 +1,5 @@
 #pragma once
 
-#include <typeinfo>
 #include <Common/SipHash.h>
 #include <Core/Types.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>

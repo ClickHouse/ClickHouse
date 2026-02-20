@@ -1,5 +1,6 @@
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <base/TypeName.h>
 
 #include <Columns/ColumnVector.h>
 #include <IO/ReadHelpers.h>
@@ -130,12 +131,15 @@ bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
 }
 
 
+/// Override of SerializationDecimalBase::getHash() to add the "Decimal" prefix,
+/// which distinguishes SerializationDecimal from other SerializationDecimalBase
+/// derivatives (e.g. SerializationDateTime64) that share the same base hash logic.
 template <typename T>
 UInt128 SerializationDecimal<T>::getHash() const
 {
     SipHash hash;
     hash.update("Decimal");
-    hash.update(typeid(T).name(), strlen(typeid(T).name()));
+    hash.update(TypeName<T>);
     hash.update(this->precision);
     hash.update(this->scale);
     return hash.get128();
