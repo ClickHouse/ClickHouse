@@ -803,6 +803,6 @@ if not all_running:
                 cluster.docker_client.containers.get(server.docker_id).kill()
         exec_info = cluster.docker_client.api.exec_inspect(server.clickhouse_exec_id)
         exit_code = exec_info["ExitCode"]
-        good_exit = good_exit and exit_code in (0, 143)  # 143 is SIGTERM
+        good_exit = good_exit and exit_code in (0, 137, 143)  # 137 is SIGKILL, 143 is SIGTERM
 
 sys.exit(0 if good_exit else 1)
