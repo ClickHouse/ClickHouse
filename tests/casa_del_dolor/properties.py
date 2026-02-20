@@ -149,6 +149,7 @@ possible_properties = {
         0.2, 0.2, 0.0, 1.0
     ),
     "enable_azure_sdk_logging": true_false_lambda,
+    "enable_system_unfreeze": true_false_lambda,
     "format_alter_operations_with_parentheses": true_false_lambda,
     "iceberg_catalog_threadpool_pool_size": threads_lambda,
     "iceberg_catalog_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),

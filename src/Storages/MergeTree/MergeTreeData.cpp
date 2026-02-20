@@ -86,6 +86,14 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
+#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -183,6 +191,7 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool optimize_dry_run_check_part;
     extern const SettingsBool materialize_ttl_after_modify;
     extern const SettingsUInt64 max_partition_size_to_drop;
     extern const SettingsMaxThreads max_threads;
@@ -260,6 +269,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
+    extern const MergeTreeSettingsBool apply_patches_on_merge;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool enable_block_number_column;
@@ -3839,6 +3849,12 @@ void MergeTreeData::renameInMemory(const StorageID & new_table_id)
 {
     IStorage::renameInMemory(new_table_id);
     log.store(new_table_id.getNameForLogs());
+
+    /// Update the cached storage ID in background job assignees so that
+    /// finish() can correctly find and wait for tasks belonging to this storage
+    /// after a rename (e.g., when system log tables are renamed during upgrade).
+    background_operations_assignee.updateStorageID(new_table_id);
+    background_moves_assignee.updateStorageID(new_table_id);
 }
 
 void MergeTreeData::dropAllData()
@@ -7643,6 +7659,130 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     }
 }
 
+void MergeTreeData::optimizeDryRun(
+    const Names & part_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool deduplicate,
+    const Names & deduplicate_by_columns,
+    bool cleanup,
+    ContextPtr local_context)
+{
+    if (part_names.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN requires at least one part name");
+
+    auto table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    MergeSelectorChoice choice;
+    choice.merge_type = MergeType::Regular;
+
+    time_t current_time = time(nullptr);
+    auto storage_policy = getStoragePolicy();
+
+    std::set<MergeTreePartInfo> part_infos;
+    for (const auto & part_name : part_names)
+    {
+        part_infos.insert(MergeTreePartInfo::fromPartName(part_name, format_version));
+    }
+
+    for (const auto & part_info : part_infos)
+    {
+        auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
+
+        if (!part)
+        {
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                "Part {} not found in table {}",
+                part_info.getPartNameForLogs(), getStorageID().getNameForLogs());
+        }
+
+        if (!choice.range.empty() && part->info.getPartitionId() != choice.range.front().info.getPartitionId())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "All parts for OPTIMIZE DRY RUN must belong to the same partition, but part {} belongs to partition {} while part {} belongs to partition {}",
+                part->name, part->info.getPartitionId(), choice.range.front().name, choice.range.front().info.getPartitionId());
+        }
+
+        choice.range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time));
+    }
+
+    if ((*getSettings())[MergeTreeSetting::apply_patches_on_merge])
+    {
+        const auto partition_id = choice.range.front().info.getPartitionId();
+        auto all_patch_parts = getPatchPartsVectorForPartition(partition_id);
+
+        if (!all_patch_parts.empty())
+        {
+            std::vector<MergeTreePartInfo> patch_infos;
+            patch_infos.reserve(all_patch_parts.size());
+
+            for (const auto & patch : all_patch_parts)
+                patch_infos.push_back(patch->info);
+
+            auto patch_infos_by_partition = getPatchPartsByPartition(patch_infos, std::numeric_limits<Int64>::max());
+            const auto & patches_for_partition = patch_infos_by_partition.at(partition_id);
+            choice.range_patches = getPatchesToApplyOnMerge(patches_for_partition, choice.range, 0);
+        }
+    }
+
+    auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
+    if (!future_part)
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Failed to construct future part for OPTIMIZE DRY RUN. Some of the source parts don't exist in the table");
+
+    UInt64 disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts);
+    ReservationSharedPtr reservation = getStoragePolicy()->reserveAndCheck(disk_space);
+    future_part->updatePath(*this, reservation.get());
+
+    MergeTreeDataMergerMutator merger_mutator(*this);
+    auto task_context = Context::createCopy(local_context);
+    task_context->makeQueryContextForMerge(*getSettings());
+
+    auto merge_list_entry = getContext()->getMergeList().insert(
+        getStorageID(),
+        future_part,
+        task_context);
+
+    auto merge_task = merger_mutator.mergePartsToTemporaryPart(
+        future_part,
+        metadata_snapshot,
+        merge_list_entry.get(),
+        /*projection_merge_list_element=*/ {},
+        table_lock,
+        time(nullptr),
+        task_context,
+        reservation,
+        deduplicate,
+        deduplicate_by_columns,
+        cleanup,
+        merging_params,
+        nullptr /* txn */);
+
+    auto new_part = executeHere(merge_task);
+
+    /// This commits a transcation on disk, but doesn't commit the data part.
+    if (new_part->getDataPartStorage().hasActiveTransaction())
+        new_part->getDataPartStorage().commitTransaction();
+
+    LOG_INFO(log,
+        "OPTIMIZE DRY RUN: successfully merged {} parts into temporary part {} ({} rows, {} bytes)",
+        choice.range.size(), new_part->name, new_part->rows_count, new_part->getBytesOnDisk());
+
+    /// Allow to disable checking data part to use dry run for performance tests.
+    /// Checking data part may negatively impact performance.
+    if (local_context->getSettingsRef()[Setting::optimize_dry_run_check_part])
+    {
+        bool is_broken_projection = false;
+        checkDataPart(
+            new_part,
+            /*require_checksums=*/ true,
+            is_broken_projection,
+            /*is_cancelled=*/ [] { return false; },
+            /*throw_on_broken_projection=*/ true);
+
+        LOG_INFO(log, "OPTIMIZE DRY RUN: part {} passed checkDataPart", new_part->name);
+    }
+
+    new_part->remove();
+}
+
 MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr local_context, PartsTemporaryRename & renamed_parts)
 {
     const fs::path source_dir = DETACHED_DIR_NAME;
@@ -10187,6 +10327,9 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & mutations_snapshot = snapshot_data.mutations_snapshot;
+
+    if (!mutations_snapshot)
+        return !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
 
     return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts();
 }

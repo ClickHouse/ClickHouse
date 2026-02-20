@@ -26,10 +26,6 @@
     Bad get: has Decimal32, requested Decimal128
 00502_sum_map
 
-    https://github.com/ClickHouse/ClickHouse/issues/74337
-    Duplicates on JOIN + CROSS JOIN
-01852_multiple_joins_with_union_join
-
     https://github.com/ClickHouse/ClickHouse/issues/74341
     Duplicates on RIGHT JOIN with Values table
 03006_join_on_inequal_expression_3.gen

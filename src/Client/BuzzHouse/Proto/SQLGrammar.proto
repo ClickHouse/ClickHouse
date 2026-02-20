@@ -4051,16 +4051,32 @@ message Detach {
     optional SettingValues setting_values = 6;
 }
 
-message SyncReplica {
-    enum SyncPolicy {
-        STRICT = 1;
-        LIGHTWEIGHT = 2;
-        PULL = 3;
-    }
-    required ExprSchemaTable est = 1;
-    required SyncPolicy policy = 2;
+message LightweightSyncReplica {
+    repeated string replicas = 1;
 }
 
+message SyncReplica {
+    required ExprSchemaTable est = 1;
+    oneof sync_oneof {
+        bool strict = 2;
+        LightweightSyncReplica lightweight = 3;
+        bool pull = 4;
+    }
+}
+
+message DropReplica {
+    required string replica = 1;
+    oneof drop_oneof {
+        ExprSchemaTable est = 2;
+        Database database = 3;
+    }
+}
+
+message DropDatabaseReplica {
+    required string replica = 1;
+    optional string shard = 2;
+    optional Database database = 3;
+}
 
 message SystemCommand {
     optional Cluster cluster = 1;
@@ -4145,6 +4161,12 @@ message SystemCommand {
         bool drop_parquet_metadata_cache = 78;
         string wait_failpoint = 79;
         string notify_failpoint = 80;
+        Database restore_database_replica = 81;
+        ExprSchemaTable stop_replicated_view = 82;
+        ExprSchemaTable start_replicated_view = 83;
+        uint32 unfreeze = 84;
+        DropReplica drop_replica = 85;
+        DropDatabaseReplica drop_database_replica = 86;
     }
 }
 
