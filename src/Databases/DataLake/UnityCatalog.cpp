@@ -62,7 +62,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const s
     return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, {auth_header}, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }
 
-bool UnityCatalog::isEmpty() const
+bool UnityCatalog::empty() const
 {
 
     auto all_schemas = getSchemas("");

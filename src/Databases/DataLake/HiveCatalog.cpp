@@ -76,7 +76,7 @@ HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & bas
     transport->open();
 }
 
-bool HiveCatalog::isEmpty() const
+bool HiveCatalog::empty() const
 {
     std::vector<std::string> result;
 

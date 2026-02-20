@@ -426,7 +426,7 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
-bool GlueCatalog::isEmpty() const
+bool GlueCatalog::empty() const
 {
     auto all_databases = getDatabases("");
     for (const auto & db : all_databases)

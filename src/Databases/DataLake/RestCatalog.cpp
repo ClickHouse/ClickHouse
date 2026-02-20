@@ -371,7 +371,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     }
 }
 
-bool RestCatalog::isEmpty() const
+bool RestCatalog::empty() const
 {
     /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;

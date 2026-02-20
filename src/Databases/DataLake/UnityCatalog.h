@@ -25,7 +25,7 @@ public:
 
     ~UnityCatalog() override = default;
 
-    bool isEmpty() const override;
+    bool empty() const override;
 
     DB::Names getTables() const override;
 

@@ -426,7 +426,7 @@ void PaimonRestCatalog::forEachTables(
 }
 
 
-bool PaimonRestCatalog::isEmpty() const
+bool PaimonRestCatalog::empty() const
 {
     DB::Strings databases;
     DB::Names tables;

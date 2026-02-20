@@ -37,7 +37,7 @@ public:
 
     ~GlueCatalog() override;
 
-    bool isEmpty() const override;
+    bool empty() const override;
 
     DB::Names getTables() const override;
 
