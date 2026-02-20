@@ -551,7 +551,7 @@ using FastApplierImpl =
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
     MULTITARGET_FUNCTION_HEADER(
     template <typename T, typename Result>
     static void

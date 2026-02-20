@@ -368,7 +368,7 @@ void clear(T * buf)
 }
 
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4_V3_SVE(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), transposeImpl, MULTITARGET_FUNCTION_BODY((const T * src, char * dst, UInt32 num_bits, UInt32 tail) /// NOLINT
@@ -422,7 +422,7 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
     }
 }
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4_V3_SVE(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT

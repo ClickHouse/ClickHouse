@@ -240,7 +240,7 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4_V3_SVE(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
@@ -955,7 +955,7 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 namespace
 {
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4_V3_SVE(
 MULTITARGET_FUNCTION_HEADER(template <typename ValueType, bool use_window, int padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType))> void),
 replicateImpl,
 MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[maybe_unused]] size_t window_size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT

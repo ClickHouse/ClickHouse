@@ -93,7 +93,7 @@ struct AggregateFunctionSumData
     }
 
     /// Vectorized version
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -152,12 +152,18 @@ struct AggregateFunctionSumData
             addManyImpl_x86_64_v3(ptr, start, end);
             return;
         }
+#elif USE_ARM_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::SVE))
+        {
+            addManyImpl_SVE(ptr, start, end);
+            return;
+        }
 #endif
 
         addManyImpl(ptr, start, end);
     }
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -255,6 +261,12 @@ struct AggregateFunctionSumData
         if (isArchSupported(TargetArch::x86_64_v3))
         {
             addManyConditionalInternalImpl_x86_64_v3<Value, add_if_zero>(ptr, condition_map, start, end);
+            return;
+        }
+#elif USE_ARM_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::SVE))
+        {
+            addManyConditionalInternalImpl_SVE<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
         }
 #endif
