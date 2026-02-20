@@ -37,7 +37,7 @@ void MutatePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
 
     task_context = createTaskContext();
-    thread_group = ThreadGroup::createForMergeMutate(task_context);
+    thread_group = ThreadGroup::createForBackgroundOps(task_context);
 
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),

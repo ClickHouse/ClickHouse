@@ -122,9 +122,14 @@ public:
 
     /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
     /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    static ThreadGroupPtr createForMergeMutate(ContextPtr task_context);
+    /// That method either creates new main thread group for the task, or creates a new thread group linked to current thread group if it exists.
+    static ThreadGroupPtr createForBackgroundOps(ContextPtr task_context);
 
+    /// That method either creates creates a new thread group linked to current thread group which has to exist
     static ThreadGroupPtr createForScope();
+
+    /// That method creates a new thread group linked to flush_query_thread_group which has to exist, and is used for flushing async insert query
+    /// Current thread are not linked to the flush_query_thread_group, that is why createForBackgroundOps is not used here
     static ThreadGroupPtr createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group);
 
     std::vector<UInt64> getInvolvedThreadIds() const;

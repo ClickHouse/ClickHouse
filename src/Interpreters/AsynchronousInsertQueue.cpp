@@ -984,7 +984,7 @@ try
     {
         /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE query,
         /// it is important to account profile events and other things correctly
-        query_scope = CurrentThread::QueryScope::createForFlushAsyncInsert(insert_context, flush_query_thread_group);
+        query_scope = CurrentThread::QueryScope::createForFlushAsyncInsertQuery(insert_context, flush_query_thread_group);
 
         /// This log line is useful to understand if async insert is flushed in the context of some query and which one
         if (auto query_context = flush_query_thread_group->query_context.lock())

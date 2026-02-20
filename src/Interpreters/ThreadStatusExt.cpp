@@ -210,7 +210,7 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr query_context)
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr task_context)
+ThreadGroupPtr ThreadGroup::createForBackgroundOps(ContextPtr task_context)
 {
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
@@ -847,7 +847,7 @@ CurrentThread::QueryScope CurrentThread::QueryScope::create(ContextMutablePtr qu
     return QueryScope(true);
 }
 
-CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsert(ContextPtr insert_context, ThreadGroupPtr flush_query_thread_group)
+CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsertQuery(ContextPtr insert_context, ThreadGroupPtr flush_query_thread_group)
 {
     auto group = ThreadGroup::createForFlushAsyncInsertQuery(insert_context, flush_query_thread_group);
     CurrentThread::attachToGroup(group);
