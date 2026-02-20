@@ -96,6 +96,10 @@ DISPATCH_2(long double, fmodl, long double, long double)
 
 DISPATCH_3(double, fma, double, double, double)
 
+DISPATCH_1(double, nan, const char*)
+DISPATCH_1(float, nanf, const char*)
+DISPATCH_1(long double, nanl, const char*)
+
 DISPATCH_2_PTR(double, frexp, double, int)
 DISPATCH_2_PTR(long double, frexpl, long double, int)
 DISPATCH_2_PTR(double, modf, double, double)
