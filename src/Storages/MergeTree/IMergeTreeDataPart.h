@@ -187,7 +187,10 @@ public:
     virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
 
     /// Removes data related to data part from mark and primary index caches.
-    void clearCaches();
+    void clearCaches() const;
+
+    /// Clear columns description cache entry. Safe to call multiple times (idempotent).
+    void clearColumnsDescription() const;
 
     /// Returns true if data related to data part may be stored in mark and primary index caches.
     bool mayStoreDataInCaches() const;
@@ -735,11 +738,12 @@ private:
 
     /// Columns description for more convenient access
     /// to columns by name and getting subcolumns.
-    std::shared_ptr<const ColumnsDescription> columns_description;
+    /// Mutable to allow clearing from const context during part removal.
+    mutable std::shared_ptr<const ColumnsDescription> columns_description;
 
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
-    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
+    mutable std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
 
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.
@@ -818,6 +822,9 @@ private:
 
     /// If it's true then data related to this part is cleared from mark and index caches.
     mutable std::atomic_bool cleared_data_in_caches = false;
+
+    /// If it's true then columns description cache entry has been released.
+    mutable std::atomic_bool cleared_columns_description = false;
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;

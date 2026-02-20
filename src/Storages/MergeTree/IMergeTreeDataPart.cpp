@@ -419,7 +419,7 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 
-    if (columns_description)
+    if (!cleared_columns_description && columns_description)
     {
         columns_description.reset();
         columns_description_with_collected_nested.reset();
@@ -703,7 +703,7 @@ bool IMergeTreeDataPart::isMovingPart() const
     return part_directory_path.parent_path().filename() == "moving";
 }
 
-void IMergeTreeDataPart::clearCaches()
+void IMergeTreeDataPart::clearCaches() const
 {
     if (cleared_data_in_caches.exchange(true) || is_duplicate)
         return;
@@ -715,6 +715,19 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
+}
+
+void IMergeTreeDataPart::clearColumnsDescription() const
+{
+    if (cleared_columns_description.exchange(true))
+        return;
+
+    if (columns_description)
+    {
+        columns_description.reset();
+        columns_description_with_collected_nested.reset();
+        storage.decrefColumnsDescriptionForColumns(columns);
+    }
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
