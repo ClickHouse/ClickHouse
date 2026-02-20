@@ -102,6 +102,15 @@ endif()
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
 
+# When using musl, build the optimized memcpy library (x86_64 only) BEFORE linking musl,
+# so that memcpy from glibc-compatibility takes precedence over musl's naive rep movsq.
+if (USE_MUSL AND NOT OS_ANDROID)
+    add_subdirectory(base/glibc-compatibility/memcpy)
+    if (TARGET memcpy)
+        target_link_libraries(global-libs INTERFACE memcpy)
+    endif ()
+endif ()
+
 # Include musl build and link configuration
 if (USE_MUSL)
     include (cmake/musl.cmake)

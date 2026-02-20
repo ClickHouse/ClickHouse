@@ -507,7 +507,9 @@ macro (clickhouse_add_executable target)
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
     # When USE_MUSL is set, we also include musl CRT objects (crt1, crti, crtn) since we use -nostartfiles
     # to avoid glibc's CRT objects from the sysroot.
-    if (USE_MUSL)
+    if (USE_MUSL AND ARCH_AMD64)
+        add_executable (${ARGV} $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn> $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
+    elseif (USE_MUSL)
         add_executable (${ARGV} $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn> $<TARGET_OBJECTS:clickhouse_malloc>)
     elseif (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
