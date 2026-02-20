@@ -13,5 +13,4 @@ FROM (
 GROUP BY c_count
 ORDER BY
     custdist DESC,
-    c_count DESC
-SETTINGS join_use_nulls = 1;
+    c_count DESC;
