@@ -4,7 +4,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
 #include <base/unaligned.h>
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 #  include <x86intrin.h>
 #endif
 

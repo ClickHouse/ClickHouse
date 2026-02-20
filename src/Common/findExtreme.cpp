@@ -129,7 +129,7 @@ template <has_find_extreme_implementation T, class ComparatorClass, bool add_all
 static std::optional<T>
 findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     /// In some cases the compiler if able to apply the condition and still generate SIMD, so we still build both
     /// conditional and unconditional functions with multiple architectures
     /// We see no benefit from using AVX512BW or AVX512F (over AVX2), so we only declare SSE and AVX2

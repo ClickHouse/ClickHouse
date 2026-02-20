@@ -17,7 +17,7 @@ MULTITARGET_FUNCTION_X86_V3(
 template <iota_supported_types T>
 void iota(T * begin, size_t count, T first_value)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
         return iotaImpl_x86_64_v3(begin, count, first_value);
 #endif
@@ -36,7 +36,7 @@ MULTITARGET_FUNCTION_X86_V3(
 template <iota_supported_types T>
 void iotaWithStep(T * begin, size_t count, T first_value, T step)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
         return iotaWithStepImpl_x86_64_v3(begin, count, first_value, step);
 #endif

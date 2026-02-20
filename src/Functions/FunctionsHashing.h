@@ -884,7 +884,7 @@ public:
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
 
-    #if USE_MULTITARGET_CODE
+    #if USE_X86_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::x86_64_v3,
             TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
         selector.registerImplementation<TargetArch::x86_64_v4,
@@ -1570,7 +1570,7 @@ public:
         selector
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
         selector
             .registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();

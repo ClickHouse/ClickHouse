@@ -42,7 +42,7 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
@@ -52,7 +52,7 @@ struct UnaryOperationImpl
 
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorImpl_x86_64_v4(a, c);
@@ -62,6 +62,12 @@ struct UnaryOperationImpl
         if (isArchSupported(TargetArch::x86_64_v3))
         {
             vectorImpl_x86_64_v3(a, c);
+            return;
+        }
+#elif USE_ARM_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::SVE))
+        {
+            vectorImpl_SVE(a, c);
             return;
         }
 #endif
@@ -79,7 +85,7 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
         ColumnFixedString::Chars & c)
     {
@@ -91,7 +97,7 @@ struct FixedStringUnaryOperationImpl
 
     static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorImpl_x86_64_v4(a, c);
@@ -103,6 +109,12 @@ struct FixedStringUnaryOperationImpl
             vectorImpl_x86_64_v3(a, c);
             return;
         }
+#elif USE_ARM_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::SVE))
+        {
+            vectorImpl_SVE(a, c);
+            return;
+        }
 #endif
 
         vectorImpl(a, c);
@@ -112,7 +124,7 @@ struct FixedStringUnaryOperationImpl
 template <typename Op>
 struct StringUnaryOperationReduceImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
         MULTITARGET_FUNCTION_HEADER(static UInt64 NO_INLINE),
         vectorImpl,
         MULTITARGET_FUNCTION_BODY((const UInt8 * start, const UInt8 * end) /// NOLINT
@@ -125,7 +137,7 @@ struct StringUnaryOperationReduceImpl
 
     static UInt64 NO_INLINE vector(const UInt8 * start, const UInt8 * end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             return vectorImpl_x86_64_v4(start, end);
@@ -134,6 +146,11 @@ struct StringUnaryOperationReduceImpl
         if (isArchSupported(TargetArch::x86_64_v3))
         {
             return vectorImpl_x86_64_v3(start, end);
+        }
+#elif USE_ARM_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::SVE))
+        {
+            return vectorImpl_SVE(start, end);
         }
 #endif
 

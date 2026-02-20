@@ -10,7 +10,7 @@
 
 #include <cmath>
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 
@@ -81,7 +81,7 @@ struct L2Distance
         state.sum += other_state.sum;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     template <typename ResultType>
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
         const ResultType * __restrict data_x,
@@ -268,7 +268,7 @@ struct CosineDistance
         state.y_squared += other_state.y_squared;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     template <typename ResultType>
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
         const ResultType * __restrict data_x,
@@ -607,7 +607,7 @@ private:
             /// - the two most common metrics L2 and cosine distance,
             /// - the most powerful SIMD instruction set (AVX-512).
             bool processed_with_simd = false;
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
             if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
             {
                 if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)

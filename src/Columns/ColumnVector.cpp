@@ -32,8 +32,12 @@
 
 #include "config.h"
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 #    include <immintrin.h>
+#endif
+
+#if USE_ARM_MULTITARGET_CODE
+#    include <arm_sve.h>
 #endif
 
 #if USE_EMBEDDED_COMPILER
@@ -240,7 +244,7 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4_V3_SVE(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
@@ -323,7 +327,7 @@ void ColumnVector<T>::compareColumn(
         return;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
@@ -823,6 +827,67 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 }
 )
 
+DECLARE_SVE_SPECIFIC_CODE(
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
+inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+{
+    static constexpr size_t ELEMENT_WIDTH = sizeof(T);
+    static const size_t VEC_LEN = svcntb();   /// SVE vector length
+    static const size_t ELEMENTS_PER_VEC = VEC_LEN / ELEMENT_WIDTH;
+    static const UInt64 KMASK = 0xffffffffffffffff >> (64 - ELEMENTS_PER_VEC);
+    const svbool_t ALL_TRUE = svptrue_b8();
+    const svbool_t FILT_LOAD_PRED = svwhilelt_b32(0ULL, ELEMENTS_PER_VEC);
+
+    size_t current_offset = res_data.size();
+    size_t reserve_size = res_data.size();
+    size_t alloc_size = SIMD_ELEMENTS * 2;
+
+    while (filt_pos < filt_end_aligned)
+    {
+        /// to avoid calling resize too frequently, resize to reserve buffer.
+        if (reserve_size - current_offset < SIMD_ELEMENTS)
+        {
+            reserve_size += alloc_size;
+            resize<T>(res_data, reserve_size);
+            alloc_size *= 2;
+        }
+
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
+        {
+            for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
+                svst1(ALL_TRUE, reinterpret_cast<uint8_t *>(&res_data[current_offset + i]),
+                        svld1(ALL_TRUE, reinterpret_cast<const uint8_t *>(data_pos + i)));
+            current_offset += SIMD_ELEMENTS;
+        }
+        else if (mask)
+        {
+            for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
+            {
+                svbool_t filt_mask = svcmpne(FILT_LOAD_PRED,
+                                        svld1ub_u32(FILT_LOAD_PRED, reinterpret_cast<const uint8_t *>(filt_pos + i)), 0);
+                svuint32_t vec = svld1(ALL_TRUE, reinterpret_cast<const uint32_t *>(data_pos + i));
+                vec = svcompact(filt_mask, vec);
+                svst1(ALL_TRUE, reinterpret_cast<uint32_t *>(&res_data[current_offset]), vec);
+
+                current_offset += std::popcount(mask & KMASK);
+                /// prepare mask for next iter, if ELEMENTS_PER_VEC = 64, no next iter
+                if (ELEMENTS_PER_VEC < 64)
+                {
+                    mask >>= ELEMENTS_PER_VEC;
+                }
+            }
+        }
+
+        filt_pos += SIMD_ELEMENTS;
+        data_pos += SIMD_ELEMENTS;
+    }
+    /// Resize to the real size.
+    res_data.resize_exact(current_offset);
+}
+)
+
 template <typename T>
 ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
@@ -848,10 +913,15 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     static constexpr size_t SIMD_ELEMENTS = 64;
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
     if (VBMI2_CAPABLE && isArchSupported(TargetArch::x86_64_icelake))
         TargetSpecific::x86_64_icelake::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
+    else
+#elif USE_ARM_MULTITARGET_CODE
+    static constexpr bool SVE_CAPABLE = sizeof(T) == 4;
+    if (SVE_CAPABLE && isArchSupported(TargetArch::SVE))
+        TargetSpecific::SVE::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
     {
@@ -955,7 +1025,7 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 namespace
 {
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4_V3_SVE(
 MULTITARGET_FUNCTION_HEADER(template <typename ValueType, bool use_window, int padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType))> void),
 replicateImpl,
 MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[maybe_unused]] size_t window_size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
@@ -1018,7 +1088,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     const size_t window_size = static_cast<size_t>(sqrt(1 + size / offsets.back()));
     bool use_window = window_size > 16;
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         if (use_window)
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
@@ -1269,7 +1339,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
     {
         /// VBMI optimization only applicable for (U)Int8 types

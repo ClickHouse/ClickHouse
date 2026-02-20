@@ -6,7 +6,7 @@
 
 #include <Common/TargetSpecific.h>
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 
@@ -60,7 +60,7 @@ inline ALWAYS_INLINE bool hasAllIntegralLoopRemainder(
     return true;
 }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 
 DECLARE_X86_64_V3_SPECIFIC_CODE (
 
@@ -887,7 +887,7 @@ template <
     bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
 inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if constexpr (search_type == ArraySearchType::All && std::is_same_v<FirstSliceType, SecondSliceType>)
     {
         if (isArchSupported(TargetArch::x86_64_v3))
