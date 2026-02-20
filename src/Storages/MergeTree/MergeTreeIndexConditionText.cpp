@@ -25,6 +25,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool query_plan_text_index_add_hint;
+    extern const SettingsBool use_text_index_tokens_cache;
     extern const SettingsBool use_text_index_header_cache;
     extern const SettingsBool use_text_index_postings_cache;
     extern const SettingsUInt64 max_memory_usage;
@@ -76,6 +77,11 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
+    if (settings[Setting::use_text_index_tokens_cache])
+        tokens_cache = context_->getTextIndexTokensCache();
+    else
+        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_memory_usage, 0, 1.0);
+
     if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
     else

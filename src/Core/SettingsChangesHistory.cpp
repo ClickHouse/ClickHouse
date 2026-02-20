@@ -163,6 +163,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
+            {"use_text_index_tokens_cache", false, false, "New setting"},
             {"use_text_index_header_cache", false, false, "New setting"},
             {"use_text_index_postings_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},

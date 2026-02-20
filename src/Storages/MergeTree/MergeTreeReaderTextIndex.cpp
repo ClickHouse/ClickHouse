@@ -233,7 +233,6 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
         may_be_true_granules.add(static_cast<UInt32>(mark));
 
     analyzed_granules.add(static_cast<UInt32>(mark));
-    granule_text.resetAfterAnalysis();
     return can_skip_mark && !may_be_true;
 }
 
@@ -340,7 +339,7 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const MergeTreeIndexGranuleText::TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
+double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
 {
     chassert(!query.tokens.empty());
 
@@ -368,7 +367,7 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
                 if (it == remaining_tokens.end())
                     return 0;
 
-                cardinality *= it->second.cardinality;
+                cardinality *= it->second->cardinality;
             }
 
             cardinality /= std::pow(total_rows, query.tokens.size() - 1);
@@ -389,7 +388,7 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             for (const auto & token : query.tokens)
             {
                 auto it = remaining_tokens.find(token);
-                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second.cardinality;
+                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second->cardinality;
                 cardinality *= (1.0 - (token_cardinality / static_cast<double>(total_rows)));
             }
 
@@ -428,7 +427,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
             continue;
         }
 
-        auto token_postings = readPostingsBlocksForToken(token, token_info, *rows_range);
+        auto token_postings = readPostingsBlocksForToken(token, *token_info, *rows_range);
 
         if (token_postings.size() == 1)
         {
@@ -487,9 +486,9 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
         if (it == postings_blocks.end())
             continue;
 
-        for (size_t i = 0; i < token_info.ranges.size(); ++i)
+        for (size_t i = 0; i < token_info->ranges.size(); ++i)
         {
-            if (!token_info.ranges[i].intersects(range))
+            if (!token_info->ranges[i].intersects(range))
                 it->second.erase(i);
         }
     }

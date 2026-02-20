@@ -191,7 +191,11 @@ struct TokenPostingsInfo
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
+    size_t bytesAllocated() const;
 };
+
+using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
+using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
 struct DictionaryBlockBase
 {
@@ -202,7 +206,6 @@ struct DictionaryBlockBase
 
     bool empty() const;
     size_t size() const;
-
     size_t upperBound(std::string_view token) const;
 };
 
@@ -212,6 +215,7 @@ struct DictionaryBlock : public DictionaryBlockBase
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_);
 
     std::vector<TokenPostingsInfo> token_infos;
+    const TokenPostingsInfo & getTokenInfo(size_t idx) const { return token_infos.at(idx); }
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase
@@ -273,7 +277,6 @@ struct TextIndexSerialization
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfo>;
     using TokenToPostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, PostingListCodecPtr posting_list_codec_);
@@ -286,7 +289,7 @@ public:
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
-    bool empty() const override { return sparse_index->empty(); }
+    bool empty() const override { return is_empty; }
     size_t memoryUsageBytes() const override;
 
     bool hasAnyQueryTokens(const TextSearchQuery & query) const;
@@ -296,7 +299,6 @@ public:
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
-    void resetAfterAnalysis();
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -306,15 +308,15 @@ public:
         PostingsSerialization & postings_serialization);
 
 private:
-    void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
+    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
+    std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
+    DictionarySparseIndexPtr loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
 
+    bool is_empty = true;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
-    /// Header of the text index contains the number of tokens and sparse index.
-    DictionarySparseIndexPtr sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
     /// Tokens with postings lists that have only one block.

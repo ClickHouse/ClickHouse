@@ -3,10 +3,10 @@
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
-#include <vector>
-
 namespace ProfileEvents
 {
+    extern const Event TextIndexTokensCacheHits;
+    extern const Event TextIndexTokensCacheMisses;
     extern const Event TextIndexHeaderCacheHits;
     extern const Event TextIndexHeaderCacheMisses;
     extern const Event TextIndexPostingsCacheHits;
@@ -15,6 +15,8 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
+    extern const Metric TextIndexTokensCacheBytes;
+    extern const Metric TextIndexTokensCacheCells;
     extern const Metric TextIndexHeaderCacheBytes;
     extern const Metric TextIndexHeaderCacheCells;
     extern const Metric TextIndexPostingsCacheBytes;
@@ -23,6 +25,45 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+/// Estimate of the memory usage (bytes) of a token info in cache
+struct TextIndexTokensWeightFunction
+{
+    static constexpr size_t TOKENS_CACHE_OVERHEAD = 64;
+
+    size_t operator()(const TokenPostingsInfo & token_info) const
+    {
+        return token_info.bytesAllocated() + TOKENS_CACHE_OVERHEAD;
+    }
+};
+
+class TextIndexTokensCache : public CacheBase<UInt128, TokenPostingsInfo, UInt128TrivialHash, TextIndexTokensWeightFunction>
+{
+public:
+    TextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+        : CacheBase(cache_policy, CurrentMetrics::TextIndexTokensCacheBytes, CurrentMetrics::TextIndexTokensCacheCells, max_size_in_bytes, max_count, size_ratio)
+    {
+    }
+
+    template <typename... Args>
+    static UInt128 hash(Args... args)
+    {
+        SipHash hasher;
+        (hasher.update(args),...);
+        return hasher.get128();
+    }
+
+    template <typename LoadFunc>
+    MappedPtr getOrSet(UInt128 key, LoadFunc && load_func)
+    {
+        auto [cache_entry, cache_miss] = CacheBase::getOrSet(key, load_func);
+        if (cache_miss)
+            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
+        return std::move(cache_entry);
+    }
+};
 
 /// Estimate of the memory usage (bytes) of a text index header in cache
 struct TextIndexHeaderWeightFunction
@@ -40,8 +81,8 @@ public:
         : CacheBase(cache_policy, CurrentMetrics::TextIndexHeaderCacheBytes, CurrentMetrics::TextIndexHeaderCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    template <typename... ARGS>
-    static UInt128 hash(ARGS... args)
+    template <typename... Args>
+    static UInt128 hash(Args... args)
     {
         SipHash hasher;
         (hasher.update(args),...);
@@ -76,8 +117,8 @@ public:
         : CacheBase(cache_policy, CurrentMetrics::TextIndexPostingsCacheBytes, CurrentMetrics::TextIndexPostingsCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    template <typename... ARGS>
-    static UInt128 hash(ARGS... args)
+    template <typename... Args>
+    static UInt128 hash(Args... args)
     {
         SipHash hasher;
         (hasher.update(args),...);
@@ -96,6 +137,7 @@ public:
     }
 };
 
+using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 

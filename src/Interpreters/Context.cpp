@@ -532,6 +532,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
+    mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
@@ -3995,6 +3996,44 @@ void Context::clearVectorSimilarityIndexCache() const
 
     if (shared->vector_similarity_index_cache)
         shared->vector_similarity_index_cache->clear();
+}
+
+void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache has been already created.");
+
+    shared->text_index_tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("text_index_tokens_cache_size", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("text_index_tokens_cache_max_entries", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES);
+    shared->text_index_tokens_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->text_index_tokens_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<TextIndexTokensCache> Context::getTextIndexTokensCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->text_index_tokens_cache;
+}
+
+void Context::clearTextIndexTokensCache() const
+{
+    auto cache = getTextIndexTokensCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
