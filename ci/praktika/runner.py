@@ -161,11 +161,11 @@ class Runner:
         result.dump()
 
         if not local_run:
-            if workflow.enable_report and job.name != Settings.CI_CONFIG_JOB_NAME and not job.no_aws:
+            if workflow.enable_report and job.name != Settings.CI_CONFIG_JOB_NAME:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
 
-        if job.requires and not _is_praktika_job(job.name) and not job.no_aws:
+        if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
             # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
@@ -309,7 +309,6 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
-            workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
                     volume = setting.removeprefix("--volume=").split(":")[0]
@@ -318,11 +317,6 @@ class Runner:
                             "WARNING: Create mount dir point in advance to have the same owner"
                         )
                         Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
-                elif setting.startswith("--workdir"):
-                    print(
-                        f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
-                    )
-                    workdir = ""
             Shell.check(
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
@@ -342,7 +336,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -525,7 +519,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
+        if run_exit_code == 0:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:
@@ -563,9 +557,7 @@ class Runner:
                             ), f"Artifact {artifact_path} not found"
                             for file_path in glob.glob(artifact_path):
                                 link = S3.copy_file_to_s3(
-                                    s3_path=s3_path,
-                                    local_path=file_path,
-                                    tags=artifact.ext.get("tags"),
+                                    s3_path=s3_path, local_path=file_path
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)
@@ -589,7 +581,7 @@ class Runner:
                     result.set_link(link)
 
         ci_db = None
-        if workflow.enable_cidb and not job.no_aws:
+        if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
                 url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
@@ -648,12 +640,12 @@ class Runner:
         result.dump()
 
         # always in the end
-        if workflow.enable_cache and not job.no_aws:
+        if workflow.enable_cache:
             print(f"Run CI cache hook")
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        if workflow.enable_open_issues_check and not job.no_aws:
+        if workflow.enable_open_issues_check:
             # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
             #   to upload updated job and workflow results to S3
             try:
@@ -670,7 +662,7 @@ class Runner:
                     env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
 
         # Always run report generation at the end to finalize workflow status with latest job result
-        if workflow.enable_report and not job.no_aws:
+        if workflow.enable_report:
             print(f"Run html report hook")
             status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
             if status_updated:
@@ -706,7 +698,7 @@ class Runner:
         info = Info()
         report_url = info.get_job_report_url(latest=False)
 
-        if workflow.enable_gh_summary_comment and not job.no_aws and (
+        if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ):
             _GH_Auth(workflow)
@@ -724,10 +716,9 @@ class Runner:
                 print(f"ERROR: failed to post CI summary, ex: {e}")
                 traceback.print_exc()
 
-        if not job.no_aws and (
-            (workflow.enable_commit_status_on_failure and not result.is_ok())
-            or job.enable_commit_status
-        ):
+        if (
+            workflow.enable_commit_status_on_failure and not result.is_ok()
+        ) or job.enable_commit_status:
             _GH_Auth(workflow)
             if not GH.post_commit_status(
                 name=job.name,
@@ -738,7 +729,7 @@ class Runner:
                 env.add_info("Failed to post GH commit status for the job")
                 print(f"ERROR: Failed to post commit status for the job")
 
-        if workflow.enable_report and not job.no_aws:
+        if workflow.enable_report:
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
 
@@ -776,7 +767,7 @@ class Runner:
             )
 
         # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
-        if workflow.enable_slack_feed and not job.no_aws and (
+        if workflow.enable_slack_feed and (
             is_final_job or is_initial_job or not result.is_ok()
         ):
             updated_emails = []

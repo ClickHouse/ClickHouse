@@ -1,4 +1,5 @@
-personal_ws-1.1 en 3534 
+personal_ws-1.1 en 3453
+aarch
 AArch
 ACLs
 ADLS
@@ -179,7 +180,6 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
-ClickLens
 ClickPipes
 ClickVisual
 ClickableSquare
@@ -260,7 +260,6 @@ DataLakeCatalog
 DataLens
 DataPacket
 DataPup
-DataStoria
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -735,7 +734,6 @@ MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
 MergerMutator
-Mersenne
 MessagePack
 Metastore
 MetroHash
@@ -2819,7 +2817,6 @@ pushdown
 pwrite
 py
 qbit
-qrencode
 qryn
 quantile
 quantileBFloat
@@ -3385,7 +3382,6 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
-totp
 tpcds
 tpch
 transactio

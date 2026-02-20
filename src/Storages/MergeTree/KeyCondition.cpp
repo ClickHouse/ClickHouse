@@ -3110,11 +3110,11 @@ bool KeyCondition::matchesExactContinuousRange() const
             if (!func || !func->hasInformationAboutMonotonicity())
                 return {false, false};
 
-            auto arg_type = getArgumentTypeOfMonotonicFunction(*func);
-            if (!arg_type)
+            const auto & types = func->getArgumentTypes();
+            if (types.empty() || !types.front())
                 return {false, false};
 
-            const auto monotonicity = func->getMonotonicityForRange(*arg_type, field, field);
+            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
             all_always_monotonic &= monotonicity.is_always_monotonic;
             all_strict &= monotonicity.is_strict;
 

@@ -5,8 +5,6 @@
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
 
-#include <map>
-
 namespace DB
 {
 

@@ -938,8 +938,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (runner)
         {
-            /// Passing buf as a reference is fine since it's a reference to this, which outlives the runner
-            runner->enqueueAndKeepTrack([this, &buf, check_thresholds]()
+            runner->enqueueAndKeepTrack([&]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });

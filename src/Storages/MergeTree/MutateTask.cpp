@@ -388,25 +388,10 @@ static void splitAndModifyMutationCommands(
 
                     /// StorageMergeTree does not have metadata version
                     if (part->storage.supportsReplication())
-                    {
-                        /// When part has higher metadata version than the table, it means the part was fetched from another replica
-                        /// that already processed an ALTER ADD COLUMN. The column will be added to this replica's table schema
-                        /// once the ALTER is processed locally. We should keep the column in the output part.
-                        if (part_metadata_version > table_metadata_version)
-                        {
-                            LOG_WARNING(log, "Part {} with metadata version {} contains column {} that is absent "
-                                             "in table {} with metadata version {}. The column was likely added via ALTER on another replica "
-                                             "and will be kept in the output part", part->name, part_metadata_version, column.name,
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                        }
-                        else
-                        {
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                            "in table {} with metadata version {}",
-                                            part->name, part_metadata_version, column.name,
-                                            part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                        }
-                    }
                 }
 
                 for_interpreter.emplace_back(
@@ -2640,13 +2625,17 @@ bool MutateTask::prepare()
     for (const auto & name : updated_columns_in_patches)
     {
         GetColumnsOptions options = GetColumnsOptions::AllPhysical;
-        auto type = ctx->storage_snapshot->getColumn(options.withVirtuals(VirtualsKind::Persistent), name).type;
+        auto column = ctx->storage_snapshot->tryGetColumn(options.withVirtuals(VirtualsKind::Persistent), name);
+
+        /// Skip updated column if it was dropped from the table.
+        if (!column)
+            continue;
 
         ctx->commands_for_part.push_back(MutationCommand
         {
             .type = MutationCommand::READ_COLUMN,
             .column_name = name,
-            .data_type = type,
+            .data_type = column->type,
             .read_for_patch = true,
         });
     }

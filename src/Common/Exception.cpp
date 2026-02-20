@@ -186,9 +186,6 @@ void Exception::addMessage(const MessageMasked & msg_masked)
 
 std::string getExceptionStackTraceString(const std::exception & e)
 {
-    /// Explicitly block MEMORY_LIMIT_EXCEEDED
-    LockMemoryExceptionInThread lock(VariableContext::Global);
-
     auto * stack_trace_frames = e.get_stack_trace_frames();
     auto stack_trace_size = e.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
@@ -350,7 +347,11 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message, LogsLevel level)
 {
-    /// Explicitly block MEMORY_LIMIT_EXCEEDED
+    /// Under high memory pressure, new allocations throw a
+    /// MEMORY_LIMIT_EXCEEDED exception.
+    ///
+    /// In this case the exception will not be logged, so let's block the
+    /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     /// getLogger can allocate memory too
@@ -360,7 +361,11 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
-    /// Explicitly block MEMORY_LIMIT_EXCEEDED
+    /// Under high memory pressure, new allocations throw a
+    /// MEMORY_LIMIT_EXCEEDED exception.
+    ///
+    /// And in this case the exception will not be logged, so let's block the
+    /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     tryLogCurrentExceptionImpl(logger, start_of_message, level);
@@ -506,9 +511,6 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
     bool with_extra_info /*= true*/,
     bool with_version /*= true*/)
 {
-    /// Explicitly block MEMORY_LIMIT_EXCEEDED
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
     WriteBufferFromOwnString stream;
     std::string_view message_format_string;
     std::vector<std::string> message_format_string_args;

@@ -6,6 +6,8 @@
 #include <variant>
 #include <vector>
 
+#include <Parsers/ASTTablesInSelectQuery.h>
+
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 

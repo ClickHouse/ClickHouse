@@ -546,8 +546,7 @@ public:
         size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
 
         for (size_t i = from; i < to; ++i)
-            if (places[offsets[i]])
-                add(places[offsets[i]] + place_offset, &values, i + 1, arena);
+            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

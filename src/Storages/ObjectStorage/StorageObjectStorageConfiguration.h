@@ -16,7 +16,6 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Databases/DataLake/StorageCredentials.h>
 
 namespace DB
 {
@@ -57,8 +56,6 @@ struct StorageObjectStorageQuerySettings
 class StorageObjectStorageConfiguration
 {
 public:
-    using CredentialsConfigurationCallback = std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>>;
-
     StorageObjectStorageConfiguration() = default;
     virtual ~StorageObjectStorageConfiguration() = default;
 
@@ -137,7 +134,7 @@ public:
     virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
 
-    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
+    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
@@ -231,14 +228,8 @@ public:
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const std::optional<FormatSettings> & /*format_settings*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
-    }
-    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
-    }
+        const std::optional<FormatSettings> & /*format_settings*/) {}
+    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
     virtual void checkAlterIsPossible(const AlterCommands & commands)
     {
@@ -267,11 +258,6 @@ public:
     virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
-    }
-
-    virtual bool supportsPrewhere() const
-    {
-        return true;
     }
 
     virtual void drop(ContextPtr) {}

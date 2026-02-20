@@ -474,8 +474,7 @@ private:
         activations.pop_front();
         node->activation_event_id = 0;
         lock.unlock(); // do not hold queue mutex while processing events
-        if (node->parent)
-            node->parent->activateChild(node);
+        node->parent->activateChild(node);
     }
 
     void processEvent(std::unique_lock<std::mutex> && lock)
@@ -525,9 +524,11 @@ inline void ISchedulerNode::setParent(ISchedulerNode * parent_)
 
 inline void ISchedulerNode::scheduleActivation()
 {
-    // The same as `enqueue([this] { parent->activateChild(this); });` but faster
-    // NOTE: Parent check is done in processActivation() on the scheduler thread to avoid data race
-    event_queue->enqueueActivation(this);
+    if (likely(parent))
+    {
+        // The same as `enqueue([this] { parent->activateChild(this); });` but faster
+        event_queue->enqueueActivation(this);
+    }
 }
 
 }
