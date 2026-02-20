@@ -210,9 +210,72 @@ set(LLVM_COMPILE_DEFINITIONS
 )
 
 #
-# Build llvm-min-tblgen first (doesn't need generated files like GenVT.inc)
-# This is used to generate the basic .inc files that llvm-tblgen needs.
+# Cross-compilation support for tablegen tools
 #
+# When cross-compiling, we need to build tablegen for the HOST system (not target).
+# The tablegen executables must be runnable on the build machine to generate .inc files.
+#
+# We detect cross-compilation by checking CMAKE_CROSSCOMPILING.
+#
+if (CMAKE_CROSSCOMPILING)
+    message(STATUS "LLVM: Cross-compiling detected, building native tablegen tools")
+    
+    include(ExternalProject)
+    
+    set(NATIVE_TBLGEN_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/native-tblgen")
+    
+    # Build native tablegen tools using ExternalProject
+    # This runs a separate CMake configuration WITHOUT the target toolchain,
+    # so it builds for the host system.
+    #
+    # IMPORTANT: We do NOT pass CMAKE_C_COMPILER/CMAKE_CXX_COMPILER here.
+    # The toolchain file sets sysroot and gcc-toolchain flags that make binaries
+    # link against target system libraries, not host libraries.
+    # By not specifying compilers, CMake will use the default host compilers.
+    ExternalProject_Add(native-tblgen-build
+        SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/native-tblgen"
+        BINARY_DIR "${NATIVE_TBLGEN_BUILD_DIR}"
+        CMAKE_ARGS
+            -DLLVM_SOURCE_DIR=${LLVM_SOURCE_DIR}
+            -DLLVM_NATIVE_OUTPUT_DIR=${NATIVE_TBLGEN_BUILD_DIR}
+            -DCMAKE_BUILD_TYPE=Release
+        # Do NOT pass toolchain file or compilers - let CMake find host compilers
+        BUILD_ALWAYS OFF
+        INSTALL_COMMAND ""
+        CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+    )
+    
+    # Paths to native tablegen executables
+    set(LLVM_TABLEGEN_EXE "${NATIVE_TBLGEN_BUILD_DIR}/llvm-tblgen")
+    set(LLVM_MIN_TABLEGEN_EXE "${NATIVE_TBLGEN_BUILD_DIR}/llvm-min-tblgen")
+    
+    # Create imported targets for native tablegen
+    add_executable(llvm-tblgen-native IMPORTED GLOBAL)
+    set_target_properties(llvm-tblgen-native PROPERTIES IMPORTED_LOCATION "${LLVM_TABLEGEN_EXE}")
+    add_dependencies(llvm-tblgen-native native-tblgen-build)
+    
+    add_executable(llvm-min-tblgen-native IMPORTED GLOBAL)
+    set_target_properties(llvm-min-tblgen-native PROPERTIES IMPORTED_LOCATION "${LLVM_MIN_TABLEGEN_EXE}")
+    add_dependencies(llvm-min-tblgen-native native-tblgen-build)
+    
+    # We still need dummy targets for non-cross builds that expect these
+    # But tablegen commands will use the imported targets
+    set(TABLEGEN_TARGET llvm-tblgen-native)
+    set(MIN_TABLEGEN_TARGET llvm-min-tblgen-native)
+    set(USE_NATIVE_TABLEGEN ON)
+    
+else()
+    # Native build - build tablegen as part of the normal build
+    message(STATUS "LLVM: Native build, building tablegen inline")
+    set(USE_NATIVE_TABLEGEN OFF)
+endif()
+
+#
+# Build llvm-min-tblgen and llvm-tblgen (only for native builds)
+# For cross-compilation, these are built by ExternalProject above.
+#
+if (NOT USE_NATIVE_TABLEGEN)
+
 add_executable(llvm-min-tblgen
     # Main entry point
     ${LLVM_SOURCE_DIR}/utils/TableGen/llvm-min-tblgen.cpp
@@ -258,12 +321,14 @@ target_include_directories(llvm-min-tblgen PRIVATE
 
 target_compile_definitions(llvm-min-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 
+# On Linux, link with pthread and dl
 if (UNIX AND NOT APPLE)
     target_link_libraries(llvm-min-tblgen PRIVATE pthread dl)
 endif()
 
 #
 # Generate GenVT.inc using llvm-min-tblgen (needed for CodeGenTypes which llvm-tblgen uses)
+# This must be done before building llvm-tblgen
 #
 file(MAKE_DIRECTORY "${LLVM_BINARY_DIR}/include/llvm/CodeGen")
 add_custom_command(
@@ -400,6 +465,43 @@ if (UNIX AND NOT APPLE)
     target_link_libraries(llvm-tblgen PRIVATE pthread dl)
 endif()
 
+# End of native tablegen build block
+endif() # NOT USE_NATIVE_TABLEGEN
+
+#
+# Set up tablegen executable variables
+#
+if (USE_NATIVE_TABLEGEN)
+    # For cross-compilation: use native (host) tablegen
+    set(LLVM_TABLEGEN_DEPENDS native-tblgen-build)
+    # The executable path is set above as LLVM_TABLEGEN_EXE
+else()
+    # For native compilation: use the tablegen we just built
+    set(LLVM_TABLEGEN_EXE "$<TARGET_FILE:llvm-tblgen>")
+    set(LLVM_MIN_TABLEGEN_EXE "$<TARGET_FILE:llvm-min-tblgen>")
+    set(LLVM_TABLEGEN_DEPENDS llvm-tblgen)
+endif()
+
+#
+# For cross-compilation: Copy GenVT.inc from native build
+# (For native compilation, llvm_gen_vt is defined inside the if (NOT USE_NATIVE_TABLEGEN) block above)
+#
+if (USE_NATIVE_TABLEGEN)
+    set(NATIVE_GENVT_INC "${NATIVE_TBLGEN_BUILD_DIR}/include/llvm/CodeGen/GenVT.inc")
+    
+    # Copy GenVT.inc from native build to our include dir
+    add_custom_command(
+        OUTPUT "${LLVM_BINARY_DIR}/include/llvm/CodeGen/GenVT.inc"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${NATIVE_GENVT_INC}"
+            "${LLVM_BINARY_DIR}/include/llvm/CodeGen/GenVT.inc"
+        DEPENDS native-tblgen-build
+        COMMENT "Copying native GenVT.inc"
+        VERBATIM
+    )
+    add_custom_target(llvm_gen_vt DEPENDS "${LLVM_BINARY_DIR}/include/llvm/CodeGen/GenVT.inc")
+endif()
+
 #
 # TableGen macros
 #
@@ -411,13 +513,13 @@ macro(tablegen_generate TARGET_NAME TD_FILE GEN_FLAGS OUTPUT_FILE)
     
     add_custom_command(
         OUTPUT "${OUTPUT_PATH}"
-        COMMAND $<TARGET_FILE:llvm-tblgen>
+        COMMAND ${LLVM_TABLEGEN_EXE}
             ${GEN_FLAGS}
             -I "${LLVM_SOURCE_DIR}/include"
             -I "${LLVM_SOURCE_DIR}/lib/Target/${LLVM_TARGET_ARCH}"
             "${TD_FILE}"
             -o "${OUTPUT_PATH}"
-        DEPENDS llvm-tblgen "${TD_FILE}"
+        DEPENDS ${LLVM_TABLEGEN_DEPENDS} "${TD_FILE}"
         COMMENT "TableGen: ${OUTPUT_FILE}"
         COMMAND_EXPAND_LISTS
     )
@@ -500,13 +602,13 @@ macro(tablegen_generate_target_parser TARGET_NAME TD_FILE GEN_FLAGS EXTRA_INCLUD
     
     add_custom_command(
         OUTPUT "${OUTPUT_PATH}"
-        COMMAND $<TARGET_FILE:llvm-tblgen>
+        COMMAND ${LLVM_TABLEGEN_EXE}
             ${GEN_FLAGS}
             -I "${LLVM_SOURCE_DIR}/include"
             -I "${EXTRA_INCLUDES}"
             "${TD_FILE}"
             -o "${OUTPUT_PATH}"
-        DEPENDS llvm-tblgen "${TD_FILE}"
+        DEPENDS ${LLVM_TABLEGEN_DEPENDS} "${TD_FILE}"
         COMMENT "TableGen: ${OUTPUT_FILE}"
         COMMAND_EXPAND_LISTS
     )
