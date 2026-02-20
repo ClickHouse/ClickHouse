@@ -59,6 +59,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
             {"allow_insert_into_iceberg", false, true, "Insert into iceberg was moved to Beta"},
             {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
+            {"opentelemetry_start_keeper_trace_probability", 0.0, 0.0, "New setting"},
+            {"use_glob_ast_parser", false, true, "Use the new AST-based glob parser instead of the legacy regex-based parser"},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",

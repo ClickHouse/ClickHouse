@@ -4087,7 +4087,10 @@ Close connection before returning connection to the pool.
 Approximate probability of failing internal (for replication) PostgreSQL queries. Valid value is in interval [0.0f, 1.0f]
 )", 0) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
-Maximum number of allowed addresses (For external storages, table functions, etc).
+Maximum number of elements generated during glob pattern expansion (for file globs, external storages, table functions, etc).
+)", 0) \
+    DECLARE(Bool, use_glob_ast_parser, true, R"(
+Use the new AST-based glob parser (GlobAST) instead of the legacy regex-based parser. The new parser supports direct matching without regex compilation and can expand globs with ranges.
 )", 0) \
     DECLARE(UInt64, odbc_bridge_connection_pool_size, 16, R"(
 Connection pool size for each connection settings string in ODBC bridge.

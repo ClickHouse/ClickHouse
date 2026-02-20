@@ -64,6 +64,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_glob_ast_parser;
     extern const SettingsUInt64 max_download_buffer_size;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
@@ -77,7 +79,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
@@ -182,15 +183,39 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    if (reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
+
+    const size_t max_expansion = local_context->getSettingsRef()[Setting::glob_expansion_max_elements];
+    const bool use_glob_ast = local_context->getSettingsRef()[Setting::use_glob_ast_parser];
+
+    std::optional<GlobAST::GlobString> glob_string;
+    if (use_glob_ast)
+        glob_string.emplace(reading_path.path);
+
+    bool has_globs = use_glob_ast ? glob_string->hasGlobs() : reading_path.hasGlobs();
+
+    bool can_expand = use_glob_ast
+        && glob_string->hasEnums()
+        && !glob_string->hasRanges()
+        && !glob_string->hasQuestionOrAsterisk()
+        && glob_string->cardinality() <= max_expansion;
+
+    if (!can_expand && !use_glob_ast && has_globs)
+        can_expand = hasExactlyOneBracketsExpansion(reading_path.path);
+
+    if (has_globs && can_expand)
     {
-        auto paths = expandSelectionGlob(reading_path.path);
+        Strings paths;
+        if (use_glob_ast)
+            paths = glob_string->expand(max_expansion, /*expand_ranges=*/false);
+        else
+            paths = expandSelectionGlob(reading_path.path);
+
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
             file_progress_callback);
     }
-    else if (reading_path.hasGlobs())
+    else if (has_globs)
     {
         // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
         std::optional<Strings> paths;
@@ -218,19 +243,25 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         {
             // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
             Strings validated_paths;
-            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
-            if (matcher.ok())
+            if (use_glob_ast)
             {
                 for (const auto & path : paths.value())
                 {
                     const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
-                    if (RE2::FullMatch(relative_path, matcher))
+                    if (glob_string->matches(relative_path))
                         validated_paths.push_back(relative_path);
                 }
             }
             else
-                throw Exception(
-                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+            {
+                GlobMatcher legacy_matcher = GlobMatcher::createLegacy(reading_path.path);
+                for (const auto & path : paths.value())
+                {
+                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                    if (legacy_matcher.matches(relative_path))
+                        validated_paths.push_back(relative_path);
+                }
+            }
 
             iterator = std::make_unique<KeysIterator>(
                 validated_paths,
@@ -959,11 +990,11 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags);
 
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
-        if (!matcher->ok())
-        {
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs.path, matcher->error());
-        }
+        const bool use_glob_ast = getContext()->getSettingsRef()[Setting::use_glob_ast_parser];
+        if (use_glob_ast)
+            matcher.emplace(GlobMatcher::createNew(key_with_globs.path));
+        else
+            matcher.emplace(GlobMatcher::createLegacy(key_with_globs.path));
 
         recursive = key_with_globs.path == "/**";
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
@@ -1034,7 +1065,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                if (!recursive && !matcher->matches((*it)->getPath()))
                     it = new_batch.erase(it);
                 else
                     ++it;
@@ -1263,16 +1294,11 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         archive_object, path_in_archive, archive_reader, archive_reader->getFileInfo(path_in_archive));
 }
 
-static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
+static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern, bool use_glob_ast)
 {
-    auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(archive_pattern));
-    if (!matcher->ok())
-    {
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                        "Cannot compile regex from glob ({}): {}",
-                        archive_pattern, matcher->error());
-    }
-    return [matcher](const std::string & p) mutable { return re2::RE2::FullMatch(p, *matcher); };
+    auto matcher = std::make_shared<GlobMatcher>(
+        use_glob_ast ? GlobMatcher::createNew(archive_pattern) : GlobMatcher::createLegacy(archive_pattern));
+    return [matcher](const std::string & p) { return matcher->matches(p); };
 }
 
 StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInArchive(
@@ -1295,7 +1321,9 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     , object_storage(object_storage_)
     , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())
     , archives_iterator(std::move(archives_iterator_))
-    , filter(is_path_in_archive_with_globs ? createArchivePathFilter(configuration_->getPathInArchive()) : IArchiveReader::NameFilter{})
+    , filter(is_path_in_archive_with_globs
+        ? createArchivePathFilter(configuration_->getPathInArchive(), context_->getSettingsRef()[Setting::use_glob_ast_parser])
+        : IArchiveReader::NameFilter{})
     , log(getLogger("ArchiveIterator"))
     , path_in_archive(is_path_in_archive_with_globs ? "" : configuration_->getPathInArchive())
     , read_keys(read_keys_)

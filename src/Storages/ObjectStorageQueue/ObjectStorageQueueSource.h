@@ -93,7 +93,7 @@ public:
         const size_t buckets_num = 0;
 
         ObjectStorageIteratorPtr object_storage_iterator;
-        std::unique_ptr<re2::RE2> matcher;
+        std::optional<GlobMatcher> matcher;
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
