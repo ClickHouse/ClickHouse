@@ -8,6 +8,10 @@
 
 namespace DB
 {
+
+class CaseSensitiveStringSearcher;
+class ASCIICaseInsensitiveStringSearcher;
+
 /** Uses two ways to optimize a regular expression:
   * 1. If the regular expression is trivial (reduces to finding a substring in a string),
   *     then replaces the search with strstr or strcasestr.
@@ -25,16 +29,6 @@ namespace DB
   *
   * NOTE: Multi-character metasymbols such as \Pl are handled incorrectly.
   */
-
-
-namespace impl
-{
-template <bool CaseSensitive, bool ASCII>
-class StringSearcher;
-}
-
-using ASCIICaseSensitiveStringSearcher = impl::StringSearcher<true, true>;
-using ASCIICaseInsensitiveStringSearcher = impl::StringSearcher<false, true>;
 
 
 namespace OptimizedRegularExpressionDetails
@@ -120,7 +114,7 @@ private:
     bool has_capture;
     bool required_substring_is_prefix;
     bool is_case_insensitive;
-    std::unique_ptr<ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
+    std::unique_ptr<CaseSensitiveStringSearcher> case_sensitive_substring_searcher;
     std::unique_ptr<ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
     std::unique_ptr<re2::RE2> re2;
     unsigned number_of_subpatterns;

@@ -728,13 +728,13 @@ public:
 };
 
 
-using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
-using VolnitskyUTF8 = VolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
+using Volnitsky = VolnitskyBase<true, true, CaseSensitiveStringSearcher>;
+using VolnitskyUTF8 = VolnitskyBase<true, false, CaseSensitiveStringSearcher>;
 using VolnitskyCaseInsensitive = VolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>; /// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
 
-using MultiVolnitsky = MultiVolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
-using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
+using MultiVolnitsky = MultiVolnitskyBase<true, true, CaseSensitiveStringSearcher>;
+using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, CaseSensitiveStringSearcher>;
 using MultiVolnitskyCaseInsensitive = MultiVolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>;
 using MultiVolnitskyCaseInsensitiveUTF8 = MultiVolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
 

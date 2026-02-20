@@ -499,15 +499,4 @@ scalar:
 }
 
 ) // DECLARE_X86_64_V3_SPECIFIC_CODE
-
-namespace impl
-{
-
-template class StringSearcher<true, true>;
-template class StringSearcher<false, true>;
-template class StringSearcher<true, false>;
-template class StringSearcher<false, false>;
-
-}
-
 }

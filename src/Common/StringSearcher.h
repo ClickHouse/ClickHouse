@@ -36,23 +36,15 @@ namespace DB
   * In most cases, performance is less than Volnitsky (see Volnitsky.h).
   */
 
-namespace impl
-{
-
-/// Performs case-sensitive or case-insensitive search of ASCII or UTF-8 strings
-template <bool CaseSensitive, bool ASCII>
-class StringSearcher;
-
 /// Case-sensitive searcher (delegates to StringZilla)
-template <bool ASCII>
-class StringSearcher<true, ASCII> final
+class CaseSensitiveStringSearcher final
 {
     /// string to be searched for
     sz_cptr_t const needle;
     sz_cptr_t const needle_end;
 
 public:
-    StringSearcher(const UInt8 * needle_, size_t needle_size)
+    CaseSensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
         : needle(reinterpret_cast<sz_cptr_t>(needle_))
         , needle_end(needle + needle_size)
     {
@@ -97,8 +89,7 @@ public:
 };
 
 /// Case-insensitive ASCII searcher
-template <>
-class StringSearcher<false, true> final
+class ASCIICaseInsensitiveStringSearcher final
 {
 private:
     /// string to be searched for
@@ -144,7 +135,7 @@ private:
 #endif
 
 public:
-    StringSearcher(const UInt8 * needle_, size_t needle_size)
+    ASCIICaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
         : needle(reinterpret_cast<const uint8_t *>(needle_))
         , needle_end(needle + needle_size)
     {
@@ -323,8 +314,6 @@ public:
 /// Case-insensitive UTF-8 searcher
 /// Uses StringZilla on x86_64_v4 (AVX-512), Poco + SIMD on ARM NEON, x86_64_v3 (AVX2), and Default (SSE4.1).
 
-} // namespace impl
-
 /// Default (Poco-based) implementation for older x86_64 CPUs and ARM NEON.
 /// Declared directly (not via DECLARE_DEFAULT_CODE) because the class uses #ifdef for SIMD members.
 namespace TargetSpecific::Default
@@ -477,19 +466,15 @@ public:
 
 ) // DECLARE_X86_64_V4_SPECIFIC_CODE
 
-namespace impl
-{
-
 #if defined(__aarch64__)
 /// On ARM, use Default (Poco + NEON) implementation
-template <>
-class StringSearcher<false, false> final
+class UTF8CaseInsensitiveStringSearcher final
 {
 private:
     TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl impl;
 
 public:
-    StringSearcher(const UInt8 * needle_, size_t needle_size)
+    UTF8CaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
         : impl(needle_, needle_size)
     {
     }
@@ -509,8 +494,7 @@ public:
 
 #else
 /// On x86_64: runtime dispatch between x86_64_v4 (StringZilla), x86_64_v3 (AVX2), and Default (SSE4.1)
-template <>
-class StringSearcher<false, false> final
+class UTF8CaseInsensitiveStringSearcher final
 {
 private:
     std::unique_ptr<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl> impl_default;
@@ -534,7 +518,7 @@ private:
     const Impl active = selectImpl();
 
 public:
-    StringSearcher(const UInt8 * needle_, size_t needle_size)
+    UTF8CaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
     {
         switch (active)
         {
@@ -577,18 +561,6 @@ public:
     const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
 };
 #endif
-
-}
-
-extern template class impl::StringSearcher<true, true>;
-extern template class impl::StringSearcher<false, true>;
-extern template class impl::StringSearcher<true, false>;
-extern template class impl::StringSearcher<false, false>;
-
-using ASCIICaseSensitiveStringSearcher =   impl::StringSearcher<true, true>;
-using ASCIICaseInsensitiveStringSearcher = impl::StringSearcher<false, true>;
-using UTF8CaseSensitiveStringSearcher =    impl::StringSearcher<true, false>;
-using UTF8CaseInsensitiveStringSearcher =  impl::StringSearcher<false, false>;
 
 /// Use only with short haystacks where cheap initialization is required.
 template <bool CaseInsensitive>

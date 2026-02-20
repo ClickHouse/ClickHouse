@@ -214,7 +214,7 @@ ColumnPtr FunctionReverseBySeparator::executeImpl(const ColumnsWithTypeAndName &
         else
         {
             /// For multi-character separators, use StringSearcher
-            ASCIICaseSensitiveStringSearcher searcher(reinterpret_cast<const UInt8*>(separator.data()), separator.size());
+            CaseSensitiveStringSearcher searcher(reinterpret_cast<const UInt8 *>(separator.data()), separator.size());
             TokenSplitter<decltype(searcher)> splitter(haystack, searcher, separator.size());
 
             tokens.clear();
