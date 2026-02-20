@@ -2601,6 +2601,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     bool is_right_join_with_remote_table = false;
     int first_left_or_inner_join_pos = -1;
     int first_right_join_pos = -1;
+    bool is_cross_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
@@ -2612,6 +2613,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (table_expression_type == QueryTreeNodeType::CROSS_JOIN)
         {
             joins_count += table_expression->as<const CrossJoinNode &>().getTableExpressions().size() - 1;
+            is_cross_join = true;
             continue;
         }
 
@@ -2653,8 +2655,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (first_left_or_inner_join_pos >= 0 && first_right_join_pos >= 0 && first_left_or_inner_join_pos < first_right_join_pos)
             return true;
 
-        /// for n-way join with FULL JOIN or GLOBAL JOINS
-        if (joins_count > 1 && (is_full_join || is_global_join))
+        /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN
+        if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
             return true;
 
         /// For RIGHT JOIN with distributed table on the right side

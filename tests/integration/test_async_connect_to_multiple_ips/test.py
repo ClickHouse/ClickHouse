@@ -58,8 +58,8 @@ def test(cluster_without_dns_cache_update):
     )
 
     assert node1.query("SELECT count(*) from test") == "1\n"
-    node2.query("SYSTEM DROP DNS CACHE")
-    node1.query("SYSTEM DROP DNS CACHE")
+    node2.query("SYSTEM CLEAR DNS CACHE")
+    node1.query("SYSTEM CLEAR DNS CACHE")
     assert (
         node2.query(
             f"SELECT count(*) FROM remote('{node1.name}', default.test) limit 1 settings serialize_query_plan=0;"

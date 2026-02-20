@@ -371,7 +371,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- "[Dictionaries](../../sql-reference/dictionaries/index.md)".
+- "[Dictionaries](../../sql-reference/statements/create/dictionary/index.md)".
 
 **Example**
 

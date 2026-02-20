@@ -229,7 +229,7 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
 
 void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers)
 {
-    Coordination::ZooKeeperRequestPtr request;
+    ZooKeeperRequestWithCallbacks request_with_callbacks;
     /// Randomly choosing connection index
     pcg64 rng(randomSeed());
     std::uniform_int_distribution<size_t> distribution(0, zookeepers.size() - 1);
@@ -249,7 +249,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         while (!extracted)
         {
-            extracted = queue->tryPop(request, 100);
+            extracted = queue->tryPop(request_with_callbacks, 100);
 
             if (shutdown
                 || (max_iterations && requests_executed >= max_iterations))
@@ -263,32 +263,15 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         auto promise = std::make_shared<std::promise<size_t>>();
         auto future = promise->get_future();
-        Coordination::ResponseCallback callback = [&request, promise](const Coordination::Response & response)
+        Coordination::ResponseCallback callback = [&request_with_callbacks, promise](const Coordination::Response & response)
         {
             bool set_exception = true;
 
             if (response.error == Coordination::Error::ZOK)
             {
+                for (const auto & success_callback : request_with_callbacks.on_success_callbacks)
+                    success_callback();
                 set_exception = false;
-            }
-            else if (response.error == Coordination::Error::ZNONODE)
-            {
-                /// remove can fail with ZNONODE because of different order of execution
-                /// of generated create and remove requests
-                /// this is okay for concurrent runs
-                if (dynamic_cast<const Coordination::ZooKeeperRemoveResponse *>(&response))
-                    set_exception = false;
-                else if (const auto * multi_response = dynamic_cast<const Coordination::ZooKeeperMultiResponse *>(&response))
-                {
-                    const auto & responses = multi_response->responses;
-                    size_t i = 0;
-                    while (responses[i]->error != Coordination::Error::ZNONODE)
-                        ++i;
-
-                    const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*request);
-                    if (dynamic_cast<const Coordination::ZooKeeperRemoveRequest *>(&*multi_request.requests[i]))
-                        set_exception = false;
-                }
             }
 
             if (set_exception)
@@ -297,6 +280,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
                 promise->set_value(response.bytesSize());
         };
 
+        const auto & request = request_with_callbacks.request;
         Stopwatch watch;
 
         if (enable_tracing)
@@ -308,10 +292,9 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
             request->tracing_context = tracing_context;
         }
 
-        zk->executeGenericRequest(request, callback);
-
         try
         {
+            zk->executeGenericRequest(request, callback);
             auto response_size = future.get();
             auto microseconds = watch.elapsedMicroseconds();
 
@@ -324,12 +307,15 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         }
         catch (...)
         {
+            std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
+            if (request)
+                std::cerr << "For request:\n" << request->toString() << std::endl;
+
             if (!continue_on_error)
             {
                 shutdown = true;
                 throw;
             }
-            std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
 
             bool got_expired = false;
             for (const auto & connection : zookeepers)
@@ -361,13 +347,13 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
     }
 }
 
-bool Runner::tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener)
+bool Runner::tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener)
 {
     bool inserted = false;
 
     while (!inserted)
     {
-        inserted = queue->tryPush(std::move(request), 100);
+        inserted = queue->tryPush(request, 100);
 
         if (shutdown)
         {
