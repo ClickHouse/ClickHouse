@@ -1,5 +1,6 @@
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
+SET materialize_statistics_on_insert = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table='auto';
 SET enable_join_runtime_filters = 0;

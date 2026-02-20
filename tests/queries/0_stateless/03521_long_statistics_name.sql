@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS t_long_statistics_name;
 
+SET materialize_statistics_on_insert = 1;
+
 CREATE TABLE t_long_statistics_name (
 `一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串` Int,
 )

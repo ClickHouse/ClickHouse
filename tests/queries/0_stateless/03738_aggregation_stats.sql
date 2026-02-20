@@ -9,6 +9,7 @@ SET query_plan_join_swap_table = 0;
 SET use_statistics = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
+SET materialize_statistics_on_insert = 1;
 
 SELECT '====== Aggregation by 1 column ======';
 SELECT explain FROM
