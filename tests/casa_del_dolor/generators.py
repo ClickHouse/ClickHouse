@@ -229,4 +229,4 @@ class BuzzHouseGenerator(Generator):
         ]
 
     def validate_exit_code(self, exit_code: int) -> bool:
-        return exit_code in (0, 32, 137, 143)
+        return exit_code in (-9, -15, 0, 32, 137, 143)
