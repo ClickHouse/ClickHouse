@@ -20,6 +20,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Storages/IStorage.h>
@@ -38,6 +40,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace Setting
@@ -77,6 +80,32 @@ bool UnionNode::isResolved() const
     }
 
     return true;
+}
+
+DataTypePtr UnionNode::getResultType() const
+{
+    auto projection_columns = computeProjectionColumns();
+
+    if (projection_columns.size() == 1)
+        return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
+
+    if (!isCorrelated())
+    {
+        DataTypes types;
+        Names names;
+        types.reserve(projection_columns.size());
+        names.reserve(projection_columns.size());
+        for (const auto & column : projection_columns)
+        {
+            types.push_back(column.type);
+            names.push_back(column.name);
+        }
+        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
+    }
+
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+        "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+        projection_columns.size());
 }
 
 NamesAndTypes UnionNode::computeProjectionColumns() const
