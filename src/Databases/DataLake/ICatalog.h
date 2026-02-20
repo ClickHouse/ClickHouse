@@ -142,7 +142,7 @@ public:
     virtual ~ICatalog() = default;
 
     /// Does catalog have any tables?
-    virtual bool isEmpty() const = 0;
+    virtual bool empty() const = 0;
 
     /// Fetch tables' names list.
     /// Contains full namespaces in names.
