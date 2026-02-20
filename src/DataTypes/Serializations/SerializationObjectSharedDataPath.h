@@ -27,8 +27,11 @@ public:
         SipHash hash;
         hash.update("ObjectSharedDataPath");
         hash.update(nested_serialization->getHash());
+        hash.update(static_cast<int>(serialization_version.value));
         hash.update(path);
         hash.update(path_subcolumn);
+        hash.update(dynamic_type->getName());
+        hash.update(subcolumn_type->getName());
         hash.update(bucket);
         return hash.get128();
     }
