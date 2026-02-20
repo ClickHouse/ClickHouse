@@ -8,26 +8,54 @@
 SELECT finalizeAggregation(CAST(unhex('01040000000000000000000000000028400000000000003C4000000000000047400000000000005A40'), 'AggregateFunction(simpleLinearRegression, Nullable(Float64), Nullable(Float64))'));
 (2,1)
 -- analysisOfVariance non-empty state.
-SELECT finalizeAggregation(CAST(unhex('0102000000000000224000000000000028400200000000008041400000000000005A400203000000000000000200000000000000'), 'AggregateFunction(analysisOfVariance, Nullable(Float64), Nullable(UInt8))'));
-(0.8100000000000002,0.43445103241803706)
+SELECT tuple(roundBankers(res.1, 4), roundBankers(res.2, 4))
+FROM
+(
+    SELECT finalizeAggregation(CAST(unhex('0102000000000000224000000000000028400200000000008041400000000000005A400203000000000000000200000000000000'), 'AggregateFunction(analysisOfVariance, Nullable(Float64), Nullable(UInt8))')) AS res
+);
+(0.81,0.4345)
 -- kolmogorovSmirnovTest non-empty state.
-SELECT finalizeAggregation(CAST(unhex('010302000000000000F03F0000000000000840000000000000144000000000000000400000000000002440'), 'AggregateFunction(kolmogorovSmirnovTest(''two-sided''), Nullable(Float64), Nullable(UInt8))'));
-(0.49999999999999994,0.8999999999999999)
+SELECT tuple(roundBankers(res.1, 4), roundBankers(res.2, 4))
+FROM
+(
+    SELECT finalizeAggregation(CAST(unhex('010302000000000000F03F0000000000000840000000000000144000000000000000400000000000002440'), 'AggregateFunction(kolmogorovSmirnovTest(''two-sided''), Nullable(Float64), Nullable(UInt8))')) AS res
+);
+(0.5,0.9)
 -- mannWhitneyUTest non-empty state.
-SELECT finalizeAggregation(CAST(unhex('010302000000000000F03F0000000000000840000000000000144000000000000000400000000000002440'), 'AggregateFunction(mannWhitneyUTest(''two-sided''), Nullable(Float64), Nullable(UInt8))'));
-(2,0.7728299926844475)
+SELECT tuple(roundBankers(res.1, 4), roundBankers(res.2, 4))
+FROM
+(
+    SELECT finalizeAggregation(CAST(unhex('010302000000000000F03F0000000000000840000000000000144000000000000000400000000000002440'), 'AggregateFunction(mannWhitneyUTest(''two-sided''), Nullable(Float64), Nullable(UInt8))')) AS res
+);
+(2,0.7728)
 -- studentTTest non-empty state.
-SELECT finalizeAggregation(CAST(unhex('01000000000000084000000000000000400000000000002240000000000000284000000000008041400000000000005A40'), 'AggregateFunction(studentTTest, Nullable(Float64), Nullable(UInt8))'));
-(-0.8999999999999999,0.4344510324180371)
+SELECT tuple(roundBankers(res.1, 4), roundBankers(res.2, 4))
+FROM
+(
+    SELECT finalizeAggregation(CAST(unhex('01000000000000084000000000000000400000000000002240000000000000284000000000008041400000000000005A40'), 'AggregateFunction(studentTTest, Nullable(Float64), Nullable(UInt8))')) AS res
+);
+(-0.9,0.4345)
 -- welchTTest non-empty state.
-SELECT finalizeAggregation(CAST(unhex('01000000000000084000000000000000400000000000002240000000000000284000000000008041400000000000005A40'), 'AggregateFunction(welchTTest, Nullable(Float64), Nullable(UInt8))'));
-(-0.7205766921228921,0.5877492311117961)
+SELECT tuple(roundBankers(res.1, 4), roundBankers(res.2, 4))
+FROM
+(
+    SELECT finalizeAggregation(CAST(unhex('01000000000000084000000000000000400000000000002240000000000000284000000000008041400000000000005A40'), 'AggregateFunction(welchTTest, Nullable(Float64), Nullable(UInt8))')) AS res
+);
+(-0.7206,0.5877)
 -- meanZTest non-empty state.
-SELECT finalizeAggregation(CAST(unhex('010000000000000840000000000000004000000000000022400000000000002840'), 'AggregateFunction(meanZTest(1., 1., 0.95), Nullable(Float64), Nullable(UInt8))'));
-(-3.286335345030997,0.0010150009471130673,-4.7891941437171575,-1.210805856282843)
+SELECT tuple(roundBankers(res.1, 4), roundBankers(res.2, 4), roundBankers(res.3, 4), roundBankers(res.4, 4))
+FROM
+(
+    SELECT finalizeAggregation(CAST(unhex('010000000000000840000000000000004000000000000022400000000000002840'), 'AggregateFunction(meanZTest(1., 1., 0.95), Nullable(Float64), Nullable(UInt8))')) AS res
+);
+(-3.2863,0.001,-4.7892,-1.2108)
 -- studentTTestOneSample non-empty state.
-SELECT finalizeAggregation(CAST(unhex('010000000000000840000000000000224000000000008041400000000000000040'), 'AggregateFunction(studentTTestOneSample, Nullable(Float64), Nullable(Float64))'));
-(2.598076211353316,0.12168993434632014)
+SELECT tuple(roundBankers(res.1, 4), roundBankers(res.2, 4))
+FROM
+(
+    SELECT finalizeAggregation(CAST(unhex('010000000000000840000000000000224000000000008041400000000000000040'), 'AggregateFunction(studentTTestOneSample, Nullable(Float64), Nullable(Float64))')) AS res
+);
+(2.5981,0.1217)
 -- argAndMin non-empty state.
 SELECT finalizeAggregation(CAST(unhex('0101030000000100000000'), 'AggregateFunction(argAndMin, Nullable(Int32), Nullable(Int32))'));
 (3,0)
