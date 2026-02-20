@@ -313,7 +313,6 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
 {'--with-sqlite' if random.randint(1, 5) == 1 else ''}
 {'--with-mongodb' if random.randint(1, 5) == 1 else ''}
 {'--with-redis' if random.randint(1, 5) == 1 else ''}
-{'--with-arrowflight' if random.randint(1, 6) == 1 else ''}
 {'--with-nginx' if random.randint(1, 6) == 1 else ''}
 {'--with-spark' if random.randint(1, 4) == 1 else ''}
 {'--with-glue' if random.randint(1, 4) == 1 else ''}
