@@ -2,7 +2,6 @@
 # Tags: no-fasttest
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
-CLICKHOUSE_CLIENT_OPT+=" --automatic_parallel_replicas_mode=0"
 . "$CURDIR"/../shell_config.sh
 
 # Tag no-fasttest: Depends on Minio
@@ -33,7 +32,7 @@ do
 
     $CLICKHOUSE_CLIENT <<EOF
     SET enable_analyzer=1;
-    SET enable_parallel_replicas=1;
+    SET enable_parallel_replicas=1, automatic_parallel_replicas_mode = 0;
     SET max_parallel_replicas=4;
     SET cluster_for_parallel_replicas='test_cluster_two_shards';
     SET parallel_replicas_for_cluster_engines=${parallel_replicas_for_cluster_engines};
@@ -85,7 +84,7 @@ EOF
 
 $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer=1;
-SET enable_parallel_replicas=1;
+SET enable_parallel_replicas=1, automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas=4;
 SET cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines=1;

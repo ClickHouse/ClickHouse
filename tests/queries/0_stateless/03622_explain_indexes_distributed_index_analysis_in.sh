@@ -12,7 +12,6 @@ CLICKHOUSE_CLIENT_OPT+="--allow_experimental_analyzer=1"
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
-CLICKHOUSE_CLIENT_OPT+=" --automatic_parallel_replicas_mode=0"
 . "$CUR_DIR"/../shell_config.sh
 
 # Generate many parts (partitions) to ensure that all replicas will be chosen for distributed index analysis
@@ -44,7 +43,7 @@ function explain_indexes()
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
   $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
-  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=1 -q "$@" | {
+  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=1 --automatic_parallel_replicas_mode=0 -q "$@" | {
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
   if [ "$with_pr" != "$without_pr" ]; then

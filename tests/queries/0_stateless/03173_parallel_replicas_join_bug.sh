@@ -2,7 +2,6 @@
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
-CLICKHOUSE_CLIENT_OPT+=" --automatic_parallel_replicas_mode=0"
 . "$CURDIR"/../shell_config.sh
 
 
@@ -21,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 $CLICKHOUSE_CLIENT -q "
-SET enable_analyzer = 1, cluster_for_parallel_replicas = 'parallel_replicas', max_parallel_replicas = 10, enable_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, max_threads = 1;
+SET enable_analyzer = 1, cluster_for_parallel_replicas = 'parallel_replicas', max_parallel_replicas = 10, enable_parallel_replicas = 2, automatic_parallel_replicas_mode = 0, parallel_replicas_for_non_replicated_merge_tree = 1, max_threads = 1;
 
 SELECT
     id,
