@@ -46,7 +46,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-extern const SettingsBool allow_experimental_parallel_reading_from_replicas;
+extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
