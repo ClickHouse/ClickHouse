@@ -22,6 +22,8 @@ using TableChangesPtr = std::shared_ptr<TableChanges>;
 using TableChangesVersionRange = std::pair<size_t, std::optional<size_t>>;
 }
 
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+
 namespace DB
 {
 
@@ -75,6 +77,8 @@ public:
         StorageMetadataPtr storage_metadata_snapshot,
 
         ContextPtr context) const override;
+
+    DeltaLakeHistory getHistory(ContextPtr local_context) const;
 
     DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
 

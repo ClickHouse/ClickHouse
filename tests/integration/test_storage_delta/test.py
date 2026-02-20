@@ -4021,6 +4021,73 @@ deltaLake{suffix}({cluster}
     assert node.contains_in_log("Row indexes size 2 for file")
 
 
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_system_delta_lake_history(started_cluster, use_delta_kernel):
+    """Test that system.delta_lake_history table works correctly with Delta Lake tables."""
+    node = get_node(started_cluster, use_delta_kernel)
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_system_delta_lake_history")
+
+    # Verify system.delta_lake_history table exists and has correct schema
+    result = node.query(
+        "SELECT name FROM system.columns WHERE database = 'system' AND table = 'delta_lake_history' ORDER BY position"
+    )
+    assert len(result.strip()) > 0, "system.delta_lake_history table should have columns"
+
+    # Create a Delta Lake table with multiple versions
+    path = f"s3a://{bucket}/{TABLE_NAME}"
+    storage_options = get_storage_options(started_cluster)
+
+    # Write initial data (version 0)
+    data = pa.table({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    write_deltalake(path, data, mode="overwrite", storage_options=storage_options)
+
+    # Write more data (version 1)
+    data2 = pa.table({"a": [4, 5, 6], "b": ["p", "q", "r"]})
+    write_deltalake(path, data2, mode="append", storage_options=storage_options)
+
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    # Create the Delta Lake table in ClickHouse
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')
+        """
+    )
+
+    # Query system.delta_lake_history for this table - check all columns except timestamp
+    history = node.query(
+        f"""
+        SELECT database, table, version, operation, operation_parameters, is_latest_version
+        FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}'
+        ORDER BY version
+        """
+    ).strip()
+
+    # Should have at least 2 versions (initial write + append)
+    lines = history.split("\n")
+    assert len(lines) >= 2, f"Expected at least 2 history entries, got {len(lines)}"
+
+    # Verify version 0 entry
+    assert f"default\t{TABLE_NAME}\t0" in history, "Version 0 should exist with correct database and table"
+
+    # Verify version 1 entry
+    assert f"default\t{TABLE_NAME}\t1" in history, "Version 1 should exist with correct database and table"
+
+    # Verify is_latest_version flag - version 1 should be latest (1), version 0 should not be (0)
+    version_0_line = [line for line in lines if f"\t0\t" in line][0]
+    version_1_line = [line for line in lines if f"\t1\t" in line][0]
+    assert version_0_line.endswith("\t0"), "Version 0 should have is_latest_version=0"
+    assert version_1_line.endswith("\t1"), "Version 1 should have is_latest_version=1"
+
+    # Clean up
+    node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_3(started_cluster, cluster):
     """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526
