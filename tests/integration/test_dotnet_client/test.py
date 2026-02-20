@@ -19,6 +19,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     user_configs=["configs/users.xml"],
+    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
 

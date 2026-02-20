@@ -39,12 +39,10 @@ struct MutationCommand
         DROP_PROJECTION,
         DROP_STATISTICS,
         MATERIALIZE_TTL,
-        REWRITE_PARTS,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
         APPLY_DELETED_MASK,
-        APPLY_PATCHES,
-        ALTER_WITHOUT_MUTATION, /// pure metadata command
+        ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
     };
 
     Type type = EMPTY;
@@ -74,37 +72,23 @@ struct MutationCommand
     /// Column rename_to
     String rename_to = {};
 
-    /// A version of mutation to which command corresponds.
-    std::optional<UInt64> mutation_version = {};
-
-    /// True if column is read by mutation command to apply patch.
-    /// Required to distinguish read command used for MODIFY COLUMN.
-    bool read_for_patch = false;
-
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(const ASTAlterCommand & command, bool parse_alter_commands = false, bool with_pure_metadata_commands = false);
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
-    bool isPureMetadataCommand() const;
-    bool isEmptyCommand() const;
-    bool isDropOrRename() const;
-    bool affectsAllColumns() const;
 };
 
-/// Multiple mutation commands, possibly from different ALTER queries
+/// Multiple mutation commands, possible from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
-    void readText(ReadBuffer & in, bool with_pure_metadata_commands);
-    std::string toString(bool with_pure_metadata_commands) const;
+    void readText(ReadBuffer & in);
+    std::string toString() const;
     bool hasNonEmptyMutationCommands() const;
-
-    bool hasAnyUpdateCommand() const;
-    bool hasOnlyUpdateCommands() const;
 
     /// These set of commands contain barrier command and shouldn't
     /// stick with other commands. Commands from one set have already been validated
@@ -122,7 +106,6 @@ struct MutationActions
     ActionsDAG dag;
     String filter_column_name;
     bool project_input;
-    std::optional<UInt64> mutation_version;
 };
 
 }

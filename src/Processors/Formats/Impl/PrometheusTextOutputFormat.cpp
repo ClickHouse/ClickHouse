@@ -91,7 +91,7 @@ Float64 tryParseFloat(const String & s)
 
 PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     WriteBuffer & out_,
-    SharedHeader header_,
+    const Block & header_,
     const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
     , string_serialization(DataTypeString().getDefaultSerialization())
@@ -348,14 +348,10 @@ void registerOutputFormatPrometheus(FormatFactory & factory)
     factory.registerOutputFormat(FORMAT_NAME, [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & settings)
     {
-        return std::make_shared<PrometheusTextOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        return std::make_shared<PrometheusTextOutputFormat>(buf, sample, settings);
     });
-
-    /// https://github.com/prometheus/docs/blob/86386ed25bc8a5309492483ec7d18d0914043162/content/docs/instrumenting/exposition_formats.md
-    factory.setContentType(FORMAT_NAME, "text/plain; version=0.0.4; charset=UTF-8");
 }
 
 }

@@ -25,3 +25,15 @@ bool hasLogger(const std::string & name)
 {
     return Poco::Logger::has(name);
 }
+
+static constinit std::atomic<bool> allow_logging{true};
+
+bool isLoggingEnabled()
+{
+    return allow_logging;
+}
+
+void disableLogging()
+{
+    allow_logging = false;
+}

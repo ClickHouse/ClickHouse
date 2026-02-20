@@ -1,5 +1,3 @@
-SET allow_materialized_view_with_bad_select = 1;
-
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS v;
 

@@ -39,6 +39,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -67,7 +68,6 @@ concept is_native_int_or_decimal_v
 
 // This macro performs a branch-free conditional assignment for floating point types.
 // It uses bitwise operations to avoid branching, which can be beneficial for performance.
-#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
 #define BRANCHFREE_IF_FLOAT(TYPE, vc, va, vb, vr) \
     using UIntType = typename NumberTraits::Construct<false, false, sizeof(TYPE)>::Type; \
     using IntType = typename NumberTraits::Construct<true, false, sizeof(TYPE)>::Type; \
@@ -143,19 +143,10 @@ inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult &
     /// We manually optimize the loop for types like (U)Int128|256 or Decimal128/256 to avoid branches
     if constexpr (is_over_big_int<ResultType>)
     {
-        auto new_a = static_cast<ResultType>(a);
-        auto new_b = static_cast<ResultType>(b);
-
+        alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
         for (size_t i = 0; i < size; ++i)
         {
-            // produces cmpb + sete
-            // results in less uops than ResultType{static_cast<MaskType>(cond[i]) - 1};
-            uint8_t flag = (cond[i] != 0);
-
-            ResultType mask{};
-            std::memset(&mask, flag ? 0xFF : 0x00, sizeof(ResultType));
-
-            res[i] = (mask & new_a) | (~mask & new_b);
+            res[i] = ab[!cond[i]];
         }
     }
     else if constexpr (std::is_same_v<ResultType, Decimal32> || std::is_same_v<ResultType, Decimal64>)
@@ -278,7 +269,7 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
@@ -779,75 +770,6 @@ private:
         return ColumnMap::create(std::move(nested_column));
     }
 
-    static ColumnPtr executeGenericWithType(
-        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, const DataTypePtr & common_type)
-    {
-        /// Convert both columns to the given common type.
-        const ColumnWithTypeAndName & arg1 = arguments[1];
-        const ColumnWithTypeAndName & arg2 = arguments[2];
-
-        ColumnPtr col_then = castColumn(arg1, common_type);
-        ColumnPtr col_else = castColumn(arg2, common_type);
-
-        MutableColumnPtr result_column = common_type->createColumn();
-        result_column->reserve(input_rows_count);
-
-        bool then_is_const = isColumnConst(*col_then);
-        bool else_is_const = isColumnConst(*col_else);
-
-        const auto & cond_array = cond_col->getData();
-
-        if (then_is_const && else_is_const)
-        {
-            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
-            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(then_nested_column, 0);
-                else
-                    result_column->insertFrom(else_nested_column, 0);
-            }
-        }
-        else if (then_is_const)
-        {
-            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(then_nested_column, 0);
-                else
-                    result_column->insertFrom(*col_else, i);
-            }
-        }
-        else if (else_is_const)
-        {
-            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
-                else
-                    result_column->insertFrom(else_nested_column, 0);
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (cond_array[i])
-                    result_column->insertFrom(*col_then, i);
-                else
-                    result_column->insertFrom(*col_else, i);
-            }
-        }
-
-        return result_column;
-    }
-
     static ColumnPtr executeGeneric(
         const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool use_variant_when_no_common_type)
     {
@@ -1003,7 +925,7 @@ private:
         if (isColumnNullable(*materialized))
             return materialized;
 
-        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
+        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
     }
 
     /// Return nested column recursively removing Nullable, examples:
@@ -1350,30 +1272,10 @@ public:
         /// Special case when one column is Integer and another is UInt64 that can be actually Int64.
         /// The result type for this case is Int64 and we need to change UInt64 type to Int64
         /// so the NumberTraits::ResultOfIf will return Int64 instead if Int128.
-        bool uint64_to_int64 = false;
         if (isNativeInteger(left_type) && isUInt64ThatCanBeInt64(right_type))
-        {
             right_type = std::make_shared<DataTypeInt64>();
-            uint64_to_int64 = true;
-        }
         else if (isNativeInteger(right_type) && isUInt64ThatCanBeInt64(left_type))
-        {
             left_type = std::make_shared<DataTypeInt64>();
-            uint64_to_int64 = true;
-        }
-
-        /// When the result type is Int64 but we have UInt64 and Int32 arguments,
-        /// the canUnsignedBeSigned flag on UInt64 type may have been lost during query plan transformations.
-        /// In this case, we use executeGenericWithType which casts both columns to the expected result type.
-        /// See issue #70017.
-        bool left_is_uint64 = WhichDataType(left_type).isUInt64();
-        bool right_is_uint64 = WhichDataType(right_type).isUInt64();
-        bool result_type_is_int64 = WhichDataType(removeNullable(result_type)).isInt64();
-        if (result_type_is_int64 && (left_is_uint64 || right_is_uint64) && !uint64_to_int64)
-        {
-            /// Cast both columns to Int64 using the pre-computed result type
-            return executeGenericWithType(cond_col, arguments, input_rows_count, removeNullable(result_type));
-        }
 
         TypeIndex left_id = left_type->getTypeId();
         TypeIndex right_id = right_type->getTypeId();
@@ -1424,51 +1326,12 @@ public:
 
 REGISTER_FUNCTION(If)
 {
-    FunctionDocumentation::Description description = R"(
-Performs conditional branching.
-
-- If the condition `cond` evaluates to a non-zero value, the function returns the result of the expression `then`.
-- If `cond` evaluates to zero or NULL, the result of the `else` expression is returned.
-
-The setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
-
-If enabled, the `then` expression is evaluated only on rows where `cond` is true and the `else` expression where `cond` is false.
-
-For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the following query:
-
-```sql
-SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)
-```
-
-`then` and `else` must be of a similar type.
-)";
-    FunctionDocumentation::Syntax syntax = "if(cond, then, else)";
-    FunctionDocumentation::Arguments arguments = {
-        {"cond", "The evaluated condition.", {"UInt8", "Nullable(UInt8)", "NULL"}},
-        {"then", "The expression returned if `cond` is true.", {}},
-        {"else", "The expression returned if `cond` is false or `NULL`.", {}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"The result of either the `then` or `else` expressions, depending on condition `cond`."};
-    FunctionDocumentation::Examples examples = {
-        {"Example usage", R"(
-SELECT if(1, 2 + 2, 2 + 6) AS res;
-)",
-    R"(
-┌─res─┐
-│   4 │
-└─────┘
-)"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionIf>({}, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
 }
 
 }

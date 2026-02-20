@@ -32,7 +32,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
 {
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
@@ -47,7 +47,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     /// Case when bucket name and key represented in the path of S3 URL.
     /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
-    static const RE2 path_style_pattern("^/([^/]*)(?:/?(.*))");
+    static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
     if (allow_archive_path_syntax)
         std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
@@ -55,31 +55,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
         uri_str = uri_;
 
     uri = Poco::URI(uri_str);
-    /// Keep a copy of how Poco parsed the original string before any mapping
-    Poco::URI original_uri(uri_str);
-    bool looks_like_presigned = false;
-    for (const auto & [qk, qv] : original_uri.getQueryParameters())
-    {
-        if (
-            qk == "versionId" ||
-            qk == "AWSAccessKeyId" ||
-            qk == "Signature" ||
-            qk == "Expires" ||
-            qk.starts_with("X-Amz-") ||
-            qk == "GoogleAccessId" ||
-            qk.starts_with("X-Goog-")
-        )
-        {
-            looks_like_presigned = true;
-            break;
-        }
-    }
-
-    /// In compatibility mode, we want to treat pre-signed URLs like plain ones,
-    /// so we fold their query into the key (like make '?' behave as wildcard)
-    /// Do it by unmarking presigned here, but if it actually looks like a presigned URL
-    if (!keep_presigned_query_parameters && looks_like_presigned)
-        looks_like_presigned = false;
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
@@ -120,12 +95,22 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
         }
     }
 
-    /// Defer handling of non-versionId, non-presigned queries until after style detection.
+    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
+    /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
+    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
+    /// It is necessary to encode '?' to avoid deletion during parsing path.
+    if (!has_version_id && uri_.contains('?'))
+    {
+        String uri_with_question_mark_encode;
+        Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
+        uri = Poco::URI(uri_with_question_mark_encode);
+    }
 
     String name;
     String endpoint_authority_from_uri;
 
     bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
+
     if (!is_using_aws_private_link_interface
         && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
     {
@@ -139,6 +124,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
         {
             endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
         }
+        validateBucket(bucket, uri);
 
         if (!uri.getPath().empty())
         {
@@ -156,6 +142,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     {
         is_virtual_hosted_style = false;
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
+        validateBucket(bucket, uri);
     }
     else
     {
@@ -168,27 +155,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
         if (!uri.getPath().empty())
             key = uri.getPath().substr(1);
     }
-
-    /// If there is a '?' in the original string, but no actual query, it means
-    /// the user intended to use '?' as a wildcard in the path. Preserve it (even if trailing)
-    if (original_uri.getRawQuery().empty() && uri_str.find('?') != std::string::npos && !has_version_id && !looks_like_presigned)
-    {
-        key += "?";
-    }
-
-    /// Merge non-presigned, non-versionId query into key as required.
-    const std::string original_query = original_uri.getQuery();
-    if (!original_query.empty() && !has_version_id && !looks_like_presigned)
-    {
-        // For all styles except pre-signed/versioned, fold query into key
-        // This ensures consistent behavior for wildcard parsing and format detection
-        key += "?";
-        key += original_query;
-        uri.setQuery("");
-    }
-
-    validateBucket(bucket, uri);
-    validateKey(key, uri);
 }
 
 void URI::addRegionToURI(const std::string &region)
@@ -209,37 +175,38 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
             !uri.empty() ? " (" + uri.toString() + ")" : "");
 }
 
-void URI::validateKey(const String & key, const Poco::URI & uri)
+std::pair<std::string, std::optional<std::string>> URI::getURIAndArchivePattern(const std::string & source)
 {
-    auto onError = [&]()
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid S3 key: {}{}",
-            quoteString(key),
-            !uri.empty() ? " (" + uri.toString() + ")" : "");
-    };
+    size_t pos = source.find("::");
+    if (pos == String::npos)
+        return {source, std::nullopt};
 
-
-    // this shouldn't happen ever because the regex should not catch this
-    if (key.size() == 1 && key[0] == '/')
+    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    bool contains_spaces_around_operator = false;
+    while (path_to_archive_view.ends_with(' '))
     {
-       onError();
+        contains_spaces_around_operator = true;
+        path_to_archive_view.remove_suffix(1);
     }
 
-    // the current regex impl allows something like "bucket-name/////".
-    // bucket: bucket-name
-    // key: ////
-    // throw exception in case such thing is found
-    for (size_t i = 1; i < key.size(); i++)
+    std::string_view archive_pattern_view = std::string_view{source}.substr(pos + 2);
+    while (archive_pattern_view.starts_with(' '))
     {
-        if (key[i - 1] == '/' && key[i] == '/')
-        {
-            onError();
-        }
+        contains_spaces_around_operator = true;
+        archive_pattern_view.remove_prefix(1);
     }
+
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains spaces after or before :: (URI cannot contain spaces)
+    /// - it contains characters that could mean glob expression
+    if (archive_pattern_view.empty() || path_to_archive_view.empty()
+        || (!contains_spaces_around_operator && !hasSupportedArchiveExtension(path_to_archive_view)
+            && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+        return {source, std::nullopt};
+
+    return std::pair{std::string{path_to_archive_view}, std::string{archive_pattern_view}};
 }
-
 }
 
 }

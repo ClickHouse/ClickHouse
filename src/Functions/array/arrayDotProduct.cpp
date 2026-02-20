@@ -1,6 +1,5 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
-#include <Common/TargetSpecific.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionBinaryArithmetic.h>
@@ -8,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/types.h>
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
@@ -79,7 +79,7 @@ struct DotProduct
 
 #if USE_MULTITARGET_CODE
     template <typename Type>
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
         const Type * __restrict data_x,
         const Type * __restrict data_y,
         size_t i_max,
@@ -352,7 +352,7 @@ private:
             if constexpr ((std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>)
                             && std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>)
             {
-                if (isArchSupported(TargetArch::x86_64_v4))
+                if (isArchSupported(TargetArch::AVX512F))
                     Kernel::template accumulateCombine<ResultType>(&data_x[0], &data_y[current_offset], array_size, i, state);
             }
 #else
@@ -386,35 +386,7 @@ using FunctionArrayDotProduct = FunctionArrayScalarProduct<DotProduct>;
 
 REGISTER_FUNCTION(ArrayDotProduct)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the dot product of two arrays.
-
-:::note
-The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
-:::
-)";
-    FunctionDocumentation::Syntax syntax = "arrayDotProduct(v1, v2)";
-    FunctionDocumentation::Arguments arguments = {
-        {"v1", "First vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
-        {"v2", "Second vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {R"(
-The dot product of the two vectors.
-
-:::note
-The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
-:::
-
-)", {"(U)Int*", "Float*", "Decimal"}};
-    FunctionDocumentation::Examples examples = {
-        {"Array example", "SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);", "32    UInt16"},
-        {"Tuple example", "SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UInt8)) AS res, toTypeName(res);", "32    Float64"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionArrayDotProduct>(documentation);
+    factory.registerFunction<FunctionArrayDotProduct>();
 }
 
 // These functions are used by TupleOrArrayFunction in Function/vectorFunctions.cpp

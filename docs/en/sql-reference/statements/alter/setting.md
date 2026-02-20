@@ -4,7 +4,6 @@ sidebar_label: 'SETTING'
 sidebar_position: 38
 slug: /sql-reference/statements/alter/setting
 title: 'Table Settings Manipulations'
-doc_type: 'reference'
 ---
 
 # Table Settings Manipulations
@@ -14,7 +13,7 @@ If a setting with the specified name does not exist, then the query raises an ex
 
 **Syntax**
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 

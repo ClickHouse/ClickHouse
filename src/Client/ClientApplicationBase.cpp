@@ -6,7 +6,6 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SignalHandlers.h>
-#include <Client/JWTProvider.h>
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -159,15 +158,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     if (argc)
         argv0 = argv[0];
-
-    /// Set application name for help messages based on how the binary was invoked
-    std::string_view argv0_view(argv0 ? argv0 : "");
-    std::string name_with_dash = "clickhouse-" + getName();
-    if (argv0_view.find(name_with_dash) != std::string_view::npos)
-        app_name = name_with_dash;
-    else
-        app_name = "clickhouse " + getName();
-
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes
@@ -194,23 +184,23 @@ void ClientApplicationBase::init(int argc, char ** argv)
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
-    if (options.contains("version") || options.contains("V"))
+    if (options.count("version") || options.count("V"))
     {
         showClientVersion();
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
-    if (options.contains("version-clean"))
+    if (options.count("version-clean"))
     {
         output_stream << VERSION_STRING;
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     /// If user writes -help instead of --help.
-    bool user_made_a_typo = options.contains("host") && options["host"].as<std::string>() == "elp";
-    if (options.contains("help") || user_made_a_typo)
+    bool user_made_a_typo = options.count("host") && options["host"].as<std::string>() == "elp";
+    if (options.count("help") || user_made_a_typo)
     {
-        if (options.contains("verbose"))
+        if (options.count("verbose"))
             printHelpMessage(options_description);
         else
             printHelpMessage(options_description_non_verbose);
@@ -221,7 +211,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());
-    profile_events.print = options.contains("print-profile-events");
+    profile_events.print = options.count("print-profile-events");
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
@@ -257,7 +247,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     fatal_console_channel_ptr = new Poco::ConsoleChannel;
     fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
 
-    if (options.contains("client_logs_file"))
+    if (options.count("client_logs_file"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing logs to a file is disabled in an embedded mode.");
@@ -269,6 +259,11 @@ void ClientApplicationBase::init(int argc, char ** argv)
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
+
+#if USE_GWP_ASAN
+    GWPAsan::initFinished();
+#endif
+
 }
 
 

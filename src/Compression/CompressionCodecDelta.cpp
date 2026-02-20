@@ -1,7 +1,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,12 +29,6 @@ protected:
     bool isGenericCompression() const override { return false; }
     bool isDeltaCompression() const override { return true; }
 
-    String getDescription() const override
-    {
-        return "Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing or decreasing data.";
-    }
-
-
 private:
     const UInt8 delta_bytes_size;
 };
@@ -54,7 +47,7 @@ namespace ErrorCodes
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
     : delta_bytes_size(delta_bytes_size_)
 {
-    setCodecDescription("Delta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
+    setCodecDescription("Delta", {std::make_shared<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
 }
 
 uint8_t CompressionCodecDelta::getMethodByte() const
@@ -111,7 +104,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         dest += sizeof(T);
     }
 
-    return static_cast<UInt32>(dest - original_dest);
+    return dest - original_dest;
 }
 
 }

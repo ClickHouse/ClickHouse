@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -21,10 +20,9 @@ extern const int LOGICAL_ERROR;
 }
 
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
-    const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait, DDLGuardPtr && database_guard_)
+    const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
     : DistributedQueryStatusSource(
-          zk_node_path, zk_replicas_path, std::make_shared<const Block>(getSampleBlock()), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
-    , database_guard(std::move(database_guard_))
+          zk_node_path, zk_replicas_path, getSampleBlock(), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
 {
 }
 

@@ -3,8 +3,8 @@
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
 
-#include <csignal>
 #include <sys/stat.h>
+#include <pwd.h>
 
 #if defined(OS_LINUX)
     #include <syscall.h>
@@ -33,18 +33,13 @@
 
 #include <Poco/Util/XMLConfiguration.h>
 
+#include <incbin.h>
+
 #include "config.h"
 
 /// Embedded configuration files used inside the install program
-constexpr unsigned char resource_config_xml[] =
-{
-#embed "../server/config.xml"
-};
-
-constexpr unsigned char resource_users_xml[] =
-{
-#embed "../server/users.xml"
-};
+INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
+INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.
@@ -238,10 +233,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)\n\n";
-            std::cout << "Usage: " << formatWithSudo("clickhouse install", getuid() != 0) << " [options]\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
             std::cout << desc << '\n';
             return 0;
         }
@@ -291,7 +286,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool old_binary_exists = fs::exists(main_bin_path);
         bool already_installed = false;
 
-        if (options.contains("link"))
+        if (options.count("link"))
         {
             if (old_binary_exists)
             {
@@ -439,10 +434,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
             "clickhouse-disks",
-#if USE_CHDIG
-            "clickhouse-chdig",
-            "chdig",
-#endif
             "ch",
             "chl",
             "chc",
@@ -469,7 +460,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     if (is_symlink)
                         points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
 
-                    if (is_symlink && (points_to == main_bin_path || (options.contains("link") && points_to == binary_self_canonical_path)))
+                    if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
                     {
                         need_to_create = false;
                     }
@@ -586,7 +577,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(main_config_file))
         {
-            std::string_view main_config_content(reinterpret_cast<const char *>(resource_config_xml), std::size(resource_config_xml));
+            std::string_view main_config_content(reinterpret_cast<const char *>(gresource_config_xmlData), gresource_config_xmlSize);
             if (main_config_content.empty())
             {
                 fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -697,7 +688,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(users_config_file))
         {
-            std::string_view users_config_content(reinterpret_cast<const char *>(resource_users_xml), std::size(resource_users_xml));
+            std::string_view users_config_content(reinterpret_cast<const char *>(gresource_users_xmlData), gresource_users_xmlSize);
             if (users_config_content.empty())
             {
                 fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
@@ -804,7 +795,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
         bool noninteractive = (debian_frontend_var && debian_frontend_var == std::string_view("noninteractive"))
-                              || options.contains("noninteractive");
+                              || options.count("noninteractive");
 
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
@@ -939,45 +930,16 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         if (has_password_for_default_user)
             maybe_password = " --password";
 
-        /// If user specified --prefix, --pid-path, --config-path, --binary-path, --user, --group
-        /// in install args we need to pass them to start command
-        std::string maybe_prefix;
-        if (options.contains("prefix") && prefix != "/")
-            maybe_prefix = " --prefix " + prefix.string();
-
-        std::string maybe_pid_path;
-        if (options.contains("pid-path"))
-            maybe_pid_path = " --pid-path " + options["pid-path"].as<std::string>();
-
-        std::string maybe_config_path;
-        if (options.contains("config-path"))
-            maybe_config_path = " --config-path " + options["config-path"].as<std::string>();
-
-        std::string maybe_binary_path;
-        if (options.contains("binary-path"))
-            maybe_binary_path = " --binary-path " + options["binary-path"].as<std::string>();
-
-        std::string maybe_user;
-        if (options.contains("user") && user != DEFAULT_CLICKHOUSE_SERVER_USER)
-            maybe_user = " --user " + user;
-
-        std::string maybe_group;
-        if (options.contains("group") && group != DEFAULT_CLICKHOUSE_SERVER_GROUP)
-            maybe_group = " --group " + group;
-
-        std::string start_options = maybe_prefix + maybe_pid_path + maybe_config_path + maybe_binary_path + maybe_user + maybe_group;
-
         fs::path pid_file = pid_path / "clickhouse-server.pid";
         if (fs::exists(pid_file))
         {
             fmt::print(
                 "\nClickHouse has been successfully installed.\n"
                 "\nRestart clickhouse-server with:\n"
-                " {}{}\n"
+                " {}\n"
                 "\nStart clickhouse-client with:\n"
                 " clickhouse-client{}\n\n",
-                formatWithSudo("clickhouse restart", getuid() != 0),
-                start_options,
+                formatWithSudo("clickhouse restart"),
                 maybe_password);
         }
         else
@@ -985,11 +947,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             fmt::print(
                 "\nClickHouse has been successfully installed.\n"
                 "\nStart clickhouse-server with:\n"
-                " {}{}\n"
+                " {}\n"
                 "\nStart clickhouse-client with:\n"
                 " clickhouse-client{}\n\n",
-                formatWithSudo("clickhouse start", getuid() != 0),
-                start_options,
+                formatWithSudo("clickhouse start"),
                 maybe_password);
         }
     }
@@ -1014,7 +975,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 namespace
 {
-    int start(const std::string & user, const std::string & group, const fs::path & binary, const fs::path & executable, const fs::path & config, const fs::path & pid_file, unsigned max_tries, bool no_sudo)
+    int start(const std::string & user, const fs::path & executable, const fs::path & config, const fs::path & pid_file, unsigned max_tries)
     {
         if (fs::exists(pid_file))
         {
@@ -1054,20 +1015,11 @@ namespace
 
         if (!user.empty())
         {
-            if (no_sudo)
-            {
-                /// Sometimes there is no sudo available like in some Docker images.
-                /// We will use clickhouse su instead.
-                command = fmt::format("{} su {}:{} {}", binary.string(), user, group, command);
-            }
-            else
-            {
-                /// sudo respects limits in /etc/security/limits.conf e.g. open files,
-                /// that's why we are using it instead of the 'clickhouse su' tool.
-                /// by default, sudo resets all the ENV variables, but we should preserve
-                /// the values /etc/default/clickhouse in /etc/init.d/clickhouse file
-                command = fmt::format("sudo --preserve-env -u '{}' {}", user, command);
-            }
+            /// sudo respects limits in /etc/security/limits.conf e.g. open files,
+            /// that's why we are using it instead of the 'clickhouse su' tool.
+            /// by default, sudo resets all the ENV variables, but we should preserve
+            /// the values /etc/default/clickhouse in /etc/init.d/clickhouse file
+            command = fmt::format("sudo --preserve-env -u '{}' {}", user, command);
         }
 
         fmt::print("Will run {}\n", command);
@@ -1118,27 +1070,52 @@ namespace
         return 0;
     }
 
-    int isRunning(const fs::path & pid_file, bool ignore_file_does_not_exist)
+    int isRunning(const fs::path & pid_file)
     {
         int pid = 0;
 
-        try
+        if (fs::exists(pid_file))
         {
-            ReadBufferFromFile in(pid_file.string());
-            if (tryReadIntText(pid, in))
+            try
             {
-                fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
+                ReadBufferFromFile in(pid_file.string());
+                if (tryReadIntText(pid, in))
+                {
+                    fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
+                }
+                else
+                {
+                    fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
+                    (void)fs::remove(pid_file);
+                }
             }
-            else
+            catch (const Exception & e)
             {
-                fmt::print("{} file exists but damaged, ignoring (the file will be removed).\n", pid_file.string());
-                (void)fs::remove(pid_file);
+                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                    throw;
+
+                /// If file does not exist (TOCTOU) - it's ok.
             }
         }
-        catch (const Exception & e)
+
+        if (!pid)
         {
-            if (!ignore_file_does_not_exist || e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                throw;
+            auto sh = ShellCommand::execute("pidof clickhouse-server");
+
+            if (tryReadIntText(pid, sh->out))
+            {
+                fmt::print("Found pid = {} in the list of running processes.\n", pid);
+            }
+            else if (!sh->out.eof())
+            {
+                fmt::print("The pidof command returned unusual output.\n");
+            }
+
+            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
+            copyData(sh->err, std_err);
+            std_err.finalize();
+
+            sh->tryWait();
         }
 
         if (pid)
@@ -1166,7 +1143,7 @@ namespace
 
     bool sendSignalAndWaitForStop(const fs::path & pid_file, int signal, unsigned max_tries, unsigned wait_ms, const char * signal_name)
     {
-        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
+        int pid = isRunning(pid_file);
 
         if (!pid)
             return true;
@@ -1180,7 +1157,7 @@ namespace
         for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to stop\n");
-            if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true))
+            if (!isRunning(pid_file))
             {
                 fmt::print("Server stopped\n");
                 break;
@@ -1202,7 +1179,7 @@ namespace
         if (sendSignalAndWaitForStop(pid_file, signal, max_tries, 1000, signal_name))
             return 0;
 
-        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
+        int pid = isRunning(pid_file);
         if (!pid)
             return 0;
 
@@ -1221,10 +1198,10 @@ namespace
         constexpr size_t num_kill_check_tries = 1000;
         constexpr size_t kill_check_delay_ms = 100;
         fmt::print("Will terminate forcefully (pid = {}).\n", pid);
-        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, "kill"))
+        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, signal_name))
             return 0;
 
-        if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true))
+        if (!isRunning(pid_file))
             return 0;
 
         throw Exception(ErrorCodes::CANNOT_KILL,
@@ -1251,34 +1228,27 @@ int mainEntryClickHouseStart(int argc, char ** argv)
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
-            ("group", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_GROUP), "clickhouse group")
-            ("no-sudo", po::bool_switch(), "use clickhouse su instead of sudo (useful when running in a Docker container)")
             ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server (with 1 second delay)")
         ;
 
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        bool no_sudo = options["no-sudo"].as<bool>();
-
-        if (options.contains("help"))
+        if (options.count("help"))
         {
-            std::cout << "Usage: " << formatWithSudo("clickhouse start", !no_sudo && getuid() != 0) << " [options]\n";
-            std::cout << desc << "\n";
-            return 0;
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " start", getuid() != 0) << '\n';
+            return 1;
         }
 
         std::string user = options["user"].as<std::string>();
-        std::string group = options["group"].as<std::string>();
 
         fs::path prefix = options["prefix"].as<std::string>();
-        fs::path binary = prefix / options["binary-path"].as<std::string>() / "clickhouse";
         fs::path executable = prefix / options["binary-path"].as<std::string>() / "clickhouse-server";
         fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
         unsigned max_tries = options["max-tries"].as<unsigned>();
 
-        return start(user, group, binary, executable, config, pid_file, max_tries, no_sudo);
+        return start(user, executable, config, pid_file, max_tries);
     }
     catch (...)
     {
@@ -1305,11 +1275,10 @@ int mainEntryClickHouseStop(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
-            std::cout << "Usage: " << formatWithSudo("clickhouse stop", getuid() != 0) << " [options]\n";
-            std::cout << desc << "\n";
-            return 0;
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " stop", getuid() != 0) << '\n';
+            return 1;
         }
 
         fs::path prefix = options["prefix"].as<std::string>();
@@ -1342,17 +1311,16 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
-            std::cout << "Usage: " << formatWithSudo("clickhouse status", getuid() != 0) << " [options]\n";
-            std::cout << desc << "\n";
-            return 0;
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " status", getuid() != 0) << '\n';
+            return 1;
         }
 
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
 
-        isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
+        isRunning(pid_file);
     }
     catch (...)
     {
@@ -1381,8 +1349,6 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
-            ("group", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_GROUP), "clickhouse group")
-            ("no-sudo", po::bool_switch(), "use clickhouse su instead of sudo (useful when running in a Docker container)")
             ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
             ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
             ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server (with 1 second delay)")
@@ -1391,20 +1357,15 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        bool no_sudo = options["no-sudo"].as<bool>();
-
-        if (options.contains("help"))
+        if (options.count("help"))
         {
-            std::cout << "Usage: " << formatWithSudo("clickhouse restart", !no_sudo && getuid() != 0) << " [options]\n";
-            std::cout << desc << "\n";
-            return 0;
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " restart", getuid() != 0) << '\n';
+            return 1;
         }
 
         std::string user = options["user"].as<std::string>();
-        std::string group = options["group"].as<std::string>();
 
         fs::path prefix = options["prefix"].as<std::string>();
-        fs::path binary = prefix / options["binary-path"].as<std::string>() / "clickhouse";
         fs::path executable = prefix / options["binary-path"].as<std::string>() / "clickhouse-server";
         fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
@@ -1415,7 +1376,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
 
         if (int res = stop(pid_file, force, do_not_kill, max_tries))
             return res;
-        return start(user, group, binary, executable, config, pid_file, max_tries, no_sudo);
+        return start(user, executable, config, pid_file, max_tries);
     }
     catch (...)
     {
