@@ -136,14 +136,12 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        for _ in range(60):
-            res = Shell.check(
-                "/mc ls clickminio/test | grep -q .",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
+        if Shell.check(
+            "/mc ls clickminio/test | grep -q .",
+            verbose=False,
+            retries=6,
+        ):
+            return True
         print("Failed to start minio")
         return False
 
@@ -723,7 +721,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ):
             if proc and pid:
                 if not Shell.check(
-                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill",
+                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
                     print(
@@ -1019,9 +1017,7 @@ disassemble /s
 p \"done\"
 detach
 quit
-""".format(
-            RTMIN=rtmin
-        )
+""".format(RTMIN=rtmin)
         with open(f"{temp_dir}/script.gdb", "w") as file:
             file.write(script)
         return f"{temp_dir}/script.gdb"

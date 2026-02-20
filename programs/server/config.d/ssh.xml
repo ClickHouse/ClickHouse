@@ -1,6 +1,0 @@
-<clickhouse>
-    <tcp_ssh_port>9022</tcp_ssh_port>
-    <ssh_server>
-        <host_ed25519_key>config.d/ssh_host_ed25519_key</host_ed25519_key>
-    </ssh_server>
-</clickhouse>

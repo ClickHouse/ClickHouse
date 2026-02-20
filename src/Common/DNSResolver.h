@@ -107,7 +107,7 @@ private:
     void addToNewAddresses(const Poco::Net::IPAddress & address);
 
     IPAddresses resolveIPAddressWithCache(const std::string & host);
-    IPAddresses getResolvedIPAdressessWithFiltering(const std::string & host);
+    IPAddresses getResolvedIPAddressesWithFiltering(const std::string & host);
 };
 
 }

@@ -148,6 +148,12 @@ public:
 
     ~FutureSetFromSubquery() override;
 
+    /// The following two methods are used to transfer ownership of `SetAndKey` from one
+    /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
+    /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
+    void replaceSetAndKey(SetAndKeyPtr set);
+    SetAndKeyPtr detachSetAndKey();
+
     SetPtr get() const override;
     DataTypes getTypes() const override;
     Hash getHash() const override;
