@@ -660,7 +660,6 @@ def publish_home_view(
 
     # Add footer with divider
     if github_login:
-        blocks.append({"type": "divider"})
         blocks.append(
             {
                 "type": "section",

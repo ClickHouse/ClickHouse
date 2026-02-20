@@ -42,6 +42,7 @@ class ClickHouseProc:
 """
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
+    KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
     GDB_LOG = f"{temp_dir}/gdb.log"
@@ -96,6 +97,7 @@ class ClickHouseProc:
         self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
+        self.kafka_proc = None
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
@@ -134,14 +136,12 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        for _ in range(20):
-            res = Shell.check(
-                "/mc ls clickminio/test | grep -q .",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
+        if Shell.check(
+            "/mc ls clickminio/test | grep -q .",
+            verbose=False,
+            retries=6,
+        ):
+            return True
         print("Failed to start minio")
         return False
 
@@ -155,6 +155,29 @@ class ClickHouseProc:
             )
         print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
         return True
+
+    def start_kafka(self):
+        command = [
+            "./ci/jobs/scripts/functional_tests/setup_kafka.sh",
+        ]
+        with open(self.KAFKA_LOG, "w") as log_file:
+            self.kafka_proc = subprocess.Popen(
+                command, stdout=log_file, stderr=subprocess.STDOUT
+            )
+        print(
+            f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}"
+        )
+
+        for _ in range(60):
+            res = Shell.check(
+                "kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list",
+                verbose=True,
+            )
+            if res:
+                return True
+            time.sleep(1)
+        print("Failed to start Kafka")
+        return False
 
     @staticmethod
     def log_cluster_config():
@@ -676,6 +699,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 verbose=True,
             )
 
+        if self.kafka_proc:
+            print("Stopping Kafka broker")
+            Shell.check("kafka-server-stop.sh", verbose=True)
+            try:
+                self.kafka_proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                self.kafka_proc.kill()
+
         self._flush_system_logs()
 
         self.save_system_metadata_files_from_remote_database_disk()
@@ -690,7 +721,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ):
             if proc and pid:
                 if not Shell.check(
-                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill",
+                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
                     print(
@@ -724,6 +755,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     res.append(self.MINIO_LOG)
                 if Path(self.AZURITE_LOG).exists():
                     res.append(self.AZURITE_LOG)
+                if Path(self.KAFKA_LOG).exists():
+                    res.append(self.KAFKA_LOG)
                 if Path(self.DMESG_LOG).exists():
                     res.append(self.DMESG_LOG)
                 if Path(self.CH_LOCAL_ERR_LOG).exists():
@@ -984,9 +1017,7 @@ disassemble /s
 p \"done\"
 detach
 quit
-""".format(
-            RTMIN=rtmin
-        )
+""".format(RTMIN=rtmin)
         with open(f"{temp_dir}/script.gdb", "w") as file:
             file.write(script)
         return f"{temp_dir}/script.gdb"

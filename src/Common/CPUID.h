@@ -184,6 +184,16 @@ inline bool haveBMI2() noexcept
     return (CPUInfo(0x7, 0).registers.ebx >> 8) & 1u;
 }
 
+inline bool haveLZCNT() noexcept
+{
+    return (CPUInfo(0x80000001).registers.ecx >> 5) & 1u;
+}
+
+inline bool haveMOVBE() noexcept
+{
+    return (CPUInfo(0x1).registers.ecx >> 22) & 1u;
+}
+
 inline bool haveAVX512F() noexcept
 {
 #if defined(__x86_64__)
@@ -278,9 +288,52 @@ inline bool haveAVX512VBMI2() noexcept
     return haveAVX512F() && ((CPUInfo(0x7, 0).registers.ecx >> 6) & 1u);
 }
 
+inline bool haveGFNI() noexcept
+{
+    // GFNI (Galois Field New Instructions) can be used with AVX512 or AVX, check for at least AVX
+    return haveAVX() && CPUInfo(0x0).registers.eax >= 0x7 && ((CPUInfo(0x7, 0).registers.ecx >> 8) & 1u);
+}
+
+inline bool haveVAES() noexcept
+{
+    // VAES (Vector AES) requires AVX or AVX512
+    return haveAVX() && CPUInfo(0x0).registers.eax >= 0x7 && ((CPUInfo(0x7, 0).registers.ecx >> 9) & 1u);
+}
+
+inline bool haveVPCLMULQDQ() noexcept
+{
+    // VPCLMULQDQ (Vector Carry-Less Multiply) requires AVX or AVX512
+    return haveAVX() && CPUInfo(0x0).registers.eax >= 0x7 && ((CPUInfo(0x7, 0).registers.ecx >> 10) & 1u);
+}
+
+inline bool haveAVX512VNNI() noexcept
+{
+    return haveAVX512F() && ((CPUInfo(0x7, 0).registers.ecx >> 11) & 1u);
+}
+
+inline bool haveAVX512BITALG() noexcept
+{
+    return haveAVX512F() && ((CPUInfo(0x7, 0).registers.ecx >> 12) & 1u);
+}
+
+inline bool haveAVX512VPOPCNTDQ() noexcept
+{
+    return haveAVX512F() && ((CPUInfo(0x7, 0).registers.ecx >> 14) & 1u);
+}
+
 inline bool haveAVX512BF16() noexcept
 {
     return haveAVX512F() && ((CPUInfo(0x7, 1).registers.eax >> 5) & 1u);
+}
+
+inline bool haveAVX512FP16() noexcept
+{
+    return haveAVX512F() && ((CPUInfo(0x7, 0).registers.edx >> 23) & 1u);
+}
+
+inline bool haveAVXVNNI() noexcept
+{
+    return haveAVX2() && ((CPUInfo(0x7, 1).registers.eax >> 4) & 1u);
 }
 
 inline bool haveRDRAND() noexcept
@@ -347,6 +400,8 @@ inline bool haveGenuineIntel() noexcept
     OP(POPCNT) \
     OP(BMI1) \
     OP(BMI2) \
+    OP(LZCNT) \
+    OP(MOVBE) \
     OP(PCLMUL) \
     OP(AES) \
     OP(AVX) \
@@ -362,7 +417,12 @@ inline bool haveGenuineIntel() noexcept
     OP(AVX512VL) \
     OP(AVX512VBMI) \
     OP(AVX512VBMI2) \
+    OP(AVX512VNNI) \
+    OP(AVX512BITALG) \
+    OP(AVX512VPOPCNTDQ) \
     OP(AVX512BF16) \
+    OP(AVX512FP16) \
+    OP(AVXVNNI) \
     OP(PREFETCHWT1) \
     OP(SHA) \
     OP(ADX) \
@@ -374,6 +434,9 @@ inline bool haveGenuineIntel() noexcept
     OP(CLWB) \
     OP(XSAVE) \
     OP(OSXSAVE) \
+    OP(GFNI) \
+    OP(VAES) \
+    OP(VPCLMULQDQ) \
     OP(AMXBF16) \
     OP(AMXTILE) \
     OP(AMXINT8) \
