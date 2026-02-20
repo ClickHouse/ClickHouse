@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Badge, Icon, Tooltip, Panel, useToast } from '@clickhouse/click-ui'
+import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Badge, Icon, Tooltip, Panel, useToast, Dropdown } from '@clickhouse/click-ui'
 import './App.css'
 
 interface TestResult {
@@ -55,6 +55,8 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
   const [, setTick] = useState(0)
   const { createToast } = useToast()
   const [topLevelExt, setTopLevelExt] = useState<any>(null)
+  const [commits, setCommits] = useState<Array<{ sha: string; message: string }>>([])
+  const [currentSha, setCurrentSha] = useState<string>('')
 
   // Initialize sortByStatus from localStorage
   useEffect(() => {
@@ -259,6 +261,44 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
 
         // Create cache key based on PR/REF and SHA to identify the session
         const cacheKey = `ci_ext_${prParam || refParam}_${shaParam}`
+
+        // Store current SHA
+        setCurrentSha(shaParam || '')
+
+        // Fetch commits.json for SHA dropdown
+        if ((prParam || refParam) && shaParam) {
+          try {
+            const baseUrl = import.meta.env.DEV
+              ? 'https://s3.amazonaws.com/clickhouse-test-reports'
+              : `${window.location.origin}/clickhouse-test-reports`
+
+            let pathType: string
+            let refValue: string
+
+            if (prParam) {
+              pathType = 'PRs'
+              refValue = prParam
+            } else {
+              pathType = 'REFs'
+              refValue = refParam!
+            }
+
+            let commitsUrl = `${baseUrl}/${pathType}/${refValue}/commits.json`
+
+            // In development, use proxy to avoid CORS issues
+            if (import.meta.env.DEV && commitsUrl.startsWith('https://s3.amazonaws.com')) {
+              commitsUrl = commitsUrl.replace('https://s3.amazonaws.com', '/s3-proxy')
+            }
+
+            const commitsResponse = await fetch(commitsUrl)
+            if (commitsResponse.ok) {
+              const commitsData = await commitsResponse.json()
+              setCommits(commitsData || [])
+            }
+          } catch (err) {
+            console.error('Failed to fetch commits:', err)
+          }
+        }
 
         if (urlParam) {
           // Mode 1: Direct URL provided
@@ -991,27 +1031,68 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
           {data && !loading && (
             <Container orientation='vertical' gap='none'>
               <Panel hasBorder padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
-                {/* Line 1: PR or commit info (from top-level, cached across navigation) */}
+                {/* Line 1: PR or commit info (from top-level, cached across navigation) with SHA selector */}
                 {topLevelExt && (topLevelExt.pr_number > 0 || topLevelExt.commit_sha) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px' }}>
-                    <Icon name="git-merge" size="md" />
-                    {topLevelExt.pr_number && topLevelExt.pr_number > 0 ? (
-                      <>
-                        <Link href={topLevelExt.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
-                          #{topLevelExt.pr_number}
-                        </Link>
-                        <Text>:</Text>
-                        <Text>{topLevelExt.pr_title}</Text>
-                      </>
-                    ) : topLevelExt.commit_sha ? (
-                      <>
-                        <Link href={topLevelExt.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                          {topLevelExt.commit_sha.substring(0, 7)}
-                        </Link>
-                        <Text>:</Text>
-                        <Text>{topLevelExt.commit_message}</Text>
-                      </>
-                    ) : null}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                      <Icon name="git-merge" size="md" />
+                      {topLevelExt.pr_number && topLevelExt.pr_number > 0 ? (
+                        <>
+                          <Link href={topLevelExt.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
+                            #{topLevelExt.pr_number}
+                          </Link>
+                          <Text>:</Text>
+                          <Text>{topLevelExt.pr_title}</Text>
+                        </>
+                      ) : topLevelExt.commit_sha ? (
+                        <>
+                          <Link href={topLevelExt.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                            {topLevelExt.commit_sha.substring(0, 7)}
+                          </Link>
+                          <Text>:</Text>
+                          <Text>{topLevelExt.commit_message}</Text>
+                        </>
+                      ) : null}
+                    </div>
+                    {commits.length > 0 && (
+                      <div style={{ flexShrink: 0 }}>
+                        <Dropdown>
+                          <Dropdown.Trigger>
+                            <Button type="secondary" label={currentSha ? currentSha.substring(0, 8) : 'SHA'} />
+                          </Dropdown.Trigger>
+                          <Dropdown.Content>
+                            {commits.map((commit) => {
+                              const shortSha = commit.sha.substring(0, 8)
+                              const label = commit.message ? `${shortSha}: ${commit.message}` : shortSha
+                              return (
+                                <Dropdown.Item
+                                  key={commit.sha}
+                                  onClick={() => {
+                                    const params = new URLSearchParams(window.location.search)
+                                    params.set('SHA', commit.sha)
+                                    window.location.search = params.toString()
+                                  }}
+                                >
+                                  {label}
+                                </Dropdown.Item>
+                              )
+                            })}
+                            <Dropdown.Item
+                              onClick={() => {
+                                const params = new URLSearchParams(window.location.search)
+                                const latestSha = commits[commits.length - 1]?.sha
+                                if (latestSha) {
+                                  params.set('SHA', latestSha)
+                                  window.location.search = params.toString()
+                                }
+                              }}
+                            >
+                              latest
+                            </Dropdown.Item>
+                          </Dropdown.Content>
+                        </Dropdown>
+                      </div>
+                    )}
                   </div>
                 )}
                   {/* Line 2: Current result name with GitHub link */}
