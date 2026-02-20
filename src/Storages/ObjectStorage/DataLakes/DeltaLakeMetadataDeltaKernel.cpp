@@ -23,6 +23,7 @@
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/DeltaMetadataLog.h>
+#include <IO/ReadHelpers.h>
 
 namespace CurrentMetrics
 {
@@ -678,6 +679,11 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
 std::string DeltaLakeMetadataDeltaKernel::latestSnapshotVersionToStr() const
 {
     return latest_snapshot_version.has_value() ? toString(latest_snapshot_version.value()) : "Unknown";
+}
+
+DeltaLakeHistory DeltaLakeMetadataDeltaKernel::getHistory(ContextPtr local_context) const
+{
+    return parseDeltaLakeHistory(object_storage_common, kernel_helper->getDataPath(), local_context, log);
 }
 
 }
