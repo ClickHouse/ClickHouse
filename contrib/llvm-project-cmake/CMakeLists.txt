@@ -47,8 +47,8 @@ endif ()
 
 if (USE_MUSL)
     set (CMAKE_DL_LIBS "")
-    # Musl provides these functions, but CMake's check_symbol_exists can't find them
-    # because musl headers aren't in the include path during CMake configuration time.
+    # Musl provides these functions, but they cannot be auto-detected during
+    # CMake configuration because musl headers aren't in the default include path.
     # Force-define these so LLVM's config-ix.cmake doesn't fail to detect them.
     set (HAVE_GETPAGESIZE 1 CACHE INTERNAL "")
     set (HAVE_SYSCONF 1 CACHE INTERNAL "")
