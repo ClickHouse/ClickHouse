@@ -830,7 +830,7 @@ static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 
 size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
     if (isArchSupported(TargetArch::x86_64_v4))
         return TargetSpecific::x86_64_v4::numZerosInTail(begin, end);
@@ -1588,7 +1588,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
     const auto * second_data = second_descr.data->data();
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_icelake))
     {
         TargetSpecific::x86_64_icelake::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);

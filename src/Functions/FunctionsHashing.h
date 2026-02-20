@@ -900,7 +900,7 @@ public:
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
 
-    #if USE_MULTITARGET_CODE
+    #if USE_X86_MULTITARGET_CODE
         /// The v3 registration is needed because `FunctionsHashingMisc.cpp` is compiled at `-march=x86-64-v2`
         /// (to dodge an unrelated SLP regression), so the `Default` namespace inherits v2 codegen. Without this
         /// per-function v3 attribute path, the dispatcher has no AVX2 specialization to pick and falls back to
@@ -1596,7 +1596,7 @@ public:
         selector
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
         /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
         selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();

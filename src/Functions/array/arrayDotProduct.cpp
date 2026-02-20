@@ -283,7 +283,7 @@ private:
                 && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
             {
                 /// SIMD-optimized path for same-type floating point
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
                 if (isArchSupported(TargetArch::x86_64_v4))
                     result_data[row] = dotProductImpl_x86_64_v4<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
                 else
@@ -368,7 +368,7 @@ private:
                 && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
             {
                 /// SIMD-optimized path for same-type floating point
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
                 if (isArchSupported(TargetArch::x86_64_v4))
                     result[row] = dotProductImpl_x86_64_v4<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);
                 else

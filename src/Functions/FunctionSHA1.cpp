@@ -27,7 +27,7 @@
 #    include <openssl/evp.h>
 #endif
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 #    include <immintrin.h>
 #endif
 
@@ -788,7 +788,7 @@ public:
 
         selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionSHA1Impl>();
 
-#    if USE_MULTITARGET_CODE
+#    if USE_X86_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
 #    endif
     }

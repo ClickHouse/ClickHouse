@@ -590,7 +590,7 @@ private:
 
             return;
         }
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
         {
             radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION, true>(arr, size, reverse, destination);
@@ -606,7 +606,7 @@ public:
       */
     static void executeLSD(Element * arr, size_t size)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
         {
             radixSortLSDInternal<false, true>(arr, size, false, nullptr);
@@ -618,7 +618,7 @@ public:
 
     static void executeLSD(Element * arr, size_t size, bool reverse)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
         {
             radixSortLSDInternal<false, true>(arr, size, reverse, nullptr);
@@ -636,7 +636,7 @@ public:
       */
     static void executeLSD(Element * arr, size_t size, bool reverse, Result * destination)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
         {
             radixSortLSDInternal<true, true>(arr, size, reverse, destination);

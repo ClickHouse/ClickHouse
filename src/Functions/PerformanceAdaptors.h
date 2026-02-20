@@ -184,7 +184,7 @@ namespace detail
  *         /// Register all implementations in constructor.
  *         /// There could be as many implementation for every target as you want.
  *         selector.registerImplementation<TargetArch::Default, MyDefaultImpl>();
- *     #if USE_MULTITARGET_CODE
+ *     #if USE_X86_MULTITARGET_CODE
  *         selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::Myv4Impl>();
  *     #endif
  *     }

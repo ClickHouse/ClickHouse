@@ -1,6 +1,6 @@
 #include <Common/TargetSpecific.h>
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 #    include "config.h"
 #    if USE_SSL
 
@@ -350,4 +350,4 @@ TYPED_TEST(SHA1MultiBufTest, StressRandom)
 
 #    endif // USE_SSL
 
-#endif // USE_MULTITARGET_CODE && x86_64
+#endif // USE_X86_MULTITARGET_CODE && x86_64
