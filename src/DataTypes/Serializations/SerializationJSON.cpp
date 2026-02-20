@@ -378,6 +378,14 @@ UInt128 SerializationJSON<Parser>::getHash() const
 {
     SipHash hash;
     hash.update("JSON");
+    for (const auto & path : sorted_typed_paths)
+    {
+        hash.update(path);
+        hash.update(typed_paths_types.at(path)->getName());
+    }
+    for (const auto & path : sorted_paths_to_skip)
+        hash.update(path);
+    hash.update(dynamic_type->getName());
     return hash.get128();
 }
 
