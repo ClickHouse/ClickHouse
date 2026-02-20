@@ -3893,7 +3893,7 @@ class ClickHouseCluster:
                     self.exec_in_container(
                         instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
                     )
-                    instance.exec_in_container(
+                    instance.clickhouse_exec_id = instance.exec_in_container(
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
@@ -3961,10 +3961,8 @@ class ClickHouseCluster:
             for name, instance in self.instances.items():
                 # Collect exit codes for later inspection
                 if self.with_dolor:
-                    container = self.docker_client.containers.get(instance.docker_id)
-                    res = container.wait()
-                    exit_code = res["StatusCode"]
-                    logging.info(f"The server {name} exited with code: {exit_code}")
+                    exec_info = self.docker_client.api.exec_inspect(instance.clickhouse_exec_id)
+                    logging.info(f"The server {name} exited with code: {exec_info['ExitCode']}")
 
                 if instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
@@ -4478,6 +4476,7 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.clickhouse_exec_id = ""
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(

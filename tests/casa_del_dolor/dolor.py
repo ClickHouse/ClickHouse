@@ -680,7 +680,7 @@ while all_running and (not reached_limit):
             pid = server.get_process_pid("clickhouse")
             if pid is None:
                 logger.info(f"The server {server.name} is not running")
-                all_running = good_exit = False
+                all_running = False
         reached_limit = test_limit is not None and time.time() >= test_limit
         if reached_limit:
             logger.info("Test timeout reached, stopping the load generator and exiting")
@@ -721,7 +721,7 @@ while all_running and (not reached_limit):
         except Exception as ex:
             logger.error(f"Failed to stop ClickHouse: {ex}")
             logger.info(f"The server {next_pick.name} is not running")
-            all_running = good_exit = False
+            all_running = False
         time.sleep(1)
         # Replace server binary, using a new temporary symlink
         if (
@@ -755,7 +755,7 @@ while all_running and (not reached_limit):
             except Exception as ex:
                 logger.error(f"Failed to start ClickHouse: {ex}")
                 logger.info(f"The server {next_pick.name} is not running")
-                all_running = good_exit = False
+                all_running = False
             if all_running and args.with_leak_detection and next_pick.name == "node0":
                 # Has to reset leak detector
                 leak_detector.reset_and_capture_baseline(cluster)
@@ -790,5 +790,19 @@ while all_running and (not reached_limit):
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
+
+if not all_running:
+    for server in servers:
+        pid = server.get_process_pid("clickhouse")
+        if pid is not None:
+            server.stop_clickhouse(stop_wait_sec=20, kill=True)
+            if server.get_process_pid("clickhouse") is not None:
+                logger.warning(
+                    f"Instance {server.name} is still running after kill command, killing it with docker kill"
+                )
+                cluster.docker_client.containers.get(server.docker_id).kill()
+        exec_info = cluster.docker_client.api.exec_inspect(server.clickhouse_exec_id)
+        exit_code = exec_info["ExitCode"]
+        good_exit = good_exit and exit_code in (0, 143)  # 143 is SIGTERM
 
 sys.exit(0 if good_exit else 1)
