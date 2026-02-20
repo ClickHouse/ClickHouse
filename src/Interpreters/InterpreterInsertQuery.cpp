@@ -450,7 +450,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         context);
 
     const auto & settings = context->getSettingsRef();
-    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits];
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
 
     if (!squash_with_strict_limits)
     {
@@ -747,7 +747,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     chassert(chains.size() == 1);
     auto chain = std::move(chains.front());
-    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits];
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
 
     if (squash_with_strict_limits)
     {

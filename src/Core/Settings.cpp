@@ -145,6 +145,8 @@ When disabled, a block is emitted when:
 
 **Note**: If max settings are smaller than min settings, the max limits take precedence and blocks will be emitted before min thresholds are reached.
 
+**Note**: This setting is automatically disabled for async inserts, because async inserts attach per-entry deduplication tokens that are incompatible with block splitting that is needed for enforsement of strict limits.
+
 Disabled by default.
 )", 0) \
     DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
