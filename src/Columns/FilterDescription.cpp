@@ -36,7 +36,7 @@ ALWAYS_INLINE bool tryConvertColumnToBool(const IColumn & column, IColumnFilter 
     chassert(res.size() == column.size());
 
     auto & data = column_typed->getData();
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         convertColumnToBoolImpl_x86_64_v4<T>(data, res);

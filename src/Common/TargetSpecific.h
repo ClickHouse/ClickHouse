@@ -17,13 +17,13 @@
  *
  * If compiler is not gcc/clang or target isn't x86_64/aarch64 or ENABLE_MULTITARGET_CODE
  * was set to OFF in cmake, all code inside these macros will be removed and
- * USE_MULTITARGET_CODE will be set to 0. Use #if USE_MULTITARGET_CODE whenever you
+ * USE_X86_MULTITARGET_CODE will be set to 0. Use #if USE_X86_MULTITARGET_CODE whenever you
  * use anything from this namespaces.
  *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
  * into the namespace TargetSpecific::Default but doesn't specify any additional
  * compile options. Functions and classes inside this macros are available regardless
- * of USE_MULTITARGET_CODE.
+ * of USE_X86_MULTITARGET_CODE.
  *
  * Example of usage:
  *
@@ -40,7 +40,7 @@
  * ) // DECLARE_AVX2_SPECIFIC_CODE
  *
  * int func() {
- * #if USE_MULTITARGET_CODE
+ * #if USE_X86_MULTITARGET_CODE
  *     if (isArchSupported(TargetArch::x86_64_v3))
  *         return TargetSpecific::x86_64_v3::funcImpl();
  * #endif
@@ -111,7 +111,7 @@ String toString(TargetArch arch);
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
 
-#define USE_MULTITARGET_CODE 1
+#define USE_X86_MULTITARGET_CODE 1
 #define USE_ARM_MULTITARGET_CODE 0
 
 /// Function-specific attributes using arch= for cleaner specification
@@ -206,7 +206,7 @@ END_TARGET_SPECIFIC_CODE
 
 #elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
 
-#define USE_MULTITARGET_CODE 0
+#define USE_X86_MULTITARGET_CODE 0
 #define USE_ARM_MULTITARGET_CODE 1
 
 #define SVE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sve")))
@@ -240,7 +240,7 @@ END_TARGET_SPECIFIC_CODE
 
 #else
 
-#define USE_MULTITARGET_CODE 0
+#define USE_X86_MULTITARGET_CODE 0
 #define USE_ARM_MULTITARGET_CODE 0
 
 /* Multitarget code is disabled, just delete target-specific code.

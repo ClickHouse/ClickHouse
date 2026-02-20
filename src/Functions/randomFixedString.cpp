@@ -84,7 +84,7 @@ public:
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
 
-    #if USE_MULTITARGET_CODE
+    #if USE_X86_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::x86_64_v3,
             FunctionRandomFixedStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
     #endif

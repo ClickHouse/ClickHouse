@@ -7,7 +7,7 @@
 #include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
-#if USE_MULTITARGET_CODE && defined(__BMI2__)
+#if USE_X86_MULTITARGET_CODE && defined(__BMI2__)
 #include <morton-nd/mortonND_BMI2.h>
 #endif
 
@@ -261,7 +261,7 @@ public:
         selector.registerImplementation<TargetArch::Default,
                                         TargetSpecific::Default::FunctionMortonEncode>();
 
-#if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
+#if USE_X86_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
         selector.registerImplementation<TargetArch::x86_64_v3,
                                         TargetSpecific::x86_64_v3::FunctionMortonEncode>();
 #endif
