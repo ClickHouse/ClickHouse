@@ -134,11 +134,11 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
   }
 
   const normalizeName = (name: string): string => {
-    // Replace spaces with underscores and remove special symbols
     return name
-      .replace(/\s+/g, '_')
-      .replace(/[^a-zA-Z0-9_-]/g, '')
       .toLowerCase()
+      .replace(/[^a-z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/_+$/, '')
   }
 
   const navigateToNestedResult = (
