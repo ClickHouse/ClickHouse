@@ -982,28 +982,6 @@ class JobConfigs:
         run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
     ).parametrize(
         Job.ParamSet(
-            parameter="arm_binary",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
-    )
-    buzz_fuzzer_jobs = Job.Config(
-        name=JobNames.BUZZHOUSE,
-        runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/buzzhouse_job.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/docker/fuzzer",
-                "./ci/jobs/buzzhouse_job.py",
-                "./ci/jobs/ast_fuzzer_job.py",
-                "./ci/jobs/scripts/log_parser.py",
-                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                "./ci/jobs/scripts/fuzzer/",
-                "./ci/docker/fuzzer",
-            ],
-        ),
-    ).parametrize(
-        Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],

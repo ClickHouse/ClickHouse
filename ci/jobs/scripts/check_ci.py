@@ -39,7 +39,7 @@ class JobTypes:
     AST_FUZZER = "AST Fuzzer"
     BUILD = "Build"
     FORMATTER = "Formatter"
-    BUZZ_FUZZER = "Buzz"
+    LACASA_FUZZER = "La casa Fuzzer"
     DOCKER = "Docker"
     COMPATIBILITY = "Compatibility"
     INSTALL = "Install"
@@ -195,7 +195,7 @@ Test output:
             print("Cannot handle OOM errors - skip")
             return False
         if (
-            any(key in job_result.name for key in ("Buzz", "AST"))
+            any(key in job_result.name for key in ("La casa", "AST"))
             and job_result.results
         ):
             return True
@@ -236,7 +236,7 @@ Test output:
                 issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                     result, job_name
                 )
-        elif any(key in job_name for key in ("Buzz", "AST", "Stress")):
+        elif any(key in job_name for key in ("La casa", "AST", "Stress")):
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                 result, job_name
             )

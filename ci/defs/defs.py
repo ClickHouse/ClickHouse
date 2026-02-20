@@ -347,7 +347,6 @@ class JobNames:
     LLVM_COVERAGE_MERGE = "LLVM Coverage Merge"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
-    BUZZHOUSE = "BuzzHouse"
     LACASADELDOLOR = "La Casa Del Dolor"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
