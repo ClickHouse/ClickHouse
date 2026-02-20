@@ -375,25 +375,10 @@ static void splitAndModifyMutationCommands(
 
                     /// StorageMergeTree does not have metadata version
                     if (part->storage.supportsReplication())
-                    {
-                        /// When part has higher metadata version than the table, it means the part was fetched from another replica
-                        /// that already processed an ALTER ADD COLUMN. The column will be added to this replica's table schema
-                        /// once the ALTER is processed locally. We should keep the column in the output part.
-                        if (part_metadata_version > table_metadata_version)
-                        {
-                            LOG_WARNING(log, "Part {} with metadata version {} contains column {} that is absent "
-                                             "in table {} with metadata version {}. The column was likely added via ALTER on another replica "
-                                             "and will be kept in the output part", part->name, part_metadata_version, column.name,
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                        }
-                        else
-                        {
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                            "in table {} with metadata version {}",
-                                            part->name, part_metadata_version, column.name,
-                                            part->storage.getStorageID().getNameForLogs(), table_metadata_version);
-                        }
-                    }
                 }
 
                 for_interpreter.emplace_back(

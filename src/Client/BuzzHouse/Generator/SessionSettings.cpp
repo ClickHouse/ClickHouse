@@ -1420,17 +1420,17 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_ast_depth",
              "max_ast_elements",*/
              "max_autoincrement_series",
-             "max_backup_bandwidth",
+             /// "max_backup_bandwidth",
              "max_distributed_connections",
              /// "max_distributed_depth",
              "max_download_threads",
              /// "max_expanded_ast_elements",
              "max_fetch_partition_retries_count",
              "max_http_get_redirects",
-             "max_network_bandwidth",
+             /*"max_network_bandwidth",
              "max_network_bandwidth_for_all_users",
              "max_network_bandwidth_for_user",
-             /*"max_parser_backtracks",
+             "max_parser_backtracks",
              "max_parser_depth",
              "max_partitions_to_read",*/
              "max_sessions_for_user",
@@ -1449,8 +1449,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_execution_speed_bytes",*/
              "max_hyperscan_regexp_length",
              "max_hyperscan_regexp_total_length",
-             "max_network_bytes",
-             /*"max_query_size",
+             /*"max_network_bytes",
+             "max_query_size",
              "max_result_bytes",*/
              "max_size_to_preallocate_for_aggregation",
              "max_size_to_preallocate_for_joins"/*,
@@ -1479,17 +1479,20 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (const auto & entry : max_bytes_values)
     {
         performanceSettings.insert({{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "16", "32", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert(
+            {{entry, CHSetting(bytesRange, {"0", "1", "2", "4", "8", "16", "32", "1024", "2048", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_rows_values)
     {
         performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "16", "32", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert(
+            {{entry, CHSetting(rowsRange, {"0", "1", "2", "4", "8", "16", "32", "1024", "2048", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_block_sizes)
     {
         performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "16", "32", "64", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert(
+            {{entry, CHSetting(highRange, {"1", "2", "4", "8", "16", "32", "64", "1024", "2048", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_columns_values)
     {

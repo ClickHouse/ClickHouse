@@ -71,7 +71,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     }
     if (combination != 0)
     {
-        gen.generateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
+        gen.generateGroupBy(rg, 1, true, true, ssc);
     }
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
     gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;

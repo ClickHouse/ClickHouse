@@ -52,8 +52,8 @@ COMMENT 'Comment'
 |---|---|
 | [Attributes](./attributes.md) | Dictionary attributes are specified similarly to table columns. The only required property is the type, all others may have default values. |
 | PRIMARY KEY | Defines the key column(s) for dictionary lookups. Depending on the layout, one or more attributes can be specified as keys. |
-| [`SOURCE`](./sources/) | Defines the data source for the dictionary (e.g. ClickHouse table, HTTP, PostgreSQL). |
-| [`LAYOUT`](./layouts/) | Controls how the dictionary is stored in memory (e.g. `FLAT`, `HASHED`, `CACHE`). |
+| [`SOURCE`](./sources/overview.md) | Defines the data source for the dictionary (e.g. ClickHouse table, HTTP, PostgreSQL). |
+| [`LAYOUT`](./layouts/overview.md) | Controls how the dictionary is stored in memory (e.g. `FLAT`, `HASHED`, `CACHE`). |
 | [`LIFETIME`](./lifetime.md) | Sets the refresh interval for the dictionary. |
 | [`ON CLUSTER`](../../../distributed-ddl.md) | Creates the dictionary on a cluster. Optional. |
 | `SETTINGS` | Additional dictionary settings. Optional. |
@@ -89,8 +89,8 @@ You can configure any number of dictionaries in the same file.
 
 ## Related content {#related-content}
 
-- [Layouts](./layouts/) — How dictionaries are stored in memory
-- [Sources](./sources/) — Connecting to data sources
+- [Layouts](/sql-reference/statements/create/dictionary/layouts) — How dictionaries are stored in memory
+- [Sources](/sql-reference/statements/create/dictionary/sources) — Connecting to data sources
 - [Lifetime](./lifetime.md) — Automatic refresh configuration
 - [Attributes](./attributes.md) — Key and attribute configuration
 - [Embedded Dictionaries](./embedded.md) — Built-in geobase dictionaries

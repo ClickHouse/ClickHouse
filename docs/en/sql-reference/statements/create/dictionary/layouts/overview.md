@@ -27,7 +27,7 @@ There are a variety of ways to store dictionaries in memory, each with CPU and R
 | [range_hashed](./range-hashed.md) | Hash table with ordered ranges. Supports lookups by key + date/time range. |
 | [complex_key_range_hashed](./range-hashed.md#complex_key_range_hashed) | Like `range_hashed`, for composite keys. |
 | [cache](./cache.md) | Fixed-size in-memory cache. Only frequently accessed keys are stored. |
-| [complex_key_cache](./complex-key-cache.md) | Like `cache`, for composite keys. |
+| [complex_key_cache](/sql-reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) | Like `cache`, for composite keys. |
 | [ssd_cache](./ssd-cache.md) | Like `cache`, but stores data on SSD with an in-memory index. |
 | [complex_key_ssd_cache](./ssd-cache.md#complex_key_ssd_cache) | Like `ssd_cache`, for composite keys. |
 | [direct](./direct.md) | No in-memory storage — queries the source directly for each request. |

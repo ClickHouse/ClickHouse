@@ -10,6 +10,11 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
 
 
 #if USE_AVRO && USE_PARQUET
@@ -65,6 +70,14 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
+    extern const DatabaseDataLakeSettingsString google_project_id;
+    extern const DatabaseDataLakeSettingsString google_service_account;
+    extern const DatabaseDataLakeSettingsString google_metadata_service;
+    extern const DatabaseDataLakeSettingsString google_adc_client_id;
+    extern const DatabaseDataLakeSettingsString google_adc_client_secret;
+    extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
+    extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
+    extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
 }
 
 namespace Setting
@@ -165,7 +178,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
-            catalog_impl = std::make_shared<DataLake::RestCatalog>(
+            catalog_impl = std::make_shared<DataLake::OneLakeCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
@@ -174,6 +187,75 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        {
+            std::string google_project_id = settings[DatabaseDataLakeSetting::google_project_id].value;
+            std::string google_service_account = settings[DatabaseDataLakeSetting::google_service_account].value;
+            std::string google_metadata_service = settings[DatabaseDataLakeSetting::google_metadata_service].value;
+            std::string google_adc_client_id = settings[DatabaseDataLakeSetting::google_adc_client_id].value;
+            std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
+            std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
+            std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
+
+            if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
+            {
+                try
+                {
+                    const std::string & credentials_file_path = settings[DatabaseDataLakeSetting::google_adc_credentials_file].value;
+                    DB::ReadBufferFromFile file_buf(credentials_file_path);
+                    std::string json_str;
+                    DB::readStringUntilEOF(json_str, file_buf);
+
+                    Poco::JSON::Parser parser;
+                    Poco::Dynamic::Var json = parser.parse(json_str);
+                    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+                    if (object->has("type"))
+                    {
+                        String type = object->get("type").extract<String>();
+                        if (type != "authorized_user")
+                        {
+                            throw DB::Exception(
+                                DB::ErrorCodes::BAD_ARGUMENTS,
+                                "Unsupported credentials type '{}' in Google ADC credentials file. Expected 'authorized_user'",
+                                type);
+                        }
+                    }
+
+                    if (google_adc_client_id.empty() && object->has("client_id"))
+                        google_adc_client_id = object->get("client_id").extract<String>();
+                    if (google_adc_client_secret.empty() && object->has("client_secret"))
+                        google_adc_client_secret = object->get("client_secret").extract<String>();
+                    if (google_adc_refresh_token.empty() && object->has("refresh_token"))
+                        google_adc_refresh_token = object->get("refresh_token").extract<String>();
+                    if (google_adc_quota_project_id.empty() && object->has("quota_project_id"))
+                        google_adc_quota_project_id = object->get("quota_project_id").extract<String>();
+                    if (google_project_id.empty() && object->has("project_id"))
+                        google_project_id = object->get("project_id").extract<String>();
+                }
+                catch (const DB::Exception & e)
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Failed to load Google ADC credentials from file '{}': {}",
+                        settings[DatabaseDataLakeSetting::google_adc_credentials_file].value,
+                        e.message());
+                }
+            }
+
+            catalog_impl = std::make_shared<DataLake::BigLakeCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                google_project_id,
+                google_service_account,
+                google_metadata_service,
+                google_adc_client_id,
+                google_adc_client_secret,
+                google_adc_refresh_token,
+                google_adc_quota_project_id,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -272,6 +354,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         }
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
+        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
         {
             switch (type)
             {
@@ -448,7 +531,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
 
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
-    if (!lightweight && with_vended_credentials)
+    if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
@@ -487,7 +570,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// so we have a separate setting to know whether we should even try to fetch them.
     if (args.size() == 1)
     {
-        std::array<DatabaseDataLakeCatalogType, 2> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
+        std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
         if (table_metadata.hasStorageCredentials())
         {
             LOG_DEBUG(log, "Getting credentials");
@@ -556,7 +639,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto azure_configuration = std::static_pointer_cast<StorageAzureIcebergConfiguration>(configuration);
         if (!azure_configuration)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
-        auto rest_catalog = std::static_pointer_cast<DataLake::RestCatalog>(catalog);
+        auto rest_catalog = std::static_pointer_cast<DataLake::OneLakeCatalog>(catalog);
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
         azure_configuration->setInitializationAsOneLake(
@@ -945,6 +1028,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         {
             case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
+            case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
