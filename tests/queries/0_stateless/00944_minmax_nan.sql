@@ -10,7 +10,8 @@ CREATE TABLE tab (
   INDEX col_idx col TYPE minmax
 )
 ENGINE = MergeTree()
-ORDER BY id; -- This is important. We want to have additional primary index that does not use the column `col`.
+ORDER BY id -- This is important. We want to have additional primary index that does not use the column `col`.
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0; -- Explicit granularity to make EXPLAIN output deterministic.
 
 INSERT INTO tab VALUES
     (1, 1.0),
