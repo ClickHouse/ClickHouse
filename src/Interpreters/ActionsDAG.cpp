@@ -3740,15 +3740,26 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
 
     if (WhichDataType(type).isFunction())
     {
+        bool is_constant = false;
+
         const IColumn * maybe_function = &value;
         if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_function))
+        {
+            is_constant = true;
             maybe_function = &column_const->getDataColumn();
+        }
 
         const auto * column_function = typeid_cast<const ColumnFunction *>(maybe_function);
         if (!column_function)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "ColumnSet is expected for DataTypeSet. Got {}", value.getName());
+                "ColumnFunction is expected for DataTypeFunction. Got {}", value.getName());
+
+        UInt8 flags = 0;
+        if (is_constant)
+            flags |= 1;
+
+        writeBinary(flags, out);
 
         auto function = column_function->getFunction();
         const auto * function_expression = typeid_cast<const FunctionExpression *>(function.get());
@@ -3814,6 +3825,11 @@ static MutableColumnPtr deserializeConstant(
 
     if (WhichDataType(type).isFunction())
     {
+        UInt8 flags;
+        readBinary(flags, in);
+
+        bool is_constant = flags & 1;
+
         LambdaCapture capture;
         deserializeCapture(capture, in);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context);
@@ -3834,7 +3850,11 @@ static MutableColumnPtr deserializeConstant(
                 std::move(capture_dag),
                 ExpressionActionsSettings(context, CompileExpressions::yes)));
 
-        return ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns));
+        auto column_function = ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns));
+        if (is_constant)
+            return ColumnConst::create(std::move(column_function), 0);
+
+        return column_function;
     }
 
     auto column = type.createColumn();
