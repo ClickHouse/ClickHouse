@@ -87,6 +87,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 
 #include <ranges>
@@ -563,7 +564,7 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     const auto & query_context = planner_context->getQueryContext();
 
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (!row_policy_filter || row_policy_filter->empty())
+    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return {};
 
     for (const auto & row_policy : row_policy_filter->policies)
@@ -943,11 +944,50 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
+                    /// Collect columns needed by row policy and additional filters
+                    NameSet columns_needed_by_other_filters;
+
+                    /// Pre-build additional table filter to know what columns it needs
+                    const auto & table_expression_alias = table_expression->getOriginalAlias();
+                    auto additional_filters_info_temp = buildAdditionalFiltersIfNeeded(
+                        storage, table_expression_alias, table_expression_query_info, prewhere_info, planner_context);
+                    if (additional_filters_info_temp)
+                    {
+                        for (const auto * input : additional_filters_info_temp->actions.getInputs())
+                            columns_needed_by_other_filters.insert(input->result_name);
+                    }
+
+                    /// Clone prewhere actions and add required columns to outputs
+                    auto prewhere_actions_clone = prewhere_actions->clone();
+                    const auto prewhere_column_name = prewhere_actions_clone.getOutputs().at(0)->result_name;
+
+                    /// Add columns needed by other filters to prewhere outputs
+                    auto & prewhere_outputs = prewhere_actions_clone.getOutputs();
+
+                    /// Build set of existing outputs for fast lookup
+                    std::unordered_set<const ActionsDAG::Node *> existing_outputs(
+                        prewhere_outputs.begin(), prewhere_outputs.end());
+
+                    /// Iterate inputs in deterministic order and add missing nodes
+                    for (const auto * input : prewhere_actions_clone.getInputs())
+                    {
+                        if (columns_needed_by_other_filters.contains(input->result_name)
+                            && !existing_outputs.contains(input))
+                        {
+                            prewhere_outputs.push_back(input);
+                        }
+                    }
+
+                    /// Check if prewhere filter column should be removed
+                    const bool keep_for_query = std::ranges::contains(columns_names, prewhere_column_name);
+                    const bool keep_for_filters = columns_needed_by_other_filters.contains(prewhere_column_name);
+                    const bool remove_prewhere_column = !keep_for_query && !keep_for_filters;
+
                     where_filters.emplace_back(
                         FilterDAGInfo{
-                            prewhere_actions->clone(),
-                            prewhere_actions->getOutputs().at(0)->result_name,
-                            true},
+                            std::move(prewhere_actions_clone),
+                            prewhere_column_name,
+                            remove_prewhere_column},
                         makeDescription("Prewhere"));
                 }
                 else if (prewhere_actions)
@@ -2601,6 +2641,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     bool is_right_join_with_remote_table = false;
     int first_left_or_inner_join_pos = -1;
     int first_right_join_pos = -1;
+    bool is_cross_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
@@ -2612,6 +2653,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (table_expression_type == QueryTreeNodeType::CROSS_JOIN)
         {
             joins_count += table_expression->as<const CrossJoinNode &>().getTableExpressions().size() - 1;
+            is_cross_join = true;
             continue;
         }
 
@@ -2653,8 +2695,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (first_left_or_inner_join_pos >= 0 && first_right_join_pos >= 0 && first_left_or_inner_join_pos < first_right_join_pos)
             return true;
 
-        /// for n-way join with FULL JOIN or GLOBAL JOINS
-        if (joins_count > 1 && (is_full_join || is_global_join))
+        /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN
+        if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
             return true;
 
         /// For RIGHT JOIN with distributed table on the right side

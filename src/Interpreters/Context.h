@@ -289,6 +289,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+class SystemAllocatedMemoryHolder;
+using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
+
 /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
 /// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
 /// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
@@ -1319,6 +1322,14 @@ public:
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
+
+    /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
+    SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;
+    void allowSystemAllocateMemory(bool allow);
+
+    /// See users_to_ignore_early_memory_limit_check in ServerSettings
+    std::shared_ptr<std::unordered_set<std::string>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
+    void setUsersToIgnoreEarlyMemoryLimitCheck(std::string users);
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
