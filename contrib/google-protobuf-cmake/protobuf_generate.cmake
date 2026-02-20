@@ -84,12 +84,6 @@ function(protobuf_generate)
     set(NATIVE_protoc $<TARGET_FILE:protoc>)
   endif()
 
-  set(_native_tools_dep)
-  if (DEFINED NATIVE_TOOLS_TARGET)
-    set(_native_tools_dep ${NATIVE_TOOLS_TARGET})
-  endif()
-
-
   set(_options APPEND_PATH DESCRIPTORS)
   set(_singleargs LANGUAGE OUT_VAR EXPORT_MACRO PROTOC_OUT_DIR)
   if(COMMAND target_sources)
@@ -195,7 +189,7 @@ function(protobuf_generate)
       OUTPUT ${_generated_srcs}
       COMMAND ${NATIVE_protoc}
       ARGS --${protobuf_generate_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_PROTOC_OUT_DIR} ${_dll_desc_out} ${_protobuf_include_path} ${_abs_file}
-      DEPENDS ${_abs_file} ${NATIVE_protoc} ${_native_tools_dep}
+      DEPENDS ${_abs_file} ${NATIVE_protoc}
       COMMENT "Running ${protobuf_generate_LANGUAGE} protocol buffer compiler on ${_proto}"
       VERBATIM)
   endforeach()
