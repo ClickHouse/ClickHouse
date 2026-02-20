@@ -21,7 +21,7 @@ CREATE TABLE test_max_insert_bytes_squashing(
 Engine = MergeTree()
 Order by id;
 
--- Expect 4 parts
+-- Expect 5 parts
 SET max_insert_block_size_bytes = 1000000;
 SET min_insert_block_size_rows = 0;
 SET min_insert_block_size_bytes = 100000;

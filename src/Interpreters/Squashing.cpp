@@ -125,7 +125,7 @@ bool Squashing::canGenerate()
     size_t total_rows = accumulated.getRows() + pending.getRows();
     size_t total_bytes = accumulated.getBytes() + pending.getBytes();
 
-    if (total_rows == 0 || total_bytes == 0)
+    if (total_rows == 0 && total_bytes == 0)
         return false;
 
     if (squash_with_strict_limits)
@@ -439,7 +439,7 @@ std::pair<size_t, size_t> Squashing::PendingQueue::calculateConsumable(size_t ma
     const Chunk & chunk = chunks.front();
     size_t total_rows_front = chunk.getNumRows();
     size_t total_bytes_front = chunk.bytes();
-    double bytes_per_row = static_cast<double>(total_bytes_front) / static_cast<double>(total_rows_front);
+    double bytes_per_row = total_rows_front != 0 ? static_cast<double>(total_bytes_front) / static_cast<double>(total_rows_front) : 0.;
     size_t available_rows = total_rows_front - offset_first;
 
     /// No limits: return entire available front chunk
