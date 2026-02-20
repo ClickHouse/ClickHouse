@@ -29,4 +29,8 @@ set(LLVMDEBUGINFODWARF_SOURCES
     ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFUnitIndex.cpp
     ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp
     ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFVerifier.cpp
+    # LowLevel subdirectory
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/LowLevel/DWARFCFIProgram.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/LowLevel/DWARFExpression.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/LowLevel/DWARFUnwindTable.cpp
 )

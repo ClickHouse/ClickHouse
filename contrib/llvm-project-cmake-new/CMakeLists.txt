@@ -15,7 +15,6 @@
 # This prototype uses option (b) - building llvm-tblgen from sources.
 #
 # Note: This is a PROTOTYPE. Production use would require:
-# - Support for all target architectures (AArch64, PowerPC, SystemZ, RISCV)
 # - Proper handling of cross-compilation
 # - Testing on all supported platforms
 
@@ -79,6 +78,21 @@ set (CMAKE_CXX_STANDARD 17)
 # Needed for musl compatibility
 add_compile_definitions(_LARGEFILE64_SOURCE)
 
+# BLAKE3 x86 assembly files
+if (ARCH_AMD64)
+    set(LLVM_BLAKE3_ASM_SOURCES
+        ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_sse2_x86-64_unix.S
+        ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_sse41_x86-64_unix.S
+        ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_avx2_x86-64_unix.S
+        ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_avx512_x86-64_unix.S
+    )
+    set_source_files_properties(${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_avx512_x86-64_unix.S
+        PROPERTIES COMPILE_OPTIONS "-mavx512vl")
+else()
+    set(LLVM_BLAKE3_ASM_SOURCES "")
+    add_compile_definitions(BLAKE3_NO_AVX512 BLAKE3_NO_AVX2 BLAKE3_NO_SSE41 BLAKE3_NO_SSE2)
+endif()
+
 # Include source file lists
 include(${LLVM_CMAKE_DIR}/sources/LLVMDemangle.cmake)
 include(${LLVM_CMAKE_DIR}/sources/LLVMSupport.cmake)
@@ -111,12 +125,29 @@ include(${LLVM_CMAKE_DIR}/sources/LLVMCodeGenTypes.cmake)
 include(${LLVM_CMAKE_DIR}/sources/LLVMGlobalISel.cmake)
 include(${LLVM_CMAKE_DIR}/sources/LLVMSelectionDAG.cmake)
 include(${LLVM_CMAKE_DIR}/sources/LLVMAsmPrinter.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMCGData.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMObjCARCOpts.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMIRPrinter.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMCFGuard.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMFrontendOpenMP.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMFrontendOpenACC.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMFrontendOffloading.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMCoroutines.cmake)
+include(${LLVM_CMAKE_DIR}/sources/LLVMSandboxIR.cmake)
 include(${LLVM_CMAKE_DIR}/sources/LLVMPasses.cmake)
 include(${LLVM_CMAKE_DIR}/sources/LLVMExecutionEngine.cmake)
 include(${LLVM_CMAKE_DIR}/sources/LLVMRuntimeDyld.cmake)
 
 if (ARCH_AMD64)
     include(${LLVM_CMAKE_DIR}/sources/LLVMX86.cmake)
+elseif (ARCH_AARCH64)
+    include(${LLVM_CMAKE_DIR}/sources/LLVMAArch64.cmake)
+elseif (ARCH_PPC64LE)
+    include(${LLVM_CMAKE_DIR}/sources/LLVMPowerPC.cmake)
+elseif (ARCH_S390X)
+    include(${LLVM_CMAKE_DIR}/sources/LLVMSystemZ.cmake)
+elseif (ARCH_RISCV64)
+    include(${LLVM_CMAKE_DIR}/sources/LLVMRISCV.cmake)
 endif()
 
 if (ENABLE_XRAY)
@@ -214,6 +245,7 @@ add_executable(llvm-min-tblgen
     ${LLVM_SOURCE_DIR}/lib/TableGen/TGTimer.cpp
     # Support library
     ${LLVMSUPPORT_SOURCES}
+    ${LLVM_BLAKE3_ASM_SOURCES}
     ${LLVMDEMANGLE_SOURCES}
 )
 
@@ -347,6 +379,7 @@ add_executable(llvm-tblgen
     ${LLVMCODEGENTYPES_SOURCES}
     # Support library
     ${LLVMSUPPORT_SOURCES}
+    ${LLVM_BLAKE3_ASM_SOURCES}
     ${LLVMDEMANGLE_SOURCES}
 )
 
@@ -535,10 +568,113 @@ if (ARCH_AMD64)
     tablegen_generate(X86 "${X86_TD}" "-gen-x86-instr-mapping" "lib/Target/X86/X86GenInstrMapping.inc")
 endif()
 
+#
+# AArch64-specific TableGen
+#
+if (ARCH_AARCH64)
+    set(AARCH64_TD "${LLVM_SOURCE_DIR}/lib/Target/AArch64/AArch64.td")
+
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-register-info" "lib/Target/AArch64/AArch64GenRegisterInfo.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-instr-info" "lib/Target/AArch64/AArch64GenInstrInfo.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-subtarget" "lib/Target/AArch64/AArch64GenSubtargetInfo.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-dag-isel" "lib/Target/AArch64/AArch64GenDAGISel.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-callingconv" "lib/Target/AArch64/AArch64GenCallingConv.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-asm-writer" "lib/Target/AArch64/AArch64GenAsmWriter.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-asm-writer;-asmwriternum=1" "lib/Target/AArch64/AArch64GenAsmWriter1.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-asm-matcher" "lib/Target/AArch64/AArch64GenAsmMatcher.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-disassembler" "lib/Target/AArch64/AArch64GenDisassemblerTables.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-fast-isel" "lib/Target/AArch64/AArch64GenFastISel.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel" "lib/Target/AArch64/AArch64GenGlobalISel.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64O0PreLegalizerCombiner" "lib/Target/AArch64/AArch64GenO0PreLegalizeGICombiner.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64PreLegalizerCombiner" "lib/Target/AArch64/AArch64GenPreLegalizeGICombiner.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64PostLegalizerCombiner" "lib/Target/AArch64/AArch64GenPostLegalizeGICombiner.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-global-isel-combiner;-combiners=AArch64PostLegalizerLowering" "lib/Target/AArch64/AArch64GenPostLegalizeGILowering.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-emitter" "lib/Target/AArch64/AArch64GenMCCodeEmitter.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-pseudo-lowering" "lib/Target/AArch64/AArch64GenMCPseudoLowering.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-register-bank" "lib/Target/AArch64/AArch64GenRegisterBank.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-sd-node-info" "lib/Target/AArch64/AArch64GenSDNodeInfo.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-searchable-tables" "lib/Target/AArch64/AArch64GenSystemOperands.inc")
+    tablegen_generate(AARCH64 "${AARCH64_TD}" "-gen-exegesis" "lib/Target/AArch64/AArch64GenExegesis.inc")
+endif()
+
+#
+# PowerPC-specific TableGen
+#
+if (ARCH_PPC64LE)
+    set(PPC_TD "${LLVM_SOURCE_DIR}/lib/Target/PowerPC/PPC.td")
+
+    tablegen_generate(PPC "${PPC_TD}" "-gen-register-info" "lib/Target/PowerPC/PPCGenRegisterInfo.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-instr-info" "lib/Target/PowerPC/PPCGenInstrInfo.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-subtarget" "lib/Target/PowerPC/PPCGenSubtargetInfo.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-dag-isel" "lib/Target/PowerPC/PPCGenDAGISel.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-callingconv" "lib/Target/PowerPC/PPCGenCallingConv.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-asm-writer" "lib/Target/PowerPC/PPCGenAsmWriter.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-asm-matcher" "lib/Target/PowerPC/PPCGenAsmMatcher.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-disassembler" "lib/Target/PowerPC/PPCGenDisassemblerTables.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-fast-isel" "lib/Target/PowerPC/PPCGenFastISel.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-emitter" "lib/Target/PowerPC/PPCGenMCCodeEmitter.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-register-bank" "lib/Target/PowerPC/PPCGenRegisterBank.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-global-isel" "lib/Target/PowerPC/PPCGenGlobalISel.inc")
+    tablegen_generate(PPC "${PPC_TD}" "-gen-exegesis" "lib/Target/PowerPC/PPCGenExegesis.inc")
+endif()
+
+#
+# SystemZ-specific TableGen
+#
+if (ARCH_S390X)
+    set(SYSTEMZ_TD "${LLVM_SOURCE_DIR}/lib/Target/SystemZ/SystemZ.td")
+
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-register-info" "lib/Target/SystemZ/SystemZGenRegisterInfo.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-instr-info" "lib/Target/SystemZ/SystemZGenInstrInfo.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-subtarget" "lib/Target/SystemZ/SystemZGenSubtargetInfo.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-dag-isel" "lib/Target/SystemZ/SystemZGenDAGISel.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-callingconv" "lib/Target/SystemZ/SystemZGenCallingConv.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-asm-writer" "lib/Target/SystemZ/SystemZGenGNUAsmWriter.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-asm-writer;-asmwriternum=1" "lib/Target/SystemZ/SystemZGenHLASMAsmWriter.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-asm-matcher" "lib/Target/SystemZ/SystemZGenAsmMatcher.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-disassembler" "lib/Target/SystemZ/SystemZGenDisassemblerTables.inc")
+    tablegen_generate(SYSTEMZ "${SYSTEMZ_TD}" "-gen-emitter" "lib/Target/SystemZ/SystemZGenMCCodeEmitter.inc")
+endif()
+
+#
+# RISCV-specific TableGen
+#
+if (ARCH_RISCV64)
+    set(RISCV_TD "${LLVM_SOURCE_DIR}/lib/Target/RISCV/RISCV.td")
+
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-register-info" "lib/Target/RISCV/RISCVGenRegisterInfo.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-instr-info" "lib/Target/RISCV/RISCVGenInstrInfo.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-subtarget" "lib/Target/RISCV/RISCVGenSubtargetInfo.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-dag-isel" "lib/Target/RISCV/RISCVGenDAGISel.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-asm-writer" "lib/Target/RISCV/RISCVGenAsmWriter.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-asm-matcher" "lib/Target/RISCV/RISCVGenAsmMatcher.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-compress-inst-emitter" "lib/Target/RISCV/RISCVGenCompressInstEmitter.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-macro-fusion-pred" "lib/Target/RISCV/RISCVGenMacroFusion.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-disassembler" "lib/Target/RISCV/RISCVGenDisassemblerTables.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-emitter" "lib/Target/RISCV/RISCVGenMCCodeEmitter.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-pseudo-lowering" "lib/Target/RISCV/RISCVGenMCPseudoLowering.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-register-bank" "lib/Target/RISCV/RISCVGenRegisterBank.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-searchable-tables" "lib/Target/RISCV/RISCVGenSearchableTables.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-sd-node-info" "lib/Target/RISCV/RISCVGenSDNodeInfo.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-global-isel" "lib/Target/RISCV/RISCVGenGlobalISel.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-global-isel-combiner;-combiners=RISCVO0PreLegalizerCombiner" "lib/Target/RISCV/RISCVGenO0PreLegalizeGICombiner.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-global-isel-combiner;-combiners=RISCVPreLegalizerCombiner" "lib/Target/RISCV/RISCVGenPreLegalizeGICombiner.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-global-isel-combiner;-combiners=RISCVPostLegalizerCombiner" "lib/Target/RISCV/RISCVGenPostLegalizeGICombiner.inc")
+    tablegen_generate(RISCV "${RISCV_TD}" "-gen-exegesis" "lib/Target/RISCV/RISCVGenExegesis.inc")
+endif()
+
 # Combine all tablegen outputs
 set(ALL_TABLEGEN_OUTPUTS ${COMMON_TABLEGEN_OUTPUTS})
 if (ARCH_AMD64)
     list(APPEND ALL_TABLEGEN_OUTPUTS ${X86_TABLEGEN_OUTPUTS})
+elseif (ARCH_AARCH64)
+    list(APPEND ALL_TABLEGEN_OUTPUTS ${AARCH64_TABLEGEN_OUTPUTS})
+elseif (ARCH_PPC64LE)
+    list(APPEND ALL_TABLEGEN_OUTPUTS ${PPC_TABLEGEN_OUTPUTS})
+elseif (ARCH_S390X)
+    list(APPEND ALL_TABLEGEN_OUTPUTS ${SYSTEMZ_TABLEGEN_OUTPUTS})
+elseif (ARCH_RISCV64)
+    list(APPEND ALL_TABLEGEN_OUTPUTS ${RISCV_TABLEGEN_OUTPUTS})
 endif()
 
 add_custom_target(llvm_tablegen_outputs DEPENDS ${ALL_TABLEGEN_OUTPUTS})
@@ -569,7 +705,7 @@ endfunction()
 # Build LLVM libraries (in dependency order)
 #
 add_llvm_library(LLVMDemangle SOURCES ${LLVMDEMANGLE_SOURCES})
-add_llvm_library(LLVMSupport SOURCES ${LLVMSUPPORT_SOURCES} DEPENDS LLVMDemangle)
+add_llvm_library(LLVMSupport SOURCES ${LLVMSUPPORT_SOURCES} ${LLVM_BLAKE3_ASM_SOURCES} DEPENDS LLVMDemangle)
 add_llvm_library(LLVMBinaryFormat SOURCES ${LLVMBINARYFORMAT_SOURCES} DEPENDS LLVMSupport)
 add_llvm_library(LLVMTargetParser SOURCES ${LLVMTARGETPARSER_SOURCES} DEPENDS LLVMSupport)
 add_llvm_library(LLVMCore SOURCES ${LLVMCORE_SOURCES} DEPENDS LLVMSupport LLVMBinaryFormat LLVMTargetParser)
@@ -601,6 +737,15 @@ add_llvm_library(LLVMAsmPrinter SOURCES ${LLVMASMPRINTER_SOURCES} DEPENDS LLVMCo
 add_llvm_library(LLVMPasses SOURCES ${LLVMPASSES_SOURCES} DEPENDS LLVMCore LLVMAnalysis LLVMTransformUtils LLVMScalarOpts LLVMInstCombine LLVMVectorize LLVMipo LLVMInstrumentation LLVMTarget LLVMSupport)
 add_llvm_library(LLVMRuntimeDyld SOURCES ${LLVMRUNTIMEDYLD_SOURCES} DEPENDS LLVMCore LLVMObject LLVMMC LLVMSupport)
 add_llvm_library(LLVMExecutionEngine SOURCES ${LLVMEXECUTIONENGINE_SOURCES} DEPENDS LLVMCore LLVMTarget LLVMObject LLVMMC LLVMRuntimeDyld LLVMSupport)
+add_llvm_library(LLVMCGData SOURCES ${LLVMCGDATA_SOURCES} DEPENDS LLVMSupport LLVMCore LLVMObject)
+add_llvm_library(LLVMObjCARCOpts SOURCES ${LLVMOBJCARCOPTS_SOURCES} DEPENDS LLVMCore LLVMAnalysis LLVMTransformUtils LLVMSupport)
+add_llvm_library(LLVMIRPrinter SOURCES ${LLVMIRPRINTER_SOURCES} DEPENDS LLVMCore LLVMAnalysis LLVMSupport)
+add_llvm_library(LLVMCFGuard SOURCES ${LLVMCFGUARD_SOURCES} DEPENDS LLVMCore LLVMSupport)
+add_llvm_library(LLVMFrontendOpenMP SOURCES ${LLVMFRONTENDOPENMP_SOURCES} DEPENDS LLVMCore LLVMTransformUtils LLVMSupport)
+add_llvm_library(LLVMFrontendOpenACC SOURCES ${LLVMFRONTENDOPENACC_SOURCES} DEPENDS LLVMSupport)
+add_llvm_library(LLVMFrontendOffloading SOURCES ${LLVMFRONTENDOFFLOADING_SOURCES} DEPENDS LLVMCore LLVMSupport)
+add_llvm_library(LLVMCoroutines SOURCES ${LLVMCOROUTINES_SOURCES} DEPENDS LLVMCore LLVMAnalysis LLVMTransformUtils LLVMipo LLVMSupport)
+add_llvm_library(LLVMSandboxIR SOURCES ${LLVMSANDBOXIR_SOURCES} DEPENDS LLVMCore LLVMSupport)
 
 # Architecture-specific libraries
 if (ARCH_AMD64)
@@ -609,6 +754,30 @@ if (ARCH_AMD64)
     add_llvm_library(LLVMX86CodeGen SOURCES ${LLVMX86CODEGEN_SOURCES} DEPENDS LLVMX86Info LLVMX86Desc LLVMCodeGen LLVMGlobalISel LLVMSelectionDAG LLVMAsmPrinter LLVMTarget LLVMMC LLVMSupport)
     add_llvm_library(LLVMX86AsmParser SOURCES ${LLVMX86ASMPARSER_SOURCES} DEPENDS LLVMX86Desc LLVMX86Info LLVMMCParser LLVMMC LLVMSupport)
     add_llvm_library(LLVMX86Disassembler SOURCES ${LLVMX86DISASSEMBLER_SOURCES} DEPENDS LLVMX86Info LLVMMCDisassembler LLVMMC LLVMSupport)
+elseif (ARCH_AARCH64)
+    add_llvm_library(LLVMAArch64Info SOURCES ${LLVMAARCH64INFO_SOURCES} DEPENDS LLVMMC LLVMSupport)
+    add_llvm_library(LLVMAArch64Desc SOURCES ${LLVMAARCH64DESC_SOURCES} DEPENDS LLVMAArch64Info LLVMMC LLVMMCDisassembler LLVMSupport)
+    add_llvm_library(LLVMAArch64CodeGen SOURCES ${LLVMAARCH64CODEGEN_SOURCES} DEPENDS LLVMAArch64Info LLVMAArch64Desc LLVMCodeGen LLVMGlobalISel LLVMSelectionDAG LLVMAsmPrinter LLVMTarget LLVMMC LLVMSupport)
+    add_llvm_library(LLVMAArch64AsmParser SOURCES ${LLVMAARCH64ASMPARSER_SOURCES} DEPENDS LLVMAArch64Desc LLVMAArch64Info LLVMMCParser LLVMMC LLVMSupport)
+    add_llvm_library(LLVMAArch64Disassembler SOURCES ${LLVMAARCH64DISASSEMBLER_SOURCES} DEPENDS LLVMAArch64Info LLVMMCDisassembler LLVMMC LLVMSupport)
+elseif (ARCH_PPC64LE)
+    add_llvm_library(LLVMPowerPCInfo SOURCES ${LLVMPOWERPCINFO_SOURCES} DEPENDS LLVMMC LLVMSupport)
+    add_llvm_library(LLVMPowerPCDesc SOURCES ${LLVMPOWERPCDESC_SOURCES} DEPENDS LLVMPowerPCInfo LLVMMC LLVMMCDisassembler LLVMSupport)
+    add_llvm_library(LLVMPowerPCCodeGen SOURCES ${LLVMPOWERPCCODEGEN_SOURCES} DEPENDS LLVMPowerPCInfo LLVMPowerPCDesc LLVMCodeGen LLVMGlobalISel LLVMSelectionDAG LLVMAsmPrinter LLVMTarget LLVMMC LLVMSupport)
+    add_llvm_library(LLVMPowerPCAsmParser SOURCES ${LLVMPOWERPCASMPARSER_SOURCES} DEPENDS LLVMPowerPCDesc LLVMPowerPCInfo LLVMMCParser LLVMMC LLVMSupport)
+    add_llvm_library(LLVMPowerPCDisassembler SOURCES ${LLVMPOWERPCDISASSEMBLER_SOURCES} DEPENDS LLVMPowerPCInfo LLVMMCDisassembler LLVMMC LLVMSupport)
+elseif (ARCH_S390X)
+    add_llvm_library(LLVMSystemZInfo SOURCES ${LLVMSYSTEMZINFO_SOURCES} DEPENDS LLVMMC LLVMSupport)
+    add_llvm_library(LLVMSystemZDesc SOURCES ${LLVMSYSTEMZDESC_SOURCES} DEPENDS LLVMSystemZInfo LLVMMC LLVMMCDisassembler LLVMSupport)
+    add_llvm_library(LLVMSystemZCodeGen SOURCES ${LLVMSYSTEMZCODEGEN_SOURCES} DEPENDS LLVMSystemZInfo LLVMSystemZDesc LLVMCodeGen LLVMSelectionDAG LLVMAsmPrinter LLVMTarget LLVMMC LLVMSupport)
+    add_llvm_library(LLVMSystemZAsmParser SOURCES ${LLVMSYSTEMZASMPARSER_SOURCES} DEPENDS LLVMSystemZDesc LLVMSystemZInfo LLVMMCParser LLVMMC LLVMSupport)
+    add_llvm_library(LLVMSystemZDisassembler SOURCES ${LLVMSYSTEMZDISASSEMBLER_SOURCES} DEPENDS LLVMSystemZInfo LLVMMCDisassembler LLVMMC LLVMSupport)
+elseif (ARCH_RISCV64)
+    add_llvm_library(LLVMRISCVInfo SOURCES ${LLVMRISCVINFO_SOURCES} DEPENDS LLVMMC LLVMSupport)
+    add_llvm_library(LLVMRISCVDesc SOURCES ${LLVMRISCVDESC_SOURCES} DEPENDS LLVMRISCVInfo LLVMMC LLVMMCDisassembler LLVMSupport)
+    add_llvm_library(LLVMRISCVCodeGen SOURCES ${LLVMRISCVCODEGEN_SOURCES} DEPENDS LLVMRISCVInfo LLVMRISCVDesc LLVMCodeGen LLVMGlobalISel LLVMSelectionDAG LLVMAsmPrinter LLVMTarget LLVMMC LLVMSupport)
+    add_llvm_library(LLVMRISCVAsmParser SOURCES ${LLVMRISCVASMPARSER_SOURCES} DEPENDS LLVMRISCVDesc LLVMRISCVInfo LLVMMCParser LLVMMC LLVMSupport)
+    add_llvm_library(LLVMRISCVDisassembler SOURCES ${LLVMRISCVDISASSEMBLER_SOURCES} DEPENDS LLVMRISCVInfo LLVMMCDisassembler LLVMMC LLVMSupport)
 endif()
 
 # XRay support
@@ -653,6 +822,15 @@ else()
         LLVMMC
         LLVMBinaryFormat
         LLVMDebugInfoCodeView
+        LLVMCGData
+        LLVMObjCARCOpts
+        LLVMIRPrinter
+        LLVMCFGuard
+        LLVMFrontendOpenMP
+        LLVMFrontendOpenACC
+        LLVMFrontendOffloading
+        LLVMCoroutines
+        LLVMSandboxIR
         LLVMTargetParser
         LLVMSupport
         LLVMDemangle
@@ -660,6 +838,14 @@ else()
 
     if (ARCH_AMD64)
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen LLVMX86AsmParser LLVMX86Disassembler)
+    elseif (ARCH_AARCH64)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen LLVMAArch64AsmParser LLVMAArch64Disassembler)
+    elseif (ARCH_PPC64LE)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMPowerPCInfo LLVMPowerPCDesc LLVMPowerPCCodeGen LLVMPowerPCAsmParser LLVMPowerPCDisassembler)
+    elseif (ARCH_S390X)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMSystemZInfo LLVMSystemZDesc LLVMSystemZCodeGen LLVMSystemZAsmParser LLVMSystemZDisassembler)
+    elseif (ARCH_RISCV64)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMRISCVInfo LLVMRISCVDesc LLVMRISCVCodeGen LLVMRISCVAsmParser LLVMRISCVDisassembler)
     endif()
 
     if (ENABLE_XRAY)

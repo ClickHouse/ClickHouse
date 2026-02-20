@@ -160,4 +160,9 @@ set(LLVMSUPPORT_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Support/YAMLParser.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/YAMLTraits.cpp
     ${LLVM_SOURCE_DIR}/lib/Support/Z3Solver.cpp
+    # BLAKE3
+    ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3.c
+    ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_dispatch.c
+    ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_portable.c
+    ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_neon.c
 )
