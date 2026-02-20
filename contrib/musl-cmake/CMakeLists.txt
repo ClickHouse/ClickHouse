@@ -1475,7 +1475,6 @@ if (ARCH_AMD64)
     "${MUSL_SOURCE_DIR}/src/setjmp/x86_64/setjmp.s"
     "${MUSL_SOURCE_DIR}/src/signal/x86_64/restore.s"
     "${MUSL_SOURCE_DIR}/src/signal/x86_64/sigsetjmp.s"
-    "${MUSL_SOURCE_DIR}/src/string/x86_64/memcpy.s"
     "${MUSL_SOURCE_DIR}/src/string/x86_64/memmove.s"
     "${MUSL_SOURCE_DIR}/src/string/x86_64/memset.s"
     "${MUSL_SOURCE_DIR}/src/thread/x86_64/__set_thread_area.s"
