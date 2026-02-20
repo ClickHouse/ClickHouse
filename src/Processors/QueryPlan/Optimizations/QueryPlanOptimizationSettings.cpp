@@ -17,6 +17,7 @@ namespace Setting
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool join_runtime_filter_use_minmax;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -24,6 +25,7 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
     extern const SettingsBool optimize_use_projections;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_in_order;
@@ -89,7 +91,6 @@ namespace Setting
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
-    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace ServerSetting
@@ -215,6 +216,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
+    join_runtime_filter_use_minmax = from[Setting::join_runtime_filter_use_minmax];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     if (query_plan_optimize_join_order_algorithm.empty())

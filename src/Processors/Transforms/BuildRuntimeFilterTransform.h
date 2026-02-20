@@ -27,7 +27,8 @@ public:
         Float64 pass_ratio_threshold_for_disabling_,
         UInt64 blocks_to_skip_before_reenabling_,
         Float64 max_ratio_of_set_bits_in_bloom_filter_,
-        bool allow_to_use_not_exact_filter_);
+        bool allow_to_use_not_exact_filter_,
+        bool can_use_minmax_filter);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 

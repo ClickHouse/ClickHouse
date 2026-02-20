@@ -98,7 +98,7 @@ SETTINGS join_runtime_filter_exact_values_limit=1, join_runtime_bloom_filter_byt
 SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
-    ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 AND ProfileEvents['RuntimeFilterBlocksProcessed'] = 0 AS Passed,
+    ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
 WHERE

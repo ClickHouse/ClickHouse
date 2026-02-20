@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_statistics_cache", false, true, "Enable statistics cache"},
             {"apply_row_policy_after_final", false, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
+            {"join_runtime_filter_use_minmax", false, true, "New setting."},
             {"allow_insert_into_iceberg", false, true, "Insert into iceberg was moved to Beta"},
             {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},

@@ -10,6 +10,7 @@
 #include <boost/noncopyable.hpp>
 #include <cstddef>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -168,6 +169,11 @@ protected:
 
     void releaseExactValues() { exact_values.reset(); }
 
+    ColumnPtr lookupInExactSet(const ColumnWithTypeAndName & values) const
+    {
+        return RuntimeFilterBase<negate>::findImpl(values);
+    }
+
 private:
     enum class ValuesCount
     {
@@ -229,13 +235,13 @@ public:
 
 /// As long as the number of unique values is small they are stored in a Set but when it grows beyond the limit
 /// the values are moved into a BloomFilter.
-class ApproximateRuntimeFilter : public RuntimeFilterBase<false>
+class ApproximateGenericRuntimeFilter : public RuntimeFilterBase<false>
 {
     using Base = RuntimeFilterBase<false>;
 public:
     static bool isDataTypeSupported(const DataTypePtr & data_type);
 
-    ApproximateRuntimeFilter(
+    ApproximateGenericRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
         Float64 pass_ratio_threshold_for_disabling_,
@@ -256,9 +262,19 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     void merge(const IRuntimeFilter * source) override;
 
+protected:
+    virtual void insertIntoApproximateSet(ColumnPtr values, size_t row);
+
+    void mergeImpl(const ApproximateGenericRuntimeFilter * source);
+
+    bool isApproximate() const { return bloom_filter != nullptr; }
+
+    bool lookupInBloomFilter(ColumnPtr values, size_t row) const;
+
+    void switchToApproximateSet();
+
 private:
     void insertIntoBloomFilter(ColumnPtr values);
-    void switchToBloomFilter();
 
     /// Disables bloom filter if it is likely to have bad selectivity
     void checkBloomFilterWorthiness();
@@ -268,6 +284,51 @@ private:
 
     BloomFilterPtr bloom_filter;
 };
+
+/// Runtime filter that can switch to bloom filter and minmax range
+/// when the number of unique values exceeds the limit.
+/// It is used for numeric columns only.
+/// The minmax range allows to quickly filter out values that are outside of the observed min and max values,
+/// which can be beneficial for avoiding unnecessary bloom filter lookups.
+template <typename T>
+class ApproximateNumericRuntimeFilter : public ApproximateGenericRuntimeFilter
+{
+    using Base = ApproximateGenericRuntimeFilter;
+
+public:
+    ApproximateNumericRuntimeFilter(
+        size_t filters_to_merge_,
+        const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
+        UInt64 bytes_limit_,
+        UInt64 exact_values_limit_,
+        UInt64 bloom_filter_hash_functions_,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_);
+
+    void finishInsertImpl() override;
+
+    ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
+
+    void merge(const IRuntimeFilter * source) override;
+
+private:
+    void insertIntoApproximateSet(ColumnPtr values, size_t row) override;
+
+    T min_value;
+    T max_value;
+};
+
+/// Factory function that dispatches on the data type to create the correct `ApproximateNumericRuntimeFilter` instantiation
+UniqueRuntimeFilterPtr createApproximateNumericRuntimeFilter(
+    size_t filters_to_merge,
+    const DataTypePtr & filter_column_target_type,
+    Float64 pass_ratio_threshold_for_disabling,
+    UInt64 blocks_to_skip_before_reenabling,
+    UInt64 bytes_limit,
+    UInt64 exact_values_limit,
+    UInt64 bloom_filter_hash_functions,
+    Float64 max_ratio_of_set_bits_in_bloom_filter);
 
 /// Store and find per-query runtime filters that are used for optimizing some kinds of JOINs
 /// by early pre-filtering of the left side of the JOIN.

@@ -579,7 +579,6 @@ void optimizeTreeSecondPass(
 
     Stack stack;
     stack.push_back({.node = &root});
-
     while (!stack.empty())
     {
         if (optimization_settings.query_plan_optimize_primary_key)

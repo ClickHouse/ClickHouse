@@ -21,7 +21,8 @@ public:
         Float64 pass_ratio_threshold_for_disabling,
         UInt64 blocks_to_skip_before_reenabling,
         Float64 max_ratio_of_set_bits_in_bloom_filter,
-        bool allow_to_use_not_exact_filter_);
+        bool allow_to_use_not_exact_filter_,
+        bool can_use_minmax_filter_);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -57,6 +58,7 @@ private:
     Float64 max_ratio_of_set_bits_in_bloom_filter;
 
     bool allow_to_use_not_exact_filter;
+    bool can_use_minmax_filter;
 };
 
 }
