@@ -39,7 +39,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
            {"warehouse", [&](const JSONObjectType & value) { warehouse = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
-    for (const auto & [key, value] : jobj.getObject())
+    for (const auto [key, value] : jobj.getObject())
     {
         const String & nkey = String(key);
 
@@ -93,7 +93,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }},
            {"unity", [&](const JSONObjectType & value) { unity_catalog = loadCatalog(value, "", 8181); }}};
 
-    for (const auto & [key, value] : jobj.getObject())
+    for (const auto [key, value] : jobj.getObject())
     {
         const String & nkey = String(key);
 
@@ -135,7 +135,7 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
            {"threshold", [&](const JSONObjectType & value) { threshold = static_cast<uint32_t>(value.getUInt64()); }},
            {"minimum", [&](const JSONObjectType & value) { minimum = static_cast<uint32_t>(value.getUInt64()); }}};
 
-    for (const auto & [key, value] : jobj.getObject())
+    for (const auto [key, value] : jobj.getObject())
     {
         const String & nkey = String(key);
 
@@ -418,7 +418,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
         {"oracle_ignore_error_codes", parseErrorCodes(oracle_ignore_error_codes)}};
 
-    for (const auto & [key, value] : object.getObject())
+    for (const auto [key, value] : object.getObject())
     {
         const String & nkey = String(key);
 
