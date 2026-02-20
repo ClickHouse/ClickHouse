@@ -361,9 +361,6 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
                     )
                 ]
                 is_failed = True
-                attached_files.extend(
-                    [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
-                )
         except Exception:
             pass  # Don't let the safety-net check itself break the job
 
@@ -405,9 +402,11 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
         )
         if is_failed:
             test_results = [result]
-            attached_files.extend(
-                [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
-            )
+
+    if is_failed:
+        attached_files.extend(
+            [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
+        )
 
     if is_failed and not info.is_local_run:
         # TODO: collect needed logs

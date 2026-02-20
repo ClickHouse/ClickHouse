@@ -31,7 +31,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     String warehouse = "data";
     uint32_t port = default_port;
 
-    static const SettingEntries configEntries
+    static SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
@@ -39,7 +39,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
            {"warehouse", [&](const JSONObjectType & value) { warehouse = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
-    for (const auto [key, value] : jobj.getObject())
+    for (const auto & [key, value] : jobj.getObject())
     {
         const String & nkey = String(key);
 
@@ -74,7 +74,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::optional<Catalog> rest_catalog;
     std::optional<Catalog> unity_catalog;
 
-    static const SettingEntries configEntries
+    static SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
@@ -93,7 +93,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }},
            {"unity", [&](const JSONObjectType & value) { unity_catalog = loadCatalog(value, "", 8181); }}};
 
-    for (const auto [key, value] : jobj.getObject())
+    for (const auto & [key, value] : jobj.getObject())
     {
         const String & nkey = String(key);
 
@@ -130,12 +130,12 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     uint32_t threshold = default_minimum;
     uint32_t minimum = default_threshold;
 
-    static const SettingEntries metricEntries
+    static SettingEntries metricEntries
         = {{"enabled", [&](const JSONObjectType & value) { enabled = value.getBool(); }},
            {"threshold", [&](const JSONObjectType & value) { threshold = static_cast<uint32_t>(value.getUInt64()); }},
            {"minimum", [&](const JSONObjectType & value) { minimum = static_cast<uint32_t>(value.getUInt64()); }}};
 
-    for (const auto [key, value] : jobj.getObject())
+    for (const auto & [key, value] : jobj.getObject())
     {
         const String & nkey = String(key);
 
@@ -316,7 +316,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"alias", allow_alias},
            {"kafka", allow_kafka}};
 
-    static const SettingEntries configEntries = {
+    static SettingEntries configEntries = {
         {"client_file_path",
          [&](const JSONObjectType & value)
          {
@@ -418,7 +418,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
         {"oracle_ignore_error_codes", parseErrorCodes(oracle_ignore_error_codes)}};
 
-    for (const auto [key, value] : object.getObject())
+    for (const auto & [key, value] : object.getObject())
     {
         const String & nkey = String(key);
 
