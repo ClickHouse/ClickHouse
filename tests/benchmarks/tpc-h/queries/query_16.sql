@@ -1,38 +1,24 @@
--- TPC TPC-H Parameter Substitution (Version 2.17.3 build 0)
--- using 1718355933 as a seed to the RNG
--- $ID$
--- TPC-H/TPC-R Parts/Supplier Relationship Query (Q16)
--- Functional Query Definition
--- Approved February 1998
-
-
-select
+SELECT
     p_brand,
     p_type,
     p_size,
-    count(distinct ps_suppkey) as supplier_cnt
-from
-    partsupp,
-    part
-where
-    p_partkey = ps_partkey
-    and p_brand <> 'Brand#45'
-    and p_type not like 'MEDIUM POLISHED%'
-    and p_size in (49, 14, 23, 45, 19, 3, 36, 9)
-    and ps_suppkey not in (
-        select
-            s_suppkey
-        from
-            supplier
-        where
-            s_comment like '%Customer%Complaints%'
-    )
-group by
+    count(DISTINCT ps_suppkey) AS supplier_cnt
+FROM partsupp, part
+WHERE (p_partkey = ps_partkey)
+    AND (p_brand <> 'Brand#45')
+    AND (p_type NOT LIKE 'MEDIUM POLISHED%')
+    AND (p_size IN (49, 14, 23, 45, 19, 3, 36, 9))
+    AND (ps_suppkey NOT IN (
+        SELECT s_suppkey
+        FROM supplier
+        WHERE (s_comment LIKE '%Customer%Complaints%')
+    ))
+GROUP BY
     p_brand,
     p_type,
     p_size
-order by
-    supplier_cnt desc,
+ORDER BY
+    supplier_cnt DESC,
     p_brand,
     p_type,
     p_size;
