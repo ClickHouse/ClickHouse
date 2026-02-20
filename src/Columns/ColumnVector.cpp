@@ -865,7 +865,7 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
         {
             for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
             {
-                svbool_t filt_mask = svcmpne(FILT_LOAD_PRED, 
+                svbool_t filt_mask = svcmpne(FILT_LOAD_PRED,
                                         svld1ub_u32(FILT_LOAD_PRED, reinterpret_cast<const uint8_t *>(filt_pos + i)), 0);
                 svuint32_t vec = svld1(ALL_TRUE, reinterpret_cast<const uint32_t *>(data_pos + i));
                 vec = svcompact(filt_mask, vec);
