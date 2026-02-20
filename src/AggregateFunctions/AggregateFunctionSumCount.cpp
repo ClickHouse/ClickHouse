@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <AggregateFunctions/AggregateFunctionAvg.h>
 
@@ -44,6 +45,25 @@ public:
     }
 
     String getName() const final { return "sumCount"; }
+
+    /// Keep the legacy nullable behavior/state layout for sumCount.
+    /// After `Nullable(Tuple)` was introduced, for Nullable arguments in the
+    /// generic Null-combinator path it started using `AggregateFunctionNullUnary<true, true>`
+    /// instead of `AggregateFunctionNullUnary<false, false>` for sumCount.
+    /// This adds a leading null-flag byte during serialization and expects that
+    /// byte during deserialization, which breaks compatibility with previously
+    /// serialized sumCount states.
+    /// So we force the legacy adapter for sumCount to preserve compatibility.
+    /// The extra null-flag is also redundant for sumCount: "has non-NULL rows"
+    /// can be inferred from `count` (`count > 0` means at least one row was seen).
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const final
+    {
+        return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+    }
 
 #if USE_EMBEDDED_COMPILER
 
