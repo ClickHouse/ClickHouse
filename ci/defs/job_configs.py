@@ -1246,6 +1246,7 @@ class JobConfigs:
             ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         ],
         provides=[ArtifactNames.LLVM_COVERAGE_DIFF_HTML_REPORT],
+        provides_artifacts_on_failure=True,
         command="python3 ./ci/jobs/check_llvm_coverage.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/check_llvm_coverage.py"],

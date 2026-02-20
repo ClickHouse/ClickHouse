@@ -75,6 +75,10 @@ class Job:
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 
+        # Even though a job may provide artifacts, we do not store them if the job failed. 
+        # This flag allows to control this behavior.
+        provides_artifacts_on_failure: bool = False
+
         def parametrize(self, *param_sets: "Job.ParamSet"):
             res = []
             for param_set in param_sets:

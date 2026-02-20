@@ -524,7 +524,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0:
+        if run_exit_code == 0 or (job.provides_artifacts_on_failure and job.provides):
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:

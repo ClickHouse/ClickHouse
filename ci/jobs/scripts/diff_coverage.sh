@@ -133,7 +133,8 @@ genhtml \
   --simplified-colors \
   --flat \
   $include_args \
-  current.changed.info 
+  current.changed.info \
+  2>/dev/null
 
 lcov --version
 base_line_coverage=$(lcov --ignore-errors inconsistent,corrupt --summary base_llvm_coverage.info 2>/dev/null | awk '/^  lines\.*:/{gsub(/%/,"",$2); print $2}')

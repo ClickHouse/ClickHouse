@@ -39,12 +39,13 @@ if __name__ == "__main__":
 
         info.store_kv_data("previous_commits_sha", commits)
 
-    # get merge base for master and current branch and store 30 previous commits in master
+    # store current commit and merge base between master and current branch
     try:
         info.store_kv_data("current_commit_sha", info.sha)
         # Get the merge base commit using git
         merge_base_commit_sha = Shell.get_output(
-            "git merge-base origin/master HEAD", verbose=True
+            f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
+            verbose=True,
         ).strip()
         info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
 
