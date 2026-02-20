@@ -148,15 +148,6 @@ _Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v3\"))),apply_
  */
 #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 
-#define DECLARE_X86_64_V3_SPECIFIC_CODE(...) \
-BEGIN_X86_64_V3_SPECIFIC_CODE \
-namespace TargetSpecific::x86_64_v3 { \
-    DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::x86_64_v3; \
-    __VA_ARGS__ \
-} \
-END_TARGET_SPECIFIC_CODE
-
 #define DECLARE_X86_64_V4_SPECIFIC_CODE(...) \
 BEGIN_X86_64_V4_SPECIFIC_CODE \
 namespace TargetSpecific::x86_64_v4 { \

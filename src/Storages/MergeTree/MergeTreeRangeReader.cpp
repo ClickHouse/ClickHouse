@@ -23,11 +23,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
-#ifdef __SSE2__
-#include <emmintrin.h>
-#endif
-
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 #include <immintrin.h>
 #endif
 
@@ -835,6 +831,12 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
             return count;
         }
     }
+    while (end > begin && end[-1] == 0)
+    {
+        --end;
+        ++count;
+    }
+    return count;
 #else
 
     while (end > begin && end[-1] == 0)
@@ -1378,7 +1380,7 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
  * 1. https://www.felixcloutier.com/x86/pdep
  * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
  */
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+#if defined(__BMI2__)
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
@@ -1412,7 +1414,7 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
         }
     }
 }
-)
+#endif
 
 /// Second filter size must be equal to number of 1s in the first filter.
 /// The result has size equal to first filter size and contains 1s only where both filters contain 1s.
@@ -1461,13 +1463,12 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     {
         TargetSpecific::x86_64_icelake::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
-    else if (isArchSupported(TargetArch::x86_64_v3))
-    {
-        TargetSpecific::x86_64_v3::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
-    }
     else
 #endif
     {
+#if defined(__BMI2__)
+        combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+#else
         for (auto & val : first_data)
         {
             if (val)
@@ -1476,6 +1477,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
                 ++second_data;
             }
         }
+#endif
     }
 
     return mut_first;
