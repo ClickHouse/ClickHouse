@@ -5,6 +5,7 @@ INSERT INTO users VALUES (111, 'JFK', 33);
 INSERT INTO users VALUES (6666, 'KLM', 48);
 INSERT INTO users VALUES (88888, 'AMS', 50);
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT '-- count() ------------------------------';
 SELECT count() FROM users PREWHERE uid > 2000;
 

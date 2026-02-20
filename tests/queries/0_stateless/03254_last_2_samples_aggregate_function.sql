@@ -1,3 +1,4 @@
+SET automatic_parallel_replicas_mode = 0;
 SET allow_experimental_ts_to_grid_aggregate_function=1;
 
 -- Table for raw data

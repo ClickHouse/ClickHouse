@@ -1,3 +1,4 @@
+SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_for_non_replicated_merge_tree=1;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/49559

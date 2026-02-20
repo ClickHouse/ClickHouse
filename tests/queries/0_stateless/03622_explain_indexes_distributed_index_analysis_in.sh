@@ -12,6 +12,7 @@ CLICKHOUSE_CLIENT_OPT+="--allow_experimental_analyzer=1"
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
+CLICKHOUSE_CLIENT_OPT+=" --automatic_parallel_replicas_mode=0"
 . "$CUR_DIR"/../shell_config.sh
 
 # Generate many parts (partitions) to ensure that all replicas will be chosen for distributed index analysis

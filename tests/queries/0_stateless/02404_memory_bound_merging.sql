@@ -7,6 +7,7 @@ drop table if exists t_different_dbs;
 drop table if exists dist_t;
 drop table if exists t;
 
+SET automatic_parallel_replicas_mode = 0;
 set optimize_trivial_insert_select = 1;
 
 create table t(a UInt64, b UInt64) engine=MergeTree order by a;

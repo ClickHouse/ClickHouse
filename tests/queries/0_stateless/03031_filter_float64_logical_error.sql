@@ -18,6 +18,7 @@ INSERT INTO 03031_test SELECT
     toString(number)
 FROM numbers(10);
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT
     count('9223372036854775806'),
     7

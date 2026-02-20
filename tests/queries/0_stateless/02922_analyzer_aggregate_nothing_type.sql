@@ -1,4 +1,5 @@
 
+SET automatic_parallel_replicas_mode = 0;
 select sum(NULL);
 select quantile(0.5)(NULL);
 select quantiles(0.1, 0.2)(NULL :: Nullable(UInt32));

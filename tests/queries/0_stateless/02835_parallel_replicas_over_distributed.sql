@@ -1,5 +1,6 @@
 -- 1 shard
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT '-- 1 shard, 3 replicas';
 DROP TABLE IF EXISTS test_d;
 DROP TABLE IF EXISTS test;

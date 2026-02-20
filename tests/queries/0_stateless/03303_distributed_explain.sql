@@ -1,5 +1,6 @@
 -- Tags: no-random-settings
 
+SET automatic_parallel_replicas_mode = 0;
 set enable_analyzer=1;
 
 set serialize_query_plan=0;

@@ -15,6 +15,7 @@ system sync replica t2;
 system sync replica t3;
 
 -- w/o parallel replicas
+SET automatic_parallel_replicas_mode = 0;
 SELECT
     k,
     count()

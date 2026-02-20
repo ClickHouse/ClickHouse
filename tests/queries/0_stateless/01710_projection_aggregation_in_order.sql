@@ -26,6 +26,7 @@ INSERT INTO normal SELECT
     number
 FROM numbers(100000);
 
+SET automatic_parallel_replicas_mode = 0;
 SET force_optimize_projection=1;
 SET optimize_use_projections=1, optimize_aggregation_in_order=1, enable_parallel_replicas=0;
 

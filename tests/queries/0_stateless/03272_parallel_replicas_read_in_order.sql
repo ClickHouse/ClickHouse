@@ -1,3 +1,4 @@
+SET automatic_parallel_replicas_mode = 0;
 SET log_queries = 1;
 SET optimize_read_in_order=1;
 DROP TABLE IF EXISTS read_in_order_with_parallel_replicas;

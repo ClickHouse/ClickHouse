@@ -4,6 +4,7 @@ create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;
 ALTER TABLE pr_t ADD PROJECTION p_agg (SELECT a, sum(b) GROUP BY a);
 insert into pr_t select number % 1000, number % 1000 from numbers_mt(1e6);
 
+SET automatic_parallel_replicas_mode = 0;
 set parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 set max_threads = 4;

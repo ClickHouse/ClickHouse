@@ -14,6 +14,7 @@ INSERT INTO t SELECT *, randomString(10) FROM numbers(1_000);
 
 -- The problem with too small task sizes specifically happens when we have compact parts.
 -- Because for them we don't know individual column sizes, see `calculateMinMarksPerTask()` function.
+SET automatic_parallel_replicas_mode = 0;
 SELECT
     throwIf(countIf(part_type = 'Compact') = 0),
     throwIf(countIf(part_type = 'Wide') = 0)

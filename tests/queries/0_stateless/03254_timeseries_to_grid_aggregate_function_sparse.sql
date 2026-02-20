@@ -1,5 +1,6 @@
 CREATE TABLE ts_data (timestamp DateTime('UTC'), value Float64) ENGINE=MergeTree() ORDER BY tuple();
 
+SET automatic_parallel_replicas_mode = 0;
 WITH [11, 57, 71, 88, 89, 101, 127, 135, 151] as timestamps
 INSERT INTO ts_data SELECT ts::DateTime64 as timestamp, ts + 10000 as value FROM (SELECT arrayJoin(timestamps) as ts);
 

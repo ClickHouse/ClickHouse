@@ -3,6 +3,7 @@
 drop table if exists t_dio;
 
 -- Slow down the test
+SET automatic_parallel_replicas_mode = 0;
 SET min_bytes_to_use_direct_io=0, local_filesystem_read_prefetch=0, use_uncompressed_cache=0;
 
 SET max_block_size=16342;

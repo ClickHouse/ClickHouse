@@ -1,5 +1,6 @@
 -- Tags: long, no-parallel, no-object-storage, no-msan, no-tsan
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer=1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET parallel_distributed_insert_select=2;
 

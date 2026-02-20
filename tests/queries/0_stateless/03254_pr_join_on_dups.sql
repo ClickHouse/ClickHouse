@@ -1,6 +1,7 @@
 drop table if exists X sync;
 drop table if exists Y sync;
 
+SET automatic_parallel_replicas_mode = 0;
 set min_bytes_to_use_direct_io = 0; -- min_bytes_to_use_direct_io > 0 is broken and leads to unexpected results, https://github.com/ClickHouse/ClickHouse/issues/65690
 
 create table X (id Int32, x_a String, x_b Nullable(Int32)) engine ReplicatedMergeTree('/clickhouse/{database}/X', '1') order by tuple();

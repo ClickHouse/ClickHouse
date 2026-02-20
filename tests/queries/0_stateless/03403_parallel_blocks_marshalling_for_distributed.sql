@@ -1,3 +1,4 @@
+SET automatic_parallel_replicas_mode = 0;
 set serialize_query_plan = 0;
 
 CREATE TABLE t(a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
