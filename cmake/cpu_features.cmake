@@ -89,7 +89,7 @@ elseif (ARCH_AMD64)
     #   2 — SSE4.2, SSSE3, POPCNT (default, matches ClickHouse's historical baseline)
     #   3 — AVX2, BMI1/2, FMA, F16C etc.
     #   4 — AVX-512F/BW/CD/DQ/VL
-    set (X86_ARCH_LEVEL "2" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
+    set (X86_ARCH_LEVEL "3" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
     set_property (CACHE X86_ARCH_LEVEL PROPERTY STRINGS "1" "2" "3" "4")
 
     if (NOT X86_ARCH_LEVEL MATCHES "^[1-4]$")
