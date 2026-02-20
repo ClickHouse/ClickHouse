@@ -5,15 +5,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-#include <cstring>
 #include <memory>
 
 #include <Common/TargetSpecific.h>
 
-
-#ifdef __SSE2__
-#    include <emmintrin.h>
-#endif
 
 #ifdef __SSE4_1__
 #    include <smmintrin.h>
