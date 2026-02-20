@@ -1298,7 +1298,7 @@ public:
             }
 
             if (has_nothing)
-                return std::make_shared<DataTypeNothing>();
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
 
             // In null-safe cmp mode, return DataTypeUInt8
             if (is_null_safe_cmp_mode)
@@ -1306,7 +1306,7 @@ public:
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
             if (has_null)
-                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             if (has_nullable)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
