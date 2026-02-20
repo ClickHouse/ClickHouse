@@ -270,11 +270,6 @@ DB::Names GlueCatalog::getTables() const
     return result;
 }
 
-void GlueCatalog::checkDatabase(std::string /*database_name*/) const
-{
-    getTables();
-}
-
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
     Aws::Glue::Model::GetTableRequest request;
@@ -431,7 +426,7 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
-bool GlueCatalog::empty() const
+bool GlueCatalog::isEmpty() const
 {
     auto all_databases = getDatabases("");
     for (const auto & db : all_databases)

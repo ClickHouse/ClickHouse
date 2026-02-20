@@ -62,7 +62,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const s
     return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, {auth_header}, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }
 
-bool UnityCatalog::empty() const
+bool UnityCatalog::isEmpty() const
 {
 
     auto all_schemas = getSchemas("");
@@ -87,11 +87,6 @@ DB::Names UnityCatalog::getTables() const
     }
 
     return result;
-}
-
-void UnityCatalog::checkDatabase(std::string /*database_name*/) const
-{
-    getTables();
 }
 
 void UnityCatalog::getTableMetadata(

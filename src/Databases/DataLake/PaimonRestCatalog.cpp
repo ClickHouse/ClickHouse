@@ -426,7 +426,7 @@ void PaimonRestCatalog::forEachTables(
 }
 
 
-bool PaimonRestCatalog::empty() const
+bool PaimonRestCatalog::isEmpty() const
 {
     DB::Strings databases;
     DB::Names tables;
@@ -447,18 +447,6 @@ DB::Names PaimonRestCatalog::getTables() const
     auto list_tables = [this, &tables](const String & database_name) { forEachTables(database_name, tables, {}); };
     forEachDatabase(databases, {}, list_tables);
     return tables;
-}
-
-void PaimonRestCatalog::checkDatabase(std::string database_name) const
-{
-    DB::Names tables;
-    auto list_database_stop_condition = [this, &tables](const String & name)
-    {
-        /// stop when get any table
-        forEachTables(name, tables, [](const String &) { return true; });
-        return !tables.empty();
-    };
-    list_database_stop_condition(database_name);
 }
 
 bool PaimonRestCatalog::existsTable(const String & database_name, const String & table_name) const

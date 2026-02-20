@@ -83,11 +83,11 @@ public:
 
     ~PaimonRestCatalog() override = default;
 
-    bool empty() const override;
+    bool isEmpty() const override;
 
     DB::Names getTables() const override;
 
-    void checkDatabase(std::string database_name) const override;
+    void checkDatabase() const override;
 
     bool existsTable(const String & database_name, const String & table_name) const override;
 

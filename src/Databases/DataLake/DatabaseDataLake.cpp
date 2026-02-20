@@ -826,10 +826,11 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 
 void DatabaseDataLake::checkDatabase() const
 {
-    const auto name = getDatabaseName();
-    LOG_TEST(log, "Checking database '{}'", name);
     auto catalog = getCatalog();
-    catalog->checkDatabase(name);
+    /// This function checks if we can access catalog and get tables list.
+    /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
+    catalog->isEmpty();
+    LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(

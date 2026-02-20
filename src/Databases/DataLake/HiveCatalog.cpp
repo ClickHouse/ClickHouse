@@ -76,7 +76,7 @@ HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & bas
     transport->open();
 }
 
-bool HiveCatalog::empty() const
+bool HiveCatalog::isEmpty() const
 {
     std::vector<std::string> result;
 
@@ -105,14 +105,6 @@ DB::Names HiveCatalog::getTables() const
             result.push_back(db + "." + table);
     }
     return result;
-}
-
-void HiveCatalog::checkDatabase(std::string database_name) const
-{
-    std::vector<std::string> result;
-
-    std::lock_guard lock(client_mutex);
-    client.get_all_tables(result, database_name);
 }
 
 bool HiveCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const

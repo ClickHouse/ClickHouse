@@ -371,7 +371,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     }
 }
 
-bool RestCatalog::empty() const
+bool RestCatalog::isEmpty() const
 {
     /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;
@@ -552,11 +552,6 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
 
     auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, base_namespace, limit);
-}
-
-void RestCatalog::checkDatabase(std::string /*database_name*/) const
-{
-    getTables();
 }
 
 DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const

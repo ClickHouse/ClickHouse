@@ -142,13 +142,11 @@ public:
     virtual ~ICatalog() = default;
 
     /// Does catalog have any tables?
-    virtual bool empty() const = 0;
+    virtual bool isEmpty() const = 0;
 
     /// Fetch tables' names list.
     /// Contains full namespaces in names.
     virtual DB::Names getTables() const = 0;
-
-    virtual void checkDatabase(std::string database_name) const = 0;
 
     /// Check that a table exists in a given namespace.
     virtual bool existsTable(
