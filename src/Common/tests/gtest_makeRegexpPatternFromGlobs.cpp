@@ -268,8 +268,8 @@ TEST(Common, GlobASTExpand)
         GlobAST::GlobString("prefix{a,b}middle{1,2}suffix").expand(),
         V({"prefixamiddle1suffix", "prefixamiddle2suffix", "prefixbmiddle1suffix", "prefixbmiddle2suffix"}));
 
-    // Single-element enum — acts like a constant.
-    EXPECT_EQ(GlobAST::GlobString("{test}").expand(), V({"{test}"}));
+    // Single-element enum — braces are stripped (matching old ClickHouse behavior).
+    EXPECT_EQ(GlobAST::GlobString("{test}").expand(), V({"test"}));
 
     // Wildcards are passed through as literal text.
     EXPECT_EQ(GlobAST::GlobString("*.csv").expand(), V({"*.csv"}));
@@ -301,6 +301,7 @@ TEST(Common, GlobASTExpand)
     EXPECT_EQ(
         GlobAST::GlobString("{a,b}{1,2}").expand(),
         expandSelectionGlob("{a,b}{1,2}"));
+    EXPECT_EQ(GlobAST::GlobString("{test}").expand(), expandSelectionGlob("{test}"));
 
     // Cardinality guard.
     EXPECT_THROW(GlobAST::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(100), DB::Exception);
