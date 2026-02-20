@@ -62,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_insert_into_iceberg", false, true, "Insert into iceberg was moved to Beta"},
             {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
+            {"use_text_index_tokens_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
