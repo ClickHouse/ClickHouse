@@ -91,6 +91,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
+    /// In only_analyze mode, do not evaluate scalar subqueries.
+    /// The result type can be inferred from the projection columns.
+    /// EXISTS requires evaluation to produce a constant result.
+    if (only_analyze && !execute_for_exists)
+        return;
+
     auto & context = scope.context;
 
     Block scalar_block;

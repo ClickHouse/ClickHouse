@@ -1469,7 +1469,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         else
             function_base = function->build(argument_columns);
 
-        bool allow_constant_folding = true;
+        /// In only_analyze mode we only need types, not values.
+        /// Disable constant folding to avoid executing functions unnecessarily.
+        bool allow_constant_folding = !only_analyze;
 
         auto * nearest_join_query_scope = scope.joins_count > 0 ? scope.getNearestQueryScope() : nullptr;
         auto * nearest_join_query_scope_query_node = nearest_join_query_scope ? nearest_join_query_scope->scope_node->as<QueryNode>() : nullptr;

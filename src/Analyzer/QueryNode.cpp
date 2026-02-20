@@ -10,6 +10,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>
@@ -140,35 +141,31 @@ void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
 
 DataTypePtr QueryNode::getResultType() const
 {
-    if (isCorrelated())
+    if (projection_columns.size() == 1)
     {
-        if (projection_columns.size() == 1)
-        {
-            /// Scalar correlated subquery must return nullable result,
-            /// because it must return NULL value if subquery produces an empty result set.
-            ///
-            /// Example:
-            ///
-            /// SELECT
-            ///     *
-            /// FROM partsupp as ps
-            /// WHERE ps.ps_availqty > (
-            ///         SELECT 0.5 * sum(l.l_quantity)
-            ///         FROM lineitem as l
-            ///         WHERE (l.l_partkey = ps.ps_partkey) AND (l.l_suppkey = ps.ps_suppkey)
-            ///     )
-            ///
-            /// In this case, if the subquery returns a non-nullable value, it'll be evaluate to `0` for empty result set.
-            /// It will lead to incorrect result, because the condition `ps.ps_availqty > 0` will be true.
-            /// To avoid this, we return Null value here and the condition will evaluate to false.
-            return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
-        }
-        else
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
-                projection_columns.size());
+        /// Scalar subquery must return nullable result,
+        /// because it must return NULL value if subquery produces an empty result set.
+        return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
     }
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
+
+    if (!isCorrelated())
+    {
+        /// Non-correlated scalar subquery with multiple columns returns a Tuple.
+        DataTypes types;
+        Names names;
+        types.reserve(projection_columns.size());
+        names.reserve(projection_columns.size());
+        for (const auto & column : projection_columns)
+        {
+            types.push_back(column.type);
+            names.push_back(column.name);
+        }
+        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
+    }
+
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+        "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+        projection_columns.size());
 }
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const

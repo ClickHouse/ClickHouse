@@ -366,10 +366,16 @@ public:
                 if (query_node.isCorrelated())
                     result = query_node.getAlias();
                 else
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Only correlated QueryNode can be used as action query tree node, but got {}",
-                        node->formatASTForErrorMessage());
+                    result = "__scalar_subquery_" + DB::toString(node->getTreeHash());
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                auto & union_node = node->as<UnionNode &>();
+                if (union_node.isCorrelated())
+                    result = union_node.getAlias();
+                else
+                    result = "__scalar_subquery_" + DB::toString(node->getTreeHash());
                 break;
             }
             default:
@@ -603,13 +609,13 @@ public:
     }
 
     template <typename FunctionOrOverloadResolver>
-    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, const FunctionOrOverloadResolver & function)
+    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, const FunctionOrOverloadResolver & function, bool allow_constant_folding = true)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addFunction(function, children, node_name);
+        const auto * node = &actions_dag.addFunction(function, children, node_name, allow_constant_folding);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -758,6 +764,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     case QueryTreeNodeType::FUNCTION:
         return visitFunction(node);
     case QueryTreeNodeType::QUERY:
+    case QueryTreeNodeType::UNION:
         return visitQuery(node);
     default:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -1176,7 +1183,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node, !planner_context->isOnlyAnalyze());
     }
 
     size_t actions_stack_size = actions_stack.size();
@@ -1191,40 +1198,67 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitQuery(const QueryTreeNodePtr & node)
 {
-    auto & query_node = node->as<QueryNode &>();
-    if (!query_node.isCorrelated())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Only correlated QueryNode can be used as an action node, but got: {}",
-            node->formatASTForErrorMessage());
-
     Levels levels(0);
 
-    auto correlated_subquery_name = action_node_name_helper.calculateActionNodeName(node);
+    auto subquery_name = action_node_name_helper.calculateActionNodeName(node);
+    auto result_type = node->getResultType();
 
-    size_t actions_stack_size = actions_stack.size();
-    for (size_t i = 0; i < actions_stack_size; ++i)
+    bool is_correlated = false;
+    const ListNode * correlated_columns_list = nullptr;
+
+    if (auto * query_node = node->as<QueryNode>())
     {
-        auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputColumnIfNecessary(correlated_subquery_name, query_node.getResultType());
+        is_correlated = query_node->isCorrelated();
+        if (is_correlated)
+            correlated_columns_list = &query_node->getCorrelatedColumns();
+    }
+    else if (auto * union_node = node->as<UnionNode>())
+    {
+        is_correlated = union_node->isCorrelated();
+        if (is_correlated)
+            correlated_columns_list = &union_node->getCorrelatedColumns();
     }
 
-    const auto & correlated_columns = query_node.getCorrelatedColumns().getNodes();
-
-    ColumnIdentifiers correlated_column_identifiers;
-    correlated_column_identifiers.reserve(correlated_columns.size());
-    for (const auto & column : correlated_columns)
+    if (is_correlated)
     {
-        correlated_column_identifiers.push_back(action_node_name_helper.calculateActionNodeName(column));
+        size_t actions_stack_size = actions_stack.size();
+        for (size_t i = 0; i < actions_stack_size; ++i)
+            actions_stack[i].addInputColumnIfNecessary(subquery_name, result_type);
+
+        const auto & correlated_columns = correlated_columns_list->getNodes();
+
+        ColumnIdentifiers correlated_column_identifiers;
+        correlated_column_identifiers.reserve(correlated_columns.size());
+        for (const auto & column : correlated_columns)
+        {
+            correlated_column_identifiers.push_back(action_node_name_helper.calculateActionNodeName(column));
+        }
+
+        correlated_subtrees.subqueries.emplace_back(
+            node,
+            CorrelatedSubqueryKind::SCALAR,
+            subquery_name,
+            std::move(correlated_column_identifiers));
+    }
+    else
+    {
+        /// Non-correlated scalar subquery that was not evaluated during analysis
+        /// (e.g. in only_analyze mode for parametrized views).
+        /// Add it as a constant with a default value so that the actions DAG
+        /// produces the correct output type without requiring an input column.
+        ColumnWithTypeAndName column;
+        column.name = subquery_name;
+        column.type = result_type;
+        column.column = result_type->createColumnConstWithDefaultValue(1);
+
+        actions_stack[0].addConstantIfNecessary(subquery_name, column, false /*is_deterministic*/);
+
+        size_t actions_stack_size = actions_stack.size();
+        for (size_t i = 1; i < actions_stack_size; ++i)
+            actions_stack[i].addInputConstantColumnIfNecessary(subquery_name, column);
     }
 
-    correlated_subtrees.subqueries.emplace_back(
-        node,
-        CorrelatedSubqueryKind::SCALAR,
-        correlated_subquery_name,
-        std::move(correlated_column_identifiers));
-
-    return { correlated_subquery_name, levels };
+    return { subquery_name, levels };
 }
 
 }

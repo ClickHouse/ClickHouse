@@ -186,6 +186,8 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
+    bool isOnlyAnalyze() const { return is_only_analyze; }
+
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -199,6 +201,7 @@ private:
     GlobalPlannerContextPtr global_planner_context;
 
     bool is_ast_level_optimization_allowed;
+    bool is_only_analyze;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;

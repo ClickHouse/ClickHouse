@@ -339,7 +339,8 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
 const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionOverloadResolverPtr & function,
     NodeRawConstPtrs children,
-    std::string result_name)
+    std::string result_name,
+    bool allow_constant_folding)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
@@ -363,13 +364,15 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(arguments),
         std::move(result_name),
         function_base->getResultType(),
-        all_const);
+        all_const,
+        allow_constant_folding);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionNode & function,
     NodeRawConstPtrs children,
-    std::string result_name)
+    std::string result_name,
+    bool allow_constant_folding)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
@@ -379,13 +382,15 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(arguments),
         std::move(result_name),
         function.getResultType(),
-        all_const);
+        all_const,
+        allow_constant_folding);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionBasePtr & function_base,
     NodeRawConstPtrs children,
-    std::string result_name)
+    std::string result_name,
+    bool allow_constant_folding)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
@@ -395,7 +400,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(arguments),
         std::move(result_name),
         function_base->getResultType(),
-        all_const);
+        all_const,
+        allow_constant_folding);
 }
 
 const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
@@ -420,7 +426,8 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     ColumnsWithTypeAndName arguments,
     std::string result_name,
     DataTypePtr result_type,
-    bool all_const)
+    bool all_const,
+    bool allow_constant_folding)
 {
     size_t num_arguments = children.size();
 
@@ -433,7 +440,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     node.function = node.function_base->prepare(arguments);
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (node.function_base->isSuitableForConstantFolding())
+    if (allow_constant_folding && node.function_base->isSuitableForConstantFolding())
     {
         ColumnPtr column;
 

@@ -165,15 +165,18 @@ public:
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
-            std::string result_name);
+            std::string result_name,
+            bool allow_constant_folding = true);
     const Node & addFunction(
         const FunctionNode & function,
         NodeRawConstPtrs children,
-        std::string result_name);
+        std::string result_name,
+        bool allow_constant_folding = true);
     const Node & addFunction(
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
-        std::string result_name);
+        std::string result_name,
+        bool allow_constant_folding = true);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
@@ -543,7 +546,8 @@ private:
         ColumnsWithTypeAndName arguments,
         std::string result_name,
         DataTypePtr result_type,
-        bool all_const);
+        bool all_const,
+        bool allow_constant_folding = true);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
