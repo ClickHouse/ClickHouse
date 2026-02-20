@@ -947,15 +947,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     /// Collect columns needed by row policy and additional filters
                     NameSet columns_needed_by_other_filters;
 
-                    /// Pre-build row policy filter to know what columns it needs
-                    auto row_policy_filter_info_temp
-                        = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
-                    if (row_policy_filter_info_temp)
-                    {
-                        for (const auto * input : row_policy_filter_info_temp->actions.getInputs())
-                            columns_needed_by_other_filters.insert(input->result_name);
-                    }
-
                     /// Pre-build additional table filter to know what columns it needs
                     const auto & table_expression_alias = table_expression->getOriginalAlias();
                     auto additional_filters_info_temp = buildAdditionalFiltersIfNeeded(
