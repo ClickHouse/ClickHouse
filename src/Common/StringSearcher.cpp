@@ -63,7 +63,7 @@ bool initFirstCharacter(
 /// Shared: build cache byte arrays from needle with case folding.
 /// Returns true if force_fallback should be set (case expansion mismatch).
 /// Only used by SSE4.1 (Default) and AVX2 (x86_64_v3) paths.
-#if defined(__SSE4_1__) || USE_MULTITARGET_CODE
+#if defined(__SSE4_1__) || USE_MULTITARGET_CODE || (defined(__aarch64__) && defined(__ARM_NEON))
 bool buildCacheBytes(
     const uint8_t * needle,
     const uint8_t * needle_end,
@@ -162,11 +162,11 @@ UTF8CaseInsensitiveSearcherImpl::UTF8CaseInsensitiveSearcherImpl(const UInt8 * n
     if (force_fallback)
         return;
 
-#ifdef __SSE4_1__
-    patl = _mm_set1_epi8(l);
-    patu = _mm_set1_epi8(u);
+#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    patl = vecSet1(l);
+    patu = vecSet1(u);
 
-    constexpr size_t N = sizeof(__m128i);
+    constexpr size_t N = sizeof(Vec);
     uint8_t cache_l_bytes[N] = {};
     uint8_t cache_u_bytes[N] = {};
 
@@ -174,8 +174,8 @@ UTF8CaseInsensitiveSearcherImpl::UTF8CaseInsensitiveSearcherImpl(const UInt8 * n
     if (force_fallback)
         return;
 
-    cachel = _mm_loadu_si128(reinterpret_cast<const __m128i *>(cache_l_bytes));
-    cacheu = _mm_loadu_si128(reinterpret_cast<const __m128i *>(cache_u_bytes));
+    cachel = vecLoad(cache_l_bytes);
+    cacheu = vecLoad(cache_u_bytes);
 #endif
 }
 
@@ -187,18 +187,18 @@ bool UTF8CaseInsensitiveSearcherImpl::compareTrivial(
 
 bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
 {
-#ifdef __SSE4_1__
-    constexpr size_t N = sizeof(__m128i);
+#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    constexpr size_t N = sizeof(Vec);
 
     if (likely(!force_fallback) && pos + N <= haystack_end)
     {
-        const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-        const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
-        const auto v_against_u = _mm_cmpeq_epi8(v_haystack, cacheu);
-        const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
-        const auto mask = _mm_movemask_epi8(v_against_l_or_u);
+        const auto v_haystack = vecLoad(pos);
+        const auto v_against_l = vecCmpeq(v_haystack, cachel);
+        const auto v_against_u = vecCmpeq(v_haystack, cacheu);
+        const auto v_against_l_or_u = vecOr(v_against_l, v_against_u);
+        const auto mask = static_cast<uint32_t>(vecMovemask(v_against_l_or_u));
 
-        if ((static_cast<uint32_t>(mask) & cachemask) == cachemask)
+        if ((mask & cachemask) == cachemask)
         {
             if (compareTrivial(pos, haystack_end, needle))
                 return true;
@@ -225,13 +225,13 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
     if (needle_size == 0)
         return haystack;
 
-#ifdef __SSE4_1__
-    constexpr size_t N = sizeof(__m128i);
+#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    constexpr size_t N = sizeof(Vec);
 
     /// Continuation bytes (10xxxxxx): after XOR with 0x80 → 00xxxxxx, AND with 0x40 → 0.
     /// Non-continuation bytes keep bit 6 set. movemask of cmpeq-to-zero gives 1 for continuation.
-    const auto v_0x80 = _mm_set1_epi8(static_cast<char>(0x80));
-    const auto v_0x40 = _mm_set1_epi8(static_cast<char>(0x40));
+    const auto v_0x80 = vecSet1(0x80);
+    const auto v_0x40 = vecSet1(0x40);
 
     if (unlikely(force_fallback))
         goto scalar;
@@ -242,18 +242,18 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
         /// from the match position (at most N-1 bytes ahead). Check 2*N upfront to cover both.
         if (haystack + 2 * N <= haystack_end)
         {
-            const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-            const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
-            const auto v_against_u = _mm_cmpeq_epi8(v_haystack, patu);
-            const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
+            const auto v_haystack = vecLoad(haystack);
+            const auto v_against_l = vecCmpeq(v_haystack, patl);
+            const auto v_against_u = vecCmpeq(v_haystack, patu);
+            const auto v_against_l_or_u = vecOr(v_against_l, v_against_u);
 
             /// Mask out continuation bytes.
-            const auto v_xor = _mm_xor_si128(v_haystack, v_0x80);
-            const auto v_test = _mm_and_si128(v_xor, v_0x40);
-            const auto v_is_cont = _mm_cmpeq_epi8(v_test, _mm_setzero_si128());
-            const auto cont_mask = static_cast<uint32_t>(_mm_movemask_epi8(v_is_cont));
+            const auto v_xor = vecXor(v_haystack, v_0x80);
+            const auto v_test = vecAnd(v_xor, v_0x40);
+            const auto v_is_cont = vecCmpeq(v_test, vecZero());
+            const auto cont_mask = static_cast<uint32_t>(vecMovemask(v_is_cont));
 
-            const auto mask = static_cast<uint32_t>(_mm_movemask_epi8(v_against_l_or_u)) & ~cont_mask;
+            const auto mask = static_cast<uint32_t>(vecMovemask(v_against_l_or_u)) & ~cont_mask;
 
             if (mask == 0)
             {
@@ -265,13 +265,13 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
             haystack += offset;
 
             {
-                const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
-                const auto v_against_u_offset = _mm_cmpeq_epi8(v_haystack_offset, cacheu);
-                const auto v_against_l_or_u_offset = _mm_or_si128(v_against_l_offset, v_against_u_offset);
-                const auto mask_offset_both = _mm_movemask_epi8(v_against_l_or_u_offset);
+                const auto v_haystack_offset = vecLoad(haystack);
+                const auto v_against_l_offset = vecCmpeq(v_haystack_offset, cachel);
+                const auto v_against_u_offset = vecCmpeq(v_haystack_offset, cacheu);
+                const auto v_against_l_or_u_offset = vecOr(v_against_l_offset, v_against_u_offset);
+                const auto mask_offset_both = static_cast<uint32_t>(vecMovemask(v_against_l_or_u_offset));
 
-                if ((static_cast<uint32_t>(mask_offset_both) & cachemask) == cachemask)
+                if ((mask_offset_both & cachemask) == cachemask)
                 {
                     if (compareTrivial(haystack, haystack_end, needle))
                         return haystack;

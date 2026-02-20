@@ -321,12 +321,12 @@ public:
 
 
 /// Case-insensitive UTF-8 searcher
-/// Uses StringZilla on x86_64_v4 (AVX-512) and ARM NEON, original Poco implementation otherwise.
+/// Uses StringZilla on x86_64_v4 (AVX-512), Poco + SIMD on ARM NEON, x86_64_v3 (AVX2), and Default (SSE4.1).
 
 } // namespace impl
 
-/// Default (Poco-based) implementation for older x86_64 CPUs.
-/// Declared directly (not via DECLARE_DEFAULT_CODE) because the class uses #ifdef for SSE4.1 members.
+/// Default (Poco-based) implementation for older x86_64 CPUs and ARM NEON.
+/// Declared directly (not via DECLARE_DEFAULT_CODE) because the class uses #ifdef for SIMD members.
 namespace TargetSpecific::Default
 {
 
@@ -342,11 +342,41 @@ private:
     uint8_t l = 0;
     uint8_t u = 0;
 
+#if defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
 #ifdef __SSE4_1__
-    __m128i patl;
-    __m128i patu;
-    __m128i cachel = _mm_setzero_si128();
-    __m128i cacheu = _mm_setzero_si128();
+    using Vec = __m128i;
+    static Vec vecLoad(const void * p) { return _mm_loadu_si128(reinterpret_cast<const __m128i *>(p)); }
+    static Vec vecCmpeq(Vec a, Vec b) { return _mm_cmpeq_epi8(a, b); }
+    static Vec vecOr(Vec a, Vec b) { return _mm_or_si128(a, b); }
+    static Vec vecXor(Vec a, Vec b) { return _mm_xor_si128(a, b); }
+    static Vec vecAnd(Vec a, Vec b) { return _mm_and_si128(a, b); }
+    static int vecMovemask(Vec v) { return _mm_movemask_epi8(v); }
+    static Vec vecSet1(uint8_t v) { return _mm_set1_epi8(static_cast<int8_t>(v)); }
+    static Vec vecZero() { return _mm_setzero_si128(); }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+    using Vec = uint8x16_t;
+    static Vec vecLoad(const void * p) { return vld1q_u8(reinterpret_cast<const uint8_t *>(p)); }
+    static Vec vecCmpeq(Vec a, Vec b) { return vceqq_u8(a, b); }
+    static Vec vecOr(Vec a, Vec b) { return vorrq_u8(a, b); }
+    static Vec vecXor(Vec a, Vec b) { return veorq_u8(a, b); }
+    static Vec vecAnd(Vec a, Vec b) { return vandq_u8(a, b); }
+    static int vecMovemask(Vec v)
+    {
+        const uint8x16_t bitmask = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128};
+        uint8x16_t masked = vandq_u8(v, bitmask);
+        uint8x16_t paired = vpaddq_u8(masked, masked);
+        paired = vpaddq_u8(paired, paired);
+        paired = vpaddq_u8(paired, paired);
+        return static_cast<int>(vgetq_lane_u16(vreinterpretq_u16_u8(paired), 0));
+    }
+    static Vec vecSet1(uint8_t v) { return vdupq_n_u8(v); }
+    static Vec vecZero() { return vdupq_n_u8(0); }
+#endif
+
+    Vec patl;
+    Vec patu;
+    Vec cachel{};
+    Vec cacheu{};
     uint32_t cachemask = 0;
     size_t cache_valid_len = 0;
     size_t cache_actual_len = 0;
@@ -451,47 +481,27 @@ namespace impl
 {
 
 #if defined(__aarch64__)
-/// On ARM, always use StringZilla (NEON is fast)
+/// On ARM, use Default (Poco + NEON) implementation
 template <>
 class StringSearcher<false, false> final
 {
 private:
-    sz_cptr_t const needle;
-    sz_cptr_t const needle_end;
-    mutable sz_utf8_case_insensitive_needle_metadata_t needle_metadata;
+    TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl impl;
 
 public:
     StringSearcher(const UInt8 * needle_, size_t needle_size)
-        : needle(reinterpret_cast<sz_cptr_t>(needle_))
-        , needle_end(needle + needle_size)
-        , needle_metadata{}
+        : impl(needle_, needle_size)
     {
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
     {
-        sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
-        size_t needle_size = needle_end - needle;
-        sz_ordering_t result = sz_utf8_case_insensitive_order(pos_cptr, needle_size, needle, needle_size);
-        return result == sz_equal_k;
+        return impl.compare(haystack, haystack_end, pos);
     }
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
-        if (needle == needle_end)
-            return haystack;
-
-        sz_cptr_t haystack_cptr = reinterpret_cast<sz_cptr_t>(haystack);
-        size_t haystack_size = haystack_end - haystack;
-        size_t needle_size = needle_end - needle;
-
-        size_t matched_length = 0;
-        const char * res
-            = sz_utf8_case_insensitive_find(haystack_cptr, haystack_size, needle, needle_size, &needle_metadata, &matched_length);
-
-        if (!res)
-            return haystack_end;
-        return reinterpret_cast<const UInt8 *>(res);
+        return impl.search(haystack, haystack_end);
     }
 
     const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
