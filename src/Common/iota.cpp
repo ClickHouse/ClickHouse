@@ -5,42 +5,18 @@
 namespace DB
 {
 
-MULTITARGET_FUNCTION_X86_V3(
-    MULTITARGET_FUNCTION_HEADER(template <iota_supported_types T> static void NO_INLINE),
-    iotaImpl, MULTITARGET_FUNCTION_BODY((T * begin, size_t count, T first_value) /// NOLINT
-    {
-        for (size_t i = 0; i < count; i++)
-            *(begin + i) = static_cast<T>(first_value + i);
-    })
-)
-
 template <iota_supported_types T>
 void iota(T * begin, size_t count, T first_value)
 {
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return iotaImpl_x86_64_v3(begin, count, first_value);
-#endif
-    return iotaImpl(begin, count, first_value);
+    for (size_t i = 0; i < count; i++)
+        *(begin + i) = static_cast<T>(first_value + i);
 }
-
-MULTITARGET_FUNCTION_X86_V3(
-    MULTITARGET_FUNCTION_HEADER(template <iota_supported_types T> static void NO_INLINE),
-    iotaWithStepImpl, MULTITARGET_FUNCTION_BODY((T * begin, size_t count, T first_value, T step) /// NOLINT
-    {
-        for (size_t i = 0; i < count; i++)
-            *(begin + i) = static_cast<T>(first_value + i * step);
-    })
-)
 
 template <iota_supported_types T>
 void iotaWithStep(T * begin, size_t count, T first_value, T step)
 {
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return iotaWithStepImpl_x86_64_v3(begin, count, first_value, step);
-#endif
-    return iotaWithStepImpl(begin, count, first_value, step);
+    for (size_t i = 0; i < count; i++)
+        *(begin + i) = static_cast<T>(first_value + i * step);
 }
 
 template void iota(UInt8 * begin, size_t count, UInt8 first_value);
