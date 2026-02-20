@@ -3816,7 +3816,7 @@ static MutableColumnPtr deserializeConstant(
             return column_set;
         }
 
-        auto column_const = ColumnConst::create(std::move(column_set), 1);
+        auto column_const = ColumnConst::create(std::move(column_set), 0);
         /// After move, get the pointer from ColumnConst
         const auto * set_column = typeid_cast<const ColumnSet *>(column_const->getDataColumnPtr().get());
         registry.sets[hash].push_back(const_cast<ColumnSet *>(set_column));
@@ -3852,14 +3852,14 @@ static MutableColumnPtr deserializeConstant(
 
         auto column_function = ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns));
         if (is_constant)
-            return ColumnConst::create(std::move(column_function), 1);
+            return ColumnConst::create(std::move(column_function), 0);
 
         return column_function;
     }
 
     auto column = type.createColumn();
     type.getDefaultSerialization()->deserializeBinary(*column, in, FormatSettings{});
-    return ColumnConst::create(std::move(column), 1);
+    return ColumnConst::create(std::move(column), 0);
 }
 
 std::unordered_map<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap() const

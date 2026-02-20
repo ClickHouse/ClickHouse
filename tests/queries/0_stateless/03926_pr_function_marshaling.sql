@@ -5,6 +5,6 @@ SET enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_re
 
 DROP TABLE IF EXISTS my_table;
 CREATE TABLE my_table (values Array(Int32)) ENGINE = MergeTree() ORDER BY values;
-INSERT INTO my_table (values) VALUES ([12, 3, 1]);
-SELECT values FROM my_table WHERE arrayExists(x -> x > 5, values) format Null;
+INSERT INTO my_table (values) VALUES ([12, 3, 1]), ([5, 3, 1]);
+SELECT values FROM my_table WHERE arrayExists(x -> x > 5, values);
 DROP TABLE my_table;
