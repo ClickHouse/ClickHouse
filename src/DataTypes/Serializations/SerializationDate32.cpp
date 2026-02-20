@@ -14,6 +14,7 @@ UInt128 SerializationDate32::getHash() const
 {
     SipHash hash;
     hash.update("Date32");
+    hash.update(time_zone.getTimeZone());
     return hash.get128();
 }
 

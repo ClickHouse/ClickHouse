@@ -30,10 +30,15 @@ UInt128 SerializationSubObject::getHash() const
     hash.update("SubObject");
     hash.update(paths_prefix);
     hash.update(dynamic_type->getName());
-    for (const auto & [path, serialization] : typed_paths_serializations)
+    std::vector<String> sorted_paths;
+    sorted_paths.reserve(typed_paths_serializations.size());
+    for (const auto & [path, _] : typed_paths_serializations)
+        sorted_paths.push_back(path);
+    std::sort(sorted_paths.begin(), sorted_paths.end());
+    for (const auto & path : sorted_paths)
     {
         hash.update(path);
-        hash.update(serialization->getHash());
+        hash.update(typed_paths_serializations.at(path)->getHash());
     }
     return hash.get128();
 }
