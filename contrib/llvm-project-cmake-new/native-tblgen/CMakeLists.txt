@@ -6,7 +6,7 @@
 # runnable on the host system.
 
 cmake_minimum_required(VERSION 3.20)
-project(llvm-native-tblgen CXX C)
+project(llvm-native-tblgen CXX C ASM)
 
 # LLVM source directory (passed from parent)
 if (NOT DEFINED LLVM_SOURCE_DIR)
@@ -46,6 +46,63 @@ endif()
 
 # Generate config headers
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include/llvm/Config")
+
+#
+# Platform-specific config variables for the HOST system
+# Note: native-tblgen builds for the host, so we use CMAKE_HOST_SYSTEM_NAME
+#
+
+# Shared library extension
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    set(LLVM_SHLIB_EXT ".dylib")
+else()
+    set(LLVM_SHLIB_EXT ".so")
+endif()
+
+# mallinfo is only available on Linux with glibc
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    set(HAVE_MALLINFO_DEFINE "#define HAVE_MALLINFO 1")
+else()
+    set(HAVE_MALLINFO_DEFINE "/* #undef HAVE_MALLINFO */")
+endif()
+
+# getauxval is Linux-specific
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    set(HAVE_GETAUXVAL_DEFINE "#define HAVE_GETAUXVAL 1")
+    set(HAVE_BUILTIN_THREAD_POINTER_DEFINE "#define HAVE_BUILTIN_THREAD_POINTER 1")
+else()
+    set(HAVE_GETAUXVAL_DEFINE "/* #undef HAVE_GETAUXVAL */")
+    set(HAVE_BUILTIN_THREAD_POINTER_DEFINE "/* #undef HAVE_BUILTIN_THREAD_POINTER */")
+endif()
+
+# macOS-specific headers and functions
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    set(HAVE_MACH_MACH_H_DEFINE "#define HAVE_MACH_MACH_H 1")
+    set(HAVE_MALLOC_MALLOC_H_DEFINE "#define HAVE_MALLOC_MALLOC_H 1")
+    set(HAVE_MALLOC_ZONE_STATISTICS_DEFINE "#define HAVE_MALLOC_ZONE_STATISTICS 1")
+else()
+    set(HAVE_MACH_MACH_H_DEFINE "/* #undef HAVE_MACH_MACH_H */")
+    set(HAVE_MALLOC_MALLOC_H_DEFINE "/* #undef HAVE_MALLOC_MALLOC_H */")
+    set(HAVE_MALLOC_ZONE_STATISTICS_DEFINE "/* #undef HAVE_MALLOC_ZONE_STATISTICS */")
+endif()
+
+# stat struct: st_mtim (Linux) vs st_mtimespec (macOS/BSD)
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_HOST_SYSTEM_NAME STREQUAL "FreeBSD")
+    set(HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC_DEFINE "#define HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC 1")
+    set(HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC_DEFINE "/* #undef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC */")
+else()
+    set(HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC_DEFINE "/* #undef HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC */")
+    set(HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC_DEFINE "#define HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1")
+endif()
+
+# arc4random is available on macOS and BSD
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_HOST_SYSTEM_NAME STREQUAL "FreeBSD")
+    set(HAVE_DECL_ARC4RANDOM_DECL_DEFINE "#define HAVE_DECL_ARC4RANDOM 1")
+    set(HAVE_DECL_ARC4RANDOM_DEFINE "#define HAVE_DECL_ARC4RANDOM 1")
+else()
+    set(HAVE_DECL_ARC4RANDOM_DECL_DEFINE "#define HAVE_DECL_ARC4RANDOM 0")
+    set(HAVE_DECL_ARC4RANDOM_DEFINE "/* #undef HAVE_DECL_ARC4RANDOM */")
+endif()
 
 # llvm-config.h - minimal version
 configure_file(
@@ -93,6 +150,11 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../sources/LLVMSupport.cmake)
 # The LLVMSupport sources include blake3_neon.c for ARM, but we need
 # x86 assembly files when building on x86_64 hosts.
 #
+# Note: LLVMSupport.cmake includes blake3_neon.c unconditionally.
+# On x86, NEON is not available but blake3_neon.c compiles to nothing when NEON is not detected.
+# We need to add the x86 assembly files for the actual optimized implementations.
+#
+message(STATUS "Native tablegen: CMAKE_HOST_SYSTEM_PROCESSOR=${CMAKE_HOST_SYSTEM_PROCESSOR}")
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set(BLAKE3_ASM_SOURCES
         ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_sse2_x86-64_unix.S

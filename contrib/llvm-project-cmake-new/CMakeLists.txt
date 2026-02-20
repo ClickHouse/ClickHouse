@@ -161,6 +161,65 @@ file(MAKE_DIRECTORY "${LLVM_BINARY_DIR}/include/llvm/Config")
 file(MAKE_DIRECTORY "${LLVM_BINARY_DIR}/include/llvm/IR")
 file(MAKE_DIRECTORY "${LLVM_BINARY_DIR}/include/llvm/CodeGen")
 
+#
+# Platform-specific config variables
+#
+# These variables control platform-specific behavior in config.h.in
+# The target platform is determined by CMAKE_SYSTEM_NAME when cross-compiling
+#
+
+# Shared library extension
+if (APPLE)
+    set(LLVM_SHLIB_EXT ".dylib")
+else()
+    set(LLVM_SHLIB_EXT ".so")
+endif()
+
+# mallinfo is only available on Linux with glibc (not musl, not BSD, not macOS)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CXX_FLAGS MATCHES "musl")
+    set(HAVE_MALLINFO_DEFINE "#define HAVE_MALLINFO 1")
+else()
+    set(HAVE_MALLINFO_DEFINE "/* #undef HAVE_MALLINFO */")
+endif()
+
+# getauxval is Linux-specific
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(HAVE_GETAUXVAL_DEFINE "#define HAVE_GETAUXVAL 1")
+    set(HAVE_BUILTIN_THREAD_POINTER_DEFINE "#define HAVE_BUILTIN_THREAD_POINTER 1")
+else()
+    set(HAVE_GETAUXVAL_DEFINE "/* #undef HAVE_GETAUXVAL */")
+    set(HAVE_BUILTIN_THREAD_POINTER_DEFINE "/* #undef HAVE_BUILTIN_THREAD_POINTER */")
+endif()
+
+# macOS-specific headers and functions
+if (APPLE)
+    set(HAVE_MACH_MACH_H_DEFINE "#define HAVE_MACH_MACH_H 1")
+    set(HAVE_MALLOC_MALLOC_H_DEFINE "#define HAVE_MALLOC_MALLOC_H 1")
+    set(HAVE_MALLOC_ZONE_STATISTICS_DEFINE "#define HAVE_MALLOC_ZONE_STATISTICS 1")
+else()
+    set(HAVE_MACH_MACH_H_DEFINE "/* #undef HAVE_MACH_MACH_H */")
+    set(HAVE_MALLOC_MALLOC_H_DEFINE "/* #undef HAVE_MALLOC_MALLOC_H */")
+    set(HAVE_MALLOC_ZONE_STATISTICS_DEFINE "/* #undef HAVE_MALLOC_ZONE_STATISTICS */")
+endif()
+
+# stat struct: st_mtim (Linux) vs st_mtimespec (macOS/BSD)
+if (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    set(HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC_DEFINE "#define HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC 1")
+    set(HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC_DEFINE "/* #undef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC */")
+else()
+    set(HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC_DEFINE "/* #undef HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC */")
+    set(HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC_DEFINE "#define HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1")
+endif()
+
+# arc4random is available on macOS and BSD
+if (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    set(HAVE_DECL_ARC4RANDOM_DECL_DEFINE "#define HAVE_DECL_ARC4RANDOM 1")
+    set(HAVE_DECL_ARC4RANDOM_DEFINE "#define HAVE_DECL_ARC4RANDOM 1")
+else()
+    set(HAVE_DECL_ARC4RANDOM_DECL_DEFINE "#define HAVE_DECL_ARC4RANDOM 0")
+    set(HAVE_DECL_ARC4RANDOM_DEFINE "/* #undef HAVE_DECL_ARC4RANDOM */")
+endif()
+
 configure_file(
     "${LLVM_CMAKE_DIR}/config/llvm-config.h.in"
     "${LLVM_BINARY_DIR}/include/llvm/Config/llvm-config.h"

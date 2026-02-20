@@ -36,7 +36,7 @@
 
 /* Define to 1 if you have the declaration of `arc4random', and to 0 if you
    don't. */
-#define HAVE_DECL_ARC4RANDOM 0
+@HAVE_DECL_ARC4RANDOM_DECL_DEFINE@
 
 /* Define to 1 if you have the declaration of `FE_ALL_EXCEPT', and to 0 if you
    don't. */
@@ -114,22 +114,22 @@
 /* #undef HAVE_PTHREAD_SET_NAME_NP */
 
 /* Define to 1 if you have the <mach/mach.h> header file. */
-/* #undef HAVE_MACH_MACH_H */
+@HAVE_MACH_MACH_H_DEFINE@
 
 /* Define to 1 if you have the `mallctl' function. */
 /* #undef HAVE_MALLCTL */
 
 /* Define to 1 if you have the `mallinfo' function. */
-#define HAVE_MALLINFO 1
+@HAVE_MALLINFO_DEFINE@
 
 /* Define to 1 if you have the `mallinfo2' function. */
 /* #undef HAVE_MALLINFO2 */
 
 /* Define to 1 if you have the <malloc/malloc.h> header file. */
-/* #undef HAVE_MALLOC_MALLOC_H */
+@HAVE_MALLOC_MALLOC_H_DEFINE@
 
 /* Define to 1 if you have the `malloc_zone_statistics' function. */
-/* #undef HAVE_MALLOC_ZONE_STATISTICS */
+@HAVE_MALLOC_ZONE_STATISTICS_DEFINE@
 
 /* Define to 1 if you have the `posix_spawn' function. */
 #define HAVE_POSIX_SPAWN 1
@@ -168,10 +168,10 @@
 #define HAVE_SYS_IOCTL_H 1
 
 /* Define to 1 if stat struct has st_mtimespec member .*/
-/* #undef HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC */
+@HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC_DEFINE@
 
 /* Define to 1 if stat struct has st_mtim member. */
-#define HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1
+@HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC_DEFINE@
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #define HAVE_UNISTD_H 1
@@ -261,10 +261,10 @@
 /* #undef LLVM_ENABLE_LIBXML2 */
 
 /* Define to the extension used for shared libraries, say, ".so". */
-#define LTDL_SHLIB_EXT ".so"
+#define LTDL_SHLIB_EXT "@LLVM_SHLIB_EXT@"
 
 /* Define to the extension used for plugin libraries, say, ".so". */
-#define LLVM_PLUGIN_EXT ".so"
+#define LLVM_PLUGIN_EXT "@LLVM_SHLIB_EXT@"
 
 /* Define to the address where bug reports for this package should be sent. */
 #define PACKAGE_BUGREPORT "https://github.com/llvm/llvm-project/issues/"
@@ -298,8 +298,10 @@
 
 /* #undef HAVE_PROC_PID_RUSAGE */
 
-#define HAVE_BUILTIN_THREAD_POINTER 1
+@HAVE_BUILTIN_THREAD_POINTER_DEFINE@
 
-#define HAVE_GETAUXVAL 1
+@HAVE_GETAUXVAL_DEFINE@
+
+@HAVE_DECL_ARC4RANDOM_DEFINE@
 
 #endif
