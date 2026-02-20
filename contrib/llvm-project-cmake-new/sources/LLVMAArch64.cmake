@@ -1,5 +1,11 @@
 # Source files for LLVM AArch64 target
 
+# AArch64 Utils sources (needed by both Desc and CodeGen)
+set(LLVMAARCH64UTILS_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/Utils/AArch64BaseInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/Utils/AArch64SMEAttributes.cpp
+)
+
 # AArch64 Info sources
 set(LLVMAARCH64INFO_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/TargetInfo/AArch64TargetInfo.cpp
