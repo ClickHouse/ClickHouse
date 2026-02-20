@@ -14,6 +14,8 @@ class ReadFromMergeTree;
 class FilterStep;
 class ExpressionStep;
 class AggregatingStep;
+class SortingStep;
+class LimitStep;
 
 /// Derives statistics for groups in the Cascades optimizer.
 /// Statistics are logical properties that describe the data (row counts, NDVs)
@@ -36,6 +38,8 @@ private:
     ExpressionStatistics deriveFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
 
     Memo & memo;
     const IOptimizerStatistics & statistics_lookup;

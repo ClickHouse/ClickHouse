@@ -9,12 +9,13 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
-#include <limits>
 
 namespace DB
 {
@@ -79,6 +80,16 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     {
         auto input_group = memo.getGroup(expression->inputs[0].group_id);
         group->statistics = deriveAggregatingStatistics(*aggregating_step, *input_group->statistics);
+    }
+    else if (const auto * sorting_step = typeid_cast<SortingStep *>(plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        group->statistics = deriveSortingStatistics(*sorting_step, *input_group->statistics);
+    }
+    else if (const auto * limit_step = typeid_cast<LimitStep *>(plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        group->statistics = deriveLimitStatistics(*limit_step, *input_group->statistics);
     }
     else if (!expression->inputs.empty())
     {
@@ -275,6 +286,37 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     /// Maximum number of rows is the product of all aggregation key NDVs
     aggregation_statistics.max_row_count = std::min(max_total_number_of_distinct_values, input_statistics.max_row_count);
     return aggregation_statistics;
+}
+
+void trimStatisticsByLimit(ExpressionStatistics & statistics, UInt64 limit)
+{
+    statistics.estimated_row_count = std::min(statistics.estimated_row_count, Float64(limit));
+    statistics.max_row_count = std::min(statistics.max_row_count, Float64(limit));
+    for (auto & column_statistics : statistics.column_statistics)
+        if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
+            column_statistics.second.num_distinct_values = UInt64(statistics.estimated_row_count);
+}
+
+ExpressionStatistics StatisticsDerivation::deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics)
+{
+    ExpressionStatistics result_statistics = input_statistics;
+    /// If there is no LIMIT, then sorting does not change statistics
+    if (sorting_step.getLimit())
+    {
+        trimStatisticsByLimit(result_statistics, sorting_step.getLimit());
+    }
+    return result_statistics;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics)
+{
+    ExpressionStatistics result_statistics = input_statistics;
+    /// If there is no LIMIT, then limit does not change statistics
+    if (limit_step.getLimit())
+    {
+        trimStatisticsByLimit(result_statistics, limit_step.getLimit());
+    }
+    return result_statistics;
 }
 
 }
