@@ -96,6 +96,7 @@ private:
     /// Tokens that are useful for analysis and filling virtual columns.
     absl::flat_hash_set<std::string_view> useful_tokens;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
+    PostingsSerialization postings_serialization;
 };
 
 }

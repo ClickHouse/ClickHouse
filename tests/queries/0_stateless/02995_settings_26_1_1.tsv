@@ -1465,7 +1465,6 @@ use_skip_indexes_on_data_read	1
 use_statistics	1
 use_statistics_cache	0
 use_structure_from_insertion_table_in_table_functions	2
-use_text_index_dictionary_cache	0
 use_text_index_header_cache	0
 use_text_index_postings_cache	0
 use_top_k_dynamic_filtering	0

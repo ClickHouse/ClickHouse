@@ -6,9 +6,6 @@
 namespace DB
 {
 
-class TextIndexDictionaryBlockCache;
-using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
-
 class TextIndexHeaderCache;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 
@@ -83,7 +80,6 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
-    TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
@@ -156,9 +152,7 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
-    /// Instance of the text index dictionary block cache
-    TextIndexDictionaryBlockCachePtr dictionary_block_cache;
-    /// Instance of the text index dictionary block cache
+    /// Instance of the text index header cache
     TextIndexHeaderCachePtr header_cache;
     /// Instance of the text index dictionary block cache
     TextIndexPostingsCachePtr postings_cache;
