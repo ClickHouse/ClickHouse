@@ -1383,6 +1383,44 @@ jobs:
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
+  stress_test_amd_release:
+    runs-on: [self-hosted, amd-medium]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9yZWxlYXNlKQ==') }}
+    name: "Stress test (amd_release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stress test (amd_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+
   stress_test_amd_debug:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug]
@@ -1613,7 +1651,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_arm_asan, build_amd_release, build_arm_release, build_amd_darwin, build_arm_darwin, docker_server_image, docker_keeper_image, install_packages_amd_release, install_packages_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, integration_tests_amd_asan_db_disk_1_4, integration_tests_amd_asan_db_disk_2_4, integration_tests_amd_asan_db_disk_3_4, integration_tests_amd_asan_db_disk_4_4, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_amd_ubsan, stress_test_amd_msan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_arm_asan, build_amd_release, build_arm_release, build_amd_darwin, build_arm_darwin, docker_server_image, docker_keeper_image, install_packages_amd_release, install_packages_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, integration_tests_amd_asan_db_disk_1_4, integration_tests_amd_asan_db_disk_2_4, integration_tests_amd_asan_db_disk_3_4, integration_tests_amd_asan_db_disk_4_4, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, stress_test_amd_release, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_amd_ubsan, stress_test_amd_msan]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
