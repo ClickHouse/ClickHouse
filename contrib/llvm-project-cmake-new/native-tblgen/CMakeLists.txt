@@ -89,6 +89,27 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../sources/LLVMDemangle.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../sources/LLVMSupport.cmake)
 
 #
+# BLAKE3 architecture-specific sources
+# The LLVMSupport sources include blake3_neon.c for ARM, but we need
+# x86 assembly files when building on x86_64 hosts.
+#
+if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    set(BLAKE3_ASM_SOURCES
+        ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_sse2_x86-64_unix.S
+        ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_sse41_x86-64_unix.S
+        ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_avx2_x86-64_unix.S
+        ${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_avx512_x86-64_unix.S
+    )
+    # AVX-512 requires specific compiler flags
+    set_source_files_properties(${LLVM_SOURCE_DIR}/lib/Support/BLAKE3/blake3_avx512_x86-64_unix.S
+        PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl")
+else()
+    # For non-x86 hosts (ARM, etc), disable x86 BLAKE3 implementations
+    set(BLAKE3_ASM_SOURCES "")
+    list(APPEND LLVM_COMPILE_DEFINITIONS BLAKE3_NO_AVX512 BLAKE3_NO_AVX2 BLAKE3_NO_SSE41 BLAKE3_NO_SSE2)
+endif()
+
+#
 # Build llvm-min-tblgen
 #
 add_executable(llvm-min-tblgen
@@ -120,6 +141,7 @@ add_executable(llvm-min-tblgen
     ${LLVM_SOURCE_DIR}/lib/TableGen/TGTimer.cpp
     ${LLVMSUPPORT_SOURCES}
     ${LLVMDEMANGLE_SOURCES}
+    ${BLAKE3_ASM_SOURCES}
 )
 
 target_include_directories(llvm-min-tblgen PRIVATE
@@ -248,6 +270,7 @@ add_executable(llvm-tblgen
     ${LLVMSUPPORT_SOURCES}
     ${LLVMDEMANGLE_SOURCES}
     ${LLVMCODEGENTYPES_SOURCES}
+    ${BLAKE3_ASM_SOURCES}
 )
 
 target_include_directories(llvm-tblgen PRIVATE

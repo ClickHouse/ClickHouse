@@ -743,6 +743,8 @@ endif()
 #
 if (ARCH_RISCV64)
     set(RISCV_TD "${LLVM_SOURCE_DIR}/lib/Target/RISCV/RISCV.td")
+    # GlobalISel and combiners use RISCVGISel.td which includes RISCVCombine.td
+    set(RISCV_GISEL_TD "${LLVM_SOURCE_DIR}/lib/Target/RISCV/RISCVGISel.td")
 
     tablegen_generate(RISCV "${RISCV_TD}" "-gen-register-info" "lib/Target/RISCV/RISCVGenRegisterInfo.inc")
     tablegen_generate(RISCV "${RISCV_TD}" "-gen-instr-info" "lib/Target/RISCV/RISCVGenInstrInfo.inc")
@@ -758,11 +760,12 @@ if (ARCH_RISCV64)
     tablegen_generate(RISCV "${RISCV_TD}" "-gen-register-bank" "lib/Target/RISCV/RISCVGenRegisterBank.inc")
     tablegen_generate(RISCV "${RISCV_TD}" "-gen-searchable-tables" "lib/Target/RISCV/RISCVGenSearchableTables.inc")
     tablegen_generate(RISCV "${RISCV_TD}" "-gen-sd-node-info" "lib/Target/RISCV/RISCVGenSDNodeInfo.inc")
-    tablegen_generate(RISCV "${RISCV_TD}" "-gen-global-isel" "lib/Target/RISCV/RISCVGenGlobalISel.inc")
-    tablegen_generate(RISCV "${RISCV_TD}" "-gen-global-isel-combiner;-combiners=RISCVO0PreLegalizerCombiner" "lib/Target/RISCV/RISCVGenO0PreLegalizeGICombiner.inc")
-    tablegen_generate(RISCV "${RISCV_TD}" "-gen-global-isel-combiner;-combiners=RISCVPreLegalizerCombiner" "lib/Target/RISCV/RISCVGenPreLegalizeGICombiner.inc")
-    tablegen_generate(RISCV "${RISCV_TD}" "-gen-global-isel-combiner;-combiners=RISCVPostLegalizerCombiner" "lib/Target/RISCV/RISCVGenPostLegalizeGICombiner.inc")
     tablegen_generate(RISCV "${RISCV_TD}" "-gen-exegesis" "lib/Target/RISCV/RISCVGenExegesis.inc")
+    # GlobalISel commands use RISCVGISel.td (which includes RISCVCombine.td)
+    tablegen_generate(RISCV "${RISCV_GISEL_TD}" "-gen-global-isel" "lib/Target/RISCV/RISCVGenGlobalISel.inc")
+    tablegen_generate(RISCV "${RISCV_GISEL_TD}" "-gen-global-isel-combiner;-combiners=RISCVO0PreLegalizerCombiner" "lib/Target/RISCV/RISCVGenO0PreLegalizeGICombiner.inc")
+    tablegen_generate(RISCV "${RISCV_GISEL_TD}" "-gen-global-isel-combiner;-combiners=RISCVPreLegalizerCombiner" "lib/Target/RISCV/RISCVGenPreLegalizeGICombiner.inc")
+    tablegen_generate(RISCV "${RISCV_GISEL_TD}" "-gen-global-isel-combiner;-combiners=RISCVPostLegalizerCombiner" "lib/Target/RISCV/RISCVGenPostLegalizeGICombiner.inc")
 endif()
 
 # Combine all tablegen outputs
