@@ -88,6 +88,9 @@ SELECT
     ProfileEvents['MergeExecuteMilliseconds'] <= duration_ms,
     ProfileEvents['MergeTotalMilliseconds'] <= duration_ms,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
+    'duration_ms', duration_ms,
+    ProfileEvents['MergeExecuteMilliseconds'],
+    ProfileEvents['MergeTotalMilliseconds']
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_merge_profile_events_3' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
 DROP TABLE IF EXISTS t_merge_profile_events_3;

@@ -149,7 +149,7 @@ size_t ThreadGroup::getPeakThreadsUsage() const
 UInt64 ThreadGroup::getGroupElapsedMs() const
 {
     std::lock_guard lock(mutex);
-    return elapsed_group_ms;
+    return elapsed_group_ms + effective_group_stopwatch.elapsedMilliseconds();
 }
 
 UInt64 ThreadGroup::getGroupElapsedNs() const
@@ -176,7 +176,10 @@ void ThreadGroup::unlinkThread()
     --active_thread_count;
 
     if (active_thread_count == 0)
+    {
         elapsed_group_ms += effective_group_stopwatch.elapsedMilliseconds();
+        effective_group_stopwatch.stop();
+    }
 }
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
@@ -209,10 +212,18 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr query_context)
 
 ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr task_context)
 {
-    auto group = create(task_context);
-    group->memory_tracker.setDescription("Background process (mutate/merge)");
-    group->memory_tracker.setParent(&background_memory_tracker);
-    return group;
+    ThreadGroupPtr res_group;
+    if (auto current_group = CurrentThread::getGroup())
+    {
+        res_group = std::make_shared<ThreadGroup>(current_group);
+    }
+    else
+    {
+        res_group = create(task_context);
+    }
+    res_group->memory_tracker.setDescription("Background process (mutate/merge)");
+    res_group->memory_tracker.setParent(&background_memory_tracker);
+    return res_group;
 }
 
 ThreadGroupPtr ThreadGroup::createForScope()

@@ -4,6 +4,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionLog.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
@@ -93,6 +94,8 @@ void MergePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
+        LOG_DEBUG(storage.log, "Writing part log for merge of part {} with status {} duration {} ms",
+            future_part->name, execution_status.message, thread_group->getGroupElapsedMs());
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
