@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <mutex>
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -1588,20 +1589,31 @@ public:
             auto insert_settings_with_no_type_conversion = insert_settings;
             insert_settings_with_no_type_conversion.allow_type_conversion = false;
 
-            /// Check if we already have variants order for this Variant type in cache.
-            auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
-            if (variants_order_it == variants_order_cache.end())
-                variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
+            /// Get variants order from cache (thread-safe).
+            std::vector<size_t> variants_order;
+            {
+                std::lock_guard lock(cache_mutex);
+                auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
+                if (variants_order_it == variants_order_cache.end())
+                    variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
+                variants_order = variants_order_it->second;
+            }
 
-            for (size_t i : variants_order_it->second)
+            for (size_t i : variants_order)
             {
                 if (i != shared_variant_discr)
                 {
-                    auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
-                    if (it == json_extract_nodes_cache.end())
-                        it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
+                    /// Get or create cached node (thread-safe).
+                    std::shared_ptr<JSONExtractTreeNode<JSONParser>> node;
+                    {
+                        std::lock_guard lock(cache_mutex);
+                        auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
+                        if (it == json_extract_nodes_cache.end())
+                            it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
+                        node = it->second;
+                    }
 
-                    if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
+                    if (node->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
                     {
                         variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
                         variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
@@ -1626,12 +1638,17 @@ public:
         auto element_type_name = element_type->getName();
         if (column_dynamic.addNewVariant(element_type, element_type_name))
         {
-            auto it = json_extract_nodes_cache.find(element_type_name);
-            if (it == json_extract_nodes_cache.end())
-                it = json_extract_nodes_cache.emplace(element_type_name, buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference")).first;
+            std::shared_ptr<JSONExtractTreeNode<JSONParser>> node;
+            {
+                std::lock_guard lock(cache_mutex);
+                auto it = json_extract_nodes_cache.find(element_type_name);
+                if (it == json_extract_nodes_cache.end())
+                    it = json_extract_nodes_cache.emplace(element_type_name, buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference")).first;
+                node = it->second;
+            }
             auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
             auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discriminator);
-            if (!it->second->insertResultToColumn(variant, element, insert_settings, format_settings, error))
+            if (!node->insertResultToColumn(variant, element, insert_settings, format_settings, error))
                 return false;
             variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discriminator));
             variant_column.getOffsets().push_back(variant.size() - 1);
@@ -1744,8 +1761,11 @@ private:
 
     DataTypePtr object_type;
 
+    /// Mutex to protect mutable caches below, which can be accessed concurrently
+    /// when serialization objects are shared across threads via SerializationObjectPool.
+    mutable std::mutex cache_mutex;
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
-    mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
+    mutable std::unordered_map<String, std::shared_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
     /// Avoid calling getVariantsDeserializeTextOrder for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::vector<size_t>> variants_order_cache;
 };
