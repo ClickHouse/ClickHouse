@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Flyout, Badge, Icon, Tooltip, Panel, useToast } from '@clickhouse/click-ui'
+import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Badge, Icon, Tooltip, Panel, useToast } from '@clickhouse/click-ui'
 import './App.css'
 
 interface TestResult {
@@ -50,11 +50,11 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
   const [error, setError] = useState<string | null>(null)
   const [nameParams, setNameParams] = useState<string[]>([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [hoveredTask, setHoveredTask] = useState<{ name: string; x: number; y: number } | null>(null)
   const [sortByStatus, setSortByStatus] = useState<boolean>(true)
   const [displayDuration, setDisplayDuration] = useState<number>(0)
   const [, setTick] = useState(0)
   const { createToast } = useToast()
+  const [topLevelExt, setTopLevelExt] = useState<any>(null)
 
   // Initialize sortByStatus from localStorage
   useEffect(() => {
@@ -257,6 +257,9 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
         const refParam = params.get('REF')
         const shaParam = params.get('SHA') || params.get('sha')
 
+        // Create cache key based on PR/REF and SHA to identify the session
+        const cacheKey = `ci_ext_${prParam || refParam}_${shaParam}`
+
         if (urlParam) {
           // Mode 1: Direct URL provided
           url = urlParam
@@ -309,6 +312,34 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
           throw new Error(`HTTP error! status: ${response.status}`)
         }
         const jsonData = await response.json()
+
+        // Try to load cached ext data first
+        const cachedExtStr = sessionStorage.getItem(cacheKey)
+        let cachedExt = null
+        if (cachedExtStr) {
+          try {
+            cachedExt = JSON.parse(cachedExtStr)
+          } catch (e) {
+            console.error('Failed to parse cached ext:', e)
+          }
+        }
+
+        // Store top-level ext for PR/commit info display
+        if (jsonData.ext) {
+          // If this ext has PR/commit info, cache it
+          if (jsonData.ext.pr_number || jsonData.ext.commit_sha || jsonData.ext.pr_title || jsonData.ext.commit_message) {
+            sessionStorage.setItem(cacheKey, JSON.stringify(jsonData.ext))
+            setTopLevelExt(jsonData.ext)
+          } else if (cachedExt) {
+            // Use cached ext if current one doesn't have PR/commit info
+            setTopLevelExt(cachedExt)
+          } else {
+            setTopLevelExt(jsonData.ext)
+          }
+        } else if (cachedExt) {
+          // No ext in jsonData, but we have cached data
+          setTopLevelExt(cachedExt)
+        }
 
         // Navigate to nested result if name_2 or higher exists
         let finalData: PRResult | NestedTestResult
@@ -406,17 +437,6 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
         {status}
       </span>
     )
-  }
-
-  const stringToColor = (str: string, dark = false): string => {
-    let hash = 0
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash)
-    }
-    const hue = Math.abs(hash % 360)
-    const saturation = dark ? 90 : 60
-    const lightness = dark ? 45 : 60
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`
   }
 
   const renderLabels = (labels?: string[], hlabels?: (string | [string, string] | { text?: string; label?: string; href?: string; url?: string })[]) => {
@@ -926,7 +946,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
             )}
             */}
             <Tooltip>
-              <Tooltip.Trigger asChild>
+              <Tooltip.Trigger>
                 <div
                   onClick={toggleSortByStatus}
                   style={{
@@ -944,7 +964,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
               </Tooltip.Content>
             </Tooltip>
             <Tooltip>
-              <Tooltip.Trigger asChild>
+              <Tooltip.Trigger>
                 <div
                   onClick={toggleTheme}
                   style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
@@ -970,49 +990,49 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
 
           {data && !loading && (
             <Container orientation='vertical' gap='none'>
-              {data.ext && nameParams.length <= 1 && (
-                <Panel hasBorder padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
+              <Panel hasBorder padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
+                {/* Line 1: PR or commit info (from top-level, cached across navigation) */}
+                {topLevelExt && (topLevelExt.pr_number > 0 || topLevelExt.commit_sha) && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px' }}>
                     <Icon name="git-merge" size="md" />
-                    {data.ext.pr_number && data.ext.pr_number > 0 ? (
+                    {topLevelExt.pr_number && topLevelExt.pr_number > 0 ? (
                       <>
-                        <Link href={data.ext.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
-                          #{data.ext.pr_number}
+                        <Link href={topLevelExt.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
+                          #{topLevelExt.pr_number}
                         </Link>
                         <Text>:</Text>
-                        <Text>{data.ext.pr_title}</Text>
+                        <Text>{topLevelExt.pr_title}</Text>
                       </>
-                    ) : (
+                    ) : topLevelExt.commit_sha ? (
                       <>
-                        <Link href={data.ext.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                          {data.ext.commit_sha?.substring(0, 7)}
+                        <Link href={topLevelExt.change_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                          {topLevelExt.commit_sha.substring(0, 7)}
                         </Link>
                         <Text>:</Text>
-                        <Text>{data.ext.commit_message}</Text>
+                        <Text>{topLevelExt.commit_message}</Text>
                       </>
+                    ) : null}
+                  </div>
+                )}
+                  {/* Line 2: Current result name with GitHub link */}
+                  <div style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Text><strong>{data.name}</strong></Text>
+                    {data.ext?.run_url && (
+                      <Link href={data.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }}>
+                        <Icon name="github" size="sm" />
+                      </Link>
                     )}
                   </div>
-                  {data.ext.workflow_name && (
-                    <div style={{ fontSize: '14px', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Text>Workflow: <strong>{data.ext.workflow_name}</strong></Text>
-                      {data.ext.run_url && (
-                        <Link href={data.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }}>
-                          <Icon name="github" size="sm" />
-                        </Link>
-                      )}
-                    </div>
-                  )}
+                  {/* Line 3: Status overview */}
+                  <div style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Text>status:</Text>
+                    {getStatusBadge(data.status)}
+                    <Text>|</Text>
+                    <Text>Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong></Text>
+                    <Text>|</Text>
+                    <Text>Duration: <strong>{formatDuration(displayDuration)}</strong></Text>
+                  </div>
                 </Panel>
-              )}
-
-              <div style={{ padding: '12px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Text>status:</Text>
-                {getStatusBadge(data.status)}
-                <Text>|</Text>
-                <Text>Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong></Text>
-                <Text>|</Text>
-                <Text>Duration: <strong>{formatDuration(displayDuration)}</strong></Text>
-              </div>
 
               {data.info && (
                 <Panel hasShadow padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
