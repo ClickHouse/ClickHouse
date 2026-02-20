@@ -225,10 +225,8 @@ add_executable(llvm-tblgen
     ${LLVM_SOURCE_DIR}/utils/TableGen/SearchableTableEmitter.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/SubtargetEmitter.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86DisassemblerTables.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/X86CompressEVEXTablesEmitter.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86FoldTablesEmitter.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86InstrMappingEmitter.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/X86ManualInstrMapping.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86MnemonicTables.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86ModRMFilters.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/X86RecognizableInstr.cpp
