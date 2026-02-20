@@ -38,7 +38,9 @@ def _start_docker_in_docker():
         )
     retries = 20
     for i in range(retries):
-        if Shell.check("docker info > /dev/null", verbose=True):
+        # On last retry, show errors; otherwise suppress them
+        cmd = "docker info > /dev/null" if i == retries - 1 else "docker info > /dev/null 2>&1"
+        if Shell.check(cmd, verbose=True):
             break
         if i == retries - 1:
             raise RuntimeError(
@@ -221,6 +223,17 @@ def get_parallel_sequential_tests_to_run(
     # 1) test suit (e.g. test_directory or test_directory/)
     # 2) test module (e.g. test_directory/test_module or test_directory/test_module.py)
     # 3) test case (e.g. test_directory/test_module.py::test_case or test_directory/test_module::test_case[test_param])
+    def normalize_test_path(test_arg: str) -> str:
+        """Normalize test path by removing integration test directory prefixes."""
+        # Handle: tests/integration/, integration/, ./tests/integration/, or full paths
+        if "tests/integration/" in test_arg:
+            # Extract everything after tests/integration/
+            test_arg = test_arg.split("tests/integration/", 1)[1]
+        elif test_arg.startswith("integration/"):
+            # Handle integration/ prefix
+            test_arg = test_arg[len("integration/"):]
+        return test_arg
+
     def test_match(test_file: str, test_arg: str) -> bool:
         if "/" not in test_arg:
             return f"{test_arg}/" in test_file
@@ -232,14 +245,16 @@ def get_parallel_sequential_tests_to_run(
     parallel_tests = []
     sequential_tests = []
     for test_arg in args_test:
+        # Normalize the test path first
+        normalized_test_arg = normalize_test_path(test_arg)
         matched = False
         for test_file in parallel_test_modules:
-            if test_match(test_file, test_arg):
-                parallel_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                parallel_tests.append(normalized_test_arg)
                 matched = True
         for test_file in sequential_test_modules:
-            if test_match(test_file, test_arg):
-                sequential_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                sequential_tests.append(normalized_test_arg)
                 matched = True
         if not no_strict:
             assert matched, f"Test [{test_arg}] not found"
@@ -249,8 +264,18 @@ def get_parallel_sequential_tests_to_run(
 
 def tail(filepath: str, buff_len: int = 1024) -> List[str]:
     with open(filepath, "rb") as f:
-        f.seek(-buff_len, os.SEEK_END)
-        f.readline()
+        # Get file size to avoid seeking before start of file
+        f.seek(0, os.SEEK_END)
+        file_size = f.tell()
+
+        if file_size <= buff_len:
+            # File is smaller than buffer, read from beginning
+            f.seek(0)
+        else:
+            # File is larger, seek from end
+            f.seek(-buff_len, os.SEEK_END)
+            f.readline()  # Skip partial line
+
         data = f.read()
         return data.decode(errors="replace")
 
@@ -483,7 +508,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )  # remove parametrization - does not work with test repeat with --count
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
-    if not Shell.check("docker info > /dev/null", verbose=True):
+    if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 

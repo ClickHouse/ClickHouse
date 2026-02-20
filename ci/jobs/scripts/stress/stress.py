@@ -463,7 +463,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                 break
             except Exception as ex:
                 logging.error(
-                    "Failed to SHOW or DROP databasese, will retry %s", str(ex)
+                    "Failed to SHOW or DROP databases, will retry %s", str(ex)
                 )
                 time.sleep(i)
         else:
