@@ -67,6 +67,14 @@ node8 = cluster.add_instance(
     stay_alive=True,
     ipv6_address="2001:3984:3989::1:1118",
 )
+node9 = cluster.add_instance(
+    "node9",
+    main_configs=[
+        "configs/disable_cache_and_ipv6.xml",
+        "configs/listen_host.xml"
+    ],
+    ipv6_address="2001:3984:3989::1:1119",
+)
 
 
 def _fill_nodes(nodes, table_name):
@@ -476,3 +484,13 @@ def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_
         assert node.query("SELECT count(*) from system.dns_cache;") == "0\n"
     else:
         assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"
+
+
+def test_dns_resolver_filter_cache_disabled(cluster_ready):
+    node = node9
+    node.set_hosts([(node.ipv6_address, "test_host")])
+    # query should fail because we disable IPv6 address resolution but provide no IPv4 address
+    with pytest.raises(QueryRuntimeException) as e:
+        node.query("SELECT * FROM remote('test_host', 'system', 'one')")
+    assert "DNS_ERROR" in str(e.value)
+    assert "After filtering there are no resolved address for host(test_host)" in str(e.value)
