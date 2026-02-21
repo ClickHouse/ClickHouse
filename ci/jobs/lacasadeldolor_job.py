@@ -244,8 +244,10 @@ def main():
     # Fatal log file if ClickHouse server crashes
     buzz_out = workspace_path / "fuzzerout.sql"  # BuzzHouse generated queries
     server_cmd = workspace_path / "server.sh"  # Command line used for La Casa del Dolor
-    config_xml = workspace_path / "config.xml"  # Generated configuration file for servers
-    users_xml = workspace_path / "users.xml"  # Generated user configuration file for servers
+    # Generated configuration file for servers
+    config_xml = workspace_path / "config.xml"
+    # Generated user configuration file for servers
+    users_xml = workspace_path / "users.xml"
     # Query log files for queries sent to other databases
     postgresql_query_log = workspace_path / "postgresql.sql"
     mysql_query_log = workspace_path / "mysql.sql"
@@ -254,7 +256,6 @@ def main():
     paths = [
         core_file,
         fuzzer_log,
-        dmesg_log,
         buzzconfig,
         buzz_out,
         server_cmd,
@@ -401,6 +402,22 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         server_died = False
         fuzzer_exit_code = 0
 
+        # Gather OOM information
+        if not info.is_local_run:
+            if Path("./ci/tmp/docker-in-docker.log").exists():
+                attached_files.append("./ci/tmp/docker-in-docker.log")
+            print("Dumping dmesg")
+            Shell.check(f"dmesg -T > {dmesg_log}", verbose=True, strict=True)
+            with open(dmesg_log, "rb") as dmesg:
+                dmesg = dmesg.read()
+                if (
+                    b"Out of memory: Killed process" in dmesg
+                    or b"oom_reaper: reaped process" in dmesg
+                    or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
+                ):
+                    result_info += "\nOOM detected in dmesg"
+                    attached_files.append(dmesg_log)
+
         try:
             pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
             pattern2 = re.compile(r"The server node\d+ is not running")
@@ -453,21 +470,6 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
         )
 
-    if is_failed and not info.is_local_run:
-        if Path("./ci/tmp/docker-in-docker.log").exists():
-            attached_files.append("./ci/tmp/docker-in-docker.log")
-        print("Dumping dmesg")
-        Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        with open("dmesg.log", "rb") as dmesg:
-            dmesg = dmesg.read()
-            if (
-                b"Out of memory: Killed process" in dmesg
-                or b"oom_reaper: reaped process" in dmesg
-                or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
-            ):
-                result_info += "\nOOM detected in dmesg"
-                attached_files.append("dmesg.log")
-
     # Build a single Result with all files
     R = Result.create_from(
         results=[
@@ -481,7 +483,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         stopwatch=sw,
     )
 
-    R.sort().complete_job()
+    R.complete_job()
 
 
 if __name__ == "__main__":
