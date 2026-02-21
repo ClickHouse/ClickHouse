@@ -9,8 +9,8 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS error_log;"
 
 # Get the previous number of errors for 111, 222 and 333
 errors_111=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 111")
-errors_222=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 222")
-errors_333=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 333")
+errors_222=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 222")
+errors_333=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 333")
 
 # Throw three random errors: 111, 222 and 333
 $CLICKHOUSE_CLIENT -m -q "
