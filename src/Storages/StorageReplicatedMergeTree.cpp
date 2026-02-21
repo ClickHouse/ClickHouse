@@ -4209,6 +4209,9 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
     auto try_assign_merge = [&]() -> AttemptStatus
     {
+        if (merger_mutator.merges_blocker.isCancelled())
+            return AttemptStatus::CannotSelect;
+
         /// We must select parts for merge under merge_selecting_mutex because other threads
         /// (OPTIMIZE queries) can assign new merges.
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
@@ -9560,7 +9563,15 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
     if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge
         || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
         || action_type == ActionLocks::ReplicationQueue)
+    {
         background_operations_assignee.trigger();
+        /// When merges are re-enabled, also wake up the merge-selecting task so it
+        /// runs promptly instead of waiting for its next scheduled interval (which can
+        /// be up to `max_merge_selecting_sleep_ms` after an extended period of STOP MERGES
+        /// where the task accumulated backoff from repeated `CannotSelect` results).
+        if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge)
+            merge_selecting_task->schedule();
+    }
     else if (action_type == ActionLocks::PartsMove)
         background_moves_assignee.trigger();
     else if (action_type == ActionLocks::Cleanup)
