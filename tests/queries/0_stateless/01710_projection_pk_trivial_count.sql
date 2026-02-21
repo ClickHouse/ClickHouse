@@ -1,6 +1,7 @@
 drop table if exists x;
 
 set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
+set optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 1;
 
 create table x (i int) engine MergeTree order by i settings index_granularity = 3;
 insert into x select * from numbers(10);
