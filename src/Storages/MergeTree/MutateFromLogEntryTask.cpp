@@ -44,6 +44,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     const auto storage_settings_ptr = storage.getSettings();
     LOG_TRACE(log, "Executing log entry to mutate part {} to {}", source_part_name, entry.new_part_name);
 
+    ReplicatedMergeMutateTaskBase::prepare();
+
     FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_in_prepare);
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);

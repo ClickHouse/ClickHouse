@@ -326,6 +326,10 @@ ReplicatedMergeMutateTaskBase::ReplicatedMergeMutateTaskBase(
     , task_result_callback(task_result_callback_)
     , rng(randomSeed())
 {
+}
+
+ReplicatedMergeMutateTaskBase::PrepareResult ReplicatedMergeMutateTaskBase::prepare()
+{
     task_context = createTaskContext();
     thread_group = ThreadGroup::createForBackgroundOps(task_context);
 }

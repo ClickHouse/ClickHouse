@@ -63,6 +63,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
+    ReplicatedMergeMutateTaskBase::prepare();
+
     fiu_do_on(FailPoints::rmt_merge_task_sleep_in_prepare,
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
