@@ -13,6 +13,7 @@
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
@@ -23,7 +24,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -65,12 +65,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t arguments_size = arguments.size();
-        if (arguments_size < 2)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
-                getName(),
-                arguments_size);
+        // Validation is not exhaustive.
+        FunctionArgumentDescriptors mandatory_args{{"column_names", &isArray, &isColumnConst, "const Array(String)"}};
+        FunctionArgumentDescriptor variadic_args{"value", &isArray, nullptr, "Any"};
+        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
 
         if (const auto * const_column = typeid_cast<const ColumnConst *>(arguments[0].column.get()))
             if (auto res_type = getType(0, const_column->getDataColumn(), arguments))
@@ -218,6 +216,7 @@ The first argument must be a constant array of Strings determining the names of 
 The other arguments must be arrays of the same size.
 )",
         .examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])", ""}},
+        .introduced_in = {23, 2},
         .category = FunctionDocumentation::Category::Other
     });
 }

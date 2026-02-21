@@ -24,7 +24,7 @@ public:
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Set"; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTSetQuery>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTSetQuery>(*this); }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 

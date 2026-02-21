@@ -1,4 +1,4 @@
-100	200
+10	20
 IN (1000-element set)
 {
   "Type": "PrimaryKey",
@@ -6,24 +6,24 @@ IN (1000-element set)
     "key"
   ],
   "Condition": "(key in 1000-element set)",
-  "Initial Parts": 100,
-  "Selected Parts": 100,
-  "Initial Granules": 100,
-  "Selected Granules": 100,
+  "Initial Parts": 10,
+  "Selected Parts": 10,
+  "Initial Granules": 10,
+  "Selected Granules": 10,
   "Distributed": [
     {
       "Address": "127.0.0.1:9000",
-      "Parts send": 56,
-      "Parts received": 56,
-      "Granules send": 56,
-      "Granules received": 56
+      "Parts send": 9,
+      "Parts received": 9,
+      "Granules send": 9,
+      "Granules received": 9
     },
     {
       "Address": "127.0.0.2:9000",
-      "Parts send": 44,
-      "Parts received": 44,
-      "Granules send": 44,
-      "Granules received": 44
+      "Parts send": 1,
+      "Parts received": 1,
+      "Granules send": 1,
+      "Granules received": 1
     }
   ]
 }
@@ -34,24 +34,24 @@ GLOBAL IN (1000-element set)
     "key"
   ],
   "Condition": "(key in 1000-element set)",
-  "Initial Parts": 100,
-  "Selected Parts": 100,
-  "Initial Granules": 100,
-  "Selected Granules": 100,
+  "Initial Parts": 10,
+  "Selected Parts": 10,
+  "Initial Granules": 10,
+  "Selected Granules": 10,
   "Distributed": [
     {
       "Address": "127.0.0.1:9000",
-      "Parts send": 56,
-      "Parts received": 56,
-      "Granules send": 56,
-      "Granules received": 56
+      "Parts send": 9,
+      "Parts received": 9,
+      "Granules send": 9,
+      "Granules received": 9
     },
     {
       "Address": "127.0.0.2:9000",
-      "Parts send": 44,
-      "Parts received": 44,
-      "Granules send": 44,
-      "Granules received": 44
+      "Parts send": 1,
+      "Parts received": 1,
+      "Granules send": 1,
+      "Granules received": 1
     }
   ]
 }
@@ -62,23 +62,23 @@ IN (10-element set)
     "key"
   ],
   "Condition": "(key in 10-element set)",
-  "Initial Parts": 100,
+  "Initial Parts": 10,
   "Selected Parts": 1,
-  "Initial Granules": 100,
+  "Initial Granules": 10,
   "Selected Granules": 1,
   "Distributed": [
     {
       "Address": "127.0.0.1:9000",
-      "Parts send": 56,
+      "Parts send": 9,
       "Parts received": 0,
-      "Granules send": 56,
+      "Granules send": 9,
       "Granules received": 0
     },
     {
       "Address": "127.0.0.2:9000",
-      "Parts send": 44,
+      "Parts send": 1,
       "Parts received": 1,
-      "Granules send": 44,
+      "Granules send": 1,
       "Granules received": 1
     }
   ]
@@ -90,23 +90,23 @@ GLOBAL IN (10-element set)
     "key"
   ],
   "Condition": "(key in 10-element set)",
-  "Initial Parts": 100,
+  "Initial Parts": 10,
   "Selected Parts": 1,
-  "Initial Granules": 100,
+  "Initial Granules": 10,
   "Selected Granules": 1,
   "Distributed": [
     {
       "Address": "127.0.0.1:9000",
-      "Parts send": 56,
+      "Parts send": 9,
       "Parts received": 0,
-      "Granules send": 56,
+      "Granules send": 9,
       "Granules received": 0
     },
     {
       "Address": "127.0.0.2:9000",
-      "Parts send": 44,
+      "Parts send": 1,
       "Parts received": 1,
-      "Granules send": 44,
+      "Granules send": 1,
       "Granules received": 1
     }
   ]

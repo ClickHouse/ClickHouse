@@ -200,7 +200,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/)
 
             /// OR must have at least two arguments.
             if (unique_elems.size() == 1)
-                unique_elems.push_back(std::make_shared<ASTLiteral>(Field(false)));
+                unique_elems.push_back(make_intrusive<ASTLiteral>(Field(false)));
 
             expr_list_fn->children = std::move(unique_elems);
 

@@ -79,12 +79,12 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     writeChar(')', ostr);
 
-    if (nulls_action == NullsAction::RESPECT_NULLS)
+    if (getNullsAction() == NullsAction::RESPECT_NULLS)
         writeCString(" RESPECT NULLS", ostr);
-    else if (nulls_action == NullsAction::IGNORE_NULLS)
+    else if (getNullsAction() == NullsAction::IGNORE_NULLS)
         writeCString(" IGNORE NULLS", ostr);
 
-    if (is_window_function)
+    if (isWindowFunction())
     {
         writeCString(" OVER ", ostr);
         if (!window_name.empty())
@@ -105,12 +105,12 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
 void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (nulls_action == NullsAction::RESPECT_NULLS)
+    if (getNullsAction() == NullsAction::RESPECT_NULLS)
         ostr << " RESPECT NULLS";
-    else if (nulls_action == NullsAction::IGNORE_NULLS)
+    else if (getNullsAction() == NullsAction::IGNORE_NULLS)
         ostr << " IGNORE NULLS";
 
-    if (!is_window_function)
+    if (!isWindowFunction())
         return;
 
     ostr << " OVER ";
@@ -134,7 +134,7 @@ String ASTFunction::getID(char delim) const
 
 ASTPtr ASTFunction::clone() const
 {
-    auto res = std::make_shared<ASTFunction>(*this);
+    auto res = make_intrusive<ASTFunction>(*this);
     res->children.clear();
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
@@ -156,8 +156,8 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     hash_state.update(name);
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 
-    hash_state.update(nulls_action);
-    if (is_window_function)
+    hash_state.update(getNullsAction());
+    if (isWindowFunction())
     {
         hash_state.update(window_name.size());
         hash_state.update(window_name);
@@ -189,7 +189,7 @@ static ASTPtr createLiteral(const ASTs & arguments)
             return {};
     }
 
-    return std::make_shared<ASTLiteral>(container);
+    return make_intrusive<ASTLiteral>(container);
 }
 
 ASTPtr ASTFunction::toLiteral() const
@@ -271,6 +271,7 @@ struct FunctionOperatorMapping
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
+    auto kind = getKind();
     if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
         frame.allow_operators = false;
     FormatStateStacked nested_need_parens = frame;
@@ -316,7 +317,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (is_operator && arguments && !parameters && frame.allow_operators && nulls_action == NullsAction::EMPTY)
+    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -528,10 +529,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                 }
 
-                // It can be printed in a form of 'x.1' only if right hand side
-                // is an unsigned integer lineral. We also allow nonnegative
-                // signed integer literals, because the fuzzer sometimes inserts
-                // them, and we want to have consistent formatting.
+                /// It can be printed in a form of 'x.1' only if right hand side
+                /// is an unsigned integer lineral. We also allow nonnegative
+                /// signed integer literals, because the fuzzer sometimes inserts
+                /// them, and we want to have consistent formatting.
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
@@ -540,10 +541,31 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
+                        /// Little hack: Expression like this: (tab.*).1 (tab contains single tuple column)
+                        /// causes inconsistent formatting because it is formatted as tab.*.1 which is invalid.
+                        /// So when child 0 has more than one element, we surround it with parens.
+                        /// Exception: array and tuple functions format with their own brackets ([...] and (...)),
+                        /// which are already unambiguous with .N syntax. Adding extra parens around them
+                        /// would cause inconsistent formatting when re-parsed, because the parser's fast path
+                        /// creates ASTLiteral (size=1, no parens) while ASTFunction has size>1.
+                        const auto * left_func = arguments->children[0]->as<ASTFunction>();
+                        bool left_needs_parens = arguments->children[0]->size() > 1
+                            && !(left_func && (left_func->name == "array" || left_func->name == "tuple"));
+
+                        if (left_needs_parens)
+                        {
+                            nested_need_parens.need_parens = false; /// Don't want duplicate parens
+                            ostr << '(';
+                        }
+
                         /// Don't allow moving operators like '-' before parents,
                         /// otherwise (-(42)).1 will be formatted as -(42).1 that will be parsed as -((42).1)
                         nested_need_parens.allow_moving_operators_before_parens = false;
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+
+                        if (left_needs_parens)
+                            ostr << ')';
+
                         ostr << ".";
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                         written = true;
@@ -682,7 +704,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << ')';
     }
 
-    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
         ostr << '(';
 
     if (arguments)
@@ -758,7 +780,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         }
     }
 
-    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
         ostr << ')';
 
     finishFormatWithWindow(ostr, settings, state, frame);

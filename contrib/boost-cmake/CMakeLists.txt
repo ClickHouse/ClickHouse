@@ -82,9 +82,6 @@ target_include_directories (_boost_program_options SYSTEM BEFORE PUBLIC ${LIBRAR
 
 set (SRCS_REGEX
     "${LIBRARY_DIR}/libs/regex/src/posix_api.cpp"
-    "${LIBRARY_DIR}/libs/regex/src/regex_debug.cpp"
-    "${LIBRARY_DIR}/libs/regex/src/regex.cpp"
-    "${LIBRARY_DIR}/libs/regex/src/static_mutex.cpp"
     "${LIBRARY_DIR}/libs/regex/src/wide_posix_api.cpp"
 )
 
@@ -92,15 +89,11 @@ add_library (_boost_regex ${SRCS_REGEX})
 add_library (boost::regex ALIAS _boost_regex)
 target_include_directories (_boost_regex PRIVATE ${LIBRARY_DIR})
 
-# system
+# system (header-only since Boost 1.69)
 
-set (SRCS_SYSTEM
-    "${LIBRARY_DIR}/libs/system/src/error_code.cpp"
-)
-
-add_library (_boost_system ${SRCS_SYSTEM})
+add_library (_boost_system INTERFACE)
 add_library (boost::system ALIAS _boost_system)
-target_include_directories (_boost_system PRIVATE ${LIBRARY_DIR})
+target_include_directories (_boost_system SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
 
 # context
 option (BOOST_USE_UCONTEXT "Use ucontext_t for context switching of boost::fiber within boost::context" OFF)
@@ -110,6 +103,7 @@ SET(ASM_OPTIONS "-x assembler-with-cpp")
 
 set (SRCS_CONTEXT
     "${LIBRARY_DIR}/libs/context/src/dummy.cpp"
+    "${LIBRARY_DIR}/libs/context/src/fcontext.cpp"
     "${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp"
 )
 
