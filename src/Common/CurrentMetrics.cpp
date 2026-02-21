@@ -388,6 +388,12 @@
     M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
     M(SharedMergeTreeCondemnedPartsInKeeper, "How many condemned part records stored in keeper") \
     M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
+    M(SharedMergeTreeMaxActiveReplicas, "The maximum number of active replicas registered in Keeper") \
+    M(SharedMergeTreeMaxInactiveReplicas, "The maximum number of inactive replicas registered in Keeper") \
+    M(SharedMergeTreeMaxReplicas, "The maximum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMaxActiveReplicas and SharedMergeTreeMaxInactiveReplicas") \
+    M(SharedMergeTreeMinActiveReplicas, "The minimum number of active replicas registered in Keeper") \
+    M(SharedMergeTreeMinInactiveReplicas, "The minimum number of inactive replicas registered in Keeper") \
+    M(SharedMergeTreeMinReplicas, "The minimum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMinActiveReplicas and SharedMergeTreeMinInactiveReplicas") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \

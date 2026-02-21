@@ -8,6 +8,18 @@
 namespace BuzzHouse
 {
 
+String StatementGenerator::getNextAlias(RandomGenerator & rg)
+{
+    /// Most of the times, use a new alias
+    const uint32_t noption = rg.nextMediumNumber();
+
+    if (noption < 81)
+    {
+        return "a" + std::to_string(aliases_counter++);
+    }
+    return (noption < 91 ? "a" : "c") + std::to_string(rg.randomInt<uint32_t>(0, noption < 91 ? 2 : 3));
+}
+
 void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const uint32_t nested_prob)
 {
     if (rg.nextMediumNumber() < nested_prob)
@@ -1458,7 +1470,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     if (eca && this->allow_in_expression_alias && !this->inside_projection && rg.nextSmallNumber() < 4)
     {
         SQLRelation rel("");
-        const String ncname = this->getNextAlias();
+        const String ncname = this->getNextAlias(rg);
 
         rel.cols.emplace_back(SQLRelationCol("", {ncname}));
         this->levels[this->current_level].rels.emplace_back(rel);

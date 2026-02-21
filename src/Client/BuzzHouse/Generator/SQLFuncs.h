@@ -10,7 +10,11 @@ class CHAggregate
 {
 public:
     const bool support_nulls_clause;
-    const uint32_t fnum, min_params, max_params, min_args, max_args;
+    const uint32_t fnum;
+    const uint32_t min_params;
+    const uint32_t max_params;
+    const uint32_t min_args;
+    const uint32_t max_args;
 
     CHAggregate(const uint32_t f, const uint32_t min_p, const uint32_t max_p, const uint32_t min_a, const uint32_t m_args, const bool snc)
         : support_nulls_clause(snc)
@@ -26,7 +30,11 @@ public:
 class CHFunction
 {
 public:
-    const uint32_t fnum, min_lambda_param, max_lambda_param, min_args, max_args;
+    const uint32_t fnum;
+    const uint32_t min_lambda_param;
+    const uint32_t max_lambda_param;
+    const uint32_t min_args;
+    const uint32_t max_args;
 
     CHFunction(const uint32_t f, const uint32_t min_lambda, const uint32_t max_lambda, const uint32_t min_a, const uint32_t m_args)
         : fnum(f)

@@ -3301,13 +3301,12 @@ message ColumnDef {
 enum IndexType {
     IDX_set = 1;
     IDX_minmax = 2;
-    IDX_hypothesis = 3;
-    IDX_bloom_filter = 4;
-    IDX_vector_similarity = 5;
-    IDX_ngrambf_v1 = 6;
-    IDX_tokenbf_v1 = 7;
-    IDX_text = 8;
-    IDX_basic = 9;
+    IDX_bloom_filter = 3;
+    IDX_vector_similarity = 4;
+    IDX_ngrambf_v1 = 5;
+    IDX_tokenbf_v1 = 6;
+    IDX_text = 7;
+    IDX_basic = 8;
 }
 
 message IndexDef {
