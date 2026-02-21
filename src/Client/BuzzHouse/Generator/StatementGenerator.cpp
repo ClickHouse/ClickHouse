@@ -4932,23 +4932,27 @@ template <typename T>
 void StatementGenerator::renameObjects(const uint32_t old_tname, const uint32_t new_tname, const std::optional<uint32_t> & new_db)
 {
     auto & container = getNextCollection<T>();
-    if (container.contains(old_tname))
+    if (!container.contains(old_tname))
+        return;
+    if constexpr (!std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
     {
-        T obj = std::move(container.at(old_tname));
-
-        if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
-        {
-            obj->dname = new_tname;
-            UNUSED(new_db);
-        }
-        else
-        {
-            obj.tname = new_tname;
-            obj.db = new_db.has_value() ? this->databases.at(new_db.value()) : nullptr;
-        }
-        container[new_tname] = std::move(obj);
-        container.erase(old_tname);
+        if (new_db.has_value() && !this->databases.contains(new_db.value()))
+            return;
     }
+    T obj = std::move(container.at(old_tname));
+
+    if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
+    {
+        obj->dname = new_tname;
+        UNUSED(new_db);
+    }
+    else
+    {
+        obj.tname = new_tname;
+        obj.db = new_db.has_value() ? this->databases.at(new_db.value()) : nullptr;
+    }
+    container[new_tname] = std::move(obj);
+    container.erase(old_tname);
 }
 
 template <typename T>
@@ -5039,7 +5043,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
         if (!ssq.explain().is_explain() && success)
         {
-            if (query.create_view().create_opt() != CreateReplaceOption::Create)
+            if (query.create_dictionary().create_opt() != CreateReplaceOption::Create)
             {
                 this->dictionaries.erase(dname);
             }
