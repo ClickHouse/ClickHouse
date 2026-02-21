@@ -254,7 +254,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
         String modifiers;
         readEscapedStringUntilEOL(modifiers, buf);
 
-        ParserColumnDeclaration column_parser(/* require type */ true);
+        ParserColumnDeclaration column_parser(/* require type */ true, /* allow null modifiers */ true);
         ASTPtr ast = parseQuery(column_parser, "x T " + modifiers, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         if (auto * col_ast = ast->as<ASTColumnDeclaration>())
