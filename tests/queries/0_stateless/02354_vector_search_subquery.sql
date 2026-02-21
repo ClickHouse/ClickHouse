@@ -1,6 +1,8 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 -- Reference vector for vector search is computed by a subquery (issue #69085)
 

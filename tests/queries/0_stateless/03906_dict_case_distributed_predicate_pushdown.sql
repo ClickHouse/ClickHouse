@@ -2,6 +2,8 @@
 -- Dictionary + CASE + distributed table: predicate pushdown should not filter out rows incorrectly.
 
 SET enable_analyzer = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS t_dict_dist_local;
 DROP DICTIONARY IF EXISTS d_dict_dist;
