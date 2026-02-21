@@ -1712,7 +1712,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     LOG_DEBUG(log, "Renames completed successfully");
 
     for (const auto & id : dropped_tables)
-        DatabaseCatalog::instance().waitTableFinallyDropped(id);
+        DatabaseCatalog::instance().waitTableFinallyDropped(id, nullptr);
 
     /// Create all needed tables in a proper order
     TablesDependencyGraph tables_dependencies("DatabaseReplicated (" + getDatabaseName() + ")");

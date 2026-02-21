@@ -2,6 +2,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -107,15 +108,23 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to drop, both names are empty");
 }
 
-void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait)
+void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait, ContextPtr context_)
 {
     if (uuid_to_wait == UUIDHelpers::Nil)
         return;
 
     if (query.kind == ASTDropQuery::Kind::Drop)
-        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait);
+    {
+        auto process_list_element = context_->getProcessListElementSafe();
+        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, [&]() -> bool
+        {
+            return process_list_element && process_list_element->isKilled();
+        });
+    }
     else if (query.kind == ASTDropQuery::Kind::Detach)
+    {
         db->waitDetachedTableNotInUse(uuid_to_wait);
+    }
 }
 
 BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
@@ -124,7 +133,7 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
     UUID table_to_wait_on = UUIDHelpers::Nil;
     auto res = executeToTableImpl(getContext(), query, database, table_to_wait_on);
     if (query.sync)
-        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on);
+        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on, getContext());
     return res;
 }
 
@@ -376,7 +385,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
         if (query.sync)
         {
             for (const auto & table_uuid : tables_to_wait)
-                waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
+                waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid, getContext());
         }
         throw;
     }
@@ -384,7 +393,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     if (query.sync)
     {
         for (const auto & table_uuid : tables_to_wait)
-            waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
+            waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid, getContext());
     }
     return res;
 }
