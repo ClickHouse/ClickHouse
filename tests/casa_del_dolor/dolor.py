@@ -777,6 +777,8 @@ while all_running and (not reached_limit):
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
+    if all_running:
+        tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
 if not all_running:
     for server in servers:
