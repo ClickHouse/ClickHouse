@@ -52,7 +52,7 @@ do
     while [ "$LOGIN_COUNT" != "$CORRESPONDING_LOGOUT_RECORDS_COUNT" ]
     do
         sleep 0.1
-        CORRESPONDING_LOGOUT_RECORDS_COUNT=`${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM (SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' AND type = 'LoginSuccess' AND interface = '${interface}' INTERSECT SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'Logout' AND interface = '${interface}')"`
+        CORRESPONDING_LOGOUT_RECORDS_COUNT=`${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM (SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' AND type = 'LoginSuccess' AND interface = '${interface}' INTERSECT SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' AND type = 'Logout' AND interface = '${interface}')"`
     done
 
     if [ "$LOGIN_COUNT" == "$CORRESPONDING_LOGOUT_RECORDS_COUNT" ]; then
