@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BUZZHOUSE;
+extern const int NETWORK_ERROR;
 }
 }
 
@@ -490,7 +491,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
         fmt::print(stderr, "Error on processing query '{}'\n", query);
         if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Couldn't not reconnect to the server");
+            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Couldn't not reconnect to the server");
         }
     }
     return res;

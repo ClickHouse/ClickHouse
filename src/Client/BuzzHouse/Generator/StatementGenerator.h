@@ -171,6 +171,7 @@ private:
     uint32_t cache_counter = 0;
     uint32_t aliases_counter = 0;
     uint32_t id_counter = 0;
+    uint32_t freeze_counter = 0;
 
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
@@ -823,6 +824,10 @@ public:
     const std::function<bool(const SQLTable &)> detached_tables = [](const SQLTable & t) { return t.isDettached(); };
     const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return v.isDettached(); };
     const std::function<bool(const SQLDictionary &)> detached_dictionaries = [](const SQLDictionary & d) { return d.isDettached(); };
+    const std::function<bool(const std::shared_ptr<SQLDatabase> &)> replicated_databases
+        = [](const std::shared_ptr<SQLDatabase> & db) { return db->isAttached() && (db->shard_counter > 0 || db->replica_counter > 0); };
+    const std::function<bool(const SQLTable &)> replicated_tables
+        = [](const SQLTable & t) { return t.isAttached() && (t.shard_counter > 0 || t.replica_counter > 0); };
 
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const

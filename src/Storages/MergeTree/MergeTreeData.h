@@ -767,6 +767,16 @@ public:
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
+    /// Execute a merge of the specified parts to a temporary directory without committing.
+    /// Used by OPTIMIZE ... DRY RUN PARTS.
+    void optimizeDryRun(
+        const Names & part_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        bool cleanup,
+        ContextPtr context);
+
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
