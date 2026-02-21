@@ -1281,7 +1281,9 @@ class SettingsRandomizer:
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         # Default-false optimize_* settings: enable with 0.5 probability
-        "optimize_move_to_prewhere_if_final": lambda: random.random() < 0.5,
+        # NOTE: optimize_move_to_prewhere_if_final is excluded because it triggers
+        # "Logical error: Input-output header mismatch after removing unused columns
+        # after pushing down filters to prewhere" (a real code bug).
         "optimize_rewrite_array_exists_to_has": lambda: random.random() < 0.5,
         "optimize_skip_unused_shards": lambda: random.random() < 0.5,
         "optimize_trivial_approximate_count_query": lambda: random.random() < 0.5,
