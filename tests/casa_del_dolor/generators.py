@@ -210,7 +210,7 @@ class BuzzHouseGenerator(Generator):
             delete=False,
         ) as temp_file:
             self.temp_name = temp_file.name
-            json.dump(buzz_config, temp_file, indent=2)
+            json.dump(buzz_config, temp_file, indent=4)
 
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
         return [
