@@ -401,6 +401,13 @@ bool JoinActionRef::fromNone() const
     return getSourceRelations().none();
 }
 
+bool JoinActionRef::isFromSameActions(const JoinActionRef & other) const
+{
+    auto data_ptr = getData();
+    auto other_data_ptr = other.getData();
+    return data_ptr.get() == other_data_ptr.get();
+}
+
 std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> JoinActionRef::asBinaryPredicate() const
 {
     auto data_ptr = getData();

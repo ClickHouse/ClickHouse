@@ -368,7 +368,7 @@ void clear(T * buf)
 }
 
 
-MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), transposeImpl, MULTITARGET_FUNCTION_BODY((const T * src, char * dst, UInt32 num_bits, UInt32 tail) /// NOLINT
@@ -406,19 +406,14 @@ template <typename T, bool full = false>
 ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 {
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
+    if (isArchSupported(TargetArch::x86_64_v4))
     {
-        transposeImplAVX512BW<T, full>(src, dst, num_bits, tail);
+        transposeImpl_x86_64_v4<T, full>(src, dst, num_bits, tail);
         return;
     }
-    if (isArchSupported(TargetArch::AVX512F))
+    if (isArchSupported(TargetArch::x86_64_v3))
     {
-        transposeImplAVX512F<T, full>(src, dst, num_bits, tail);
-        return;
-    }
-    if (isArchSupported(TargetArch::AVX2))
-    {
-        transposeImplAVX2<T, full>(src, dst, num_bits, tail);
+        transposeImpl_x86_64_v3<T, full>(src, dst, num_bits, tail);
         return;
     }
 #endif
@@ -427,7 +422,7 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
     }
 }
 
-MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
 void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT
@@ -462,19 +457,14 @@ template <typename T, bool full = false>
 ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
 {
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
+    if (isArchSupported(TargetArch::x86_64_v4))
     {
-        reverseTransposeImplAVX512BW<T, full>(src, buf, num_bits, tail);
+        reverseTransposeImpl_x86_64_v4<T, full>(src, buf, num_bits, tail);
         return;
     }
-    if (isArchSupported(TargetArch::AVX512F))
+    if (isArchSupported(TargetArch::x86_64_v3))
     {
-        reverseTransposeImplAVX512F<T, full>(src, buf, num_bits, tail);
-        return;
-    }
-    if (isArchSupported(TargetArch::AVX2))
-    {
-        reverseTransposeImplAVX2<T, full>(src, buf, num_bits, tail);
+        reverseTransposeImpl_x86_64_v3<T, full>(src, buf, num_bits, tail);
         return;
     }
 #endif

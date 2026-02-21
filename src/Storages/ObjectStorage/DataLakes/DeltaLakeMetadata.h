@@ -61,6 +61,10 @@ public:
     {
     }
 
+    static bool supportsTotalRows(ContextPtr, ObjectStorageType);
+
+    static bool supportsTotalBytes(ContextPtr, ObjectStorageType);
+
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,
