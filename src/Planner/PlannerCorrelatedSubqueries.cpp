@@ -61,8 +61,10 @@ namespace Setting
 {
 
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
-extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
+extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
 extern const SettingsBool join_use_nulls;
+extern const SettingsBool use_variant_as_common_type;
+extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsNonZeroUInt64 max_block_size;
 
@@ -193,6 +195,9 @@ struct DecorrelationContext
     /// Equivalence classes stack for subqeiries. Equivalence classes should not be propagated
     /// to the subqueries of the JOIN or UNION steps.
     std::vector<EquivalenceClasses> equivalence_class_stack;
+    /// Whether the input subplan is referenced during decorrelation.
+    /// This is necessary to identify if in-memory buffer would be used.
+    bool referenced_input_subplan = false;
 };
 
 /// Correlated subquery is represented by implicit dependent join operator.
@@ -251,6 +256,8 @@ QueryPlan decorrelateQueryPlan(
                 return result_plan;
             }
         }
+        /// JOIN reordering might be disabled in such case.
+        context.referenced_input_subplan = true;
 
         QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
         QueryPlan rhs_plan;
@@ -378,6 +385,7 @@ QueryPlan decorrelateQueryPlan(
         ///     FROM t2
         ///     WHERE t.x = t2.y
         /// )
+        const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
         auto process_isolated_subplan = [](
             DecorrelationContext & current_context,
             QueryPlan::Node * subplan_root
@@ -398,8 +406,11 @@ QueryPlan decorrelateQueryPlan(
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_lhs_plan)));
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_rhs_plan)));
 
-        Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, SelectUnionMode::UNION_ALL); // Union mode doesn't matter here
-        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers);
+        Block union_common_header = buildCommonHeaderForUnion(
+            query_plans_headers,
+            SelectUnionMode::UNION_ALL,
+            settings[Setting::use_variant_as_common_type]); // Union mode doesn't matter here
+        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers, context.planner_context->getQueryContext());
 
         union_step->updateInputHeaders(std::move(query_plans_headers));
 
@@ -514,7 +525,8 @@ QueryPlan buildLogicalJoin(
     const PlannerContextPtr & planner_context,
     QueryPlan input_stream_plan,
     QueryPlan decorrelated_plan,
-    const CorrelatedSubquery & correlated_subquery
+    const CorrelatedSubquery & correlated_subquery,
+    bool referenced_input_subplan
 )
 {
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
@@ -573,6 +585,23 @@ QueryPlan buildLogicalJoin(
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
 
+    /// Depending on correlated_subqueries_use_in_memory_buffer setting,
+    /// the RHS input stream can be buffered in memory.
+    /// In this case, we cannot reorder JOIN to ensure correlated subquery input
+    /// is evaluated before the subquery itself.
+    /// Do not disable reordering if the input subplan is not referenced (expression substitution happened).
+    if (referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
+    {
+        auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
+        /// Remove algorithms that are not compatible with in-memory buffering
+        /// of correlated subquery input.
+        /// We must be sure that the input stream is fully evaluated
+        /// before the correlated subquery is executed.
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
+        result_join->setOptimized();
+    }
+
     QueryPlan result_plan;
 
     std::vector<QueryPlanPtr> plans;
@@ -607,7 +636,8 @@ Planner buildPlannerForCorrelatedSubquery(
 
 void addStepForResultRenaming(
     const CorrelatedSubquery & correlated_subquery,
-    QueryPlan & correlated_subquery_plan
+    QueryPlan & correlated_subquery_plan,
+    const PlannerContextPtr & planner_context
 )
 {
     const auto & header = correlated_subquery_plan.getCurrentHeader();
@@ -637,7 +667,8 @@ void addStepForResultRenaming(
         result_node = &dag.addCast(
             *dag.getOutputs()[0],
             expected_result_type,
-            correlated_subquery.action_node_name);
+            correlated_subquery.action_node_name,
+            planner_context->getQueryContext());
     }
     else
     {
@@ -664,10 +695,7 @@ void addStepForResultRenaming(
  * Instead, it produces a query plan where almost every step has an analog from relational algebra.
  * This function implements a decorrelation algorithm using the ClickHouse query plan.
  *
- * TODO: Support scalar correlated subqueries.
  * TODO: Support decorrelation of all kinds of query plan steps.
- * TODO: Implement left table substitution optimization: T_left DEPENDENT JOIN T_right is a subset of T_right
- * if T_right has all the necessary columns of T_left.
  */
 void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
@@ -675,8 +703,8 @@ void buildQueryPlanForCorrelatedSubquery(
     const CorrelatedSubquery & correlated_subquery,
     const SelectQueryOptions & select_query_options)
 {
-    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
-    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
+    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
     switch (correlated_subquery.kind)
@@ -687,7 +715,7 @@ void buildQueryPlanForCorrelatedSubquery(
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 
-            addStepForResultRenaming(correlated_subquery, correlated_query_plan);
+            addStepForResultRenaming(correlated_subquery, correlated_query_plan, planner_context);
 
             /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
@@ -710,7 +738,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 planner_context,
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
-                correlated_subquery);
+                correlated_subquery,
+                context.referenced_input_subplan);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
@@ -753,7 +782,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 planner_context,
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
-                correlated_subquery);
+                correlated_subquery,
+                context.referenced_input_subplan);
             break;
         }
     }

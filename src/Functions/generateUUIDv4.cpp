@@ -8,7 +8,7 @@ namespace DB
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
@@ -72,8 +72,8 @@ public:
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionGenerateUUIDv4>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionGenerateUUIDv4>();
 #endif
     }
 
@@ -128,7 +128,7 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
     };
     FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv4 = {1, 1};
     FunctionDocumentation::Category category_generateUUIDv4 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_generateUUIDv4 = {description_generateUUIDv4, syntax_generateUUIDv4, arguments_generateUUIDv4, returned_value_generateUUIDv4, examples_generateUUIDv4, introduced_in_generateUUIDv4, category_generateUUIDv4};
+    FunctionDocumentation documentation_generateUUIDv4 = {description_generateUUIDv4, syntax_generateUUIDv4, arguments_generateUUIDv4, {}, returned_value_generateUUIDv4, examples_generateUUIDv4, introduced_in_generateUUIDv4, category_generateUUIDv4};
 
     factory.registerFunction<FunctionGenerateUUIDv4>(documentation_generateUUIDv4);
 }

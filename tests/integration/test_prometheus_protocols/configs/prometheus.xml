@@ -34,6 +34,43 @@
                     <user>no_such_user</user>
                 </handler>
             </my_rule_4>
+
+            <!-- Query API endpoints -->
+            <my_rule_5>
+                <url>/api/v1/query</url>
+                <handler>
+                    <type>query_api</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_5>
+            <my_rule_6>
+                <url>/api/v1/query_range</url>
+                <handler>
+                    <type>query_api</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_6>
+            <my_rule_7>
+                <url>/api/v1/series</url>
+                <handler>
+                    <type>query_api</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_7>
+            <my_rule_8>
+                <url>/api/v1/labels</url>
+                <handler>
+                    <type>query_api</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_8>
+            <my_rule_9>
+                <url>/api/v1/label/*/values</url>
+                <handler>
+                    <type>query_api</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_9>
         </handlers>
     </prometheus>
 </clickhouse>

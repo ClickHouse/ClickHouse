@@ -24,7 +24,7 @@ Returns 2 to the power of the given argument.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT exp2(3);", "8"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionExp2>(documentation);
 }

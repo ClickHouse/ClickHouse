@@ -23,6 +23,7 @@
 #include <Core/Settings.h>
 #include <base/range.h>
 #include <IO/Operators.h>
+#include <Common/Exception.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
@@ -38,6 +39,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
@@ -299,6 +301,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
+    setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
     setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
     setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
@@ -306,9 +309,12 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
+    setImpersonateUserAllowed(config_.getBool("access_control_improvements.allow_impersonate_user", config_.getBool("allow_impersonate_user", false)));
 
     /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
+
+    setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -375,7 +381,13 @@ void AccessControl::addReplicatedStorage(
         if (auto replicated_storage = typeid_cast<std::shared_ptr<ReplicatedAccessStorage>>(storage))
             return;
     }
-    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_, *changes_notifier, allow_backup_);
+    auto new_storage = std::make_shared<ReplicatedAccessStorage>(
+        storage_name_,
+        zookeeper_path_,
+        get_zookeeper_function_,
+        *changes_notifier,
+        allow_backup_,
+        throw_on_invalid_replicated_access_entities);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
@@ -618,7 +630,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         int error_code = ErrorCodes::AUTHENTICATION_FAILED;
 
         WriteBufferFromOwnString message;
-        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
+        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name";
 
         /// Better exception message for usability.
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
@@ -639,6 +651,10 @@ See also /etc/clickhouse-server/users.xml on the server where ClickHouse is inst
 
 )";
         }
+
+        /// Preserve the second factor authentication error code.
+        if (getCurrentExceptionCode() == ErrorCodes::REQUIRED_SECOND_FACTOR)
+            error_code = ErrorCodes::REQUIRED_SECOND_FACTOR;
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
         /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as

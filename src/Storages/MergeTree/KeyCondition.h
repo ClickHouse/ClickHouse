@@ -9,6 +9,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Set.h>
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -60,7 +61,8 @@ public:
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        bool single_point_ = false);
+        bool single_point_ = false,
+        bool skip_analysis_ = false); /// Toggled by `use_primary_key` setting. Useful for testing.
 
     struct BloomFilterData
     {
@@ -78,11 +80,32 @@ public:
     };
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
+
+    /// Ref : https://github.com/ClickHouse/ClickHouse/pull/87781
+    /// ClickHouse always supported pruning for conditions with conjunctions/ANDs :
+    ///    A = 5 AND B > 10 AND C < 1000
+    /// The code was oriented towards each skip index application immediately 'throwing out'
+    /// ranges that do not pass the condition and moving on to evaluating the next skip index
+    /// on a reduced set of ranges.
+    ///
+    /// But a condition with ORs is fundamentally different : A = 5 OR B = 5. If a range does
+    /// not match the condition (A = 5) using skip index on A, we cannot throw out or prune away
+    /// that range. We need to 'wait' for skip index B application and see the result of B = 5
+    /// on that range.
+    ///
+    /// Range pruning for mixed AND/OR predicates uses below callback to record each atom's
+    /// evaluation result got by applying corresponding skip index (true or false). This is
+    /// done in MergeTreeDataSelectExecutor::filterMarksUsingIndex(). Each *IndexCondition
+    /// invokes this callback as it is evaluating the predicate. The final result for each
+    /// granule is computed in MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions()
+    using UpdatePartialDisjunctionResultFn = std::function<void (size_t position, bool result, bool is_unknown)>;
+
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
-        const ColumnIndexToBloomFilter & column_index_to_column_bf = {}) const;
+        const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
+        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -175,6 +198,35 @@ public:
     ///     3. no where
     /// TODO handle the cases when generate RPN.
     bool extractPlainRanges(Ranges & ranges) const;
+
+    /// Extract a conservative union of ranges implied by this condition for the only key column.
+    ///
+    /// This method tries to extract plain ranges from each top-level conjunct (AND component) independently
+    /// and intersects all successfully extracted conjunct ranges, ignoring the rest.
+    ///
+    /// Return value semantics:
+    ///  - empty vector means the condition is always false;
+    ///  - a single universe range `(-Inf, +Inf)` means no bounds could be inferred;
+    ///  - otherwise, the result may contain 1+ (possibly disjoint) ranges.
+    ///
+    /// If the key condition is not 1-dimensional (key_columns.size() != 1), the result is always `(-Inf, +Inf)`.
+    ///
+    /// Examples (single key column `x`):
+    ///  - `x % 2 = 0 AND x < 100`                    -> { "(-Inf, 99]" }  (the `%` conjunct is ignored)
+    ///  - `x > 10 AND x < 20 AND x % 2 = 0`          -> { "[11, 19]" }
+    ///  - `(x BETWEEN 0 AND 3) OR (x BETWEEN 10 AND 13)` -> { "[0, 3]", "[10, 13]" }
+    ///  - `x IN (8, 0, 6)`                           -> { "[0, 0]", "[6, 6]", "[8, 8]" }
+    ///  - `x NOT IN (2, 4)`                          -> { "(-Inf, 1]", "[3, 3]", "[5, +Inf)" }
+    ///  - `NOT (x BETWEEN 2 AND 6) AND x < 10`       -> { "(-Inf, 1]", "[7, 9]" }
+    ///  - `isNull(x)`                                -> {}               (for non-nullable keys)
+    ///  - `x < 5 AND x > 10`                         -> {}               (always false / contradictory)
+    ///  - `x % 2 = 0`                                -> { "(-Inf, +Inf)" } (no bounds inferred)
+    ///
+    /// Non-examples (currently NOT extracted; result is `{ "(-Inf, +Inf)" }` unless another conjunct provides bounds):
+    ///  - `x + 1 < 100`                               -> { "(-Inf, +Inf)" } (simple arithmetic on the key is not inverted to avoid potential overflow)
+    ///  - `intDiv(x, 3) < 10`                         -> { "(-Inf, +Inf)" } (functions on the key are not analyzed here)
+    ///  - `(x < 10 AND x % 2 = 0) OR (x < 20 AND x % 3 = 0)` -> { "(-Inf, +Inf)" } (no partial extraction across OR branches)
+    Ranges extractBounds() const;
 
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -279,6 +331,9 @@ public:
     bool isRelaxed() const { return relaxed; }
 
     bool isSinglePoint() const { return single_point; }
+
+    /// Does the filter condition have any ORs?
+    bool hasOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
@@ -391,10 +446,23 @@ private:
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
-    bool tryPrepareSetIndex(
+    bool tryPrepareSetIndexForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         RPNElement & out,
+        bool allow_constant_transformation);
+    bool tryPrepareSetIndexForHas(
+        const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
+        RPNElement & out,
+        bool allow_constant_transformation);
+
+    void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
+        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
+        std::vector<MonotonicFunctionsChain> &set_transforming_chains,
+        DataTypes & data_types,
+        size_t & args_count,
+        const BuildInfo & info,
         bool allow_constant_transformation);
 
     /// Checks that the index can not be used.

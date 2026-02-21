@@ -7,6 +7,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 template <typename A>
 struct BitCountImpl
 {
@@ -25,20 +29,39 @@ struct BitCountImpl
                 res += std::popcount(item);
             return res;
         }
-        if constexpr (std::is_same_v<A, UInt64> || std::is_same_v<A, Int64>)
-            return std::popcount(static_cast<UInt64>(a));
-        if constexpr (std::is_same_v<A, UInt32> || std::is_same_v<A, Int32> || std::is_unsigned_v<A>)
-            return std::popcount(static_cast<UInt32>(a));
-        if constexpr (std::is_same_v<A, Int16>)
-            return std::popcount(static_cast<UInt16>(a));
-        if constexpr (std::is_same_v<A, Int8>)
-            return std::popcount(static_cast<uint8_t>(a));
+        else if constexpr (std::is_same_v<A, UInt64> || std::is_same_v<A, Int64>)
+            return static_cast<ResultType>(std::popcount(static_cast<UInt64>(a)));
+        else if constexpr (std::is_same_v<A, UInt32> || std::is_same_v<A, Int32>)
+            return static_cast<ResultType>(std::popcount(static_cast<UInt32>(a)));
+        else if constexpr (std::is_same_v<A, Int16>)
+            return static_cast<ResultType>(std::popcount(static_cast<UInt16>(a)));
+        else if constexpr (std::is_same_v<A, Int8>)
+            return static_cast<ResultType>(std::popcount(static_cast<uint8_t>(a)));
         else
-            return std::popcount(bit_cast<uint64_t>(a));
+            return static_cast<ResultType>(std::popcount(bit_cast<uint64_t>(a)));
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
+    static constexpr bool compilable = true;
+
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        const auto & type = arg->getType();
+        llvm::Value * int_value = nullptr;
+
+        if (type->isIntegerTy())
+            int_value = arg;
+        else if (type->isFloatTy())
+            int_value = b.CreateBitCast(arg, llvm::Type::getInt32Ty(b.getContext()));
+        else if (type->isDoubleTy())
+            int_value = b.CreateBitCast(arg, llvm::Type::getInt64Ty(b.getContext()));
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitCountImpl compilation expected native integer or floating-point type");
+
+        auto * func_ctpop = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::ctpop, {int_value->getType()});
+        llvm::Value * ctpop_value = b.CreateCall(func_ctpop, {int_value});
+        return b.CreateZExtOrTrunc(ctpop_value, llvm::Type::getInt8Ty(b.getContext()));
+    }
 #endif
 };
 
@@ -79,7 +102,7 @@ For example: `bitCount(toUInt8(-1)) = 8`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitCount>(documentation);
 }

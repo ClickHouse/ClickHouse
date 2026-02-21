@@ -78,6 +78,8 @@ public:
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
+    bool isMessageQueue() const override { return true; }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
@@ -189,6 +191,7 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    size_t getSchemaRegistrySkipBytes() const;
 
     enum class StallKind : uint8_t
     {

@@ -1,3 +1,4 @@
+-- add_minmax_index_for_numeric_columns=0: Different plan
 DROP TABLE IF EXISTS alpha;
 DROP TABLE IF EXISTS alpha__day;
 
@@ -10,7 +11,7 @@ CREATE TABLE alpha
 )
 ENGINE = MergeTree
 ORDER BY (auid, ts)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 CREATE VIEW alpha__day
 (

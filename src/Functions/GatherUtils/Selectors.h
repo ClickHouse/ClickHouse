@@ -25,7 +25,7 @@ namespace GatherUtils
 template <typename Base, typename Tuple, int index, typename ... Args>
 void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
 {
-    if constexpr (index == std::tuple_size<Tuple>::value)
+    if constexpr (index == std::tuple_size_v<Tuple>)
         Base::selectImpl(args ...);
     else
         callSelectMemberFunctionWithTupleArgument<Base, Tuple, index + 1>(tuple, args ..., std::get<index>(tuple));
@@ -34,7 +34,7 @@ void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
 template <typename Base, typename Tuple, int index, typename ... Args>
 void callSelectSource(bool is_const, bool is_nullable, Tuple & tuple, Args && ... args)
 {
-    if constexpr (index == std::tuple_size<Tuple>::value)
+    if constexpr (index == std::tuple_size_v<Tuple>)
         Base::selectSource(is_const, is_nullable, args ...);
     else
         callSelectSource<Base, Tuple, index + 1>(is_const, is_nullable, tuple, args ..., std::get<index>(tuple));

@@ -37,14 +37,6 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
 
-    if (const auto * function = ast->template as<ASTFunction>())
-    {
-        std::unordered_set<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
-        if (replace_result)
-            ast = replace_result;
-    }
-
     for (auto & child : ast->children)
     {
         if (!child)
@@ -69,15 +61,6 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
     }
 }
 
-void UserDefinedSQLFunctionVisitor::visit(IAST * ast, ContextPtr context_)
-{
-    if (!ast)
-        return;
-
-    for (auto & child : ast->children)
-        visit(child, context_);
-}
-
 namespace
 {
 bool isVariadic(const ASTPtr & arg)
@@ -89,7 +72,7 @@ bool isVariadic(const ASTPtr & arg)
 
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
 {
-    if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
+    if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive function call detected during function call {}",
             function.name);
@@ -160,7 +143,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 
-    auto expression_list = std::make_shared<ASTExpressionList>();
+    auto expression_list = make_intrusive<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
     std::stack<ASTPtr> ast_nodes_to_update;

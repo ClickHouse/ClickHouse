@@ -4,8 +4,10 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
+#include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
@@ -124,6 +126,8 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
+    , data_file_name_generator(params.data_file_name_generator)
+    , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , version(CURRENT_BACKUP_VERSION)
@@ -235,7 +239,8 @@ void BackupImpl::openArchive()
     }
     else
     {
-        archive_writer = createArchiveWriter(archive_name, writer->writeFile(archive_name));
+        archive_writer = createArchiveWriter(
+            archive_name, writer->writeFile(archive_name), DBMS_DEFAULT_BUFFER_SIZE, archive_params.adaptive_buffer_max_size);
         archive_writer->setPassword(archive_params.password);
         archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     }
@@ -354,6 +359,9 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
+    if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
+        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
+             << "</data_file_name_generator>";
 
     auto all_file_infos = coordination->getFileInfosForAllHosts();
 
@@ -421,7 +429,10 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+        bool has_entry = !params.deduplicate_files
+            || (info.size && (info.size != info.base_size)
+                && (info.data_file_name.empty()
+                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
         if (has_entry)
         {
             ++num_entries;
@@ -553,7 +564,7 @@ void BackupImpl::readBackupMetadata()
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
             if (has_entry)
             {
                 ++num_entries;
@@ -1180,29 +1191,20 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     }
 }
 
-bool BackupImpl::tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept
+void BackupImpl::removeAllFilesUnderDirectory(const String & directory) const
 {
-    try
-    {
-        LOG_INFO(log, "Removing all files of under directory {}", directory);
+    LOG_INFO(log, "Removing all files of under directory {}", directory);
 
-        Strings files_to_remove = listFiles(directory, true);
-        Strings objects_to_remove;
-        for (const String & file_name : files_to_remove)
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
-            objects_to_remove.push_back(file_object_key);
-        }
-
-        lightweight_snapshot_writer->removeFiles(objects_to_remove);
-        return true;
-    }
-    catch (...)
+    Strings files_to_remove = listFiles(directory, true);
+    Strings objects_to_remove;
+    for (const String & file_name : files_to_remove)
     {
-        DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
-        return false;
+        std::lock_guard<std::mutex> lock(mutex);
+        String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
+        objects_to_remove.push_back(file_object_key);
     }
+
+    lightweight_snapshot_writer->removeFiles(objects_to_remove);
 }
 
 }

@@ -136,7 +136,7 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
     columns = sample_block.cloneEmptyColumns();
 
     for (const auto & name : sample_block.getNames())
-        columns_ast.children.emplace_back(std::make_shared<ASTIdentifier>(name));
+        columns_ast.children.emplace_back(make_intrusive<ASTIdentifier>(name));
 }
 
 MaterializedPostgreSQLConsumer::StorageData::Buffer & MaterializedPostgreSQLConsumer::StorageData::getLastBuffer()
@@ -204,7 +204,7 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
                     column_nullable.getNestedColumn(), value, type_description.first,
                     data_type.getNestedType(), storage_data.array_info, column_idx_in_table);
 
-            column_nullable.getNullMapData().emplace_back(0);
+            column_nullable.getNullMapData().emplace_back(false);
         }
         else
         {
@@ -300,7 +300,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 {
     Int16 num_columns = readInt16(message, pos, size);
 
-    auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
+    auto process_column_value = [&](Int8 identifier, Int16 column_idx)
     {
         switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
         {
@@ -345,11 +345,11 @@ void MaterializedPostgreSQLConsumer::readTupleData(
     };
 
     std::exception_ptr error;
-    for (int column_idx = 0; column_idx < num_columns; ++column_idx)
+    for (Int16 column_idx = 0; column_idx < num_columns; ++column_idx)
     {
         try
         {
-            proccess_column_value(readInt8(message, pos, size), column_idx);
+            process_column_value(readInt8(message, pos, size), column_idx);
         }
         catch (...)
         {
@@ -454,7 +454,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
             auto & storage_data = storages.find(table_name)->second;
 
-            auto proccess_identifier = [&](Int8 identifier) -> bool
+            auto process_identifier = [&](Int8 identifier) -> bool
             {
                 bool read_next = true;
                 switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
@@ -483,11 +483,11 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             };
 
             /// Read either 'K' or 'O'. Never both of them. Also possible not to get both of them.
-            bool read_next = proccess_identifier(readInt8(replication_message, pos, size));
+            bool read_next = process_identifier(readInt8(replication_message, pos, size));
 
             /// 'N'. Always present, but could come in place of 'K' and 'O'.
             if (read_next)
-                proccess_identifier(readInt8(replication_message, pos, size));
+                process_identifier(readInt8(replication_message, pos, size));
 
             break;
         }
@@ -696,9 +696,9 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     insert_context->makeQueryContext();
                     insert_context->setInternalQuery(true);
 
-                    auto insert = std::make_shared<ASTInsertQuery>();
+                    auto insert = make_intrusive<ASTInsertQuery>();
                     insert->table_id = storage->getStorageID();
-                    insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
+                    insert->columns = make_intrusive<ASTExpressionList>(buffer->columns_ast);
 
                     InterpreterInsertQuery interpreter(
                         insert,

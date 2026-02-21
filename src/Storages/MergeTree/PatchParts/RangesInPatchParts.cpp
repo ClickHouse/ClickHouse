@@ -254,10 +254,10 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     auto metadata_snapshot = patch_part->getMetadataSnapshot();
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
 
-    auto it = std::ranges::find_if(secondary_indices, [&](const auto & index)
-    {
-        return index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
-    });
+    auto it = std::ranges::find_if(
+        secondary_indices,
+        [&](const auto & index)
+        { return index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name; });
 
     if (it == secondary_indices.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column", column_name);

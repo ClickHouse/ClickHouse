@@ -29,7 +29,7 @@ def parse_response_line(line):
 
     if line.startswith("#"):
         return {}
-    match = re.match(r"^([a-zA-Z_:][a-zA-Z0-9_:]+)(\{.*\})? -?(\d)", line)
+    match = re.match(r"^([a-zA-Z_:][a-zA-Z0-9_:]+)(\{.*\})? -?(\d+)", line)
     assert match, line
     name, _, val = match.groups()
     return {name: int(val)}
@@ -41,7 +41,7 @@ def get_and_check_metrics(retries):
             response = requests.get(
                 "http://{host}:{port}/metrics".format(host=node.ip_address, port=8001),
                 allow_redirects=False,
-                # less then default keep-alive timeout (10 seconds)
+                # less than default keep-alive timeout (10 seconds)
                 timeout=5,
             )
 
@@ -88,3 +88,4 @@ def test_prometheus_endpoint(start_cluster):
 
     assert metrics_dict["ClickHouseErrorMetric_NUMBER_OF_ARGUMENTS_DOESNT_MATCH"] >= 1
     assert metrics_dict["ClickHouseErrorMetric_ALL"] >= 1
+    assert metrics_dict["ClickHouse_Info"] == 1

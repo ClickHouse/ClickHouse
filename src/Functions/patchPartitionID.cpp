@@ -53,7 +53,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The second argument of function {} must be a const string with hash of patch column names", name);
 
         String patch_prefix{MergeTreePartInfo::PATCH_PART_PREFIX};
-        patch_prefix += column_structure_hash->getDataAt(0).toString();
+        patch_prefix += column_structure_hash->getDataAt(0);
         patch_prefix += "-";
 
         if (patch_prefix.size() != MergeTreePartInfo::PATCH_PART_PREFIX_SIZE)
@@ -70,19 +70,19 @@ public:
             auto ref = column_part_name->getDataAt(i);
 
             /// Allow empty part name to allow execute this function over the dictionary of LowCardinality.
-            if (ref.size > 0)
+            if (!ref.empty())
             {
-                const auto * pos = find_first_symbols<'_'>(ref.data, ref.data + ref.size);
-                size_t bytes_to_copy = pos - ref.data;
+                const auto * pos = find_first_symbols<'_'>(ref.data(), ref.data() + ref.size());
+                size_t bytes_to_copy = pos - ref.data();
 
-                if (bytes_to_copy == ref.size)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect name of part: {}", ref.toString());
+                if (bytes_to_copy == ref.size())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect name of part: {}", ref);
 
                 size_t old_size = out_chars.size();
                 out_chars.resize(old_size + patch_prefix.size() + bytes_to_copy);
 
                 memcpy(out_chars.data() + old_size, patch_prefix.data(), patch_prefix.size());
-                memcpySmallAllowReadWriteOverflow15(out_chars.data() + old_size + patch_prefix.size(), ref.data, bytes_to_copy);
+                memcpySmallAllowReadWriteOverflow15(out_chars.data() + old_size + patch_prefix.size(), ref.data(), bytes_to_copy);
             }
 
             out_offsets.push_back(out_chars.size());
@@ -96,14 +96,7 @@ public:
 
 REGISTER_FUNCTION(PatchPartitionID)
 {
-    factory.registerFunction<FunctionPatchPartitionID>(FunctionDocumentation
-    {
-        .description = R"(
-Internal function. Receives the name of a part and a hash of patch part's column names. Returns the name of partition of patch part. The argument must be a correct name of part, the behaviour is undefined otherwise.
-        )",
-        .introduced_in = {25, 5},
-        .category = FunctionDocumentation::Category::Other,
-    });
+    factory.registerFunction<FunctionPatchPartitionID>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

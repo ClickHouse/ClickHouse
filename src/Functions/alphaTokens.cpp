@@ -121,7 +121,7 @@ Selects substrings of consecutive bytes from the ranges `a-z` and `A-Z` and retu
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSplitByAlpha>(documentation);
     factory.registerAlias("splitByAlpha", FunctionSplitByAlpha::name);

@@ -25,6 +25,7 @@ public:
         const NamesAndTypesList & columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -40,6 +41,14 @@ public:
                             size_t rows_offset, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
+
+    /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
+    /// So we must always apply filter into the RangeReader.
+    virtual bool mustApplyFilter() const { return false; }
+
+    virtual size_t getResultColumnCount() const { return getColumns().size(); }
+
+    virtual bool producesFilterOnly() const { return false; }
 
     virtual ~IMergeTreeReader() = default;
 
@@ -102,6 +111,7 @@ protected:
     MarkCache * const mark_cache;
 
     MergeTreeReaderSettings settings;
+    MergeTreeSettingsPtr storage_settings;
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
@@ -124,6 +134,11 @@ protected:
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
+
+    /// Returns true if the column at position @pos in columns_to_read was dropped
+    /// by a pending mutation that hasn't been applied to this part yet.
+    /// Such columns should not be read from the part; defaults should be used instead.
+    bool isColumnDroppedByPendingMutation(size_t pos) const;
 
 private:
     friend class MergeTreeReaderIndex;
@@ -153,6 +168,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -167,6 +183,6 @@ struct MergeTreeIndexWithCondition;
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read);
-
+    const NamesAndTypesList & columns_to_read,
+    bool can_skip_mark);
 }

@@ -6,6 +6,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
+
+#include <mutex>
 #include <unordered_map>
 
 
@@ -72,20 +74,27 @@ public:
     BackupOperationInfo getInfo(const BackupOperationID & id) const;
     std::vector<BackupOperationInfo> getAllInfos() const;
 
+#if CLICKHOUSE_CLOUD
+    void unlockSnapshot(ASTPtr unlock_query, ContextPtr context);
+#endif
+
 private:
     std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     struct BackupStarter;
 
-    BackupMutablePtr openBackupForWriting(const BackupInfo & backup_info, const BackupSettings & backup_settings, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context) const;
+    BackupMutablePtr openBackupForWriting(
+        const BackupInfo & backup_info,
+        const BackupSettings & backup_settings,
+        std::shared_ptr<IBackupCoordination> backup_coordination,
+        const ContextPtr & context) const;
 
     void doBackup(
         BackupMutablePtr backup,
-        const std::shared_ptr<ASTBackupQuery> & backup_query,
+        const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
         ContextMutablePtr context,
-        const ContextPtr & query_context,
         bool on_cluster,
         const ClusterPtr & cluster);
 
@@ -105,7 +114,7 @@ private:
 #endif
 
     void doRestore(
-        const std::shared_ptr<ASTBackupQuery> & restore_query,
+        const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
         const BackupOperationID & restore_id,
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
@@ -115,7 +124,8 @@ private:
         bool on_cluster,
         const ClusterPtr & cluster);
 
-    std::shared_ptr<IBackupCoordination> makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context) const;
+    std::shared_ptr<IBackupCoordination>
+    makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context) const;
     std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(bool on_cluster, const RestoreSettings & restore_settings, const ContextPtr & context) const;
 
     /// Sends a BACKUP or RESTORE query to other hosts.

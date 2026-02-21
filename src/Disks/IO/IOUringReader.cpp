@@ -208,7 +208,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
 
 void IOUringReader::monitorRing()
 {
-    setThreadName("IOUringMonitor");
+    DB::setThreadName(ThreadName::IO_URING_MONITOR);
 
     while (!cancelled.load(std::memory_order_relaxed))
     {
@@ -321,7 +321,7 @@ void IOUringReader::monitorRing()
         else
         {
             ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, enqueued.request.ignore);
-            enqueued.promise.set_value(Result{ .size = total_bytes_read, .offset = enqueued.request.ignore });
+            enqueued.promise.set_value(Result{ .buf = enqueued.request.buf, .size = total_bytes_read, .offset = enqueued.request.ignore, .file_offset_of_buffer_end = enqueued.request.offset + total_bytes_read });
             finalizeRequest(it);
         }
 
