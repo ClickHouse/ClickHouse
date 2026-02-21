@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET query_plan_join_swap_table = 'auto';
+SET query_plan_optimize_join_order_algorithm = 'greedy';
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
