@@ -4269,7 +4269,11 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
             future_merged_part->uuid = UUIDHelpers::generateV4();
 
-        bool can_assign_merge = max_source_parts_bytes_for_merge > 0;
+        /// Do not schedule new merges while merges are blocked (e.g. via SYSTEM STOP MERGES).
+        /// This prevents pending merge queue entries from marking parts as virtual, which would
+        /// cause selectPartsForMove to skip them and silently block TTL moves.
+        /// Mutations are handled separately below and are intentionally not gated here.
+        bool can_assign_merge = !merger_mutator.merges_blocker.isCancelled() && max_source_parts_bytes_for_merge > 0;
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
