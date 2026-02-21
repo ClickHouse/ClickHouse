@@ -38,14 +38,6 @@ if __name__ == "__main__":
 
         info.store_kv_data("previous_commits_sha", commits)
 
-    # Unshallow repo to retrieve required info from git.
-    # If commit is a mere-commit - both parents need to be unshallowed. In PRs we might need commits from master to calculate CH version.
-    Shell.check(
-        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
-        verbose=True,
-        strict=True,
-    )
-
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
         file_diff = {}

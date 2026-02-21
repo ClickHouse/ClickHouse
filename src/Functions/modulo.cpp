@@ -107,7 +107,7 @@ struct ModuloByConstantImpl
 
         /// Modulo of division by negative number is the same as the positive number.
         if (b < 0)
-            b = -b;
+            b = static_cast<B>(-b);
 
         /// Here we failed to make the SSE variant from libdivide give an advantage.
 
@@ -211,7 +211,21 @@ using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, 
 
 REGISTER_FUNCTION(ModuloLegacy)
 {
-    factory.registerFunction<FunctionModuloLegacy>();
+    FunctionDocumentation::Description description = R"(
+Calculates the remainder of a division. This is the legacy modulo implementation that uses the C++ `%` operator, which may produce negative results for negative arguments. This function exists for backward compatibility with old table partitioning logic. Use `modulo` or `positiveModulo` for standard behavior.
+    )";
+    FunctionDocumentation::Syntax syntax = "moduloLegacy(a, b)";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "The dividend.", {"(U)Int*", "Float*"}},
+        {"b", "The divisor.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the remainder of the division.", {"(U)Int*", "Float*"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT moduloLegacy(10, 3)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionModuloLegacy>(documentation);
 }
 
 struct NamePositiveModulo

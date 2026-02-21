@@ -754,10 +754,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             total_size += row_group_meta->ColumnChunk(column_index)->total_uncompressed_size();
         }
         if (!total_size || !format_settings.parquet.prefer_block_bytes) return 0;
-        auto average_row_bytes = floor(static_cast<double>(total_size) / row_group_meta->num_rows());
+        auto average_row_bytes = floor(static_cast<double>(total_size) / static_cast<double>(row_group_meta->num_rows()));
         // avoid inf preferred_num_rows;
         if (average_row_bytes < 1) return 0;
-        const size_t preferred_num_rows = static_cast<size_t>(floor(format_settings.parquet.prefer_block_bytes/average_row_bytes));
+        const size_t preferred_num_rows = static_cast<size_t>(floor(static_cast<double>(format_settings.parquet.prefer_block_bytes) / average_row_bytes));
         const size_t MIN_ROW_NUM = 128;
         // size_t != UInt64 in darwin
         return std::min(std::max(preferred_num_rows, MIN_ROW_NUM), static_cast<size_t>(format_settings.parquet.max_block_size));
@@ -1069,7 +1069,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     auto get_approx_original_chunk_size = [&](size_t num_rows)
     {
-        return static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * num_rows));
+        return static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / static_cast<double>(row_group_batch.total_rows) * static_cast<double>(num_rows)));
     };
 
     if (!row_group_batch.record_batch_reader)
@@ -1079,7 +1079,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     res.chunk_idx = row_group_batch.next_chunk_idx;
     res.row_group_batch_idx = row_group_batch_idx;
 
-    auto fetchBatch = [&]
+    auto fetch_batch = [&]
     {
         chassert(row_group_batch.record_batch_reader);
         auto batch = row_group_batch.record_batch_reader->Next();
@@ -1101,13 +1101,13 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         return;
     }
 
-    auto batch = fetchBatch();
+    auto batch = fetch_batch();
     if (!*batch && row_group_batch.prefetch_iterator)
     {
         row_group_batch.record_batch_reader = row_group_batch.prefetch_iterator->nextRowGroupReader();
         if (row_group_batch.record_batch_reader)
         {
-            batch = fetchBatch();
+            batch = fetch_batch();
         }
     }
 

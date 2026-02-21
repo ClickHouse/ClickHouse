@@ -60,7 +60,8 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
     /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
     return
         join_algorithm == JoinAlgorithm::HASH ||
-        join_algorithm == JoinAlgorithm::PARALLEL_HASH;
+        join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        join_algorithm == JoinAlgorithm::GRACE_HASH;
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -93,6 +94,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
             || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
             || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Anti)
+            || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
         std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
@@ -152,6 +154,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    // Skip runtime filters if there are no join keys
+    if (join_keys_build_side.empty())
+    {
+        return false;
+    }
+
     /// When negation will be use for the set of rows in filter, double check that all original predicates were transformed into equality predicates
     /// between left and right side
     if (check_left_does_not_contain &&
@@ -165,11 +173,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", check_left_does_not_contain ? "_exclusion_" : "", thread_local_rng());
 
     {
-        ActionsDAG filter_dag;
-
         /// Pass all columns on probe side
-        for (const auto & column : apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName())
-            filter_dag.addOrReplaceInOutputs(filter_dag.addInput(column));
+        ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
 
         String filter_column_name;
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
@@ -225,7 +230,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                     optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                     /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
-                new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_key_build_side.name, filter_name), 200);
+                new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
                 new_build_filter_node->children = {build_filter_node};
 
                 build_filter_node = new_build_filter_node;

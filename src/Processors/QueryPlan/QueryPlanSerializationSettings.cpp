@@ -69,6 +69,7 @@ namespace DB
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, "Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, "Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.)", 0) \
     DECLARE(Bool, joined_block_split_single_row, false, "Allow to chunk hash join result by rows corresponding to single row from left table.", 0) \
+    DECLARE(Bool, parallel_non_joined_rows_processing, true, "Allow parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins.", 0) \
     \
     DECLARE(Bool, use_join_disjunctions_push_down, false, "Enable JOIN disjunction pushdown: allows pushing safe OR-branch predicates from JOIN conditions down to the respective left/right inputs so storages can pre-filter. Applied only when each top-level OR branch contributes a deterministic predicate for the target side.", 0) \
     \
@@ -106,6 +107,7 @@ namespace DB
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
+    DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
 
 
 // clang-format on

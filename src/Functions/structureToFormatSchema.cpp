@@ -1,11 +1,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Formats/StructureToCapnProtoSchema.h>
 #include <Formats/StructureToProtobufSchema.h>
@@ -137,6 +135,7 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "    x @1 : UInt32;\n"
 "}"},
             },
+            .introduced_in = {23, 8},
             .category = FunctionDocumentation::Category::Other
         });
 }

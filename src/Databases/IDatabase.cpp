@@ -206,7 +206,7 @@ void IDatabase::stopReplication()
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", getEngineName());
 }
 
-BlockIO IDatabase::tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags) /// NOLINT
+BlockIO IDatabase::tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags, DDLGuardPtr && /*database_guard*/) /// NOLINT
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", getEngineName());
 }

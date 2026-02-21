@@ -1,7 +1,7 @@
 -- Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree, no-async-insert
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 -- Tag no-shared-merge-tree: no-shared-merge-tree: No quorum
---- Tag no-async-insert: async inserts are not supported with quorum inserts
+--- Tag no-async-insert: async inserts are not supported with non-parallel quorum inserts
 
 
 SET send_logs_level = 'fatal';

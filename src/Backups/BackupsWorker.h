@@ -74,6 +74,10 @@ public:
     BackupOperationInfo getInfo(const BackupOperationID & id) const;
     std::vector<BackupOperationInfo> getAllInfos() const;
 
+#if CLICKHOUSE_CLOUD
+    void unlockSnapshot(ASTPtr unlock_query, ContextPtr context);
+#endif
+
 private:
     std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     struct BackupStarter;
@@ -86,12 +90,11 @@ private:
 
     void doBackup(
         BackupMutablePtr backup,
-        const std::shared_ptr<ASTBackupQuery> & backup_query,
+        const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
         ContextMutablePtr context,
-        const ContextPtr & query_context,
         bool on_cluster,
         const ClusterPtr & cluster);
 
@@ -111,7 +114,7 @@ private:
 #endif
 
     void doRestore(
-        const std::shared_ptr<ASTBackupQuery> & restore_query,
+        const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
         const BackupOperationID & restore_id,
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,

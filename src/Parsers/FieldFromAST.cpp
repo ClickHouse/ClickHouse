@@ -72,7 +72,7 @@ public:
 
                 const std::string & key = key_identifier->name();
                 if (is_secret_arg(key))
-                    function_args[1] = std::make_shared<ASTLiteral>("[HIDDEN]");
+                    function_args[1] = make_intrusive<ASTLiteral>("[HIDDEN]");
             }
         }
     }

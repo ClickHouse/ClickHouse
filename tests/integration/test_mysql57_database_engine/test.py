@@ -288,8 +288,9 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
         )
     ) as mysql_node:
         with pytest.raises(QueryRuntimeException) as exception:
+            mysql_node.query("DROP DATABASE IF EXISTS test_bad_arguments")
             mysql_node.query(
-                "CREATE DATABASE IF NOT EXISTS test_bad_arguments DEFAULT CHARACTER SET 'utf8'"
+                "CREATE DATABASE test_bad_arguments DEFAULT CHARACTER SET 'utf8'"
             )
             clickhouse_node.query(
                 "CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql57:3306', test_bad_arguments, root, '{mysql_pass}')"
@@ -354,7 +355,7 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test")
         mysql_node.query(
-            "CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'"
+            "CREATE DATABASE test DEFAULT CHARACTER SET 'utf8'"
         )
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(

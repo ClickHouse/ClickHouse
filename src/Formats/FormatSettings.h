@@ -91,6 +91,7 @@ struct FormatSettings
 
     UInt64 schema_inference_make_columns_nullable = 1;
     bool schema_inference_make_json_columns_nullable = false;
+    bool schema_inference_allow_nullable_tuple_type = false;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
@@ -115,6 +116,7 @@ struct FormatSettings
 
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
+    bool check_conversion_from_numbers_to_enum = true;
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
@@ -126,6 +128,8 @@ struct FormatSettings
     size_t max_threads = 1;
 
     size_t max_block_size_bytes = 0;
+    size_t max_block_wait_ms = 0;
+    bool connection_handling = false;
 
     bool pretty_format = false;
 
@@ -160,6 +164,7 @@ struct FormatSettings
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
+        bool output_date_as_uint16 = false;
     } arrow{};
 
     struct
@@ -260,6 +265,8 @@ struct FormatSettings
         bool empty_as_default = false;
         bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
+        std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
+        bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
         bool pretty_print = true;
         char pretty_print_indent = ' ';

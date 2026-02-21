@@ -212,12 +212,6 @@
     M(ThreadpoolReaderSubmitLookupInCacheMicroseconds) \
     M(AsynchronousReaderIgnoredBytes) \
 \
-    M(FileSegmentWaitReadBufferMicroseconds) \
-    M(FileSegmentReadMicroseconds) \
-    M(FileSegmentCacheWriteMicroseconds) \
-    M(FileSegmentPredownloadMicroseconds) \
-    M(FileSegmentUsedBytes) \
-\
     M(ReadBufferSeekCancelConnection) \
 \
     M(SleepFunctionCalls) \
@@ -273,6 +267,10 @@
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \
+    M(KeeperChangelogWrittenBytes) \
+    M(KeeperChangelogFileSyncMicroseconds) \
+    M(KeeperSnapshotWrittenBytes) \
+    M(KeeperSnapshotFileSyncMicroseconds) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -402,10 +400,15 @@ extern const std::vector<Metric> keeper_metrics
 }
 
 #define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
-    M(KeeperServerPreprocessRequestDurationMetricFamily) \
-    M(KeeperServerProcessRequestDuration) \
-    M(KeeperServerQueueDurationMetricFamily) \
-    M(KeeperServerSendDurationMetricFamily) \
+    M(KeeperReceiveRequestTimeMetricFamily) \
+    M(KeeperDispatcherRequestsQueueTimeMetricFamily) \
+    M(KeeperWritePreCommitTimeMetricFamily) \
+    M(KeeperWriteCommitTimeMetricFamily) \
+    M(KeeperDispatcherResponsesQueueTimeMetricFamily) \
+    M(KeeperSendResponseTimeMetricFamily) \
+    M(KeeperReadWaitForWriteTimeMetricFamily) \
+    M(KeeperReadProcessTimeMetricFamily) \
+    M(KeeperBatchSizeBytesMetricFamily) \
 
 
 namespace HistogramMetrics

@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
-#include <Compression/CachedCompressedReadBuffer.h>
 
 namespace DB
 {
@@ -143,7 +142,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     /// would create too much lock contention in the cache (this was learned the hard way).
     if (index->isVectorSimilarityIndex())
     {
-        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getFullPath(),
+        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getDiskName() + ":" + part->getDataPartStorage().getFullPath(),
                                           index->getFileName(),
                                           mark};
 

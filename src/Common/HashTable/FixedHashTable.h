@@ -170,7 +170,7 @@ protected:
         iterator_base() {} /// NOLINT
         iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_)
         {
-            cell.update(ptr - container->buf, ptr);
+            cell.update(static_cast<Key>(ptr - container->buf), ptr);
         }
 
         bool operator==(const iterator_base & rhs) const { return ptr == rhs.ptr; }
@@ -193,13 +193,13 @@ protected:
         auto & operator*()
         {
             if (cell.key != ptr - container->buf)
-                cell.update(ptr - container->buf, ptr);
+                cell.update(static_cast<Key>(ptr - container->buf), ptr);
             return cell;
         }
         auto * operator-> ()
         {
             if (cell.key != ptr - container->buf)
-                cell.update(ptr - container->buf, ptr);
+                cell.update(static_cast<Key>(ptr - container->buf), ptr);
             return &cell;
         }
 

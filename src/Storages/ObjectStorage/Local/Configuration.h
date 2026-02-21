@@ -74,21 +74,23 @@ public:
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly) override
+    ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override
     {
-        return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("/", readonly));
+        return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(disk_name, "/", readonly));
     }
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
 protected:
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
-    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
+    void fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
+    String disk_name;
     Path path;
     Paths paths;
     void initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments);
 };
+
 }
