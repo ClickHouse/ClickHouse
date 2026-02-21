@@ -141,36 +141,40 @@ class FileBlockBase:
     @staticmethod
     def convert_request(sql):
         if sql.startswith("CREATE TABLE"):
-            result = sqlglot.transpile(sql, read="sqlite", write="clickhouse")[0]
-            pk_token = sqlglot.parse_one(result, read="clickhouse").find(
-                PrimaryKeyColumnConstraint
-            )
-            pk_string = "tuple()"
-            if pk_token is not None:
-                pk_string = str(pk_token.find_ancestor(ColumnDef).args["this"])
+            try:
+                result = sqlglot.transpile(sql, read="sqlite", write="clickhouse")[0]
+                pk_token = sqlglot.parse_one(result, read="clickhouse").find(
+                    PrimaryKeyColumnConstraint
+                )
+                pk_string = "tuple()"
+                if pk_token is not None:
+                    pk_string = str(pk_token.find_ancestor(ColumnDef).args["this"])
 
-            result += " ENGINE = MergeTree() ORDER BY " + pk_string
-            return result
+                result += " ENGINE = MergeTree() ORDER BY " + pk_string
+                return result
+            except Exception as err:
+                logger.info("cannot transpile CREATE TABLE %s , error is %s", sql, err)
+                return sql
         elif "SELECT" in sql and "CAST" in sql and "NULL" in sql:
             # convert `CAST (NULL as INTEGER)` to `CAST (NULL as Nullable(Int32))`
             try:
                 ast = sqlglot.parse_one(sql, read="sqlite")
-            except sqlglot.errors.ParseError as err:
+                cast = ast.find(sqlglot.expressions.Cast)
+                # logger.info("found sql %s && %s && %s", sql, cast.sql(), cast.to.args)
+                if (
+                    cast is not None
+                    and cast.name == "NULL"
+                    and ("nested" not in cast.to.args or not cast.to.args["nested"])
+                ):
+                    cast.args["to"] = sqlglot.expressions.DataType.build(
+                        "NULLABLE", expressions=[cast.to]
+                    )
+                    new_sql = ast.sql("clickhouse")
+                    # logger.info("convert from %s to %s", sql, new_sql)
+                    return new_sql
+            except Exception as err:
                 logger.info("cannot parse %s , error is %s", sql, err)
                 return sql
-            cast = ast.find(sqlglot.expressions.Cast)
-            # logger.info("found sql %s && %s && %s", sql, cast.sql(), cast.to.args)
-            if (
-                cast is not None
-                and cast.name == "NULL"
-                and ("nested" not in cast.to.args or not cast.to.args["nested"])
-            ):
-                cast.args["to"] = sqlglot.expressions.DataType.build(
-                    "NULLABLE", expressions=[cast.to]
-                )
-                new_sql = ast.sql("clickhouse")
-                # logger.info("convert from %s to %s", sql, new_sql)
-                return new_sql
         return sql
 
     @staticmethod
