@@ -330,40 +330,35 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
         outfile.write("\n")
 
     # Wrap with pipefail so the pipe returns dolor.py's exit code, not tee's
-    test_results = [
-        Result.from_commands_run(
-            name="dolor",
-            command=base_command,
-        )
-    ]
+    run_result = Result.from_commands_run(
+        name="dolor",
+        command=base_command,
+    )
 
-    is_failed = False
-    server_died = False
-    server_exit_code = 0
-    fuzzer_exit_code = 0
+    result_name = "dolor"
+    result_status = run_result.status
+    result_info = run_result.info or ""
+    attached_files = []
 
     # Safety net: detect Python-level crashes in the fuzzer log even if the
     # exit code was somehow swallowed (e.g. future command changes drop pipefail)
-    attached_files = []
-    if test_results[-1].is_ok() and fuzzer_log.exists():
+    if run_result.is_ok() and fuzzer_log.exists():
         try:
             log_text = fuzzer_log.read_text(encoding="utf-8", errors="replace")
             if "Traceback (most recent call last):" in log_text:
                 # Extract the last traceback for the error message
                 tb_start = log_text.rfind("Traceback (most recent call last):")
                 tb_snippet = log_text[tb_start : tb_start + 1000].strip()
-                test_results = [
-                    Result(
-                        name="dolor",
-                        status=Result.StatusExtended.FAIL,
-                        info=f"Python exception in dolor.py:\n{tb_snippet}",
-                    )
-                ]
-                is_failed = True
+                result_status = Result.StatusExtended.FAIL
+                result_info = f"Python exception in dolor.py:\n{tb_snippet}"
         except Exception:
             pass  # Don't let the safety-net check itself break the job
 
-    if not is_failed and not test_results[-1].is_ok():
+    if not run_result.is_ok():
+        server_died = False
+        server_exit_code = 0
+        fuzzer_exit_code = 0
+
         try:
             pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
             pattern2 = re.compile(r"The server node0 exited with code:\s*(\d+)")
@@ -387,7 +382,7 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
                 status=Result.Status.ERROR, info=error_info
             ).complete_job()
 
-        result, is_failed = analyze_job_logs(
+        analyzed_result, is_analyzed_failure = analyze_job_logs(
             paths,
             server_died,
             fuzzer_exit_code,
@@ -399,16 +394,19 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
             stderr_log,
             fatal_log,
         )
-        if is_failed:
-            test_results = [result]
+        if is_analyzed_failure:
+            result_status = analyzed_result.status
+            result_info = analyzed_result.info or ""
 
+    is_failed = result_status != Result.Status.SUCCESS
+
+    # Collect all files in one place
     if is_failed:
         attached_files.extend(
             [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
         )
 
     if is_failed and not info.is_local_run:
-        # TODO: collect needed logs
         if Path("./ci/tmp/docker-in-docker.log").exists():
             attached_files.append("./ci/tmp/docker-in-docker.log")
         print("Dumping dmesg")
@@ -420,14 +418,21 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
                 or b"oom_reaper: reaped process" in dmesg
                 or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
             ):
-                test_results.append(
-                    Result(
-                        name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
-                    )
-                )
+                result_info += "\nOOM detected in dmesg"
                 attached_files.append("dmesg.log")
 
-    R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
+    # Build a single Result with all files
+    R = Result.create_from(
+        results=[
+            Result(
+                name=result_name,
+                status=result_status,
+                info=result_info,
+                files=attached_files,
+            )
+        ],
+        stopwatch=sw,
+    )
 
     R.sort().complete_job()
 

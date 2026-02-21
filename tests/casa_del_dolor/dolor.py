@@ -561,7 +561,7 @@ def dolor_cleanup():
         logger.info(f"Load generator exited with code: {client.process.returncode}")
 
         try:
-            cluster.shutdown(kill=True, ignore_fatal=False)
+            cluster.shutdown(kill=True)
         except:
             pass
         close_spark_http_server(catalog_server)
@@ -793,16 +793,38 @@ while all_running and (not reached_limit):
 
 if not all_running:
     for server in servers:
+        # First try to stop gracefully
         pid = server.get_process_pid("clickhouse")
         if pid is not None:
-            server.stop_clickhouse(stop_wait_sec=20, kill=True)
+            server.stop_clickhouse(stop_wait_sec=30, kill=False)
             if server.get_process_pid("clickhouse") is not None:
                 logger.warning(
-                    f"Instance {server.name} is still running after kill command, killing it with docker kill"
+                    f"Instance {server.name} is still running after stop command"
                 )
-                cluster.docker_client.containers.get(server.docker_id).kill()
-        exec_info = cluster.docker_client.api.exec_inspect(server.clickhouse_exec_id)
-        exit_code = exec_info["ExitCode"]
-        good_exit = good_exit and exit_code in (-9, -15, 0, 137, 143)  # 137 is SIGKILL, 143 is SIGTERM
+                good_exit = False
+        if server.clickhouse_exec_id:
+            try:
+                exec_info = cluster.docker_client.api.exec_inspect(
+                    server.clickhouse_exec_id
+                )
+                exit_code = exec_info["ExitCode"]
+                logging.info(f"The server {server.name} exited with code: {exit_code}")
+                good_exit = good_exit and exit_code in (
+                    -9,
+                    -15,
+                    0,
+                    137,
+                    143,
+                )  # 137 is SIGKILL, 143 is SIGTERM
+            except Exception as ex:
+                logging.warning(
+                    f"Could not inspect exec for {server.name} - already gone: {ex}"
+                )
+                good_exit = False
+        else:
+            logging.warning(
+                f"Could not get exec ID for {server.name}, maybe it never started properly?"
+            )
+            good_exit = False
 
 sys.exit(0 if good_exit else 1)

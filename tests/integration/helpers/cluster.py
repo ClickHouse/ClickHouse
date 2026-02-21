@@ -3897,6 +3897,8 @@ class ClickHouseCluster:
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
+                        use_cli=False,
+                        get_exec_id=True,
                     )
 
             start_timeout = 300.0  # seconds
@@ -3959,11 +3961,6 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                # Collect exit codes for later inspection
-                if self.with_dolor:
-                    exec_info = self.docker_client.api.exec_inspect(instance.clickhouse_exec_id)
-                    logging.info(f"The server {name} exited with code: {exec_info['ExitCode']}")
-
                 if instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
