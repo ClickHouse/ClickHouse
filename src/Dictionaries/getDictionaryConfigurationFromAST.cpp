@@ -45,7 +45,7 @@ struct AttributeConfiguration
     std::string expression;
 };
 
-using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
+using AttributeNameToConfiguration = UnorderedMapWithMemoryTracking<std::string, AttributeConfiguration>;
 
 String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
 {

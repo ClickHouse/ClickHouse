@@ -914,7 +914,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.filter_asts.clear();
 
             /// Fix source_header for filter actions.
-            if (row_policy_filter && !row_policy_filter->empty())
+            if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             {
                 row_policy_info = generateFilterActions(
                     table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
@@ -1541,10 +1541,7 @@ static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node
             Int64 int_value = converted_value.safeGet<Int64>();
             assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
-            // We need to be careful because -Int64::min() is not representable as Int64
-            const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
-                ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
-                : static_cast<UInt64>(-int_value);
+            const UInt64 magnitude = -static_cast<UInt64>(int_value);
             return {magnitude, 0, true};
         }
     }
