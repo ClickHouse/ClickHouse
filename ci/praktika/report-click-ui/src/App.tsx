@@ -257,15 +257,10 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
         const urlParam = params.get('url')
         const prParam = params.get('PR')
         const refParam = params.get('REF')
-        const shaParam = params.get('SHA') || params.get('sha')
+        let shaParam = params.get('SHA') || params.get('sha')
 
-        // Create cache key based on PR/REF and SHA to identify the session
-        const cacheKey = `ci_ext_${prParam || refParam}_${shaParam}`
-
-        // Store current SHA
-        setCurrentSha(shaParam || '')
-
-        // Fetch commits.json for SHA dropdown
+        // Fetch commits.json for SHA dropdown and resolve "latest"
+        let commitsData: Array<{ sha: string; message: string }> = []
         if ((prParam || refParam) && shaParam) {
           try {
             const baseUrl = import.meta.env.DEV
@@ -292,13 +287,24 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
 
             const commitsResponse = await fetch(commitsUrl)
             if (commitsResponse.ok) {
-              const commitsData = await commitsResponse.json()
+              commitsData = await commitsResponse.json()
               setCommits(commitsData || [])
+
+              // Resolve "latest" to actual SHA
+              if (shaParam === 'latest' && commitsData.length > 0) {
+                shaParam = commitsData[commitsData.length - 1].sha
+              }
             }
           } catch (err) {
             console.error('Failed to fetch commits:', err)
           }
         }
+
+        // Store current SHA (resolved from "latest" if needed)
+        setCurrentSha(shaParam || '')
+
+        // Create cache key based on PR/REF and SHA to identify the session
+        const cacheKey = `ci_ext_${prParam || refParam}_${shaParam}`
 
         if (urlParam) {
           // Mode 1: Direct URL provided
@@ -745,6 +751,11 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
               />
             </Link>
           )}
+          {result.ext?.run_url && (
+            <Link href={result.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', padding: '4px' }}>
+              <Icon name="github" size="md" />
+            </Link>
+          )}
           <div
             onClick={copyUrlToClipboard}
             style={{
@@ -1095,16 +1106,11 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                     )}
                   </div>
                 )}
-                  {/* Line 2: Current result name with GitHub link */}
+                  {/* Line 2: Current result name */}
                   <div style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Text><strong>{data.name}</strong></Text>
-                    {data.ext?.run_url && (
-                      <Link href={data.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }}>
-                        <Icon name="github" size="sm" />
-                      </Link>
-                    )}
                   </div>
-                  {/* Line 3: Status overview */}
+                  {/* Line 3: Status overview with GitHub link */}
                   <div style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Text>status:</Text>
                     {getStatusBadge(data.status)}
@@ -1112,6 +1118,14 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                     <Text>Start Time: <strong>{data.start_time ? (typeof data.start_time === 'number' ? new Date(data.start_time * 1000).toLocaleString() : new Date(data.start_time).toLocaleString()) : ''}</strong></Text>
                     <Text>|</Text>
                     <Text>Duration: <strong>{formatDuration(displayDuration)}</strong></Text>
+                    {data.ext?.run_url && (
+                      <>
+                        <Text>|</Text>
+                        <Link href={data.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }}>
+                          <Icon name="github" size="sm" />
+                        </Link>
+                      </>
+                    )}
                   </div>
                 </Panel>
 
