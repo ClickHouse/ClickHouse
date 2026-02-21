@@ -23,7 +23,8 @@ CREATE TABLE t_not_null
     key Int64 NOT NULL,
     value String
 )
-ENGINE = Memory;
+ENGINE = Memory
+FORMAT Null;
 
 SELECT name, type
 FROM system.columns
@@ -36,7 +37,8 @@ CREATE TABLE t_collation
 (
     x varchar(255) COLLATE utf8_unicode_ci NOT NULL
 )
-ENGINE = Memory;
+ENGINE = Memory
+FORMAT Null;
 
 SELECT
     positionCaseInsensitive(create_table_query, 'COLLATE utf8_unicode_ci') > 0 AS has_collation,
@@ -50,7 +52,8 @@ CREATE TABLE t_auto_increment
 (
     x Int32 AUTO_INCREMENT
 )
-ENGINE = Memory;
+ENGINE = Memory
+FORMAT Null;
 
 SELECT
     positionCaseInsensitive(create_table_query, 'AUTO_INCREMENT') > 0 AS has_auto_increment

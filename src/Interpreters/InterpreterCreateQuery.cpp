@@ -588,7 +588,11 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    const ASTExpressionList & columns_ast,
+    ContextPtr context_,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup,
+    bool preserve_explicit_not_null)
 {
     /// First, deduce implicit types.
 
@@ -641,7 +645,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         auto & col_decl = (*ast_it)->as<ASTColumnDeclaration &>();
 
         column.name = col_decl.name;
-        if (col_decl.null_modifier.has_value() && !*col_decl.null_modifier)
+        if (preserve_explicit_not_null && col_decl.null_modifier.has_value() && !*col_decl.null_modifier)
             column.null_modifier = false;
 
         /// ignore or not other database extensions depending on compatibility settings
@@ -778,7 +782,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+            bool preserve_explicit_not_null = false;
+            if (!create.isTemporary())
+            {
+                String target_database_name = create.database ? create.getDatabase() : getContext()->getCurrentDatabase();
+                if (auto target_database = DatabaseCatalog::instance().tryGetDatabase(target_database_name))
+                    preserve_explicit_not_null = (target_database->getEngineName() == "Replicated");
+            }
+
+            properties.columns = getColumnsDescription(
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, preserve_explicit_not_null);
         }
 
         if (create.columns_list->indices)
