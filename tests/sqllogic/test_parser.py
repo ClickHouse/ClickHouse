@@ -151,6 +151,7 @@ class FileBlockBase:
                     pk_string = str(pk_token.find_ancestor(ColumnDef).args["this"])
 
                 result += " ENGINE = MergeTree() ORDER BY " + pk_string
+                result += " SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
                 return result
             except Exception as err:
                 logger.info("cannot transpile CREATE TABLE %s , error is %s", sql, err)
