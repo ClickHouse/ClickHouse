@@ -5,7 +5,11 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/BroadcastExchangeStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
@@ -243,14 +247,16 @@ std::vector<GroupExpressionPtr> ShuffleHashJoinImplementation::applyImpl(GroupEx
 
     GroupExpressionPtr hash_join_expression = std::make_shared<GroupExpression>(*expression);
 
-    DistributionColumns distribution_columns;
+    DistributionDescription distribution;
+    distribution.node_count = 4;    /// TODO: get actual cluster topology and calculate number of nodes to shuffle to
+    distribution.is_replicated = false;
     for (const auto & predicate : join_step->getJoinOperator().expression)
     {
         auto equality_predicate = predicate.asBinaryPredicate();
         if (get<0>(equality_predicate) != JoinConditionOperator::Equals)
             continue;
 
-        distribution_columns.push_back({
+        distribution.columns.push_back({
             get<1>(equality_predicate).getColumnName(),
             get<2>(equality_predicate).getColumnName()});
     }
@@ -260,12 +266,12 @@ std::vector<GroupExpressionPtr> ShuffleHashJoinImplementation::applyImpl(GroupEx
     chassert(hash_join_expression->inputs.size() == 2);
     /// Set required distribution by join keys to both inputs
     /// TODO: handle swapped inputs
-    hash_join_expression->inputs[0].required_properties.distribution_columns = distribution_columns;
-    hash_join_expression->inputs[1].required_properties.distribution_columns = distribution_columns;
+    hash_join_expression->inputs[0].required_properties.distribution = distribution;
+    hash_join_expression->inputs[1].required_properties.distribution = distribution;
 
     /// Output is also distibuted by join keys 
     /// TODO: handle equivalent columns
-    hash_join_expression->properties.distribution_columns = distribution_columns;
+    hash_join_expression->properties.distribution = distribution;
 
     memo.getGroup(expression->group_id)->addPhysicalExpression(hash_join_expression);
     hash_join_expression->setApplied(*this, required_properties);
@@ -287,9 +293,27 @@ std::vector<GroupExpressionPtr> BroadcastJoinImplementation::applyImpl(GroupExpr
 
     new_join_step->setStepDescription(fmt::format("BroadcastJoin IMPL: {}", join_step->getStepDescription()), 200);
 
+    size_t node_count = 4;    /// TODO: get actual cluster topology and calculate number of nodes
+
+    /// For left input we require partitioned distribution in any way
+    DistributionDescription partitioned_distribution;
+    partitioned_distribution.node_count = node_count;
+    partitioned_distribution.is_replicated = false;
+
+    /// For right input we require replicated distribution
+    DistributionDescription replicated_distribution;
+    replicated_distribution.node_count = node_count;
+    replicated_distribution.is_replicated = true;
+
     GroupExpressionPtr hash_join_expression = std::make_shared<GroupExpression>(*expression);
     hash_join_expression->plan_step = std::move(new_join_step);
     chassert(hash_join_expression->inputs.size() == 2);
+
+    hash_join_expression->inputs[0].required_properties.distribution = partitioned_distribution;
+    hash_join_expression->inputs[1].required_properties.distribution = replicated_distribution;
+
+    hash_join_expression->properties.distribution = partitioned_distribution;
+
     memo.getGroup(expression->group_id)->addPhysicalExpression(hash_join_expression);
     hash_join_expression->setApplied(*this, required_properties);
     return {hash_join_expression};
@@ -354,7 +378,6 @@ bool PartialDistributedAggregationImplementation::checkPattern(GroupExpressionPt
 
 std::vector<GroupExpressionPtr> PartialDistributedAggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    /// TODO: create hash join step from JoinStepLogical
     auto * aggregating_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
 
     auto new_aggregating_step = aggregating_step->clone();
@@ -364,9 +387,42 @@ std::vector<GroupExpressionPtr> PartialDistributedAggregationImplementation::app
     GroupExpressionPtr aggregation_expression = std::make_shared<GroupExpression>(*expression);
     aggregation_expression->plan_step = std::move(new_aggregating_step);
     chassert(aggregation_expression->inputs.size() == 1);
+
+    /// For the input we require partitioned distribution in any way
+    size_t node_count = 4;    /// TODO: get actual cluster topology and calculate number of nodes
+    DistributionDescription partitioned_distribution;
+    partitioned_distribution.node_count = node_count;
+    partitioned_distribution.is_replicated = false;
+
+    aggregation_expression->inputs[0].required_properties.distribution = partitioned_distribution;
+
     memo.getGroup(expression->group_id)->addPhysicalExpression(aggregation_expression);
     aggregation_expression->setApplied(*this, required_properties);
     return {aggregation_expression};
+}
+
+bool ParallelReadImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
+{
+    return typeid_cast<ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr &&
+        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:") &&
+        required_properties.distribution.node_count > 1 &&
+        !required_properties.distribution.is_replicated;
+}
+
+std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    auto * read_step = typeid_cast<ReadFromMergeTree *>(expression->getQueryPlanStep());
+
+    auto new_read_step = read_step->clone();
+
+    new_read_step->setStepDescription(fmt::format("ParallelRead IMPL: {}", read_step->getStepDescription()), 200);
+    GroupExpressionPtr read_expression = std::make_shared<GroupExpression>(*expression);
+    read_expression->plan_step = std::move(new_read_step);
+    read_expression->properties = required_properties;
+
+    memo.getGroup(expression->group_id)->addPhysicalExpression(read_expression);
+    read_expression->setApplied(*this, required_properties);
+    return {read_expression};
 }
 
 
@@ -386,30 +442,57 @@ std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpression
 //    implementation_expression->applied_rules = expression->applied_rules;
     implementation_expression->plan_step->setStepDescription(fmt::format("IMPL: {}", expression->plan_step->getStepDescription()), 200);
     implementation_expression->setApplied(*this, required_properties);
+
+    /// FIXME: pass required properties only for steps that do not affect them, e.g. Filter and Expression steps
+    if (implementation_expression->inputs.size() == 1)
+        implementation_expression->inputs[0].required_properties = required_properties;
+
     memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
     return {implementation_expression};
 }
 
 bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
-    return expression->properties.distribution_columns != required_properties.distribution_columns;
+    return !ExpressionProperties::isDistributionSatisfiedBy(required_properties.distribution, expression->properties.distribution);
 }
 
 std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     auto implementation_expression = std::make_shared<GroupExpression>(*expression);
-    /// TODO: add actual Shuffle step
-    SortDescription sort_description;
-//    for (const auto & column : required_properties.distribution_columns)
-//        sort_description.push_back(SortColumnDescription(*column.begin()));
-    auto sorting_step = std::make_unique<SortingStep>(
-        expression->getQueryPlanStep()->getOutputHeader(),
-        sort_description,
-        0,
-        SortingStep::Settings(65000)    /// TODO: construct from settings
-    );
-//    implementation_expression->property_enforcer_steps.push_back(std::move(sorting_step));
-    implementation_expression->properties.distribution_columns = required_properties.distribution_columns;
+
+    if (required_properties.distribution.columns.empty())
+    {
+        if (required_properties.distribution.is_replicated)
+        {
+            auto broadcast_exchange_step = std::make_unique<BroadcastExchangeStep>(
+                expression->getQueryPlanStep()->getOutputHeader(),
+                required_properties.distribution.node_count);
+            implementation_expression->property_enforcer_steps.push_back(std::move(broadcast_exchange_step));
+        }
+        else if (required_properties.distribution.node_count == 1 && expression->properties.distribution.node_count > 1)
+        {
+            auto gather_exchange_step = std::make_unique<GatherExchangeStep>(
+                expression->getQueryPlanStep()->getOutputHeader(),
+                expression->properties.distribution.node_count);
+            implementation_expression->property_enforcer_steps.push_back(std::move(gather_exchange_step));
+        }
+    }
+    else
+    {
+        Names shuffle_columns;
+        for (const auto & distribution_column : required_properties.distribution.columns)
+        {
+            /// TODO: take the column that is present in the expression and is equivalent to required distribution column
+            shuffle_columns.push_back(*distribution_column.begin());
+        }
+        auto shuffle_exchange_step = std::make_unique<ShuffleExchangeStep>(
+            expression->getQueryPlanStep()->getOutputHeader(),
+            std::move(shuffle_columns),
+            required_properties.distribution.node_count,
+            expression->properties.distribution.node_count);
+        implementation_expression->property_enforcer_steps.push_back(std::move(shuffle_exchange_step));
+    }
+    implementation_expression->properties.distribution = required_properties.distribution;
     implementation_expression->inputs = expression->inputs;
     implementation_expression->setApplied(*this, required_properties);
     memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
@@ -419,7 +502,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
 
 bool SortingEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
-    return expression->properties.sorting != required_properties.sorting;
+    return !ExpressionProperties::isSortingSatisfiedBy(required_properties.sorting, expression->properties.sorting);
 }
 
 std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const

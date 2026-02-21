@@ -106,13 +106,26 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
         join_cost.subtree_cost +=
             left_statistics.estimated_row_count +           /// Scan of left table
             2.0 * right_statistics.estimated_row_count;     /// Right table contributes more because we build hash table from it
+
+        /// HACK: Simulate spilling to disk if right table is too big
+        if (right_statistics.estimated_row_count > 1)
+            join_cost.subtree_cost += 30 * right_statistics.estimated_row_count;
     }
 
     return join_cost;
 }
 
-ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & /*read_step*/, const ExpressionStatistics & this_step_statistics)
+ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & read_step, const ExpressionStatistics & this_step_statistics)
 {
+    /// FIXME: hack to simulate that parallel read is faster
+    if (read_step.getStepDescription().contains("Parallel"))
+    {
+        const size_t node_count = 4;
+        return ExpressionCost{
+            .subtree_cost = this_step_statistics.estimated_row_count / node_count,
+        };
+    }
+
     return ExpressionCost{
         .subtree_cost = Cost(this_step_statistics.estimated_row_count),
     };
@@ -133,7 +146,9 @@ ExpressionCost CostEstimator::estimateAggregationCost(
 
     if (is_local)
     {
-        aggregation_cost.subtree_cost += this_step_statistics.estimated_row_count;
+        aggregation_cost.subtree_cost +=
+            this_step_statistics.estimated_row_count +
+            input_statistics.estimated_row_count;
     }
     else if (is_shuffle)
     {
@@ -143,7 +158,9 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     }
     else if (is_partial)
     {
-        aggregation_cost.subtree_cost += input_statistics.estimated_row_count;
+        aggregation_cost.subtree_cost +=
+            this_step_statistics.estimated_row_count / node_count +
+            input_statistics.estimated_row_count / node_count;
     }
 
     return aggregation_cost;

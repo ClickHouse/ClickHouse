@@ -19,17 +19,23 @@ bool ExpressionProperties::isSortingSatisfiedBy(const SortDescription & required
     return true;
 }
 
-bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionColumns & required, const DistributionColumns & existing)
+bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionDescription & required, const DistributionDescription & existing)
 {
-    /// Required distribution is satisfied if existing has all the columns from required
-    if (required.size() > existing.size())
+    if (required.node_count != existing.node_count)
         return false;
-    for (const auto & required_column : required)
+
+    if (required.is_replicated != existing.is_replicated)
+        return false;
+
+    /// Required distribution is satisfied if existing has all the columns from required
+    if (required.columns.size() > existing.columns.size())
+        return false;
+    for (const auto & required_column : required.columns)
     {
         bool found = false;
         for (const auto & equivalent_column : required_column)
         {
-            for (const auto & existing_column : existing)
+            for (const auto & existing_column : existing.columns)
             {
                 if (existing_column.contains(equivalent_column))
                 {
@@ -49,7 +55,7 @@ bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionColumns &
 bool ExpressionProperties::isSatisfiedBy(const ExpressionProperties & existing_properties) const
 {
     return isSortingSatisfiedBy(sorting, existing_properties.sorting) &&
-        isDistributionSatisfiedBy(distribution_columns, existing_properties.distribution_columns);
+        isDistributionSatisfiedBy(distribution, existing_properties.distribution);
 }
 
 void  ExpressionProperties::dump(WriteBuffer & out) const
@@ -57,7 +63,7 @@ void  ExpressionProperties::dump(WriteBuffer & out) const
     out << "{[";
     dumpSortDescription(sorting, out);
     out << "], {";
-    out << fmt::format("{}", fmt::join(distribution_columns, ","));
+    out << fmt::format("{} nodes, {}, {}", distribution.node_count, distribution.is_replicated ? "replicated" : "not replicated", fmt::join(distribution.columns, ","));
     out << "}}";
 }
 

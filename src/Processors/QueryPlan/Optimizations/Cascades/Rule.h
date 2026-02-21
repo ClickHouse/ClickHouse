@@ -125,6 +125,19 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
 };
 
+class ParallelReadImplementation : public IOptimizationRule
+{
+public:
+    String getName() const override { return "ParallelRead"; }
+    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    Promise getPromise() const override { return 5000; }
+    bool isTransformation() const override { return false; }
+
+protected:
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
+};
+
+
 /// Moves the QueryPlan node to implementation as is
 class DefaultImplementation : public IOptimizationRule
 {

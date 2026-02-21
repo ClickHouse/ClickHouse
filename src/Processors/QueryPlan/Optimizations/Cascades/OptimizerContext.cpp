@@ -32,6 +32,7 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
     addRule(std::make_shared<LocalAggregationImplementation>());
     addRule(std::make_shared<ShuffleAggregationImplementation>());
     addRule(std::make_shared<PartialDistributedAggregationImplementation>());
+    addRule(std::make_shared<ParallelReadImplementation>());
     addEnforcerRule(std::make_shared<DistributionEnforcer>());
     addEnforcerRule(std::make_shared<SortingEnforcer>());
 }
