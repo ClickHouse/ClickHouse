@@ -154,7 +154,7 @@ UInt64 ThreadGroup::getGroupElapsedNs() const
 
 UInt64 ThreadGroup::getGroupElapsedMs() const
 {
-    return getGroupElapsedNs() / 1000000;
+    return getGroupElapsedNs() / 1000000UL;
 }
 
 void ThreadGroup::linkThread(UInt64 thread_id)
