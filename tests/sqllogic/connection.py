@@ -94,6 +94,8 @@ def default_clickhouse_native_conn_args():
             "join_use_nulls": 1,
             "allow_create_index_without_type": 1,
             "create_index_ignore_unique": 1,
+            "cast_keep_nullable": 1,
+            "prefer_column_name_to_alias": 1,
         }
     )
 
