@@ -21,9 +21,8 @@ namespace ErrorCodes
 
 OptimizationRulePtr createJoinCommutativity();
 OptimizationRulePtr createHashJoinImplementation();
-OptimizationRulePtr createLocalAggregationImplementation();
-OptimizationRulePtr createShuffleAggregationImplementation();
-OptimizationRulePtr createPartialDistributedAggregationImplementation();
+OptimizationRulePtr createAggregationImplementation();
+OptimizationRulePtr createTwoPhaseAggregationTransformation();
 OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDistributionEnforcer();
@@ -36,9 +35,8 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
     addRule(createJoinCommutativity());
     addRule(createHashJoinImplementation());
     addRule(createDefaultImplementation());
-    addRule(createLocalAggregationImplementation());
-    addRule(createShuffleAggregationImplementation());
-    addRule(createPartialDistributedAggregationImplementation());
+    addRule(createTwoPhaseAggregationTransformation());
+    addRule(createAggregationImplementation());
     addRule(createParallelReadImplementation());
     addEnforcerRule(createDistributionEnforcer());
     addEnforcerRule(createSortingEnforcer());
