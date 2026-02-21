@@ -82,6 +82,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
        {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
        {"enable_analyzer", trueOrFalseSetting},
+       {"enable_automatic_decision_for_merging_across_partitions_for_final", trueOrFalseSetting},
        {"enable_join_runtime_filters", trueOrFalseSetting},
        {"enable_lazy_columns_replication", trueOrFalseSetting},
        {"enable_optimize_predicate_expression", trueOrFalseSetting},
@@ -604,6 +605,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_cold_parts_seconds",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 60)); }, {}, false)},
+    {"ignore_format_null_for_explain", trueOrFalseSettingNoOracle},
     {"ignore_materialized_views_with_dropped_target_table", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_access_entities_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_database", trueOrFalseSettingNoOracle},
@@ -758,7 +760,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"join_on_disk_max_files_to_merge",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 32)); }, {}, false)},
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 2, 32)); }, {}, false)},
     {"join_runtime_bloom_filter_hash_functions",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 20)); },
@@ -854,6 +856,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"mysql_map_fixed_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"mysql_map_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"normalize_function_names", trueOrFalseSetting},
+    {"opentelemetry_start_keeper_trace_probability", probRangeSetting},
     {"opentelemetry_trace_cpu_scheduling", trueOrFalseSettingNoOracle},
     {"optimize_const_name_size",
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(-100, 100)); }, {}, false)},
@@ -1417,17 +1420,17 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_ast_depth",
              "max_ast_elements",*/
              "max_autoincrement_series",
-             "max_backup_bandwidth",
+             /// "max_backup_bandwidth",
              "max_distributed_connections",
              /// "max_distributed_depth",
              "max_download_threads",
              /// "max_expanded_ast_elements",
              "max_fetch_partition_retries_count",
              "max_http_get_redirects",
-             "max_network_bandwidth",
+             /*"max_network_bandwidth",
              "max_network_bandwidth_for_all_users",
              "max_network_bandwidth_for_user",
-             /*"max_parser_backtracks",
+             "max_parser_backtracks",
              "max_parser_depth",
              "max_partitions_to_read",*/
              "max_sessions_for_user",
@@ -1446,8 +1449,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_execution_speed_bytes",*/
              "max_hyperscan_regexp_length",
              "max_hyperscan_regexp_total_length",
-             "max_network_bytes",
-             /*"max_query_size",
+             /*"max_network_bytes",
+             "max_query_size",
              "max_result_bytes",*/
              "max_size_to_preallocate_for_aggregation",
              "max_size_to_preallocate_for_joins"/*,
@@ -1476,17 +1479,20 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (const auto & entry : max_bytes_values)
     {
         performanceSettings.insert({{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "16", "32", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert(
+            {{entry, CHSetting(bytesRange, {"0", "1", "2", "4", "8", "16", "32", "1024", "2048", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_rows_values)
     {
         performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "16", "32", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert(
+            {{entry, CHSetting(rowsRange, {"0", "1", "2", "4", "8", "16", "32", "1024", "2048", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_block_sizes)
     {
         performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "16", "32", "64", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert(
+            {{entry, CHSetting(highRange, {"1", "2", "4", "8", "16", "32", "64", "1024", "2048", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_columns_values)
     {
@@ -1689,6 +1695,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"input_format_with_types_use_header", trueOrFalseSettingNoOracle},
          {"low_cardinality_allow_in_native_format", trueOrFalseSettingNoOracle},
          {"output_format_avro_rows_in_file", CHSetting(rowsRange, {}, false)},
+         {"output_format_arrow_date_as_uint16", trueOrFalseSettingNoOracle},
          {"output_format_orc_dictionary_key_size_threshold",
           CHSetting(
               [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); },

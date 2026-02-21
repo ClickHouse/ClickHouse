@@ -72,6 +72,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/SystemAllocatedMemoryHolder.h>
 #include <base/sleep.h>
 
 #if USE_PROTOBUF
@@ -948,6 +949,26 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::ALLOCATE_MEMORY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_MEMORY);
+            auto holder = getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->alloc(query.untracked_memory_size);
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            break;
+        }
+        case Type::FREE_MEMORY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_MEMORY);
+            auto holder = getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->free();
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
@@ -1166,7 +1187,16 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
+    /// After the table is detached, we must re-create and re-attach it.
+    /// If table creation fails (e.g. due to memory allocation failure from fault injection),
+    /// the table is left permanently detached from the database while still existing in ZooKeeper
+    /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
+    /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
+    /// should always eventually succeed for transient errors.
+
     StoragePtr new_table;
+    size_t non_zk_retries = 0;
+    constexpr size_t max_non_zk_retries = 10;
     while (true)
     {
         try
@@ -1192,6 +1222,21 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
                 fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
 
             /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
+        }
+        catch (...)
+        {
+            if (++non_zk_retries > max_non_zk_retries)
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                    replica.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
             if (auto process_list_element = getContext()->getProcessListElementSafe())
                 process_list_element->checkTimeLimit();
 
@@ -1387,7 +1432,7 @@ bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, co
 
 void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database)
 {
-    for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
+    for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
         dropStorageReplica(query_replica, iterator->table());
 
     LOG_TRACE(log, "Dropped storage replica from {} of database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -2379,6 +2424,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::INSTRUMENT_REMOVE:
         {
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            break;
+        }
+        case Type::ALLOCATE_MEMORY:
+        case Type::FREE_MEMORY:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_MEMORY);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

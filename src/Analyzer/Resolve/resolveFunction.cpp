@@ -649,6 +649,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// Rewrite EXISTS (subquery) into EXISTS (SELECT 1 FROM (subquery) LIMIT 1).
         const auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
 
+        auto exists_subquery_argument_node_type = exists_subquery_argument->getNodeType();
+        if (exists_subquery_argument_node_type != QueryTreeNodeType::QUERY
+            && exists_subquery_argument_node_type != QueryTreeNodeType::UNION)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function 'exists' expects a subquery argument. Actual: {}. In scope {}",
+                exists_subquery_argument->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+
         auto constant_data_type = std::make_shared<DataTypeUInt64>();
         auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
 

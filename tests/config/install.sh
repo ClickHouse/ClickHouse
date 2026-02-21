@@ -173,7 +173,7 @@ fi
 # SSH protocol support (not supported with fasttest).
 if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/ssh.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/ssh_host_ed25519_key $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/ssh_host_rsa_key $DEST_SERVER_PATH/config.d/
 fi
 
 # Not supported with fasttest.
@@ -411,8 +411,8 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_2/</custom_cached_disks_base_directory>|" $ch_server_2_path/config.d/filesystem_caches_path.xml
 
     # Remove SSH config from replicas to avoid port conflicts on tcp_ssh_port.
-    rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_ed25519_key
-    rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_ed25519_key
+    rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_rsa_key
+    rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_rsa_key
 fi
 
 if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then

@@ -5106,11 +5106,11 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kEnableFailpoint:
             ret += "ENABLE FAILPOINT ";
-            ret += FailPoint_Name(cmd.enable_failpoint());
+            ret += cmd.enable_failpoint();
             break;
         case CmdType::kDisableFailpoint:
             ret += "DISABLE FAILPOINT ";
-            ret += FailPoint_Name(cmd.disable_failpoint());
+            ret += cmd.disable_failpoint();
             break;
         case CmdType::kIcebergMetadataCache:
             ret += "DROP ICEBERG METADATA CACHE";
@@ -5140,9 +5140,13 @@ CONV_FN(SystemCommand, cmd)
             ret += "RESET DDL WORKER";
             can_set_cluster = true;
             break;
-        case CmdType::kDropParquetMetadataCache:
-            ret += "DROP PARQUET METADATA CACHE";
-            can_set_cluster = true;
+        case CmdType::kWaitFailpoint:
+            ret += "WAIT FAILPOINT ";
+            ret += cmd.wait_failpoint();
+            break;
+        case CmdType::kNotifyFailpoint:
+            ret += "NOTIFY FAILPOINT ";
+            ret += cmd.notify_failpoint();
             break;
         default:
             ret += "FLUSH LOGS";

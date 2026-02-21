@@ -512,6 +512,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             break;
         }
 
+        case Type::ALLOCATE_MEMORY:
+        {
+            ostr << ' ' << untracked_memory_size;
+            break;
+        }
+
 #if USE_XRAY
         case Type::INSTRUMENT_ADD:
         {
@@ -617,6 +623,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
         case Type::RECONNECT_ZOOKEEPER:
+        case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
             break;
         case Type::UNKNOWN:
