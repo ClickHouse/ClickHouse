@@ -1097,16 +1097,16 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
         </div>
 
         {/* Main Content */}
-        <Container orientation='vertical' gap='none' padding='xl' style={{ marginTop: '56px', maxWidth: '100vw', boxSizing: 'border-box' }}>
+        <Container orientation='vertical' gap='none' style={{ marginTop: '56px', paddingTop: '24px', paddingBottom: '24px' }}>
 
-          {loading && <Text>Loading test results...</Text>}
+          {loading && <Text style={{ paddingLeft: '24px' }}>Loading test results...</Text>}
 
           {error && (
-            <Text color='danger'>Error: {error}</Text>
+            <Text color='danger' style={{ paddingLeft: '24px' }}>Error: {error}</Text>
           )}
 
           {data && !loading && (
-            <Container orientation='vertical' gap='none'>
+            <Container orientation='vertical' gap='none' style={{ maxWidth: '100%', overflow: 'hidden' }}>
               <Panel hasBorder padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
                 {/* Line 1: PR or commit info (from top-level, cached across navigation) with SHA selector */}
                 {topLevelExt && (topLevelExt.pr_number > 0 || topLevelExt.commit_sha) && (
