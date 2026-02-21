@@ -80,11 +80,11 @@ namespace
     bool parseIpPrefixBits(IParserBase::Pos & pos, Expected & expected,
                            std::optional<MaskBits> & ipv4_bits, std::optional<MaskBits> & ipv6_bits)
     {
-        auto try_parse_prefix = [&](const char * keyword, std::optional<MaskBits> & prefix_bits, UInt8 max_bits)
+        auto try_parse_prefix = [&](Keyword keyword, std::optional<MaskBits> & prefix_bits, UInt8 max_bits)
         {
             return IParserBase::wrapParseImpl(pos, [&]
             {
-                if (!ParserKeyword::createDeprecated(keyword).ignore(pos, expected))
+                if (!ParserKeyword{keyword}.ignore(pos, expected))
                     return false;
 
                 ASTPtr value_ast;
@@ -97,7 +97,7 @@ namespace
                     throw Exception(
                         ErrorCodes::SYNTAX_ERROR,
                         "{} prefix must be between 0 and {}",
-                        keyword,
+                        toStringView(keyword),
                         static_cast<unsigned>(max_bits));
 
                 prefix_bits = static_cast<MaskBits>(prefix);
@@ -106,8 +106,8 @@ namespace
             });
         };
         bool parsed_any = false;
-        parsed_any |= try_parse_prefix("ipv4_prefix_bits", ipv4_bits, 32);
-        parsed_any |= try_parse_prefix("ipv6_prefix_bits", ipv6_bits, 128);
+        parsed_any |= try_parse_prefix(Keyword::IPV4_PREFIX_BITS, ipv4_bits, 32);
+        parsed_any |= try_parse_prefix(Keyword::IPV6_PREFIX_BITS, ipv6_bits, 128);
         return parsed_any;
     }
 

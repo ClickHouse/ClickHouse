@@ -44,11 +44,11 @@ CREATE QUOTA quota_by_ip_${CLICKHOUSE_DATABASE}
 "
 
 # Executing a query to create the quota key
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=quoted_by_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=quoted_by_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
 
-# Check the quota key (works for both IPv4 and IPv6)
+# Check the quota key is masked (works for both IPv4 and IPv6)
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=quoted_by_ip_${CLICKHOUSE_DATABASE}" -d "
-SELECT quota_key
+SELECT quota_key IN ('::', '127.0.0.0')
 FROM system.quota_usage
 WHERE quota_name = 'quota_by_ip_${CLICKHOUSE_DATABASE}'
 FORMAT TSV;
@@ -61,10 +61,10 @@ DROP QUOTA IF EXISTS quota_by_ip_${CLICKHOUSE_DATABASE};
 echo '--- Test the masked quota key for forwarded IP ---'
 
 ${CLICKHOUSE_CLIENT} --query "
-CREATE QUOTA quota_by_forwarded_ip_${CLICKHOUSE_DATABASE} 
-    KEYED BY forwarded_ip_address 
-    IPV4_PREFIX_BITS 16 
-    FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 2 
+CREATE QUOTA quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}
+    KEYED BY forwarded_ip_address
+    IPV4_PREFIX_BITS 16
+    FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 2
     TO quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE};
 "
 

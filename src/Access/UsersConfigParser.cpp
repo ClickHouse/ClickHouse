@@ -511,7 +511,11 @@ namespace
             quota->ipv6_prefix_bits = parse_prefix_bits(quota_config + ".ipv6_prefix_bits", 128);
         }
         else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
+        {
             quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
+            quota->ipv4_prefix_bits = parse_prefix_bits(quota_config + ".ipv4_prefix_bits", 32);
+            quota->ipv6_prefix_bits = parse_prefix_bits(quota_config + ".ipv6_prefix_bits", 128);
+        }
         else if (config.has(quota_config + ".keyed"))
             quota->key_type = QuotaKeyType::CLIENT_KEY_OR_USER_NAME;
         else
