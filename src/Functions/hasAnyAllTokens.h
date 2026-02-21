@@ -2,7 +2,7 @@
 
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 #include <absl/container/flat_hash_map.h>
 
 namespace DB
@@ -36,8 +36,8 @@ public:
     static constexpr auto name = HasTokensTraits::name;
 
     explicit ExecutableFunctionHasAnyAllTokens(
-        std::shared_ptr<const ITokenExtractor> token_extractor_, const TokensWithPosition & search_tokens_)
-        : token_extractor(std::move(token_extractor_))
+        std::shared_ptr<const ITokenizer> tokenizer_, const TokensWithPosition & search_tokens_)
+        : tokenizer(std::move(tokenizer_))
         , search_tokens(std::move(search_tokens_))
     {
     }
@@ -47,7 +47,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
-    std::shared_ptr<const ITokenExtractor> token_extractor;
+    std::shared_ptr<const ITokenizer> tokenizer;
     const TokensWithPosition & search_tokens;
 };
 
@@ -58,11 +58,11 @@ public:
     static constexpr auto name = HasTokensTraits::name;
 
     FunctionBaseHasAnyAllTokens(
-        std::shared_ptr<const ITokenExtractor> token_extractor_,
+        std::shared_ptr<const ITokenizer> tokenizer_,
         TokensWithPosition search_tokens_,
         DataTypes argument_types_,
         DataTypePtr result_type_)
-        : token_extractor(std::move(token_extractor_))
+        : tokenizer(std::move(tokenizer_))
         , search_tokens(std::move(search_tokens_))
         , argument_types(std::move(argument_types_))
         , result_type(std::move(result_type_))
@@ -77,7 +77,7 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override;
 
 private:
-    std::shared_ptr<const ITokenExtractor> token_extractor;
+    std::shared_ptr<const ITokenizer> tokenizer;
     TokensWithPosition search_tokens;
     DataTypes argument_types;
     DataTypePtr result_type;

@@ -11,22 +11,6 @@ from ci.defs.defs import (
     RunnerLabels,
 )
 
-# macOS smoke test job - runs on GitHub-hosted macOS runners without Docker
-# no_aws=True because GitHub-hosted macOS runners have no AWS credentials;
-# the binary is downloaded via public HTTP inside the job script.
-common_macos_smoke_test_job_config = Job.Config(
-    name=JobNames.MACOS_SMOKE_TEST,
-    runs_on=[],  # from parametrize
-    command="python3 ./ci/jobs/macos_smoke_test.py",
-    no_aws=True,
-    digest_config=Job.CacheDigestConfig(
-        include_paths=[
-            "./ci/jobs/macos_smoke_test.py",
-        ],
-    ),
-    timeout=600,
-)
-
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
 BINARY_DOCKER_COMMAND = (
@@ -142,7 +126,7 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/log_parser.py",
         ],
     ),
-    timeout=3600 * 2,
+    timeout=3600 * 3,
 )
 common_integration_test_job_config = Job.Config(
     name=JobNames.INTEGRATION,
@@ -465,6 +449,31 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
+        Job.ParamSet(
+            parameter="amd_tsan, flaky check",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_msan, flaky check",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_ubsan, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_debug, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
     )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
@@ -699,6 +708,11 @@ class JobConfigs:
     )
     stress_test_jobs = common_stress_job_config.parametrize(
         Job.ParamSet(
+            parameter="amd_release",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_RELEASE],
+        ),
+        Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.DEB_AMD_DEBUG],
@@ -814,7 +828,16 @@ class JobConfigs:
             )
             for total_batches in (6,)
             for batch in range(1, total_batches + 1)
-        ]
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_msan, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_MSAN],
+            )
+            for total_batches in (6,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     integration_test_asan_flaky_pr_jobs = (
         common_integration_test_job_config.parametrize(
@@ -1105,6 +1128,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        needs_jobs_from_requires=True,
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     docker_keeper = Job.Config(
@@ -1119,6 +1143,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        needs_jobs_from_requires=True,
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     sqlancer_master_jobs = Job.Config(
@@ -1168,6 +1193,33 @@ class JobConfigs:
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
     )
+    toolchain_build_jobs = Job.Config(
+        name=JobNames.BUILD_TOOLCHAIN,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/build_toolchain.py",
+        run_in_docker=BINARY_DOCKER_COMMAND,
+        timeout=8 * 3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/build_toolchain.py"],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd64",
+            runs_on=RunnerLabels.AMD_LARGE,
+            provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD],
+        ),
+        Job.ParamSet(
+            parameter="aarch64",
+            runs_on=RunnerLabels.ARM_LARGE,
+            provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM],
+        ),
+    )
+    update_toolchain_dockerfile_job = Job.Config(
+        name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
+        enable_gh_auth=True,
+    )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",
         runs_on=RunnerLabels.ARM_MEDIUM,
@@ -1192,15 +1244,4 @@ class JobConfigs:
             include_paths=["./ci/jobs/merge_llvm_coverage_job.py"],
         ),
         timeout=3600,
-    )
-    # macOS smoke tests - run on GitHub-hosted macOS runners (no Docker)
-    # No `requires` here because artifact download from S3 needs AWS credentials
-    # which are not available on GitHub-hosted macOS runners.
-    # The dependency on the build job is set via set_dependency in the workflow.
-    # The binary is downloaded via public HTTP inside the job script.
-    macos_smoke_test_jobs = common_macos_smoke_test_job_config.parametrize(
-        Job.ParamSet(
-            parameter="arm_darwin",
-            runs_on=RunnerLabels.MACOS_ARM,
-        ),
     )

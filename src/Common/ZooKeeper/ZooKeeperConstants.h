@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string_view>
 #include <base/EnumReflection.h>
 
 
@@ -69,12 +70,16 @@ namespace Coordination
 
 OpNum getOpNum(int32_t raw_op_num);
 
+/// Returns operation name as string (e.g., OpNum::Get -> "Get", OpNum::Set -> "Set")
+std::string_view opNumToString(OpNum op_num);
+
 /// Returns operation type for use in metric labels (e.g., OpNum::Get -> "readonly", OpNum::Set -> "write")
 const char * toOperationTypeMetricLabel(OpNum op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64 = 11;
+static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING = 12;
 static constexpr int32_t KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT = 42;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH = 44;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH_WITH_READONLY = 45;

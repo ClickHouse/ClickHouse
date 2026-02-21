@@ -1131,6 +1131,9 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     bool split_parts_ranges_into_intersecting_and_non_intersecting_final,
     bool split_intersecting_parts_ranges_into_layers)
 {
+    if (!max_layers)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layers should be greater than 0");
+
     auto logger = getLogger("PartsSplitter");
 
     SplitPartsWithRangesByPrimaryKeyResult result;
@@ -1181,15 +1184,12 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
     }
 
-    if (!split_intersecting_parts_ranges_into_layers)
+    if (!split_intersecting_parts_ranges_into_layers || max_layers == 1)
     {
         if (!intersecting_parts_ranges.empty())
             result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
         return result;
     }
-
-    if (max_layers <= 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);

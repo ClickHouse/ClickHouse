@@ -20,6 +20,7 @@ SETTINGS auto_statistics_types = '';
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';
 SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
+SELECT name, column, statistics from system.parts_columns where (database = currentDatabase()) AND (table = 'tab') AND active;
 
 ALTER TABLE tab DROP STATISTICS a, b;
 SELECT 'After drop statistic';
@@ -38,6 +39,7 @@ ORDER BY name, column;
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After add and materialize statistic';
 SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
+SELECT name, column, statistics from system.parts_columns where (database = currentDatabase()) AND (table = 'tab') AND active;
 
 OPTIMIZE TABLE tab FINAL;
 SELECT 'After merge';
