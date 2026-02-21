@@ -302,7 +302,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
         if (i == local_replica_index)
         {
-            runner.enqueueAndKeepTrack([&, i, replica_address]()
+            /// Passing references here is fine. All of them will outlive the runner
+            runner.enqueueAndKeepTrack([i, replica_address, &logger, &replica_parts, &replicas_marks, &local_index_analysis_callback, &replicas_rows, &res]()
             {
                 LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                 auto parts_ranges = local_index_analysis_callback(replica_parts);
@@ -312,7 +313,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         }
         else
         {
-            runner.enqueueAndKeepTrack([&, i, replica_address, connection_pool]()
+            /// Passing references here is fine. All of them will outlive the runner
+            runner.enqueueAndKeepTrack([i, replica_address, connection_pool, &logger, &replica_parts, &replicas_marks, &replicas_rows, &storage_id, &filter_query, &vector_search_parameters, &execution_context, &external_tables, &res]()
             {
                 try
                 {

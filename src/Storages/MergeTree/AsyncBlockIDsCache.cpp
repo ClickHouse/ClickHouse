@@ -1,6 +1,9 @@
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedMergeTree.h>
+#endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -66,7 +69,7 @@ catch (...)
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
-    , update_wait((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms])
+    , update_wait(std::chrono::milliseconds((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds()))
     , path(fs::path(storage.getZooKeeperPath()) / dir_name)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
@@ -145,5 +148,8 @@ std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(con
 }
 
 template class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
+#if CLICKHOUSE_CLOUD
+template class AsyncBlockIDsCache<StorageSharedMergeTree>;
+#endif
 
 }

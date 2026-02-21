@@ -41,3 +41,9 @@
 --- PREWHERE before FINAL
 1
 2
+
+--- filter before FINAL
+1	aaa	1
+2	bbb	1
+--- deferred
+2	bbb	1

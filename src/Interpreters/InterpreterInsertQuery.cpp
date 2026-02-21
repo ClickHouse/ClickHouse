@@ -998,7 +998,7 @@ void InterpreterInsertQuery::setInsertContextValues(StoragePtr table)
         insert_columns = std::move(names);
     }
 
-    getContext()->setInsertionTable(insert_query.table_id, insert_columns, table->getInMemoryMetadataPtr()->columns);
+    getContext()->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr()->columns));
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory)

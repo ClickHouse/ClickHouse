@@ -47,6 +47,7 @@
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -88,63 +89,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
-}
-
-namespace
-{
-    class StorageWithComment : public IAST
-    {
-    public:
-        ASTPtr storage;
-        ASTPtr comment;
-
-        String getID(char) const override { return "Storage with comment definition"; }
-
-        ASTPtr clone() const override
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
-        }
-
-    protected:
-        void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
-        }
-    };
-
-    class ParserStorageWithComment : public IParserBase
-    {
-    protected:
-        const char * getName() const override { return "storage definition with comment"; }
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
-            ASTPtr storage;
-
-            if (!storage_p.parse(pos, storage, expected))
-                return false;
-
-            ParserKeyword s_comment(Keyword::COMMENT);
-            ParserStringLiteral string_literal_parser;
-            ASTPtr comment;
-
-            if (s_comment.ignore(pos, expected))
-                string_literal_parser.parse(pos, comment, expected);
-
-            auto storage_with_comment = make_intrusive<StorageWithComment>();
-            storage_with_comment->storage = std::move(storage);
-            storage_with_comment->comment = std::move(comment);
-
-            node = storage_with_comment;
-            return true;
-        }
-    };
 }
 
 namespace
@@ -856,8 +805,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
 
-    create->set(create->columns_list, new_columns_list);
-
     ParserStorageWithComment storage_parser;
 
     ASTPtr storage_with_comment_ast = parseQuery(
@@ -869,9 +816,40 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
 
+    const auto & engine = create->storage->engine->as<ASTFunction &>();
+
+    /// Add secondary indexes (minmax on time columns) for MergeTree engines only,
+    /// since other engines (e.g. Null) do not support skipping indices.
+    if (endsWith(engine.name, "MergeTree"))
+    {
+        auto indices = make_intrusive<ASTExpressionList>();
+
+        auto add_index = [&](const char * definition)
+        {
+            ParserIndexDeclaration parser;
+            ASTPtr ast = parseQuery(parser, definition, definition + strlen(definition),
+                "index declaration for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            indices->children.push_back(ast);
+        };
+
+        if (ordinary_columns.has("event_time"))
+            add_index("event_time_index event_time TYPE minmax GRANULARITY 1");
+        if (ordinary_columns.has("event_time_microseconds"))
+            add_index("event_time_microseconds_index event_time_microseconds TYPE minmax GRANULARITY 1");
+
+        if (ordinary_columns.has("query_id"))
+            add_index("query_id_index query_id TYPE bloom_filter(0.001) GRANULARITY 1");
+        if (ordinary_columns.has("initial_query_id"))
+            add_index("initial_query_id_index initial_query_id TYPE bloom_filter(0.001) GRANULARITY 1");
+
+        if (!indices->children.empty())
+            new_columns_list->set(new_columns_list->indices, indices);
+    }
+
+    create->set(create->columns_list, new_columns_list);
+
     /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
     /// and recreate tables on settings changes.
-    const auto & engine = create->storage->engine->as<ASTFunction &>();
     if (endsWith(engine.name, "MergeTree"))
     {
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());

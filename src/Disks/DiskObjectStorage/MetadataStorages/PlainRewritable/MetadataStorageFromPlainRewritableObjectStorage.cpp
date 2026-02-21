@@ -3,9 +3,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <cstddef>
 #include <optional>
@@ -13,7 +14,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
-#include <Storages/PartitionCommands.h>
 #include <Poco/Timestamp.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -60,7 +60,6 @@ fs::path normalizeDirectoryPath(const fs::path & path)
 void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load, bool do_not_load_unchanged_directories)
 {
     ThreadPool & pool = getIOThreadPool().get();
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
@@ -118,6 +117,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         }
     }
 
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
     try
     {
         /// Root folder is a special case. Files are stored as /__root/{file-name}.
@@ -149,6 +149,13 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 }
             }
 
+            /// Passing by reference:
+            /// log: Created before runner, so it will be destroyed after
+            /// settings: Same as log
+            /// remove_layout: Same
+            /// remote_layout_mutex: Same
+            /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
+            /// Thus the order of destruction of the variables is not important
             runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);

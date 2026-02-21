@@ -920,7 +920,7 @@ public:
     static void visitLiteral(ASTLiteral & literal, ASTPtr &)
     {
         if (literal.value.getType() == Field::Types::Tuple)
-            literal.use_legacy_column_name_of_tuple = true;
+            literal.setUseLegacyColumnNameOfTuple(true);
     }
     static void visitFunction(ASTFunction & func, ASTPtr &ast)
     {
@@ -1176,7 +1176,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             else if (const auto * common_column_desc = common_virtual_columns.tryGetDescription(*it))
             {
                 /// Ephemeral common virtual columns (e.g. `_table`) are only supported
-                /// by the new analyzer which fills them via ExpressionStep.
+                /// by the analyzer which fills them via ExpressionStep.
                 /// The old analyzer has no mechanism to fill them, so skip them here
                 /// to avoid a type mismatch between the header and the actual data.
                 if (!common_column_desc->isEphemeral())
@@ -1337,7 +1337,14 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
+    {
+        Aliases aliases;
+        NameSet name_set;
+
+        normalize(query, aliases, name_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext(), select_options.is_create_parameterized_view);
         renameDuplicatedColumns(select_query);
+    }
+
 
     /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some logic inside JOINs
     if (settings[Setting::optimize_normalize_count_variants])

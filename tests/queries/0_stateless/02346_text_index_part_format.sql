@@ -3,8 +3,6 @@
 
 -- Basic tests for text index stored in compact vs. wide format, respectively full vs. packed parts
 
-SET enable_full_text_index = 1;
-
 SET parallel_replicas_local_plan=1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 
 DROP TABLE IF EXISTS tab_compact_full;
