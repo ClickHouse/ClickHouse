@@ -1,4 +1,6 @@
 SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+SET optimize_on_insert = 1;
 
 DROP TABLE IF EXISTS tp;
 

@@ -1,3 +1,4 @@
+SET optimize_read_in_order = 1, optimize_sorting_by_input_stream_properties = 1;
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 Nested(c1 Int)) ENGINE = SummingMergeTree ORDER BY (c0.c1 DESC) SETTINGS allow_experimental_reverse_key = 1;
 INSERT INTO t0 (c0.c1) VALUES ([1]), ([2]);
