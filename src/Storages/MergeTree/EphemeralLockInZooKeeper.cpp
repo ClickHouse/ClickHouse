@@ -96,7 +96,7 @@ void EphemeralLockInZooKeeper::checkCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
 }
 
-void EphemeralLockInZooKeeper::getUnlockOp(Coordination::Requests & ops)
+void EphemeralLockInZooKeeper::getUnlockOp(Coordination::Requests & ops) const
 {
     checkCreated();
     ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
@@ -209,6 +209,20 @@ void EphemeralLocksInAllPartitions::unlock()
     zookeeper = nullptr;
 }
 
+void EphemeralLocksInAllPartitions::assumeUnlocked()
+{
+    zookeeper = nullptr;
+}
+
+void EphemeralLocksInAllPartitions::getUnlockOps(Coordination::Requests & ops) const
+{
+    if (!zookeeper)
+        return;
+
+    for (const auto & lock : locks)
+        ops.emplace_back(zkutil::makeRemoveRequest(lock.path, -1));
+}
+
 EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
 {
     try
@@ -219,6 +233,24 @@ EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
     {
         tryLogCurrentException("~EphemeralLocksInAllPartitions");
     }
+}
+
+void PartitionBlockNumbersHolder::assumeUnlocked()
+{
+    if (multiple_partitions_holder)
+        multiple_partitions_holder->assumeUnlocked();
+
+    if (single_partition_holder)
+        single_partition_holder->assumeUnlocked();
+}
+
+void PartitionBlockNumbersHolder::getUnlockOps(Coordination::Requests & ops) const
+{
+    if (multiple_partitions_holder)
+        multiple_partitions_holder->getUnlockOps(ops);
+
+    if (single_partition_holder)
+        single_partition_holder->getUnlockOp(ops);
 }
 
 }

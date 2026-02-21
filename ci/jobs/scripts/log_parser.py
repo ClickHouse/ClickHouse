@@ -158,7 +158,7 @@ class FuzzerLogParser:
 
         if is_logical_error:
             failed_query = self.get_failed_query()
-            if failed_query:
+            if failed_query and self.fuzzer_log:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
             if format_message and "Inconsistent AST formatting" not in result_name:
                 # Replace {} placeholders with A, B, C, etc. to create a generic error pattern.
@@ -492,7 +492,7 @@ class FuzzerLogParser:
         from_matches = re.findall(from_pattern, failed_query, re.IGNORECASE)
         join_matches = re.findall(join_pattern, failed_query, re.IGNORECASE)
 
-        table_finctions = set()
+        table_functions = set()
         for match in from_matches + join_matches:
             if match.startswith("file("):
                 # Extract filename from file(...) function, handling nested functions
@@ -501,13 +501,15 @@ class FuzzerLogParser:
                 if file_match:
                     table_files.add(file_match.group(1))
             if match.startswith("numbers(") or match.startswith("file("):
-                table_finctions.add(match)
+                table_functions.add(match)
             else:
                 tables.add(match)
 
-        if not (tables or table_files or table_finctions):
+        if not (tables or table_files or table_functions):
             print("WARNING: No tables found in query command")
-            return [failed_query]
+            return [
+                failed_query + ";" if not failed_query.endswith(";") else failed_query
+            ]
 
         # Get all write commands for found tables
         commands_to_reproduce = []
@@ -528,6 +530,11 @@ class FuzzerLogParser:
             # Add table drop commands
             for table in tables:
                 commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
+
+        # Ensure all commands end with a semicolon
+        commands_to_reproduce = [
+            cmd + ";" if not cmd.endswith(";") else cmd for cmd in commands_to_reproduce
+        ]
 
         return commands_to_reproduce
 

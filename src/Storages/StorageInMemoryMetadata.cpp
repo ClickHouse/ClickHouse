@@ -636,6 +636,16 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
     return select.select_query != nullptr;
 }
 
+bool StorageInMemoryMetadata::hasStatistics() const
+{
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty())
+            return true;
+    }
+    return false;
+}
+
 namespace
 {
     using NamesAndTypesMap = HashMapWithSavedHash<std::string_view, const IDataType *, StringViewHash>;
