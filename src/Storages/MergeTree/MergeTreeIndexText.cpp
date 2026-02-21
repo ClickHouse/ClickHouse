@@ -9,10 +9,11 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -326,7 +327,7 @@ void MergeTreeIndexGranuleText::readSparseIndex(MergeTreeIndexReaderStream & str
     };
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
+    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getDiskName(), state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
     sparse_index = condition_text.headerCache()->getOrSet(hash, load_sparse_index);
 }
 
@@ -362,7 +363,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
             return std::make_shared<TextIndexDictionaryBlockCacheEntry>(TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, posting_list_codec));
         };
 
-        auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
+        auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getDiskName(), state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
         return condition_text.dictionaryBlockCache()->getOrSet(hash, load_dictionary_block);
     };
 
@@ -407,7 +408,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality, posting_list_codec);
     };
 
-    auto hash = TextIndexPostingsCache::hash(data_path, index_name, token_info.offsets[block_idx]);
+    auto hash = TextIndexPostingsCache::hash(state.part.getDataPartStorage().getDiskName(), data_path, index_name, token_info.offsets[block_idx]);
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 
@@ -1005,10 +1006,10 @@ size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
 
 MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
     MergeTreeIndexTextParams params_,
-    TokenExtractorPtr token_extractor_,
+    TokenizerPtr tokenizer_,
     PostingListCodecPtr posting_list_codec_)
     : params(std::move(params_))
-    , token_extractor(token_extractor_)
+    , tokenizer(tokenizer_)
     , posting_list_codec(posting_list_codec_)
     , arena(std::make_unique<Arena>())
 {
@@ -1054,7 +1055,7 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
     forEachTokenPadded(
-        *token_extractor,
+        *tokenizer,
         document.data(),
         document.size(),
         [&](const char * token_start, size_t token_length)
@@ -1112,14 +1113,14 @@ void MergeTreeIndexTextGranuleBuilder::reset()
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     String index_column_name_,
     MergeTreeIndexTextParams params_,
-    TokenExtractorPtr token_extractor_,
+    TokenizerPtr tokenizer_,
     PostingListCodecPtr posting_list_codec_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
-    , token_extractor(token_extractor_)
+    , tokenizer(tokenizer_)
     , posting_list_codec(posting_list_codec_)
-    , granule_builder(params, token_extractor_, posting_list_codec_)
+    , granule_builder(params, tokenizer_, posting_list_codec_)
     , preprocessor(preprocessor_)
 {
 }
@@ -1186,11 +1187,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 MergeTreeIndexText::MergeTreeIndexText(
     const IndexDescription & index_,
     MergeTreeIndexTextParams params_,
-    std::unique_ptr<ITokenExtractor> token_extractor_,
+    std::unique_ptr<ITokenizer> tokenizer_,
     std::unique_ptr<IPostingListCodec> posting_list_codec_)
     : IMergeTreeIndex(index_)
     , params(std::move(params_))
-    , token_extractor(std::move(token_extractor_))
+    , tokenizer(std::move(tokenizer_))
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
 {
@@ -1220,12 +1221,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, token_extractor.get(), posting_list_codec.get(), preprocessor);
+    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, token_extractor.get(), preprocessor);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor);
 }
 
 static const String ARGUMENT_TOKENIZER = "tokenizer";
@@ -1324,7 +1325,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
-    auto token_extractor = TokenizerFactory::instance().get(tokenizer_ast);
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
@@ -1342,7 +1343,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
-    return std::make_shared<MergeTreeIndexText>(index, index_params, std::move(token_extractor), std::move(posting_list_codec));
+    return std::make_shared<MergeTreeIndexText>(index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
 void textIndexValidator(const IndexDescription & index, bool /*attach*/)

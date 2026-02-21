@@ -708,6 +708,11 @@ class JobConfigs:
     )
     stress_test_jobs = common_stress_job_config.parametrize(
         Job.ParamSet(
+            parameter="amd_release",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_RELEASE],
+        ),
+        Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.DEB_AMD_DEBUG],
@@ -823,7 +828,16 @@ class JobConfigs:
             )
             for total_batches in (6,)
             for batch in range(1, total_batches + 1)
-        ]
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_msan, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_MSAN],
+            )
+            for total_batches in (6,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     integration_test_asan_flaky_pr_jobs = (
         common_integration_test_job_config.parametrize(
@@ -1114,6 +1128,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        needs_jobs_from_requires=True,
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     docker_keeper = Job.Config(
@@ -1128,6 +1143,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        needs_jobs_from_requires=True,
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     sqlancer_master_jobs = Job.Config(
@@ -1197,6 +1213,12 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
             provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM],
         ),
+    )
+    update_toolchain_dockerfile_job = Job.Config(
+        name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
+        enable_gh_auth=True,
     )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",

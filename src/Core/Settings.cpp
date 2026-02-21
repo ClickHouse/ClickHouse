@@ -234,6 +234,11 @@ This may reduce memory usage in case of row with many matches in right table, bu
 Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
 The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
 )", 0) \
+    DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
+Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
+This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
+When disabled, non-joined rows are processed by a single thread.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -1482,7 +1487,7 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
     DECLARE(Bool, split_intersecting_parts_ranges_into_layers_final, true, R"(
 Split intersecting parts ranges into layers during FINAL optimization
 )", 0) \
-    DECLARE(Bool, apply_row_policy_after_final, false, R"(
+    DECLARE(Bool, apply_row_policy_after_final, true, R"(
 When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
 When disabled, row policies are applied before FINAL, which can cause different results when the policy
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
@@ -2506,6 +2511,9 @@ Possible values:
 
 - 1 — Throwing an exception is enabled.
 - 0 — Throwing an exception is disabled.
+)", 0) \
+    DECLARE(Bool, optimize_dry_run_check_part, true, R"(
+When enabled, `OPTIMIZE ... DRY RUN` validates the resulting merged part using `checkDataPart`. If the check fails, an exception is thrown.
 )", 0) \
     DECLARE(Bool, use_index_for_in_with_subqueries, true, R"(
 Try using an index if there is a subquery or a table expression on the right side of the IN operator.
@@ -6165,6 +6173,9 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
     DECLARE(Bool, check_referential_table_dependencies, false, R"(
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
 )", 0) \
+    DECLARE(Bool, check_named_collection_dependencies, true, R"(
+Check that DROP NAMED COLLECTION will not break tables that depend on it
+)", 0) \
     \
     DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(
 Allow unrestricted (without condition on path) reads from system.zookeeper table, can be handy, but is not safe for zookeeper
@@ -7408,7 +7419,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
     \
-    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
 )", BETA, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
@@ -7476,9 +7487,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
-    DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
-)", EXPERIMENTAL) \
+)", BETA, allow_experimental_insert_into_iceberg) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \

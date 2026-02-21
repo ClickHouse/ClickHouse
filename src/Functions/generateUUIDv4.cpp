@@ -8,7 +8,7 @@ namespace DB
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
@@ -72,8 +72,8 @@ public:
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionGenerateUUIDv4>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionGenerateUUIDv4>();
 #endif
     }
 
