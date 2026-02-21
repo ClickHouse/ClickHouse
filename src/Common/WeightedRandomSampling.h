@@ -33,7 +33,7 @@ std::vector<typename Container::const_iterator> pickWeightedRandom(const Contain
     std::uniform_real_distribution<double> dist(0, 1);
     for (auto it = data.begin(); it != data.end(); ++it)
     {
-        const double weight = get_weight(*it);
+        const double weight = static_cast<double>(get_weight(*it));
         chassert(weight > 0);
 
         double u = dist(thread_local_rng);

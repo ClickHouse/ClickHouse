@@ -340,6 +340,7 @@ IMPLEMENT_SETTING_ENUM(
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
+     {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
@@ -348,7 +349,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"lru", FileCachePolicy::LRU},
      {"LRU", FileCachePolicy::LRU},
      {"slru", FileCachePolicy::SLRU},
-     {"SLRU", FileCachePolicy::SLRU}})
+     {"SLRU", FileCachePolicy::SLRU},
+     {"lru_overcommit", FileCachePolicy::LRU_OVERCOMMIT},
+     {"LRU_OVERCOMMIT", FileCachePolicy::LRU_OVERCOMMIT},
+     {"slru_overcommit", FileCachePolicy::SLRU_OVERCOMMIT},
+     {"SLRU_OVERCOMMIT", FileCachePolicy::SLRU_OVERCOMMIT}})
 
 IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
