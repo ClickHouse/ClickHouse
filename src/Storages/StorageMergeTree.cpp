@@ -200,7 +200,7 @@ StorageMergeTree::StorageMergeTree(
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "
                         "You must either clear directory by hand or use ATTACH TABLE instead "
-                        "of CREATE TABLE if you need to use that parts.");
+                        "of CREATE TABLE if you need to use those parts");
 
     increment.set(getMaxBlockNumber());
 
@@ -1486,6 +1486,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         if (currently_merging_mutating_parts.contains(part))
             continue;
 
+        /// Skip parts in partitions where merges/mutations are blocked (e.g. by REPLACE PARTITION).
+        /// This check must be inside selectPartsToMutate (under currently_processing_in_background_mutex)
+        /// to prevent a race where a mutation is selected after the partition blocker is set
+        /// but before stopMergesAndWaitForPartition finishes waiting.
+        if (merger_mutator.merges_blocker.isCancelledForPartition(part->info.getPartitionId()))
+            continue;
+
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
         if (mutations_begin_it == mutations_end_it)
             continue;
@@ -2560,13 +2567,20 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     {
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
-        auto merges_blocker = stopMergesAndWait();
     }
     else
     {
         partition_id = getPartitionIDFromQuery(partition, local_context);
-        auto merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
+
+    /// We use the global `stopMergesAndWait` (not the per-partition variant) because the
+    /// per-partition blocker check in `scheduleDataProcessingJob` happens outside
+    /// `currently_processing_in_background_mutex`, creating a race window where a mutation
+    /// can be selected inside the mutex, pass the per-partition check outside the mutex,
+    /// and get scheduled after the blocker was set but before we call
+    /// `removePartsInRangeFromWorkingSet`, "resurrecting" old data.
+    /// The global blocker is checked inside the mutex, eliminating this race.
+    ActionLock merges_blocker = stopMergesAndWait();
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();

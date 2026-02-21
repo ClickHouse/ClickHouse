@@ -448,6 +448,9 @@ def test_async_query_sending(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
+    if NODES["node"].is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer is too slow for precise resource measurement in this test")
+
     update_configs(
         node_1_sleep_after_receiving_query=5000,
         node_2_sleep_after_receiving_query=5000,

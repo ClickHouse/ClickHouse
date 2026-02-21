@@ -70,4 +70,6 @@ def test_set():
         node.query(
             "ALTER TABLE `02581_trips` UPDATE description = 'a' WHERE id IN (SELECT CAST(number * 10, 'UInt32') FROM numbers(10e9)) SETTINGS mutations_sync = 2"
         )
-    node.query("DROP TABLE IF EXISTS 02581_trips")
+    node.query(
+        "DROP TABLE IF EXISTS 02581_trips SETTINGS max_execution_time = 0"
+    )
