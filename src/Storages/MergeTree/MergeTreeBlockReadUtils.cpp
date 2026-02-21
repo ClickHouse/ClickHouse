@@ -96,7 +96,11 @@ bool injectRequiredColumnsRecursively(
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
-        if (column_in_part)
+        if (column_in_part
+            /// If the column was dropped by a pending mutation that hasn't been applied yet,
+            /// the data in this part is stale. Treat it as missing so that the default value is used.
+            /// This can happen if the column was dropped and then re-added with the same name.
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part)))
         {
             if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {

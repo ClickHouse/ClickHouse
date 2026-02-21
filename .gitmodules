@@ -381,3 +381,6 @@
 [submodule "contrib/substrait"]
 	path = contrib/substrait
 	url = https://github.com/substrait-io/substrait.git
+[submodule "contrib/clickstack"]
+	path = contrib/clickstack
+	url = https://github.com/ClickHouse/clickhouse-clickstack.git

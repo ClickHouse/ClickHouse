@@ -4,6 +4,15 @@
 namespace DB
 {
 
+void BlockIO::resetPipeline(bool cancel)
+{
+    if (cancel)
+        pipeline.cancel();
+    /// May use storage that is protected by pipeline, so should be destroyed first
+    query_metadata_cache.reset();
+    pipeline.reset();
+}
+
 void BlockIO::reset()
 {
     /** process_list_entries should be destroyed after in, after out and after pipeline,
@@ -17,7 +26,7 @@ void BlockIO::reset()
     /// TODO simplify it all
 
     releaseQuerySlot();
-    pipeline.reset();
+    resetPipeline(/*cancel=*/false);
     process_list_entries.clear();
 
     /// TODO Do we need also reset callbacks? In which order?
@@ -32,6 +41,7 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) noexcept
     reset();
 
     process_list_entries    = std::move(rhs.process_list_entries);
+    query_metadata_cache    = std::move(rhs.query_metadata_cache);
     pipeline                = std::move(rhs.pipeline);
 
     finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);
@@ -60,9 +70,7 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
         }
     }
     else
-    {
-        pipeline.reset();
-    }
+        resetPipeline(/*cancel=*/false);
 }
 
 void BlockIO::onException(bool log_as_error)
@@ -73,15 +81,13 @@ void BlockIO::onException(bool log_as_error)
     for (const auto & callback : exception_callbacks)
         callback(log_as_error);
 
-    pipeline.cancel();
-    pipeline.reset();
+    resetPipeline(/*cancel=*/true);
 }
 
 void BlockIO::onCancelOrConnectionLoss()
 {
     releaseQuerySlot();
-    pipeline.cancel();
-    pipeline.reset();
+    resetPipeline(/*cancel=*/true);
 }
 
 void BlockIO::setAllDataSent() const

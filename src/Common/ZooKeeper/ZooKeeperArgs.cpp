@@ -258,6 +258,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             use_xid_64 = config.getBool(config_name + "." + key);
         }
+        else if (key == "pass_opentelemetry_tracing_context")
+        {
+            pass_opentelemetry_tracing_context = config.getBool(config_name + "." + key);
+        }
         else if (key == "availability_zone_autodetect")
         {
             availability_zone_autodetect = config.getBool(config_name + "." + key);

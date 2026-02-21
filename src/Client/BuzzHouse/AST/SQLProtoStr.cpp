@@ -4967,11 +4967,39 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kStartPullingReplicationLog:
             SystemCommandOnCluster(ret, "START PULLING REPLICATION LOG", cmd, cmd.start_pulling_replication_log());
             break;
-        case CmdType::kSyncReplica:
-            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, cmd.sync_replica().est());
+        case CmdType::kSyncReplica: {
+            const auto & sr = cmd.sync_replica();
+
+            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, sr.est());
             ret += " ";
-            ret += SyncReplica_SyncPolicy_Name(cmd.sync_replica().policy());
-            break;
+            using SyncType = SyncReplica::SyncOneofCase;
+            switch (sr.sync_oneof_case())
+            {
+                case SyncType::kStrict:
+                    ret += "STRICT";
+                    break;
+                case SyncType::kLightweight:
+                    ret += "LIGHTWEIGHT";
+                    if (sr.lightweight().replicas_size() > 0)
+                    {
+                        ret += " ";
+                        for (int i = 0; i < sr.lightweight().replicas_size(); i++)
+                        {
+                            if (i != 0)
+                            {
+                                ret += ", ";
+                            }
+                            ret += "'";
+                            ret += sr.lightweight().replicas(i);
+                            ret += "'";
+                        }
+                    }
+                    break;
+                default:
+                    ret += "PULL";
+            }
+        }
+        break;
         case CmdType::kSyncReplicatedDatabase:
             ret += "SYNC DATABASE REPLICA";
             if (cmd.has_cluster())
@@ -5106,11 +5134,11 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kEnableFailpoint:
             ret += "ENABLE FAILPOINT ";
-            ret += FailPoint_Name(cmd.enable_failpoint());
+            ret += cmd.enable_failpoint();
             break;
         case CmdType::kDisableFailpoint:
             ret += "DISABLE FAILPOINT ";
-            ret += FailPoint_Name(cmd.disable_failpoint());
+            ret += cmd.disable_failpoint();
             break;
         case CmdType::kIcebergMetadataCache:
             ret += "DROP ICEBERG METADATA CACHE";
@@ -5140,9 +5168,66 @@ CONV_FN(SystemCommand, cmd)
             ret += "RESET DDL WORKER";
             can_set_cluster = true;
             break;
-        case CmdType::kDropParquetMetadataCache:
-            ret += "DROP PARQUET METADATA CACHE";
-            can_set_cluster = true;
+        case CmdType::kWaitFailpoint:
+            ret += "WAIT FAILPOINT ";
+            ret += cmd.wait_failpoint();
+            break;
+        case CmdType::kNotifyFailpoint:
+            ret += "NOTIFY FAILPOINT ";
+            ret += cmd.notify_failpoint();
+            break;
+        case CmdType::kRestoreDatabaseReplica:
+            ret += "RESTORE DATABASE REPLICA";
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
+            DatabaseToString(ret, cmd.restore_database_replica());
+            break;
+        case CmdType::kStopReplicatedView:
+            ret += "STOP REPLICATED VIEW ";
+            ExprSchemaTableToString(ret, cmd.stop_replicated_view());
+            break;
+        case CmdType::kStartReplicatedView:
+            ret += "START REPLICATED VIEW ";
+            ExprSchemaTableToString(ret, cmd.start_replicated_view());
+            break;
+        case CmdType::kUnfreeze:
+            ret += "UNFREEZE WITH NAME 'f";
+            ret += std::to_string(cmd.unfreeze());
+            ret += "'";
+            break;
+        case CmdType::kDropReplica:
+            ret += "DROP REPLICA '";
+            ret += cmd.drop_replica().replica();
+            ret += "'";
+            if (cmd.drop_replica().has_est())
+            {
+                ret += " FROM TABLE ";
+                ExprSchemaTableToString(ret, cmd.drop_replica().est());
+            }
+            else if (cmd.drop_replica().has_database())
+            {
+                ret += " FROM DATABASE ";
+                DatabaseToString(ret, cmd.drop_replica().database());
+            }
+            break;
+        case CmdType::kDropDatabaseReplica:
+            ret += "DROP DATABASE REPLICA '";
+            ret += cmd.drop_database_replica().replica();
+            ret += "'";
+            if (cmd.drop_database_replica().has_shard())
+            {
+                ret += " FROM SHARD '";
+                ret += cmd.drop_database_replica().shard();
+                ret += "'";
+            }
+            if (cmd.drop_database_replica().has_database())
+            {
+                ret += " FROM DATABASE ";
+                DatabaseToString(ret, cmd.drop_database_replica().database());
+            }
             break;
         default:
             ret += "FLUSH LOGS";

@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BUZZHOUSE;
+extern const int NETWORK_ERROR;
 }
 }
 
@@ -388,6 +389,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
         {"enable_memory_settings", [&](const JSONObjectType & value) { enable_memory_settings = value.getBool(); }},
+        {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
+        {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
@@ -488,7 +491,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
         fmt::print(stderr, "Error on processing query '{}'\n", query);
         if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Couldn't not reconnect to the server");
+            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Couldn't not reconnect to the server");
         }
     }
     return res;
@@ -526,6 +529,14 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
+    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
+    /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    loadServerSettings<String>(
+        this->failpoints,
+        "failpoints",
+        "SELECT \"name\" FROM \"system\".\"fail_points\""
+        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
