@@ -11,7 +11,7 @@ CREATE TABLE tab (
 )
 ENGINE = MergeTree()
 ORDER BY id -- This is important. We want to have additional primary index that does not use the column `col`.
-SETTINGS index_granularity = 8192, index_granularity_bytes = 0; -- Explicit granularity to make EXPLAIN output deterministic.
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'; -- Explicit granularity to make EXPLAIN output deterministic.
 
 INSERT INTO tab VALUES
     (1, 1.0),
