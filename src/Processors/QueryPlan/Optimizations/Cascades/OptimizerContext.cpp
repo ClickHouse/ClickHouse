@@ -26,8 +26,6 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
 //    addRule(std::make_shared<JoinAssociativity>());
     addRule(std::make_shared<JoinCommutativity>());
     addRule(std::make_shared<HashJoinImplementation>());
-    addRule(std::make_shared<ShuffleHashJoinImplementation>());
-    addRule(std::make_shared<BroadcastJoinImplementation>());
     addRule(std::make_shared<DefaultImplementation>());
     addRule(std::make_shared<LocalAggregationImplementation>());
     addRule(std::make_shared<ShuffleAggregationImplementation>());

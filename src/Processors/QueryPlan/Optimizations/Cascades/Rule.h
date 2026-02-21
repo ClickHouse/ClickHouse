@@ -53,6 +53,14 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
 };
 
+/// Produces all applicable hash join implementations in a single rule:
+///   - Local join: both inputs gathered to one node (always applicable)
+///   - Broadcast join: left partitioned any way, right replicated (only when node_count > 1)
+///   - Partitioned (shuffle) join: both inputs shuffled by join keys (only when node_count > 1
+///     and the join has equi-join predicates)
+///
+/// When node_count == 1 all three strategies produce the same plan, so only the local join
+/// is emitted to avoid redundant identical alternatives in the memo.
 class HashJoinImplementation : public IOptimizationRule
 {
 public:
@@ -62,31 +70,7 @@ public:
     bool isTransformation() const override { return false; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
-};
-
-class ShuffleHashJoinImplementation : public IOptimizationRule
-{
-public:
-    String getName() const override { return "ShuffleHashJoin"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 3000; }
-    bool isTransformation() const override { return false; }
-
-protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
-};
-
-class BroadcastJoinImplementation : public IOptimizationRule
-{
-public:
-    String getName() const override { return "BroadcastJoin"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 4000; }
-    bool isTransformation() const override { return false; }
-
-protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 class LocalAggregationImplementation : public IOptimizationRule
