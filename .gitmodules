@@ -378,3 +378,6 @@
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
+[submodule "contrib/clickstack"]
+	path = contrib/clickstack
+	url = https://github.com/ClickHouse/clickhouse-clickstack.git

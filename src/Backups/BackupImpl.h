@@ -89,7 +89,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
-    bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept override;
+    void removeAllFilesUnderDirectory(const String & directory) const override;
 
 private:
     void open();

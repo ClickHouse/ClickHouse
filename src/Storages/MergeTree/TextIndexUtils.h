@@ -98,6 +98,8 @@ public:
 
     bool executeStep() override;
     void cancel() noexcept override;
+
+    MutableDataPartsVector extractTemporaryParts() override { return {}; }
     void addToChecksums(MergeTreeDataPartChecksums & checksums) override;
 
 private:

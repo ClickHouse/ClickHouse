@@ -147,6 +147,9 @@ void replicateBlobs(
     const ObjectStorageRouterPtr & object_storages,
     const LoggerPtr & log) noexcept
 {
+    if (blobs_to_replicate.empty())
+        return;
+
     LOG_TRACE(log, "Will replicate {} blobs", blobs_to_replicate.size());
 
     const ReadSettings read_settings = getReadSettings();
@@ -201,14 +204,14 @@ BlobCopierThread::BlobCopierThread(
 
 void BlobCopierThread::run()
 {
-    LOG_TRACE(log, "Starting replication");
+    LOG_TEST(log, "Starting replication");
 
     executeBlobsReplication(metadata_request_batch.load(), replication_tasks_runner, cluster, metadata_storage, object_storages, log);
     finished_rounds.fetch_add(1);
 
     const int64_t schedule_after_ms = DelayWithJitter(reschedule_interval_sec.load() * 1000).getDelayWithJitter(-500, 500);
     task->scheduleAfter(schedule_after_ms);
-    LOG_TRACE(log, "Scheduled after: {} ms", schedule_after_ms);
+    LOG_TEST(log, "Scheduled after: {} ms", schedule_after_ms);
 }
 
 void BlobCopierThread::startup()
@@ -253,16 +256,12 @@ void BlobCopierThread::applyNewSettings(const Poco::Util::AbstractConfiguration 
     metadata_request_batch = config.getUInt64(config_prefix + ".metadata_request_size", DEFAULT_METADATA_REQUEST_SIZE);
     replication_tasks_pool.setMaxThreads(config.getUInt64(config_prefix + ".threads_count", DEFAULT_THREADS_COUNT));
 
+    LOG_INFO(log, "Applying new settings: Enabled: {}, Started: {}", enabled.load(), started.load());
+
     if (enabled && started)
-    {
-        LOG_INFO(log, "Execution started");
         task->activateAndSchedule();
-    }
     else
-    {
-        LOG_INFO(log, "Execution stopped");
         task->deactivate();
-    }
 }
 
 }
