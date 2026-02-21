@@ -75,8 +75,9 @@ public:
     /// The first thread created this thread group
     const UInt64 master_thread_id;
 
-    /// Set up at creation, no race when reading
-    const ContextWeakPtr query_context;
+    /// Set up at creation; may be temporarily swapped for internal queries (see executeQueryImpl).
+    /// Access is protected by `mutex` since it can be swapped.
+    ContextWeakPtr query_context;
     const ContextWeakPtr global_context;
 
     const FatalErrorCallback fatal_error_callback;
@@ -295,6 +296,8 @@ public:
 
     ContextPtr getQueryContext() const;
     ContextPtr getGlobalContext() const;
+
+    void setQueryContext(ContextWeakPtr new_query_context) noexcept;
 
     /// Attaches slave thread to existing thread group
     void attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached = true);

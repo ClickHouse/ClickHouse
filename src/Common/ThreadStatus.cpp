@@ -196,6 +196,11 @@ ContextPtr ThreadStatus::getGlobalContext() const
     return global_context.lock();
 }
 
+void ThreadStatus::setQueryContext(ContextWeakPtr new_query_context) noexcept
+{
+    query_context = std::move(new_query_context);
+}
+
 void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
 {
     std::lock_guard lock(mutex);

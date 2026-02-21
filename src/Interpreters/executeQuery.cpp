@@ -1084,16 +1084,37 @@ static BlockIO executeQueryImpl(
 {
     const bool internal = flags.internal;
 
-    /// For internal queries, switch the thread's query_id so that the query profiler attributes traces correctly.
-    std::function<void()> restore_query_id;
+    /// For internal queries, temporarily switch the query_id and query_context on both the current thread
+    /// and the thread group, so that the query profiler and any worker threads spawned by the pipeline
+    /// attribute traces to the internal query rather than the outer one.
+    /// The state is restored when the internal query's BlockIO calls onFinish/onException.
+    std::function<void()> restore_internal_query_state;
     if (internal && current_thread)
     {
         String prev_query_id = current_thread->getQueryId();
         current_thread->setQueryId(String(context->getCurrentQueryId()), /*assert_empty=*/ false);
-        restore_query_id = [prev_id = std::move(prev_query_id)]() mutable
+        current_thread->setQueryContext(context);
+
+        auto thread_group = CurrentThread::getGroup();
+        ContextWeakPtr prev_group_context;
+        if (thread_group)
+        {
+            prev_group_context = thread_group->query_context;
+            thread_group->query_context = context;
+        }
+
+        restore_internal_query_state = [
+            prev_query_id = std::move(prev_query_id),
+            prev_group_context = std::move(prev_group_context),
+            thread_group = std::move(thread_group)]() mutable
         {
             if (current_thread)
-                current_thread->setQueryId(std::move(prev_id));
+            {
+                current_thread->setQueryId(std::move(prev_query_id), /*assert_empty=*/ false);
+                current_thread->setQueryContext(prev_group_context);
+            }
+            if (thread_group)
+                thread_group->query_context = std::move(prev_group_context);
         };
     }
 
@@ -1906,7 +1927,7 @@ static BlockIO executeQueryImpl(
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span,
-                                    my_restore_query_id = restore_query_id](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
+                                    my_restore_internal_query_state = restore_internal_query_state](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
@@ -1915,12 +1936,12 @@ static BlockIO executeQueryImpl(
                     implicit_tcl_executor->commit(context);
                 }
 
-                if (my_restore_query_id)
-                    my_restore_query_id();
+                if (my_restore_internal_query_state)
+                    my_restore_internal_query_state();
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span, my_restore_query_id = restore_query_id](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span, my_restore_internal_query_state = restore_internal_query_state](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -1940,8 +1961,8 @@ static BlockIO executeQueryImpl(
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
 
-                if (my_restore_query_id)
-                    my_restore_query_id();
+                if (my_restore_internal_query_state)
+                    my_restore_internal_query_state();
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
@@ -1951,8 +1972,8 @@ static BlockIO executeQueryImpl(
     }
     catch (...)
     {
-        if (restore_query_id)
-            restore_query_id();
+        if (restore_internal_query_state)
+            restore_internal_query_state();
 
         if (implicit_tcl_executor->transactionRunning())
         {
