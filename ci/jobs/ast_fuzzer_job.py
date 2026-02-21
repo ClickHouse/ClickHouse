@@ -156,7 +156,8 @@ def analyze_job_logs(
     if is_failed:
         # generate fatal log
         for server_log, fatal_log in zip(server_logs, fatal_logs):
-            Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
+            if not Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}"):
+                Path(fatal_log).unlink(missing_ok=True)
 
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
