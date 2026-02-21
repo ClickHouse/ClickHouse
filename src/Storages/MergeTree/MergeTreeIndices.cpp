@@ -167,9 +167,6 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("bloom_filter", bloomFilterIndexCreator);
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
-    registerCreator("hypothesis", hypothesisIndexCreator);
-    registerValidator("hypothesis", hypothesisIndexValidator);
-
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);

@@ -72,11 +72,7 @@ evalOrRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUs
 class ActionsDAG;
 class Block;
 struct MergeTreeWriterSettings;
-struct SelectQueryInfo;
 struct MergeTreeDataPartChecksums;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace ErrorCodes
 {
@@ -243,28 +239,6 @@ struct IMergeTreeIndex;
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 
 
-/// IndexCondition that checks several indexes at the same time.
-class IMergeTreeIndexMergedCondition
-{
-public:
-    explicit IMergeTreeIndexMergedCondition(size_t granularity_)
-        : granularity(granularity_)
-    {
-    }
-
-    virtual ~IMergeTreeIndexMergedCondition() = default;
-
-    virtual void addIndex(const MergeTreeIndexPtr & index) = 0;
-    virtual bool alwaysUnknownOrTrue() const = 0;
-    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const = 0;
-
-protected:
-    const size_t granularity;
-};
-
-using MergeTreeIndexMergedConditionPtr = std::shared_ptr<IMergeTreeIndexMergedCondition>;
-
-
 struct IMergeTreeIndex
 {
     explicit IMergeTreeIndex(const IndexDescription & index_)
@@ -277,8 +251,6 @@ struct IMergeTreeIndex
     /// Returns the filename without extension. If escape_filenames is set (default since 26.1), the name is escaped.
     String getFileName() const;
     size_t getGranularity() const { return index.granularity; }
-
-    virtual bool isMergeable() const { return false; }
 
     /// Returns substreams for serialization.
     /// Reimplement if you want new index format.
@@ -318,13 +290,6 @@ struct IMergeTreeIndex
 
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
-
-    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
-        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "MergedCondition is not implemented for index of type {}", index.type);
-    }
 
     Names getColumnsRequiredForIndexCalc() const;
 
@@ -387,9 +352,6 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
-
-MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
-void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);

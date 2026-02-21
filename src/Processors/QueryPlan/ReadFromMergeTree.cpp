@@ -1959,8 +1959,6 @@ void ReadFromMergeTree::buildIndexes(
     }
 
     UsefulSkipIndexes skip_indexes;
-    using Key = std::pair<String, size_t>;
-    std::map<Key, size_t> merged;
 
     for (const auto & index : all_indexes)
     {
@@ -1968,20 +1966,6 @@ void ReadFromMergeTree::buildIndexes(
             continue;
 
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
-
-        if (index_helper->isMergeable())
-        {
-            auto [it, inserted]
-                = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
-            if (inserted)
-            {
-                skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info_, metadata_snapshot);
-            }
-
-            skip_indexes.merged_indices[it->second].addIndex(index_helper);
-            continue;
-        }
 
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
