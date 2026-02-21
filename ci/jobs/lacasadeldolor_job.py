@@ -4,6 +4,7 @@ import random
 import re
 import secrets
 import shlex
+import shutil
 import subprocess
 import time
 import traceback
@@ -92,6 +93,40 @@ def parse_args():
         default="",
     )
     return parser.parse_args()
+
+
+def get_node_container_logs(node_index: int):
+    return [
+        # ClickHouse server log file (after final restart)
+        Path(
+            f"{repo_dir}/tests/casa_del_dolor/_instances-dolor/node{node_index}/logs/clickhouse-server.log"
+        ),
+        # ClickHouse server error log file (after final restart)
+        Path(
+            f"{repo_dir}/tests/casa_del_dolor/_instances-dolor/node{node_index}/logs/clickhouse-server.err.log"
+        ),
+        # ClickHouse server stdout log file
+        Path(
+            f"{repo_dir}/tests/casa_del_dolor/_instances-dolor/node{node_index}/logs/stdout.log"
+        ),
+        # ClickHouse server stderr log file
+        Path(
+            f"{repo_dir}/tests/casa_del_dolor/_instances-dolor/node{node_index}/logs/stderr.log"
+        ),
+    ]
+
+
+def get_node_workspace_logs(workspace_path: Path, node_index: int):
+    return [
+        # ClickHouse server log file (after final restart)
+        workspace_path / f"server{node_index}.log",
+        # ClickHouse server error log file (after final restart)
+        workspace_path / f"server{node_index}.err.log",
+        # ClickHouse server stdout log file
+        workspace_path / f"stdout{node_index}.log",
+        # ClickHouse server stderr log file
+        workspace_path / f"stderr{node_index}.log",
+    ]
 
 
 def main():
@@ -193,24 +228,21 @@ def main():
     workspace_path = temp_dir / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
+    session_seed = secrets.randbits(64)
+    print(f"Using seed {session_seed} for La Casa del Dolor")
+
+    # Set up remote servers configuration for La Casa del Dolor
+    number_of_nodes = random.randint(1, 3)
+
     core_file = workspace_path / "core.zst"  # Core dump file
     dolor_log = workspace_path / "dolor.log"  # La Casa del Dolor log file
     buzzconfig = workspace_path / "fuzz.json"  # BuzzHouse config file
-    fuzzer_log = (
-        workspace_path / "fuzzer.log"
-    )  # La Casa del Dolor stdout and stderr (BuzzHouse output)
-    dmesg_log = workspace_path / "dmesg.log"  # dmesg log file
-    fatal_log = (
-        workspace_path / "fatal.log"
-    )  # Fatal log file if ClickHouse server crashes
-    server_log = (
-        workspace_path / "server.log"
-    )  # ClickHouse server log file (after final restart)
-    server_err_log = (
-        workspace_path / "server.err.log"
-    )  # ClickHouse server error log file (after final restart)
-    stdout_log = workspace_path / "stdout.log"  # ClickHouse server stdout log file
-    stderr_log = workspace_path / "stderr.log"  # ClickHouse server stderr log file
+    # La Casa del Dolor stdout and stderr (BuzzHouse output)
+    fuzzer_log = workspace_path / "fuzzer.log"
+    # dmesg log file
+    dmesg_log = workspace_path / "dmesg.log"
+    # Fatal log file if ClickHouse server crashes
+    fatal_log = workspace_path / "fatal.log"
     buzz_out = workspace_path / "fuzzerout.sql"  # BuzzHouse generated queries
     server_cmd = workspace_path / "server.sh"  # Command line used for La Casa del Dolor
     config_xml = workspace_path / "config.xml"  # Configuration file for server
@@ -223,10 +255,6 @@ def main():
     paths = [
         core_file,
         fatal_log,
-        stdout_log,
-        stderr_log,
-        server_log,
-        server_err_log,
         fuzzer_log,
         dmesg_log,
         buzzconfig,
@@ -240,15 +268,13 @@ def main():
         sqlite_query_log,
         mongodb_query_log,
     ]
+    # Copied server logs from container
+    for i in range(number_of_nodes):
+        paths.extend(get_node_workspace_logs(workspace_path, i))
 
     # Generate BuzzHouse config
-    generate_buzz_config(buzzconfig)
+    generate_buzz_config(workspace_path)
 
-    session_seed = secrets.randbits(64)
-    print(f"Using seed {session_seed} for La Casa del Dolor")
-
-    # Set up remote servers configuration for La Casa del Dolor
-    number_of_nodes = random.randint(1, 3)
     ctree = ET.parse(f"{repo_dir}/ci/jobs/scripts/server_fuzzer/config.xml")
     croot = ctree.getroot()
     if croot.tag != "clickhouse":
@@ -273,6 +299,7 @@ def main():
             host.text = f"node{i}"
             port = ET.SubElement(next_replica, "port")
             port.text = "9000"
+    ET.indent(ctree, space="    ", level=0)  # indent tree
     ctree.write(config_xml, encoding="utf-8", xml_declaration=True)
 
     # Set parallel replicas cluster
@@ -285,11 +312,12 @@ def main():
         def_profile = ET.SubElement(profiles, "default")
         cluster_preplicas = ET.SubElement(def_profile, "cluster_for_parallel_replicas")
         cluster_preplicas.text = "allnodes"
+    ET.indent(utree, space="    ", level=0)  # indent tree
     utree.write(users_xml, encoding="utf-8", xml_declaration=True)
 
     # Set up and run La Casa del Dolor
     base_command = f"""
-python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse
+python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse
 --tmp-files-dir={workspace_path}
 --server-config={config_xml}
 --user-config={users_xml}
@@ -334,6 +362,13 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
         name="dolor",
         command=base_command,
     )
+    # Copy logs from container to host
+    for i in range(number_of_nodes):
+        for cont_log, host_log in zip(
+            get_node_container_logs(i), get_node_workspace_logs(workspace_path, i)
+        ):
+            if cont_log.exists():
+                shutil.copy2(cont_log, host_log)
 
     result_name = "dolor"
     result_status = run_result.status

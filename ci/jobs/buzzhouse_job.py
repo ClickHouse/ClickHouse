@@ -9,7 +9,7 @@ from ci.jobs.ci_utils import is_extended_run
 from ci.praktika.utils import Utils
 
 
-def generate_buzz_config(buzz_config_file: Path):
+def generate_buzz_config(workspace_path: Path):
     # Sometimes disallow SQL types to reduce number of combinations
     disabled_types_str = ""
     if random.randint(1, 2) == 1:
@@ -201,7 +201,7 @@ def generate_buzz_config(buzz_config_file: Path):
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
-        "log_path": "/workspace/fuzzerout.sql",
+        "log_path": str(workspace_path / "fuzzerout.sql"),
         "read_log": False,
         "allow_memory_tables": random.choice([True, False]),
         "allow_client_restarts": random.choice([True, False]),
@@ -250,7 +250,7 @@ def generate_buzz_config(buzz_config_file: Path):
             "vertical_merge_algorithm_min_bytes_to_activate",
         ],
     }
-    with open(buzz_config_file, "w") as outfile:
+    with open(workspace_path / "fuzz.json", "w") as outfile:
         outfile.write(json.dumps(buzz_config))
 
 
@@ -258,7 +258,7 @@ def main():
     temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
     workspace_path = temp_dir / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
-    generate_buzz_config(workspace_path / "fuzz.json")
+    generate_buzz_config(workspace_path)
 
     run_fuzz_job("BuzzHouse")
 
