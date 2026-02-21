@@ -544,7 +544,7 @@ if args.with_postgresql:
 catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
 
 # Start the load generator, at the moment only BuzzHouse is available
-generator: Generator = Generator(pathlib.Path(), pathlib.Path(), pathlib.Path(), None)
+generator: Generator = Generator()
 if args.generator == "buzzhouse":
     generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
 logger.info("Starting load generator")
@@ -566,28 +566,9 @@ def dolor_cleanup():
         except:
             pass
         close_spark_http_server(catalog_server)
-        if modified_server_settings:
-            try:
-                os.unlink(server_settings)
-            except FileNotFoundError:
-                pass
-        if modified_user_settings:
-            try:
-                os.unlink(user_settings)
-            except FileNotFoundError:
-                pass
-        try:
-            os.unlink(generator.temp.name)
-        except FileNotFoundError:
-            pass
         if args.with_minio:
             try:
                 os.unlink(credentials_file.name)
-            except FileNotFoundError:
-                pass
-        for entry in keeper_configs:
-            try:
-                os.unlink(entry)
             except FileNotFoundError:
                 pass
         everything_cleaned = True

@@ -1315,7 +1315,7 @@ def modify_server_settings(
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="config_", suffix=".xml", delete=False
         ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
@@ -1359,7 +1359,7 @@ def modify_user_settings(
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="user_", suffix=".xml", delete=False
         ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
@@ -1540,7 +1540,7 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
 
         ET.indent(tree, space="    ", level=0)
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="keeper_", suffix=".xml", delete=False
         ) as temp_file:
             result_configs.append(temp_file.name)
             tree.write(temp_file.name, encoding="utf-8", xml_declaration=True)

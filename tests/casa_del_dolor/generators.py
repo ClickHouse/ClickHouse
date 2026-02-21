@@ -7,7 +7,6 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional
 
 from environment import set_environment_variables
 from tests.integration.helpers.client import CommandRequest
@@ -20,17 +19,8 @@ from tests.integration.helpers.config_cluster import (
 
 
 class Generator:
-    def __init__(
-        self,
-        binary: pathlib.Path,
-        config: pathlib.Path,
-        tmpdir: pathlib.Path,
-        _suffix: Optional[str],
-    ):
-        self.binary: pathlib.Path = binary
-        self.config: pathlib.Path = config
-        if _suffix is not None:
-            self.temp = tempfile.NamedTemporaryFile(dir=tmpdir, suffix=_suffix)
+    def __init__(self):
+        pass
 
     @abstractmethod
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
@@ -55,9 +45,8 @@ class Generator:
 
 class BuzzHouseGenerator(Generator):
     def __init__(self, args, cluster, catalog_server, server_settings):
-        super().__init__(
-            args.client_binary, args.client_config, args.tmp_files_dir, ".json"
-        )
+        super().__init__()
+        self.binary: pathlib.Path = args.client_binary
 
         tree = ET.parse(server_settings)
         root = tree.getroot()
@@ -213,8 +202,15 @@ class BuzzHouseGenerator(Generator):
                     "password": "",
                 }
 
-        with open(self.temp.name, "w+") as file2:
-            file2.write(json.dumps(buzz_config))
+        with tempfile.NamedTemporaryFile(
+            dir=args.tmp_files_dir,
+            mode="w",
+            prefix="buzzhouse_",
+            suffix=".json",
+            delete=False,
+        ) as temp_file:
+            self.temp_name = temp_file.name
+            json.dump(buzz_config, temp_file, indent=2)
 
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
         return [
@@ -225,7 +221,7 @@ class BuzzHouseGenerator(Generator):
             "--port",
             "9000",
             "--max_memory_usage_in_client=1000000000",
-            f"--buzz-house-config={self.temp.name}",
+            f"--buzz-house-config={self.temp_name}",
         ]
 
     def validate_exit_code(self, exit_code: int) -> bool:
