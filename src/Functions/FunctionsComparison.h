@@ -1027,6 +1027,22 @@ private:
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
+        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
+        /// comparisons would produce ColumnNothing which doesn't match the declared
+        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
+        {
+            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
+            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
+                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
+                {
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
+                }
+            }
+        }
+
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
