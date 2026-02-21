@@ -1,3 +1,5 @@
+SET optimize_trivial_insert_select = 0;
+
 DROP TABLE IF EXISTS test_03444_lazy;
 CREATE TABLE test_03444_lazy (n UInt32) ENGINE = MergeTree ORDER BY n;
 INSERT INTO test_03444_lazy SELECT * FROM generateRandom() LIMIT 50;

@@ -1,3 +1,5 @@
+SET optimize_use_projections = 1;
+
 DROP TABLE IF EXISTS tp;
 
 CREATE TABLE tp (

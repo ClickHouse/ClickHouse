@@ -6,6 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 opts=(
     "--enable_analyzer=1"
+    "--query_plan_optimize_prewhere=1"
 )
 
 function run_query()

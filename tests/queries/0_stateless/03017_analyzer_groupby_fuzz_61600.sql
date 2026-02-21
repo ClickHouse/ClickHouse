@@ -1,4 +1,5 @@
 SET optimize_group_by_constant_keys = 1;
+SET optimize_trivial_insert_select = 0;
 
 CREATE TABLE set_index_not__fuzz_0 (`name` String, `status` Enum8('alive' = 0, 'rip' = 1), INDEX idx_status status TYPE set(2) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY name

@@ -1,5 +1,6 @@
 set enable_analyzer = 1;
 set allow_experimental_correlated_subqueries = 1;
+set optimize_trivial_insert_select = 0;
 
 CREATE TABLE orders  (
     o_orderkey       Int32,

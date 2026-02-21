@@ -1,4 +1,5 @@
 SET optimize_on_insert = 1;
+SET optimize_trivial_insert_select = 0;
 
 CREATE TABLE 03094_grouparrysorted_dest
 (

@@ -1,6 +1,8 @@
 -- Tests that Merge-engine (not: MergeTree!) tables support the trivial count
 -- optimization if all underlying tables support it
 
+SET optimize_trivial_count_query = 1;
+
 DROP TABLE IF EXISTS mt1;
 DROP TABLE IF EXISTS mt2;
 DROP TABLE IF EXISTS merge;

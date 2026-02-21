@@ -3,6 +3,7 @@
 -- Tag no-fasttest: In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
 
 SET optimize_trivial_insert_select = 0;
+SET optimize_trivial_approximate_count_query = 0;
 
 DROP TABLE IF EXISTS 03720_test;
 CREATE TABLE 03720_test (k1 UInt64, k2 UInt64, val UInt64) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);

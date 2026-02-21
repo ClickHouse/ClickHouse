@@ -1,4 +1,5 @@
 SET enable_parallel_replicas = 0;
+SET query_plan_optimize_prewhere = 1;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (

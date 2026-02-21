@@ -1,3 +1,5 @@
+SET optimize_trivial_insert_select = 0;
+
 CREATE TABLE t1
 (
     id Int32,
