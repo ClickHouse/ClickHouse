@@ -417,6 +417,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                 status=Result.Status.ERROR, info=error_info
             ).complete_job()
 
+        log_paths = get_node_workspace_logs(workspace_path, 0)
         analyzed_result, is_analyzed_failure = analyze_job_logs(
             paths,
             server_died,
@@ -425,8 +426,8 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             buzz_out,
             fuzzer_log,
             dmesg_log,
-            server_log,
-            stderr_log,
+            log_paths[0],
+            log_paths[3],
             fatal_log,
         )
         if is_analyzed_failure:
