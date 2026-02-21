@@ -467,7 +467,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->default_specifier = toColumnDefaultSpecifier(column.default_desc.kind);
             column_declaration->setDefaultExpression(column.default_desc.expression->clone());
         }
+        else if (column.auto_increment)
+        {
+            column_declaration->default_specifier = ColumnDefaultSpecifier::AutoIncrement;
+        }
 
+        column_declaration->null_modifier = column.null_modifier;
         column_declaration->ephemeral_default = column.default_desc.ephemeral_default;
 
         if (!column.comment.empty())
@@ -488,6 +493,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         if (column.ttl)
         {
             column_declaration->setTTL(column.ttl->clone());
+        }
+
+        if (column.collation)
+        {
+            column_declaration->setCollation(column.collation->clone());
         }
 
         if (!column.settings.empty())
@@ -631,6 +641,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         auto & col_decl = (*ast_it)->as<ASTColumnDeclaration &>();
 
         column.name = col_decl.name;
+        if (col_decl.null_modifier.has_value() && !*col_decl.null_modifier)
+            column.null_modifier = false;
 
         /// ignore or not other database extensions depending on compatibility settings
         if (col_decl.default_specifier == ColumnDefaultSpecifier::AutoIncrement
@@ -640,6 +652,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                             "AUTO_INCREMENT is not supported. To ignore the keyword "
                             "in column declaration, set `compatibility_ignore_auto_increment_in_create_table` to true");
         }
+        else if (col_decl.default_specifier == ColumnDefaultSpecifier::AutoIncrement)
+            column.auto_increment = true;
 
         if (auto default_expression = col_decl.getDefaultExpression())
         {
@@ -675,6 +689,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (auto comment = col_decl.getComment())
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
+
+        if (auto collation = col_decl.getCollation())
+            column.collation = collation->clone();
 
         if (auto codec = col_decl.getCodec())
         {
