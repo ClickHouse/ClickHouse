@@ -24,6 +24,7 @@ using LoggerPtr = std::shared_ptr<Logger>;
 
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 using LoggerRawPtr = Poco::Logger *;
+class LogFrequencyLimiterImpl;
 
 namespace DB
 {
@@ -348,6 +349,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(LogFrequencyLimiterImpl && logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 
 
 /** Prints current exception in canonical format.

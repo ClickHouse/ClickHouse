@@ -4,6 +4,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
@@ -671,7 +672,7 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
-    const std::vector<std::string> & arguments,
+    const VectorWithMemoryTracking<std::string> & arguments,
     std::vector<Pipe> && input_pipes,
     Block sample_block,
     ContextPtr context,

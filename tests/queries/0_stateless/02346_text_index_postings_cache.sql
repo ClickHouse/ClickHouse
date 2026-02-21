@@ -4,7 +4,6 @@
 --- These tests verify the caching of a deserialized text index posting lists in the consecutive executions.
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_postings_cache = 1;
