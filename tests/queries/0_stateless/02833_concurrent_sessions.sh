@@ -149,7 +149,7 @@ for user in "${ALL_USERS[@]}"; do
             SELECT COUNT(*) FROM (
                 SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${user}' AND type = 'LoginSuccess'
                 INTERSECT
-                SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${user}' AND type = 'Logout'
+                SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${user}' AND type = 'Logout'
             )") ]] && echo 3 && break;
         sleep 0.1
     done
