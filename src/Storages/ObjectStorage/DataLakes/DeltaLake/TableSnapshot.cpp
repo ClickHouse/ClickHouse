@@ -53,6 +53,7 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DeltaLakePartitionPrunedFiles;
+    extern const Event DeltaLakeScannedFiles;
 }
 
 namespace DB
@@ -84,6 +85,24 @@ namespace DeltaLake
 
 class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
+private:
+    /// Struct to hold ObjectInfo along with FFI handles for lazy parsing
+    struct ScannedDataFile
+    {
+        DB::ObjectInfoPtr object;
+        KernelDvInfo dv_info_handle;
+        std::optional<KernelExpression> transform_handle;
+
+        ScannedDataFile(
+            DB::ObjectInfoPtr object_,
+            KernelDvInfo dv_info_,
+            std::optional<KernelExpression> transform_)
+            : object(std::move(object_))
+            , dv_info_handle(std::move(dv_info_))
+            , transform_handle(std::move(transform_))
+        {}
+    };
+
 public:
     using UpdateStatsFunc = std::function<void(SnapshotStats &&)>;
 
@@ -220,10 +239,14 @@ public:
                 if (have_scan_data_res)
                 {
                     std::unique_lock lock(next_mutex);
+                    LOG_TEST(
+                        log, "List batch size is {}/{}, shutdown: {}",
+                        data_files.size(),
+                        list_batch_size ? DB::toString(list_batch_size) : "Unlimitted",
+                        shutdown.load());
+
                     if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
                     {
-                        LOG_TEST(log, "List batch size is {}/{}", data_files.size(), list_batch_size);
-
                         schedule_next_batch_cv.wait(
                             lock,
                             [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
@@ -310,9 +333,12 @@ public:
 
                 LOG_TEST(log, "Current data files: {}", data_files.size());
 
-                object = data_files.front();
+                ScannedDataFile scan_item = std::move(data_files.front());
                 data_files.pop_front();
                 schedule_next_batch_cv.notify_one();
+
+                object = std::move(scan_item.object);
+                parseHandles(scan_item, object);
             }
 
             chassert(object);
@@ -335,6 +361,58 @@ public:
         }
     }
 
+    void parseHandles(ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
+    {
+        auto & metadata = object->data_lake_metadata;
+        chassert(metadata.has_value());
+
+        if (scan_item.transform_handle.has_value())
+        {
+            if (!partition_columns.empty())
+            {
+                metadata->schema_transform = visitScanCallbackExpression(
+                    scan_item.transform_handle->get(),
+                    read_schema,
+                    expression_schema,
+                    enable_expression_visitor_logging);
+
+                LOG_TEST(
+                    log,
+                    "Parsed transform for file: {}, transform: {}",
+                    object->getPath(),
+                    metadata->schema_transform->dumpNames());
+            }
+        }
+
+        if (auto * dv_info_ptr = scan_item.dv_info_handle.get(); dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr))
+        {
+            /// `row_indexes_from_dv` returns a vector of row indexes
+            /// that should be *removed* from the result set
+            ffi::KernelRowIndexArray row_indexes = KernelUtils::unwrapResult(
+                ffi::row_indexes_from_dv(
+                    dv_info_ptr,
+                    kernel_snapshot_state->engine.get(),
+                    KernelUtils::toDeltaString(getTableLocation())),
+                "row_indexes_from_dv");
+
+            SCOPE_EXIT({
+                ffi::free_row_indexes(row_indexes);
+            });
+
+            if (row_indexes.len > 0)
+            {
+                LOG_TEST(log, "Row indexes size {} for file {}", row_indexes.len, object->getPath());
+
+                auto bitmap = std::make_shared<DB::DataLakeObjectMetadata::ExcludedRows>();
+                for (size_t i = 0; i < row_indexes.len; ++i)
+                {
+                    bitmap->add(row_indexes.ptr[i]);
+                }
+                metadata->excluded_rows = std::move(bitmap);
+            }
+        }
+    }
+
     static void visitData(
         void * engine_context,
         ffi::SharedScanMetadata * scan_metadata)
@@ -343,19 +421,19 @@ public:
         ffi::free_scan_metadata(scan_metadata);
     }
 
-    static void scanCallback(
+    static bool scanCallback(
         ffi::NullableCvoid engine_context,
         struct ffi::KernelStringSlice path,
         int64_t size,
         int64_t /*mod_time*/,
         const ffi::Stats * stats,
-        const ffi::CDvInfo * dv_info,
-        const ffi::Expression * transform,
+        ffi::SharedDvInfo * dv_info,
+        ffi::OptionalValue<ffi::SharedExpression *> transform,
         const struct ffi::CStringMap * deprecated)
     {
         try
         {
-            scanCallbackImpl(engine_context, path, size, stats, dv_info, transform, deprecated);
+            return scanCallbackImpl(engine_context, path, size, stats, dv_info, transform, deprecated);
         }
         catch (...)
         {
@@ -363,82 +441,78 @@ public:
             /// We cannot allow to throw exceptions from ScanCallback,
             /// otherwise delta-kernel will panic and call terminate.
             context->setScanException();
+
+            return false;  /// Stop iteration on exception
         }
     }
 
-    static void scanCallbackImpl(
+    static bool scanCallbackImpl(
         ffi::NullableCvoid engine_context,
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::CDvInfo * dv_info,
-        const ffi::Expression * transform,
+        ffi::SharedDvInfo * dv_info,
+        ffi::OptionalValue<ffi::SharedExpression *> transform,
         const struct ffi::CStringMap * /* deprecated */)
     {
+        /// Wrap handles in RAII immediately to ensure cleanup on any exit path
+        KernelDvInfo dv_info_handle(dv_info);
+        std::optional<KernelExpression> transform_handle;
+        if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
+            transform_handle.emplace(transform.some._0);
+
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         if (context->shutdown)
         {
+            LOG_TEST(
+                context->log, "Callback: shutdown detected at first check");
+
             context->data_files_cv.notify_all();
-            return;
+            return false; /// Break iteration
         }
+
+        if (context->list_batch_size > 0)
+        {
+            std::unique_lock lock(context->next_mutex);
+            if (context->data_files.size() >= context->list_batch_size
+                && !context->shutdown.load())
+            {
+                LOG_TEST(
+                    context->log, "Callback pausing: queue size {}/{}",
+                    context->data_files.size(), context->list_batch_size);
+
+                context->schedule_next_batch_cv.wait(lock, [&]()
+                {
+                    return (context->data_files.size() < context->list_batch_size)
+                        || context->shutdown.load();
+                });
+            }
+
+            if (context->shutdown.load())
+            {
+                LOG_TEST(
+                    context->log,
+                    "Callback: shutdown detected after queue wait");
+
+                context->data_files_cv.notify_all();
+                return false; /// Break iteration
+            }
+        }
+
+        ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
         std::string full_path = fs::path(context->getDataPath()) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
         auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
         object->data_lake_metadata.emplace();
 
-        if (transform && !context->partition_columns.empty())
-        {
-            auto parsed_transform = visitScanCallbackExpression(
-                transform,
-                context->read_schema,
-                context->expression_schema,
-                context->enable_expression_visitor_logging);
-
-            LOG_TEST(
-                context->log,
-                "Scanned file: {}, size: {}, num records: {}, transform: {}, has dv info: {}",
-                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
-                parsed_transform->dumpNames(), dv_info && dv_info->has_vector);
-
-            object->data_lake_metadata->schema_transform = std::move(parsed_transform);
-        }
-        else
-        {
-            LOG_TEST(
-                context->log,
-                "Scanned file: {}, size: {}, num records: {}, has db info: {}",
-                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
-                dv_info && dv_info->has_vector);
-        }
-
-        if (dv_info && dv_info->has_vector)
-        {
-            /// `row_indexes_from_dv` returns a vector of row indexes
-            /// that should be *removed* from the result set
-            ffi::KernelRowIndexArray row_indexes = KernelUtils::unwrapResult(
-                ffi::row_indexes_from_dv(
-                    dv_info->info,
-                    context->kernel_snapshot_state->engine.get(),
-                    KernelUtils::toDeltaString(context->getTableLocation())),
-                "row_indexes_from_dv");
-
-            SCOPE_EXIT({
-                ffi::free_row_indexes(row_indexes);
-            });
-
-            LOG_TEST(context->log, "Row indexes size: {}", row_indexes.len);
-
-            auto bitmap = std::make_shared<DB::DataLakeObjectMetadata::ExcludedRows>();
-            for (size_t i = 0; i < row_indexes.len; ++i)
-            {
-                bitmap->add(row_indexes.ptr[i]);
-            }
-            object->data_lake_metadata->excluded_rows = std::move(bitmap);
-        }
+        LOG_TEST(
+            context->log,
+            "Scanned file: {}, size: {}, num records: {}",
+            object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
 
         {
             std::lock_guard lock(context->next_mutex);
-            context->data_files.push_back(std::move(object));
+            context->data_files.emplace_back(std::move(object), std::move(dv_info_handle), std::move(transform_handle));
         }
 
         context->total_data_files += 1;
@@ -449,6 +523,7 @@ public:
             context->total_rows = std::nullopt;
 
         context->data_files_cv.notify_one();
+        return true;  /// Continue iteration
     }
 
 private:
@@ -494,7 +569,7 @@ private:
     /// as current data batch is fully read.
     std::condition_variable schedule_next_batch_cv;
 
-    std::deque<DB::ObjectInfoPtr> data_files;
+    std::deque<ScannedDataFile> data_files;
     std::mutex next_mutex;
 
     /// A thread for async data scanning.
@@ -563,16 +638,25 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
         /// Not all writers add rows count to metadata
         std::optional<size_t> total_rows = 0;
 
-        static void visit(
+        static bool visit(
             ffi::NullableCvoid engine_context,
             struct ffi::KernelStringSlice /* path */,
             int64_t size,
             int64_t /* mod_time */,
             const ffi::Stats * stats,
-            const ffi::CDvInfo * /* dv_info */,
-            const ffi::Expression * /* transform */,
+            ffi::SharedDvInfo * dv_info,
+            ffi::OptionalValue<ffi::SharedExpression *> transform,
             const struct ffi::CStringMap * /* deprecated */)
         {
+            /// Wrap handles in RAII immediately to ensure cleanup on any exit path
+            /// TODO: Actually we do not need any transforms/dv_info to exist here,
+            /// so it would be better to implement in delta-kernel scanCallback
+            /// which will only collect stats.
+            KernelDvInfo dv_info_handle(dv_info);
+            std::optional<KernelExpression> transform_handle;
+            if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
+                transform_handle.emplace(transform.some._0);
+
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
             visitor->total_data_files += 1;
             visitor->total_bytes += static_cast<size_t>(size);
@@ -580,6 +664,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
                 visitor->total_rows.value() += stats->num_records;
             else
                 visitor->total_rows = std::nullopt;
+            return true;
         }
 
         static void visitData(void * engine_context, ffi::SharedScanMetadata * scan_metadata)

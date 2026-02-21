@@ -1487,7 +1487,7 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
     DECLARE(Bool, split_intersecting_parts_ranges_into_layers_final, true, R"(
 Split intersecting parts ranges into layers during FINAL optimization
 )", 0) \
-    DECLARE(Bool, apply_row_policy_after_final, false, R"(
+    DECLARE(Bool, apply_row_policy_after_final, true, R"(
 When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
 When disabled, row policies are applied before FINAL, which can cause different results when the policy
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
@@ -2511,6 +2511,9 @@ Possible values:
 
 - 1 — Throwing an exception is enabled.
 - 0 — Throwing an exception is disabled.
+)", 0) \
+    DECLARE(Bool, optimize_dry_run_check_part, true, R"(
+When enabled, `OPTIMIZE ... DRY RUN` validates the resulting merged part using `checkDataPart`. If the check fails, an exception is thrown.
 )", 0) \
     DECLARE(Bool, use_index_for_in_with_subqueries, true, R"(
 Try using an index if there is a subquery or a table expression on the right side of the IN operator.
@@ -7484,9 +7487,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
-    DECLARE(Bool, allow_insert_into_iceberg, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
-)", BETA) \
+)", BETA, allow_experimental_insert_into_iceberg) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \

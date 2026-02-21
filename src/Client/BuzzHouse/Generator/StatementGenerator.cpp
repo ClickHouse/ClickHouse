@@ -1407,7 +1407,7 @@ void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable
             UpdateSet & uset = const_cast<UpdateSet &>(j == 0 ? upt->update() : upt->other_updates(j - 1));
             Expr * expr = uset.mutable_expr();
 
-            if (rg.nextSmallNumber() < 9)
+            if (rg.nextBool())
             {
                 /// Set constant value
                 String buf;
@@ -2375,7 +2375,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
         {
             MovePartition * mp = ati->mutable_move_partition();
 
-            generateNextTablePartition(rg, true, rg.nextSmallNumber() < 3, true, t, mp->mutable_single_partition()->mutable_partition());
+            generateNextTablePartition(rg, true, rg.nextSmallNumber() < 3, false, t, mp->mutable_single_partition()->mutable_partition());
             generateStorage(rg, mp->mutable_storage());
         }
         else if (
@@ -4612,7 +4612,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     SQLMask[static_cast<size_t>(SQLOp::OptimizeTable)] = has_tables;
     SQLMask[static_cast<size_t>(SQLOp::CheckTable)] = has_tables;
     SQLMask[static_cast<size_t>(SQLOp::DescTable)] = !in_parallel;
-    SQLMask[static_cast<size_t>(SQLOp::Exchange)] = !in_parallel
+    SQLMask[static_cast<size_t>(SQLOp::Exchange)] = this->fc.enable_renames && !in_parallel
         && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
             || collectionCount<SQLDictionary>(attached_dictionaries) > 1);
     SQLMask[static_cast<size_t>(SQLOp::Alter)] = has_tables || has_views || has_databases;
@@ -4627,10 +4627,10 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     SQLMask[static_cast<size_t>(SQLOp::CreateDatabase)] = static_cast<uint32_t>(databases.size()) < this->fc.max_databases;
     SQLMask[static_cast<size_t>(SQLOp::CreateFunction)] = static_cast<uint32_t>(functions.size()) < this->fc.max_functions;
     /// SQLMask[static_cast<size_t>(SQLOp::SystemStmt)] = true;
-    /// SQLMask[static_cast<size_t>(SQLOp::BackupOrRestore)] = true;
+    SQLMask[static_cast<size_t>(SQLOp::BackupOrRestore)] = this->fc.enable_backups;
     SQLMask[static_cast<size_t>(SQLOp::CreateDictionary)] = static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries;
-    SQLMask[static_cast<size_t>(SQLOp::Rename)]
-        = !in_parallel && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases);
+    SQLMask[static_cast<size_t>(SQLOp::Rename)] = this->fc.enable_renames && !in_parallel
+        && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases);
     SQLMask[static_cast<size_t>(SQLOp::LightUpdate)] = has_mergeable_mt;
     SQLMask[static_cast<size_t>(SQLOp::SelectQuery)] = !in_parallel;
     /// SQLMask[static_cast<size_t>(SQLOp::Kill)] = true;
@@ -4913,22 +4913,32 @@ template <typename T>
 void StatementGenerator::exchangeObjects(const uint32_t tname1, const uint32_t tname2)
 {
     auto & container = getNextCollection<T>();
-    T obj1 = std::move(container.at(tname1));
-    T obj2 = std::move(container.at(tname2));
-    auto db_tmp = obj1.db;
+    if (container.contains(tname1) && container.contains(tname2))
+    {
+        T obj1 = std::move(container.at(tname1));
+        T obj2 = std::move(container.at(tname2));
+        auto db_tmp = obj1.db;
 
-    obj1.tname = tname2;
-    obj1.db = obj2.db;
-    obj2.tname = tname1;
-    obj2.db = db_tmp;
-    container[tname2] = std::move(obj1);
-    container[tname1] = std::move(obj2);
+        obj1.tname = tname2;
+        obj1.db = obj2.db;
+        obj2.tname = tname1;
+        obj2.db = db_tmp;
+        container[tname2] = std::move(obj1);
+        container[tname1] = std::move(obj2);
+    }
 }
 
 template <typename T>
 void StatementGenerator::renameObjects(const uint32_t old_tname, const uint32_t new_tname, const std::optional<uint32_t> & new_db)
 {
     auto & container = getNextCollection<T>();
+    if (!container.contains(old_tname))
+        return;
+    if constexpr (!std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
+    {
+        if (new_db.has_value() && !this->databases.contains(new_db.value()))
+            return;
+    }
     T obj = std::move(container.at(old_tname));
 
     if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
@@ -4949,36 +4959,40 @@ template <typename T>
 void StatementGenerator::attachOrDetachObject(const uint32_t tname, const DetachStatus status)
 {
     auto & container = getNextCollection<T>();
-    T & obj = container.at(tname);
 
-    if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
+    if (container.contains(tname))
     {
-        obj->attached = status;
-        for (auto & [_, table] : this->tables)
+        T & obj = container.at(tname);
+
+        if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
         {
-            if (table.db && table.db->dname == tname)
+            obj->attached = status;
+            for (auto & [_, table] : this->tables)
             {
-                table.attached = std::max(table.attached, status);
+                if (table.db && table.db->dname == tname)
+                {
+                    table.attached = std::max(table.attached, status);
+                }
+            }
+            for (auto & [_, view] : this->views)
+            {
+                if (view.db && view.db->dname == tname)
+                {
+                    view.attached = std::max(view.attached, status);
+                }
+            }
+            for (auto & [_, dictionary] : this->dictionaries)
+            {
+                if (dictionary.db && dictionary.db->dname == tname)
+                {
+                    dictionary.attached = std::max(dictionary.attached, status);
+                }
             }
         }
-        for (auto & [_, view] : this->views)
+        else
         {
-            if (view.db && view.db->dname == tname)
-            {
-                view.attached = std::max(view.attached, status);
-            }
+            obj.attached = status;
         }
-        for (auto & [_, dictionary] : this->dictionaries)
-        {
-            if (dictionary.db && dictionary.db->dname == tname)
-            {
-                dictionary.attached = std::max(dictionary.attached, status);
-            }
-        }
-    }
-    else
-    {
-        obj.attached = status;
     }
 }
 
@@ -5029,7 +5043,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
         if (!ssq.explain().is_explain() && success)
         {
-            if (query.create_view().create_opt() != CreateReplaceOption::Create)
+            if (query.create_dictionary().create_opt() != CreateReplaceOption::Create)
             {
                 this->dictionaries.erase(dname);
             }

@@ -72,6 +72,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/SystemAllocatedMemoryHolder.h>
 #include <base/sleep.h>
 
 #if USE_PROTOBUF
@@ -948,6 +949,26 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::ALLOCATE_MEMORY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_MEMORY);
+            auto holder = getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->alloc(query.untracked_memory_size);
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            break;
+        }
+        case Type::FREE_MEMORY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_MEMORY);
+            auto holder = getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->free();
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
@@ -1411,7 +1432,7 @@ bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, co
 
 void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database)
 {
-    for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
+    for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
         dropStorageReplica(query_replica, iterator->table());
 
     LOG_TRACE(log, "Dropped storage replica from {} of database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -2403,6 +2424,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::INSTRUMENT_REMOVE:
         {
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            break;
+        }
+        case Type::ALLOCATE_MEMORY:
+        case Type::FREE_MEMORY:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_MEMORY);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

@@ -3533,7 +3533,7 @@ class ClickHouseCluster:
                     shutil.rmtree(self.mysql57_dir, ignore_errors=True)
                 os.makedirs(self.mysql57_logs_dir, exist_ok=True)
                 os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql57_cmd + common_opts)
+                subprocess_check_call(self.base_mysql57_cmd + common_opts + ["--renew-anon-volumes"])
                 self.up_called = True
                 self.wait_mysql57_to_start()
 
@@ -3543,7 +3543,7 @@ class ClickHouseCluster:
                     shutil.rmtree(self.mysql8_dir, ignore_errors=True)
                 os.makedirs(self.mysql8_logs_dir, exist_ok=True)
                 os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql8_cmd + common_opts)
+                subprocess_check_call(self.base_mysql8_cmd + common_opts + ["--renew-anon-volumes"])
                 self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
@@ -3553,7 +3553,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
-                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
+                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts + ["--renew-anon-volumes"])
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 

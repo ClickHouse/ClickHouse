@@ -327,7 +327,7 @@ void MergeTreeIndexGranuleText::readSparseIndex(MergeTreeIndexReaderStream & str
     };
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
+    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getDiskName(), state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
     sparse_index = condition_text.headerCache()->getOrSet(hash, load_sparse_index);
 }
 
@@ -363,7 +363,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
             return std::make_shared<TextIndexDictionaryBlockCacheEntry>(TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, posting_list_codec));
         };
 
-        auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
+        auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getDiskName(), state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
         return condition_text.dictionaryBlockCache()->getOrSet(hash, load_dictionary_block);
     };
 
@@ -408,7 +408,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality, posting_list_codec);
     };
 
-    auto hash = TextIndexPostingsCache::hash(data_path, index_name, token_info.offsets[block_idx]);
+    auto hash = TextIndexPostingsCache::hash(state.part.getDataPartStorage().getDiskName(), data_path, index_name, token_info.offsets[block_idx]);
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 

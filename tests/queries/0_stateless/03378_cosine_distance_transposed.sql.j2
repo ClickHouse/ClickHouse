@@ -14,29 +14,29 @@ INSERT INTO qbit_2 VALUES (1, [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]);
 INSERT INTO qbit_2 VALUES (2, [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18]);
 INSERT INTO qbit_2 VALUES (3, [2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]);
 
--- Use rounding to avoid minor precision differences when using non-vectorized implementations of distance function
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit ORDER BY id;
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 16), 5) AS dist FROM qbit ORDER BY id;
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 8), 5) AS dist FROM qbit ORDER BY id;
-WITH [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit_2 ORDER BY id;
-WITH [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 16), 5) AS dist FROM qbit_2 ORDER BY id;
-WITH [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 8), 5) AS dist FROM qbit_2 ORDER BY id;
+-- Use rounding to avoid precision differences between different architectures
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 32), 2) AS dist FROM qbit ORDER BY id;
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 16), 2) AS dist FROM qbit ORDER BY id;
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 8), 2) AS dist FROM qbit ORDER BY id;
+WITH [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 32), 3) AS dist FROM qbit_2 ORDER BY id;
+WITH [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 16), 3) AS dist FROM qbit_2 ORDER BY id;
+WITH [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] AS reference_vec SELECT id, vec, round(cosineDistanceTransposed(vec, reference_vec, 8), 3) AS dist FROM qbit_2 ORDER BY id;
 
 SELECT 'Test variadic version';
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(round(cosineDistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, vec.17, vec.18, vec.19, vec.20, vec.21, vec.22, vec.23, vec.24, vec.25, vec.26, vec.27, vec.28, vec.29, vec.30, vec.31, vec.32, 3, reference_vec), 5), 5) AS dist FROM qbit ORDER BY id;
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(round(cosineDistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, 3, reference_vec), 5), 5) AS dist FROM qbit ORDER BY id;
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(round(cosineDistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, 3, reference_vec), 5), 5) AS dist FROM qbit ORDER BY id;
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(cosineDistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, vec.17, vec.18, vec.19, vec.20, vec.21, vec.22, vec.23, vec.24, vec.25, vec.26, vec.27, vec.28, vec.29, vec.30, vec.31, vec.32, 3, reference_vec), 2) AS dist FROM qbit ORDER BY id;
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(cosineDistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, 3, reference_vec), 2) AS dist FROM qbit ORDER BY id;
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(cosineDistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, 3, reference_vec), 2) AS dist FROM qbit ORDER BY id;
 
 DROP TABLE qbit;
 DROP TABLE qbit_2;
 
 SELECT 'Check if non-const reference vector works';
-SELECT round(cosineDistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand() % 1 + 3)::Array(Float32), 32), 5);
+SELECT round(cosineDistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand() % 1 + 3)::Array(Float32), 32), 2);
 
 SELECT 'Constant QBit query vector and non-constant reference vector';
 SELECT
     number,
-    round(cosineDistanceTransposed([0,0,0]::QBit(Float64, 3), [number, number, number], 64), 5) AS dist
+    round(cosineDistanceTransposed([0,0,0]::QBit(Float64, 3), [number, number, number], 64), 1) AS dist
 FROM numbers(3);
 
 {% endfor -%}
