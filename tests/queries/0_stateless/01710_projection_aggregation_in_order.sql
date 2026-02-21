@@ -29,7 +29,7 @@ INSERT INTO normal SELECT
 FROM numbers(100000);
 
 SET force_optimize_projection=1;
-SET optimize_use_projections=1, optimize_aggregation_in_order=1, enable_parallel_replicas=0;
+SET optimize_use_projections=1, optimize_use_implicit_projections=1, optimize_use_projection_filtering=1, optimize_aggregation_in_order=1, enable_parallel_replicas=0;
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
@@ -67,7 +67,7 @@ INSERT INTO agg SELECT
     number
 FROM numbers(100000);
 
-SET optimize_use_projections=1, optimize_aggregation_in_order=1, enable_parallel_replicas=0;
+SET optimize_use_projections=1, optimize_use_implicit_projections=1, optimize_use_projection_filtering=1, optimize_aggregation_in_order=1, enable_parallel_replicas=0;
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;

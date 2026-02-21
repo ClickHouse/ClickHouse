@@ -1,5 +1,6 @@
 SET enable_analyzer = 1;
 SET optimize_time_filter_with_preimage = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS part;
