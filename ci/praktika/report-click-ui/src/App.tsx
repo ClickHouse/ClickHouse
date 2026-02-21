@@ -1222,25 +1222,41 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
             </div>
           )}
 
-          {/* Watermark footer */}
-          <div style={{
-            textAlign: 'center',
-            marginTop: '48px',
-            paddingBottom: '24px',
-            opacity: 0.5,
-            fontSize: '13px'
-          }}>
-            <Text>
-              made with{' '}
-              <Link
-                href="https://clickhouse.design/click-ui"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ textDecoration: 'none', opacity: 0.7 }}
-              >
-                Click UI
-              </Link>
-            </Text>
+        </div>
+
+        {/* Watermark footer - fixed at bottom */}
+        <div style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          textAlign: 'center',
+          padding: '12px',
+          backgroundColor: theme === 'dark' ? 'rgba(26, 26, 26, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+          borderTop: '1px solid',
+          borderColor: theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+          opacity: 0.6,
+          fontSize: '13px',
+          zIndex: 999
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <Text>Made with</Text>
+            <Link
+              href="https://clickhouse.design/click-ui"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ textDecoration: 'none' }}
+            >
+              click-ui
+            </Link>
+            <Link
+              href="https://clickhouse.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'flex', alignItems: 'center' }}
+            >
+              <Icon name="clickhouse" size="md" />
+            </Link>
           </div>
         </div>
       </Container>
