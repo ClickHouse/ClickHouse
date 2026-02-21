@@ -4682,6 +4682,14 @@ Possible values:
 - 1 — The data types in column definitions are set to `Nullable` by default.
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 )", 0) \
+    DECLARE(Bool, data_type_default_nullable_if_not_in_keys, false, R"(
+When used together with `data_type_default_nullable`, excludes columns that appear in ORDER BY or PRIMARY KEY from being made `Nullable`.
+
+Possible values:
+
+- 1 — Columns in ORDER BY / PRIMARY KEY keep their original types; other columns are made `Nullable` by `data_type_default_nullable`.
+- 0 — All columns are treated equally by `data_type_default_nullable`.
+)", 0) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
 Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#CAST) operations.
 

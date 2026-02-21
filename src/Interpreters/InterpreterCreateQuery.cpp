@@ -124,6 +124,7 @@ namespace Setting
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsBool data_type_default_nullable_if_not_in_keys;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
     extern const SettingsDefaultTableEngine default_table_engine;
@@ -139,6 +140,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool schema_inference_make_columns_nullable_if_not_in_keys;
 }
 
 namespace ServerSetting
@@ -538,7 +540,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable, const bool is_key_column)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -559,7 +561,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         if (*col_decl.null_modifier)
             column_type = makeNullable(column_type);
     }
-    else if (make_columns_nullable)
+    else if (make_columns_nullable && !is_key_column)
     {
         column_type = makeNullable(column_type);
     }
@@ -580,7 +582,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, const ASTStorage * storage)
 {
     /// First, deduce implicit types.
 
@@ -592,6 +594,16 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
+    /// Collect key column names to exclude them from auto-nullable when the setting is enabled.
+    IdentifierNameSet key_columns;
+    if (make_columns_nullable && context_->getSettingsRef()[Setting::data_type_default_nullable_if_not_in_keys] && storage)
+    {
+        if (storage->order_by)
+            storage->order_by->collectIdentifierNames(key_columns);
+        if (storage->primary_key)
+            storage->primary_key->collectIdentifierNames(key_columns);
+    }
+
     for (const auto & ast : columns_ast.children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
@@ -602,8 +614,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation, please set compatibility_ignore_collation_in_create_table=true");
         }
 
-
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        bool is_key_column = key_columns.contains(col_decl.name);
+        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable, is_key_column));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -763,7 +775,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup, create.storage);
         }
 
         if (create.columns_list->indices)
@@ -988,6 +1000,30 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// supports schema inference (will determine table structure in it's constructor).
     else if (!StorageFactory::instance().getStorageFeatures(create.storage->engine->name).supports_schema_inference)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
+
+    /// Strip Nullable from inferred key columns when the setting is enabled.
+    if (getContext()->getSettingsRef()[Setting::schema_inference_make_columns_nullable_if_not_in_keys]
+        && create.storage && (create.storage->order_by || create.storage->primary_key))
+    {
+        IdentifierNameSet key_columns;
+        if (create.storage->order_by)
+            create.storage->order_by->collectIdentifierNames(key_columns);
+        if (create.storage->primary_key)
+            create.storage->primary_key->collectIdentifierNames(key_columns);
+
+        if (!key_columns.empty())
+        {
+            NamesAndTypesList columns_list;
+            for (const auto & column : properties.columns.getAll())
+            {
+                if (key_columns.contains(column.name))
+                    columns_list.emplace_back(column.name, removeNullable(column.type));
+                else
+                    columns_list.emplace_back(column.name, column.type);
+            }
+            properties.columns = ColumnsDescription(columns_list);
+        }
+    }
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)

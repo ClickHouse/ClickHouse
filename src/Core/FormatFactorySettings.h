@@ -376,6 +376,10 @@ Possible values:
  * 2 or `auto` - the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability,
  * 3 - the inferred type nullability will match file metadata if the format has it (e.g. Parquet), always Nullable otherwise (e.g. CSV).
 )", 0) \
+    DECLARE(Bool, schema_inference_make_columns_nullable_if_not_in_keys, false, R"(
+When enabled, columns that appear in ORDER BY or PRIMARY KEY are excluded from being made `Nullable` during schema inference.
+This setting works with any non-zero value of `schema_inference_make_columns_nullable`.
+)", 0) \
     DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
 Controls making inferred JSON types `Nullable` in schema inference.
 If this setting is enabled together with schema_inference_make_columns_nullable, inferred JSON type will be `Nullable`.

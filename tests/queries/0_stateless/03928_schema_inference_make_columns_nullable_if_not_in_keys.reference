@@ -1,0 +1,9 @@
+c1	Int64
+c2	Nullable(String)
+c3	Nullable(Float64)
+c1	Int64
+c2	String
+c3	Nullable(Float64)
+c1	Nullable(Int64)
+c2	Nullable(String)
+c3	Nullable(Float64)
