@@ -242,11 +242,10 @@ def main():
     # dmesg log file
     dmesg_log = workspace_path / "dmesg.log"
     # Fatal log file if ClickHouse server crashes
-    fatal_log = workspace_path / "fatal.log"
     buzz_out = workspace_path / "fuzzerout.sql"  # BuzzHouse generated queries
     server_cmd = workspace_path / "server.sh"  # Command line used for La Casa del Dolor
-    config_xml = workspace_path / "config.xml"  # Configuration file for server
-    users_xml = workspace_path / "users.xml"  # Configuration file for server
+    config_xml = workspace_path / "config.xml"  # Generated configuration file for servers
+    users_xml = workspace_path / "users.xml"  # Generated user configuration file for servers
     # Query log files for queries sent to other databases
     postgresql_query_log = workspace_path / "postgresql.sql"
     mysql_query_log = workspace_path / "mysql.sql"
@@ -254,7 +253,6 @@ def main():
     mongodb_query_log = workspace_path / "mongodb.doc"
     paths = [
         core_file,
-        fatal_log,
         fuzzer_log,
         dmesg_log,
         buzzconfig,
@@ -271,6 +269,7 @@ def main():
     # Copied server logs from container
     for i in range(number_of_nodes):
         paths.extend(get_node_workspace_logs(workspace_path, i))
+        paths.append(workspace_path / f"fatal{i}.log")
 
     # Generate BuzzHouse config
     generate_buzz_config(workspace_path)
@@ -400,25 +399,19 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 
     if not run_result.is_ok():
         server_died = False
-        server_exit_code = 0
         fuzzer_exit_code = 0
 
         try:
             pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
-            pattern2 = re.compile(r"The server node0 exited with code:\s*(\d+)")
-            pattern3 = re.compile(r"The server node0 is not running")
+            pattern2 = re.compile(r"The server node\d+ is not running")
 
             with open(dolor_log, "r", encoding="utf-8") as logf:
                 for line in logf:
                     m = pattern1.search(line)
                     if m:
                         fuzzer_exit_code = int(m.group(1))
-                    # The server may restart, so we need to find the last exit code
                     n = pattern2.search(line)
                     if n:
-                        server_exit_code = int(n.group(1))
-                    o = pattern3.search(line)
-                    if o:
                         server_died = True
         except Exception:
             error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
@@ -426,7 +419,16 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                 status=Result.Status.ERROR, info=error_info
             ).complete_job()
 
-        log_paths = get_node_workspace_logs(workspace_path, 0)
+        # Gather logs to analyze
+        server_logs = []
+        stderr_logs = []
+        fatal_logs = []
+        for i in range(number_of_nodes):
+            log_paths = get_node_workspace_logs(workspace_path, i)
+            server_logs.append(log_paths[0])
+            stderr_logs.append(log_paths[3])
+            fatal_logs.append(workspace_path / f"fatal{i}.log")
+
         analyzed_result, is_analyzed_failure = analyze_job_logs(
             paths,
             server_died,
@@ -435,9 +437,9 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             buzz_out,
             fuzzer_log,
             dmesg_log,
-            log_paths[0],
-            log_paths[3],
-            fatal_log,
+            server_logs,
+            stderr_logs,
+            fatal_logs,
         )
         if is_analyzed_failure:
             result_status = analyzed_result.status

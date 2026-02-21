@@ -58,9 +58,9 @@ def analyze_job_logs(
     fuzzer_out: Path,
     fuzzer_log: Path,
     dmesg_log: Path,
-    server_log: Path,
-    stderr_log: Path,
-    fatal_log: Path,
+    server_logs: list[Path],
+    stderr_logs: list[Path],
+    fatal_logs: list[Path],
 ) -> tuple[Result, bool]:
     # parse runner script exit status
     status = Result.Status.FAILED
@@ -106,12 +106,15 @@ def analyze_job_logs(
 
     if is_failed:
         if is_sanitized:
-            sanitizer_oom = Shell.get_output(
-                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
-            )
-            if sanitizer_oom:
-                print("Sanitizer OOM")
-                info.append("WARNING: Sanitizer OOM - test considered passed")
+            for i, server_log in enumerate(server_logs):
+                sanitizer_oom = Shell.get_output(
+                    f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
+                )
+                if sanitizer_oom:
+                    print(f"Sanitizer OOM on server {i}")
+                    info.append(
+                        f"WARNING: Sanitizer OOM on server {i} - test considered passed"
+                    )
                 status = Result.Status.SUCCESS
                 is_failed = False
         else:
@@ -130,8 +133,8 @@ def analyze_job_logs(
     if is_failed and status != Result.Status.ERROR:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
-            server_log=str(server_log),
-            stderr_log=str(stderr_log),
+            server_log=str(server_logs[0]),
+            stderr_log=str(stderr_logs[0]),
             fuzzer_log=str(fuzzer_out),
         )
         parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
@@ -152,7 +155,9 @@ def analyze_job_logs(
 
     if is_failed:
         # generate fatal log
-        Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
+        for server_log, fatal_log in zip(server_logs, fatal_logs):
+            Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
+
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
@@ -240,9 +245,9 @@ def run_fuzz_job(check_name: str):
         workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log,
         fuzzer_log,
         dmesg_log,
-        server_log,
-        stderr_log,
-        fatal_log,
+        [server_log],
+        [stderr_log],
+        [fatal_log],
     )
 
     result.complete_job()
