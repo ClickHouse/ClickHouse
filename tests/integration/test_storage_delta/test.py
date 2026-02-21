@@ -4018,7 +4018,7 @@ deltaLake{suffix}({cluster}
     )
     # check rows indexes size is 2
     # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
-    assert node.contains_in_log("Row indexes size: 2")
+    assert node.contains_in_log("Row indexes size 2 for file")
 
 
 @pytest.mark.parametrize("cluster", [False, True])
@@ -4479,3 +4479,106 @@ def test_system_reload_delta_kernel_tracing(started_cluster, use_delta_kernel):
     # Test invalid level
     error = instance.query_and_get_error("SYSTEM RELOAD DELTA KERNEL TRACING INVALID")
     assert "BAD_ARGUMENTS" in error or "Invalid delta kernel tracing level" in error
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1"])
+def test_early_return_limit(started_cluster, use_delta_kernel):
+    """Test that scan callback stops early when using LIMIT"""
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_early_return_limit")
+
+    # Create 1000 partitions to test early return
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1000),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+        partition_by="a",
+    )
+
+    files = default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
+    num_data_files = len([f for f in files if f.endswith(".parquet")])
+    assert num_data_files == 1000
+
+    # Explicit schema to avoid schema inference iterator
+    bucket = started_cluster.minio_bucket
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int64, b String)
+        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')
+        """
+    )
+
+    # Baseline: full scan
+    query_id_full = f"{TABLE_NAME}_full_scan"
+    instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS max_threads=1, max_streams_to_max_threads_ratio=1",
+        query_id=query_id_full,
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    full_scan_files = int(
+        instance.query(
+            f"SELECT ProfileEvents['DeltaLakeScannedFiles'] FROM system.query_log "
+            f"WHERE query_id = '{query_id_full}' AND type = 'QueryFinish'"
+        )
+    )
+
+    # Test: LIMIT scan with early return
+    # Use small s3_list_object_keys_size (1) to force frequent queue pauses
+    # This makes callback check shutdown frequently and return false to stop iteration
+    query_id = f"{TABLE_NAME}_limit_query"
+    result = instance.query(
+        f"SELECT * FROM {TABLE_NAME} LIMIT 1 SETTINGS max_threads=1, max_streams_to_max_threads_ratio=1, s3_list_object_keys_size=1",
+        query_id=query_id,
+    )
+    assert len(result.strip().split("\n")) == 1
+
+    instance.query("SYSTEM FLUSH LOGS")
+    scanned_files = int(
+        instance.query(
+            f"SELECT ProfileEvents['DeltaLakeScannedFiles'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+    assert scanned_files > 0
+    assert full_scan_files == num_data_files
+
+    # Check which shutdown path was hit by querying text_log
+    first_check_hits = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%shutdown detected at first check%'"
+    ).strip()
+    queue_check_hits = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%shutdown detected after queue wait%'"
+    ).strip()
+
+    first_check_hits = int(first_check_hits)
+    queue_check_hits = int(queue_check_hits)
+
+    print(f"First shutdown check hits: {first_check_hits}")
+    print(f"Queue shutdown check hits: {queue_check_hits}")
+
+    assert first_check_hits > 0 or queue_check_hits > 0
+
+    assert 1 == int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%List batch size is 1/1, shutdown: true%'"
+    ))
+
+
+    # Early return should scan significantly fewer files
+    # With s3_list_object_keys_size=1, queue pauses frequently forcing shutdown checks
+    # Should stop very early after consuming just a few files
+    assert scanned_files < full_scan_files, \
+        f"Early return should scan fewer files: {scanned_files} >= {full_scan_files}"
+    # 3 because:
+    # we have async reader creation with 2 existing readers at a moment of time,
+    # each calls next() and consumes 2 files from the scan.
+    # It takes 1 file for the query to stop because of LIMIT 1.
+    # But because scan is also asynchronous and continues once batch limit is not reached,
+    # we get +1 scanned file.
+    assert scanned_files == 3, \
+        f"Early return should scan 3 files with LIMIT 1, but scanned {scanned_files}"
+
+

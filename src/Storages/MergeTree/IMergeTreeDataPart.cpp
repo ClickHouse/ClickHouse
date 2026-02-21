@@ -447,7 +447,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     auto callback = [this] { return loadIndex(); };
     return index_cache.getOrSet(key, callback);
 }
@@ -458,7 +458,7 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     index_cache.set(key, std::const_pointer_cast<Index>(index));
     index.reset();
 
@@ -471,7 +471,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     index_cache->remove(key);
 }
 
@@ -480,7 +480,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)

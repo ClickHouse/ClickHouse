@@ -77,6 +77,7 @@ namespace ProfileEvents
 {
     extern const Event Merge;
     extern const Event MergeSourceParts;
+    extern const Event MergeWrittenRows;
     extern const Event MergedColumns;
     extern const Event GatheredColumns;
     extern const Event MergeTotalMilliseconds;
@@ -1179,6 +1180,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 
         size_t starting_offset = global_ctx->rows_written;
         global_ctx->rows_written += block.rows();
+        ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         if (global_ctx->merge_may_reduce_rows)

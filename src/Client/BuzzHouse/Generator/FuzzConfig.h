@@ -77,7 +77,11 @@ using JSONObjectType = JSONParserImpl::Element;
 class Catalog
 {
 public:
-    String client_hostname, server_hostname, path, region, warehouse;
+    String client_hostname;
+    String server_hostname;
+    String path;
+    String region;
+    String warehouse;
     uint32_t port;
 
     Catalog()
@@ -115,11 +119,23 @@ public:
 class ServerCredentials
 {
 public:
-    String client_hostname, server_hostname, container;
-    uint32_t port, mysql_port;
-    String unix_socket, user, password, secret, database, named_collection;
-    std::filesystem::path user_files_dir, query_log_file;
-    std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog, unity_catalog;
+    String client_hostname;
+    String server_hostname;
+    String container;
+    uint32_t port;
+    uint32_t mysql_port;
+    String unix_socket;
+    String user;
+    String password;
+    String secret;
+    String database;
+    String named_collection;
+    std::filesystem::path user_files_dir;
+    std::filesystem::path query_log_file;
+    std::optional<Catalog> glue_catalog;
+    std::optional<Catalog> hive_catalog;
+    std::optional<Catalog> rest_catalog;
+    std::optional<Catalog> unity_catalog;
 
     ServerCredentials()
         : client_hostname("localhost")
@@ -178,7 +194,8 @@ class PerformanceMetric
 {
 public:
     bool enabled = false;
-    uint64_t threshold = 10, minimum = 1000;
+    uint64_t threshold = 10;
+    uint64_t minimum = 1000;
 
     PerformanceMetric() = default;
 
@@ -214,7 +231,8 @@ public:
 class SystemTable
 {
 public:
-    String schema_name, table_name;
+    String schema_name;
+    String table_name;
     DB::Strings columns;
 
     SystemTable()
@@ -251,29 +269,105 @@ private:
 public:
     LoggerPtr log;
     std::ofstream outf;
-    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, failpoints, remote_servers,
-        remote_secure_servers, http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings, hot_table_settings;
-    std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
-        minio_server, http_server, azurite_server, kafka_server, dolor_server;
+    DB::Strings collations;
+    DB::Strings storage_policies;
+    DB::Strings timezones;
+    DB::Strings disks;
+    DB::Strings keeper_disks;
+    DB::Strings clusters;
+    DB::Strings caches;
+    DB::Strings failpoints;
+    DB::Strings remote_servers;
+    DB::Strings remote_secure_servers;
+    DB::Strings http_servers;
+    DB::Strings https_servers;
+    DB::Strings arrow_flight_servers;
+    DB::Strings hot_settings;
+    DB::Strings disallowed_settings;
+    DB::Strings hot_table_settings;
+
+    std::optional<ServerCredentials> clickhouse_server;
+    std::optional<ServerCredentials> mysql_server;
+    std::optional<ServerCredentials> postgresql_server;
+    std::optional<ServerCredentials> sqlite_server;
+    std::optional<ServerCredentials> mongodb_server;
+    std::optional<ServerCredentials> redis_server;
+    std::optional<ServerCredentials> minio_server;
+    std::optional<ServerCredentials> http_server;
+    std::optional<ServerCredentials> azurite_server;
+    std::optional<ServerCredentials> kafka_server;
+    std::optional<ServerCredentials> dolor_server;
+
     std::unordered_map<String, PerformanceMetric> metrics;
-    std::unordered_set<uint32_t> disallowed_error_codes, oracle_ignore_error_codes;
-    String host = "localhost", keeper_map_path_prefix;
-    bool read_log = false, fuzz_floating_points = true, test_with_fill = true, compare_success_results = false, measure_performance = false,
-         allow_infinite_tables = false, compare_explains = false, allow_memory_tables = true, allow_client_restarts = false,
-         enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true,
-         allow_async_requests = false, truncate_output = false, allow_transactions = true, enable_overflow_settings = false,
-         random_limited_values = false, set_smt_disk = true, allow_query_oracles = true, allow_health_check = true,
-         enable_compatibility_settings = false, enable_memory_settings = false;
-    uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000,
-             type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
-    uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
-             max_columns = 5, time_to_run = 0, port = 9000, secure_port = 9440, http_port = 8123, http_secure_port = 8443,
-             use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
-             max_string_length = 1009, max_parallel_queries = 5, max_number_alters = 4, deterministic_prob = 50;
-    std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
-                          client_file_path = "/var/lib/clickhouse/user_files", server_file_path = "/var/lib/clickhouse/user_files",
-                          fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",
-                          lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
+
+    std::unordered_set<uint32_t> disallowed_error_codes;
+    std::unordered_set<uint32_t> oracle_ignore_error_codes;
+
+    String host = "localhost";
+    String keeper_map_path_prefix;
+
+    bool read_log = false;
+    bool fuzz_floating_points = true;
+    bool test_with_fill = true;
+    bool compare_success_results = false;
+    bool measure_performance = false;
+    bool allow_infinite_tables = false;
+    bool compare_explains = false;
+    bool allow_memory_tables = true;
+    bool allow_client_restarts = false;
+    bool enable_fault_injection_settings = false;
+    bool enable_force_settings = false;
+    bool allow_hardcoded_inserts = true;
+    bool allow_async_requests = false;
+    bool truncate_output = false;
+    bool allow_transactions = true;
+    bool enable_overflow_settings = false;
+    bool random_limited_values = false;
+    bool set_smt_disk = true;
+    bool allow_query_oracles = true;
+    bool allow_health_check = true;
+    bool enable_compatibility_settings = false;
+    bool enable_memory_settings = false;
+    bool enable_backups = true;
+    bool enable_renames = true;
+
+    uint64_t seed = 0;
+    uint64_t min_insert_rows = 1;
+    uint64_t max_insert_rows = 1000;
+    uint64_t min_nested_rows = 0;
+    uint64_t max_nested_rows = 10;
+    uint64_t flush_log_wait_time = 1000;
+    uint64_t type_mask = std::numeric_limits<uint64_t>::max();
+    uint64_t engine_mask = std::numeric_limits<uint64_t>::max();
+
+    uint32_t max_depth = 3;
+    uint32_t max_width = 3;
+    uint32_t max_databases = 4;
+    uint32_t max_functions = 4;
+    uint32_t max_tables = 10;
+    uint32_t max_views = 5;
+    uint32_t max_dictionaries = 5;
+    uint32_t max_columns = 5;
+    uint32_t time_to_run = 0;
+    uint32_t port = 9000;
+    uint32_t secure_port = 9440;
+    uint32_t http_port = 8123;
+    uint32_t http_secure_port = 8443;
+    uint32_t use_dump_table_oracle = 2;
+    uint32_t max_reconnection_attempts = 3;
+    uint32_t time_to_sleep_between_reconnects = 3000;
+    uint32_t min_string_length = 0;
+    uint32_t max_string_length = 1009;
+    uint32_t max_parallel_queries = 5;
+    uint32_t max_number_alters = 4;
+    uint32_t deterministic_prob = 50;
+
+    std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql";
+    std::filesystem::path client_file_path = "/var/lib/clickhouse/user_files";
+    std::filesystem::path server_file_path = "/var/lib/clickhouse/user_files";
+    std::filesystem::path fuzz_client_out = client_file_path / "fuzz.data";
+    std::filesystem::path fuzz_server_out = server_file_path / "fuzz.data";
+    std::filesystem::path lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
     FuzzConfig()
         : cb(nullptr)

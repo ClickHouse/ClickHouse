@@ -69,8 +69,14 @@ public:
 class QueryLevel
 {
 public:
-    bool global_aggregate = false, inside_aggregate = false, allow_aggregates = true, allow_window_funcs = true, group_by_all = false;
-    uint32_t level, cte_counter = 0, window_counter = 0;
+    bool global_aggregate = false;
+    bool inside_aggregate = false;
+    bool allow_aggregates = true;
+    bool allow_window_funcs = true;
+    bool group_by_all = false;
+    uint32_t level;
+    uint32_t cte_counter = 0;
+    uint32_t window_counter = 0;
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
     std::vector<String> projections;
@@ -105,7 +111,9 @@ public:
     std::unordered_map<uint32_t, SQLView> views;
     std::unordered_map<uint32_t, SQLDictionary> dictionaries;
     /// Backup a system table
-    std::optional<String> system_table_schema, system_table_name, partition_id;
+    std::optional<String> system_table_schema;
+    std::optional<String> system_table_name;
+    std::optional<String> partition_id;
 
     CatalogBackup() = default;
 };
@@ -135,22 +143,45 @@ public:
     uint64_t next_type_mask = std::numeric_limits<uint64_t>::max();
 
 private:
-    std::vector<TableEngineValues> likeEngsDeterministic, likeEngsNotDeterministic, likeEngsInfinite;
+    std::vector<TableEngineValues> likeEngsDeterministic;
+    std::vector<TableEngineValues> likeEngsNotDeterministic;
+    std::vector<TableEngineValues> likeEngsInfinite;
     std::unordered_map<SQLFunc, uint32_t> dictFuncs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features;
-    const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
-
+    const size_t deterministic_funcs_limit;
+    const size_t deterministic_aggrs_limit;
     PeerQuery peer_query = PeerQuery::None;
-    bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
-         allow_subqueries = true, enforce_final = false, allow_engine_udf = true;
-    uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, function_counter = 0, current_level = 0, backup_counter = 0,
-             cache_counter = 0, aliases_counter = 0, id_counter = 0;
-    std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
-    std::unordered_map<uint32_t, SQLTable> staged_tables, tables;
-    std::unordered_map<uint32_t, SQLView> staged_views, views;
-    std::unordered_map<uint32_t, SQLDictionary> staged_dictionaries, dictionaries;
-    std::unordered_map<uint32_t, SQLFunction> staged_functions, functions;
+
+    bool in_transaction = false;
+    bool inside_projection = false;
+    bool allow_not_deterministic = true;
+    bool allow_in_expression_alias = true;
+    bool allow_subqueries = true;
+    bool enforce_final = false;
+    bool allow_engine_udf = true;
+
+    uint32_t depth = 0;
+    uint32_t width = 0;
+    uint32_t database_counter = 0;
+    uint32_t table_counter = 0;
+    uint32_t function_counter = 0;
+    uint32_t current_level = 0;
+    uint32_t backup_counter = 0;
+    uint32_t cache_counter = 0;
+    uint32_t aliases_counter = 0;
+    uint32_t id_counter = 0;
+
+    std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases;
+    std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
+    std::unordered_map<uint32_t, SQLTable> staged_tables;
+    std::unordered_map<uint32_t, SQLTable> tables;
+    std::unordered_map<uint32_t, SQLView> staged_views;
+    std::unordered_map<uint32_t, SQLView> views;
+    std::unordered_map<uint32_t, SQLDictionary> staged_dictionaries;
+    std::unordered_map<uint32_t, SQLDictionary> dictionaries;
+    std::unordered_map<uint32_t, SQLFunction> staged_functions;
+    std::unordered_map<uint32_t, SQLFunction> functions;
     std::unordered_map<uint32_t, CatalogBackup> backups;
 
     DB::Strings enum_values
@@ -172,7 +203,9 @@ private:
 
     std::vector<uint32_t> ids;
     std::vector<CHFunction> one_arg_funcs;
-    std::vector<ColumnPathChain> entries, table_entries, remote_entries;
+    std::vector<ColumnPathChain> entries;
+    std::vector<ColumnPathChain> table_entries;
+    std::vector<ColumnPathChain> remote_entries;
     std::vector<std::reference_wrapper<const ColumnPathChain>> filtered_entries;
     std::vector<std::reference_wrapper<SQLTable>> filtered_tables;
     std::vector<std::reference_wrapper<SQLView>> filtered_views;
@@ -301,8 +334,16 @@ private:
         MergeIndexAnalyzeUDF
     };
 
-    ProbabilityGenerator SQLGen, litGen, expGen, predGen, queryGen;
-    std::vector<bool> SQLMask, litMask, expMask, predMask, queryMask;
+    ProbabilityGenerator SQLGen;
+    ProbabilityGenerator litGen;
+    ProbabilityGenerator expGen;
+    ProbabilityGenerator predGen;
+    ProbabilityGenerator queryGen;
+    std::vector<bool> SQLMask;
+    std::vector<bool> litMask;
+    std::vector<bool> expMask;
+    std::vector<bool> predMask;
+    std::vector<bool> queryMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
@@ -415,7 +456,7 @@ public:
     }
 
 private:
-    String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
+    String getNextAlias(RandomGenerator & rg);
     uint32_t getIdentifierFromString(const String & tname) const;
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
@@ -535,7 +576,7 @@ private:
         const std::vector<SQLRelationCol> & available_cols,
         std::vector<GroupCol> & gcols,
         Expr * expr);
-    bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, GroupByStatement * gb);
+    bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, SelectStatementCore * ssc);
     void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
