@@ -517,6 +517,7 @@ class ClickHouseCluster:
         thread_fuzzer_settings={},
         azurite_default_port=0,
         server_binaries=[],
+        with_dolor=False,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -593,6 +594,8 @@ class ClickHouseCluster:
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
 
         self.docker_logs_proc = None  # type: Optional[subprocess.Popen]
+
+        self.with_dolor = with_dolor
 
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
@@ -2018,7 +2021,7 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-        if not with_dolor and with_remote_database_disk is None:
+        if not self.with_dolor and with_remote_database_disk is None:
             with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK", "0"))
 
         if with_remote_database_disk:
@@ -3863,9 +3866,9 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            # Copy binaries and start ClickHouse for dolor instances
-            for instance in self.instances.values():
-                if instance.with_dolor:
+            if self.with_dolor:
+                # Copy binaries and start ClickHouse for dolor instances
+                for instance in self.instances.values():
                     i = 0
                     for val in self.server_binaries:
                         subprocess.run(
@@ -4457,7 +4460,7 @@ class ClickHouseInstance:
         # Use a common path for data lakes on the filesystem
         self.lakehouses_path = (
             "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses"
-            if with_dolor
+            if self.cluster.with_dolor
             else ""
         )
 
@@ -5572,7 +5575,7 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
-        if not self.with_dolor:
+        if not self.cluster.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
             if self.with_installed_binary:
                 # Ignore CPU overload in this case
@@ -5773,6 +5776,8 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = "- " + self.odbc_ini_path
 
+        if self.cluster.with_dolor:
+            entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
         if self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
@@ -5796,7 +5801,7 @@ class ClickHouseInstance:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
 
-        if self.with_dolor:
+        if self.cluster.with_dolor:
             binary_volume = ""
         elif not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
