@@ -63,10 +63,10 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
     const createFavicon = () => {
       const width = 64 // Higher resolution for sharper rendering
       const height = 64
-      const lineColor = 'rgb(251, 255, 129)' // Bright yellow-green
-      const lineWidth = 8 // Doubled for higher resolution
-      const spaceWidth = 6 // Doubled for higher resolution
-      const lineNumber = 4
+      const lineColor = 'rgb(0, 0, 0)' // Black
+      const lineWidth = 6 // Thicker lines
+      const spaceWidth = 4 // Narrower spacing between lines
+      const lineNumber = 5 // 5 lines
 
       // Create a canvas
       const canvas = document.createElement('canvas')
@@ -119,6 +119,21 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
       setSortByStatus(savedSort === 'true')
     }
   }, [])
+
+  // Set page title from PR title or commit message
+  useEffect(() => {
+    if (topLevelExt) {
+      if (topLevelExt.pr_title) {
+        document.title = topLevelExt.pr_title
+      } else if (topLevelExt.commit_message) {
+        document.title = topLevelExt.commit_message
+      } else {
+        document.title = 'praktika'
+      }
+    } else {
+      document.title = 'praktika'
+    }
+  }, [topLevelExt])
 
   // Update duration for running status or calculate from start_time if duration is 0
   useEffect(() => {
