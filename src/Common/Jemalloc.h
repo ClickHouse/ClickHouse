@@ -22,7 +22,7 @@ void checkProfilingEnabled();
 
 void setProfileActive(bool value);
 
-std::string_view flushProfile(const std::string & file_prefix);
+std::string_view flushProfile(const char * file_prefix);
 
 void setBackgroundThreads(bool enabled);
 

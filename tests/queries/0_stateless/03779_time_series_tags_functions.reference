@@ -27,3 +27,6 @@ timeSeriesJoinTags:
 
 timeSeriesReplaceTag:
 [('__name__','up'),('foo','a'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','a:c'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','a'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','begin a sep c end'),('job','api-server'),('service','a:c')]	[('__name__','up'),('job','api-server'),('service','c:a')]	[('__name__','up'),('job','api-server')]	1	1	1
+
+timeSeriesThrowDuplicateSeriesIf:
+0

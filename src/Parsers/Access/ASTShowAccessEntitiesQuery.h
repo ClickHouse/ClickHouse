@@ -28,7 +28,7 @@ public:
     std::optional<std::pair<String, String>> database_and_table_name;
 
     String getID(char) const override;
-    ASTPtr clone() const override { return std::make_shared<ASTShowAccessEntitiesQuery>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTShowAccessEntitiesQuery>(*this); }
 
     void replaceEmptyDatabase(const String & current_database);
 

@@ -3,6 +3,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types_fwd.h>
+#include <Interpreters/InsertDeduplication.h>
+#include <filesystem>
 
 namespace DB
 {
@@ -16,13 +18,13 @@ class AsyncBlockIDsCache
     void update();
 
 public:
-    explicit AsyncBlockIDsCache(TStorage & storage_);
+    explicit AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name);
 
     void start();
 
     void stop();
 
-    Strings detectConflicts(const Strings & paths, UInt64 & last_version);
+    std::vector<DeduplicationHash> detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 & last_version);
 
     void triggerCacheUpdate();
 
@@ -39,7 +41,7 @@ private:
     std::condition_variable cv;
     UInt64 version = 0;
 
-    const String path;
+    const std::filesystem::path path;
 
     BackgroundSchedulePoolTaskHolder task;
 

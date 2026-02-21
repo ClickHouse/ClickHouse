@@ -23,6 +23,13 @@ The table contains information about [mutations](/sql-reference/statements/alter
 - `parts_in_progress_names` ([Array](/sql-reference/data-types/array.md)([String](/sql-reference/data-types/string.md))) — An array of names of data parts that are being mutated.
 - `parts_to_do_names` ([Array](/sql-reference/data-types/array.md)([String](/sql-reference/data-types/string.md))) — An array of names of data parts that need to be mutated for the mutation to complete.
 - `parts_to_do` ([Int64](/sql-reference/data-types/int-uint.md)) — The number of data parts that need to be mutated for the mutation to complete.
+- `parts_postpone_reasons` ([Map](/sql-reference/data-types/map.md)([String](/sql-reference/data-types/string.md))) — A map of part names to reasons why they are postponed.
+
+:::note
+- If a part name is not in `parts_postpone_reasons` and has not yet been mutated, it means the part is yet not scheduled for mutation.
+- The part name `all_parts` represents all parts that have not yet been mutated.
+:::
+
 - `is_killed` ([UInt8](/sql-reference/data-types/int-uint.md)) — Indicates whether a mutation has been killed. **Only available in ClickHouse Cloud.**
 
 :::note 

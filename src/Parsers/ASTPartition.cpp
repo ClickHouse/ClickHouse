@@ -43,7 +43,7 @@ String ASTPartition::getID(char delim) const
 
 ASTPtr ASTPartition::clone() const
 {
-    auto res = std::make_shared<ASTPartition>(*this);
+    auto res = make_intrusive<ASTPartition>(*this);
     res->children.clear();
 
     if (value)

@@ -3,6 +3,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTObjectTypeArgument.h>
@@ -131,7 +132,7 @@ private:
     const char * getName() const override { return "JSON data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto argument = std::make_shared<ASTObjectTypeArgument>();
+        auto argument = make_intrusive<ASTObjectTypeArgument>();
 
         /// SKIP arguments
         if (ParserKeyword(Keyword::SKIP).ignore(pos))
@@ -187,7 +188,7 @@ private:
         if (!type_parser.parse(pos, type, expected))
             return false;
 
-        auto name_and_type = std::make_shared<ASTObjectTypedPathArgument>();
+        auto name_and_type = make_intrusive<ASTObjectTypedPathArgument>();
         name_and_type->path = getIdentifierName(identifier);
         name_and_type->type = type;
         name_and_type->children.push_back(name_and_type->type);
@@ -312,7 +313,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto saved_pos = pos;
         ++pos;
 
-        auto enum_node = std::make_shared<ASTEnumDataType>();
+        auto enum_node = make_intrusive<ASTEnumDataType>();
         enum_node->name = type_name;
 
         if (parseEnumValues(pos, enum_node->values, expected) && pos->type == TokenType::ClosingRoundBracket)
@@ -325,7 +326,88 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = saved_pos;
     }
 
-    auto data_type_node = std::make_shared<ASTDataType>();
+    /// Handle Tuple types specially - parse directly into ASTTupleDataType
+    /// to avoid creating ASTNameTypePair nodes for each named element.
+    if (type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket)
+    {
+        auto saved_pos = pos;
+        ++pos;
+
+        auto tuple_node = make_intrusive<ASTTupleDataType>();
+        tuple_node->name = type_name;
+        auto arguments = make_intrusive<ASTExpressionList>();
+        tuple_node->children.push_back(arguments);
+
+        bool has_named_elements = false;
+        Strings element_names_tmp;
+        bool first_element = true;
+
+        while (true)
+        {
+            if (!first_element)
+            {
+                if (pos->type == TokenType::Comma)
+                    ++pos;
+                else
+                    break;
+            }
+            first_element = false;
+
+            /// Try to parse: identifier Type (named element)
+            /// or just: Type (unnamed element)
+            ParserIdentifier identifier_parser;
+            ParserDataType type_parser;
+            ASTPtr identifier_node;
+            ASTPtr type_node;
+
+            auto element_pos = pos;
+            if (identifier_parser.parse(pos, identifier_node, expected) && type_parser.parse(pos, type_node, expected))
+            {
+                /// Named element: name Type
+                String elem_name;
+                tryGetIdentifierNameInto(identifier_node, elem_name);
+                element_names_tmp.push_back(elem_name);
+                arguments->children.push_back(type_node);
+                has_named_elements = true;
+            }
+            else
+            {
+                /// Try just Type (unnamed element)
+                pos = element_pos;
+                if (type_parser.parse(pos, type_node, expected))
+                {
+                    /// Empty placeholder needed to detect mixed named/unnamed tuples.
+                    /// The factory validates that all names are non-empty when element_names is set.
+                    element_names_tmp.push_back("");
+                    arguments->children.push_back(type_node);
+                }
+                else
+                {
+                    /// Could not parse element
+                    break;
+                }
+            }
+        }
+
+        if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
+        {
+            ++pos;
+            /// Only store element_names if tuple has any named elements
+            if (has_named_elements)
+            {
+                element_names_tmp.shrink_to_fit();
+                tuple_node->element_names = std::move(element_names_tmp);
+            }
+            arguments->children.shrink_to_fit();
+            node = tuple_node;
+            return true;
+        }
+
+        /// Fall back to generic parser
+        pos = saved_pos;
+    }
+
+    auto data_type_node = make_intrusive<ASTDataType>();
     data_type_node->name = type_name;
 
     if (pos->type != TokenType::OpeningRoundBracket)
@@ -336,7 +418,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ASTPtr expr_list_args = std::make_shared<ASTExpressionList>();
+    ASTPtr expr_list_args = make_intrusive<ASTExpressionList>();
 
     /// Allow mixed lists of nested and normal types.
     /// Parameters are either:
@@ -438,8 +520,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    data_type_node->arguments = expr_list_args;
-    data_type_node->children.push_back(data_type_node->arguments);
+    data_type_node->children.push_back(expr_list_args);
 
     node = data_type_node;
     return true;

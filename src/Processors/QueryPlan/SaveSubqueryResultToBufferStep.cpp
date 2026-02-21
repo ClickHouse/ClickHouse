@@ -49,13 +49,22 @@ void SaveSubqueryResultToBufferStep::transformPipeline(QueryPipelineBuilder & pi
         auto index = input_header->getPositionByName(column);
         columns_to_save_indices.push_back(index);
     }
+
     /// No need to lock here, as this method is called during pipeline building,
     /// before the execution starts.
     chunk_buffer->setInputsNumber(pipeline.getNumStreams());
 
+    /// We only add transforms for the main data streams, not for totals/extremes.
+    /// The totals/extremes streams will pass through unchanged.
+    /// This avoids the issue where addSimpleTransform would create more transforms
+    /// than the number of main streams (because it also creates transforms for
+    /// totals and extremes), causing an underflow in the unfinished_inputs counter.
     pipeline.addSimpleTransform(
-        [this, &columns_to_save_indices](const SharedHeader & in_header)
+        [this, &columns_to_save_indices](const SharedHeader & in_header, Pipe::StreamType stream_type)
+            -> std::shared_ptr<IProcessor>
         {
+            if (stream_type != Pipe::StreamType::Main)
+                return nullptr;
             return std::make_shared<SaveSubqueryResultToBufferTransform>(
                 in_header,
                 chunk_buffer,

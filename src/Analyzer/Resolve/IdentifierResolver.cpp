@@ -1065,6 +1065,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         if (using_column_node_it == using_column_name_to_column_node.end())
             return;
 
+        const auto & using_column_list = using_column_node_it->second->as<ColumnNode &>().getExpressionOrThrow()->as<const ListNode &>();
+        auto matches_using_column = [&](const auto & node) { return node->isEqual(*resolved_identifier_candidate); };
+        if (std::ranges::none_of(using_column_list.getNodes(), matches_using_column))
+            return;
+
         auto current_type = resolved_column.getColumnType();
         auto result_type = using_column_node_it->second->getColumnType();
 

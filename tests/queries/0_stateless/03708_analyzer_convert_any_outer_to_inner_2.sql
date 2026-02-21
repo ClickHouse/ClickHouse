@@ -17,7 +17,8 @@ FROM users u1 LEFT ANY JOIN
     GROUP BY name
 ) u2
 ON u1.name = u2.name
-WHERE uid < age_sum;
+WHERE uid < age_sum
+SETTINGS enable_join_runtime_filters = 0;
 
 SELECT *
 FROM users u1 LEFT ANY JOIN
@@ -39,7 +40,8 @@ FROM users u1 LEFT ANY JOIN
     GROUP BY name WITH ROLLUP
 ) u2
 ON u1.name = u2.name
-WHERE uid < age_sum;
+WHERE uid < age_sum
+SETTINGS enable_join_runtime_filters = 0;
 
 -- Do not convert to INNER JOIN
 EXPLAIN actions = 1, keep_logical_steps = 1
@@ -51,7 +53,8 @@ FROM users u1 LEFT ANY JOIN
     GROUP BY name WITH CUBE
 ) u2
 ON u1.name = u2.name
-WHERE uid < age_sum;
+WHERE uid < age_sum
+SETTINGS enable_join_runtime_filters = 0;
 
 -- Do not convert to INNER JOIN
 EXPLAIN actions = 1, keep_logical_steps = 1
@@ -63,4 +66,5 @@ FROM users u1 LEFT ANY JOIN
     GROUP BY GROUPING SETS ((name), ())
 ) u2
 ON u1.name = u2.name
-WHERE uid < age_sum;
+WHERE uid < age_sum
+SETTINGS enable_join_runtime_filters = 0;

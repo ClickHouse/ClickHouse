@@ -1,0 +1,6 @@
+<clickhouse>
+    <access_control_improvements>
+        <throw_on_unmatched_row_policies>false</throw_on_unmatched_row_policies>
+        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+    </access_control_improvements>
+</clickhouse>

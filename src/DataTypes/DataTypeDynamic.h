@@ -41,7 +41,7 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool hasDynamicSubcolumnsData() const override { return true; }
-    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
 
