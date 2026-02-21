@@ -64,11 +64,11 @@ struct PrometheusQueryParsingUtil
                                       String * error_message = nullptr,
                                       size_t * error_pos = nullptr);
 
-    /// Parses the range and optionally the resolution in a subquery, for example for "[1h:5m]" the function parses "1h" and "5m".
+    /// Parses the range and optionally the step in a subquery, for example for "[1h:5m]" the function parses "1h" and "5m".
     static bool tryParseSubqueryRange(std::string_view input,
                                       UInt32 timestamp_scale,
                                       DurationType & res_range,
-                                      std::optional<DurationType> & res_resolution,
+                                      std::optional<DurationType> & res_step,
                                       String * error_message = nullptr,
                                       size_t * error_pos = nullptr);
 };

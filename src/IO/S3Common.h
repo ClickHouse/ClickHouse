@@ -46,6 +46,7 @@ public:
     }
 
     bool isRetryableError() const;
+    bool isAccessTokenExpiredError() const;
 
     S3Exception * clone() const override { return new S3Exception(*this); }
     void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
