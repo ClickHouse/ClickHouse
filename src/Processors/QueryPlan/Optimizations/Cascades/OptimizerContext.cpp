@@ -19,20 +19,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+OptimizationRulePtr createJoinCommutativity();
+OptimizationRulePtr createHashJoinImplementation();
+OptimizationRulePtr createLocalAggregationImplementation();
+OptimizationRulePtr createShuffleAggregationImplementation();
+OptimizationRulePtr createPartialDistributedAggregationImplementation();
+OptimizationRulePtr createParallelReadImplementation();
+OptimizationRulePtr createDefaultImplementation();
+OptimizationRulePtr createDistributionEnforcer();
+OptimizationRulePtr createSortingEnforcer();
+
 OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
     : cost_estimator(memo)
     , statistics_derivation(memo, statistics)
 {
-//    addRule(std::make_shared<JoinAssociativity>());
-    addRule(std::make_shared<JoinCommutativity>());
-    addRule(std::make_shared<HashJoinImplementation>());
-    addRule(std::make_shared<DefaultImplementation>());
-    addRule(std::make_shared<LocalAggregationImplementation>());
-    addRule(std::make_shared<ShuffleAggregationImplementation>());
-    addRule(std::make_shared<PartialDistributedAggregationImplementation>());
-    addRule(std::make_shared<ParallelReadImplementation>());
-    addEnforcerRule(std::make_shared<DistributionEnforcer>());
-    addEnforcerRule(std::make_shared<SortingEnforcer>());
+    addRule(createJoinCommutativity());
+    addRule(createHashJoinImplementation());
+    addRule(createDefaultImplementation());
+    addRule(createLocalAggregationImplementation());
+    addRule(createShuffleAggregationImplementation());
+    addRule(createPartialDistributedAggregationImplementation());
+    addRule(createParallelReadImplementation());
+    addEnforcerRule(createDistributionEnforcer());
+    addEnforcerRule(createSortingEnforcer());
 }
 
 void OptimizerContext::addRule(OptimizationRulePtr rule)
