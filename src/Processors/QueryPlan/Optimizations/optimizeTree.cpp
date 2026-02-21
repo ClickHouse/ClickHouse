@@ -255,13 +255,27 @@ void optimizeTreeSecondPass(
         });
     }
 
-    bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
             optimizeJoinLogical(frame_node, nodes, optimization_settings);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
             useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
+        });
+
+///    if (optimization_settings.enable_cascades_optimizer)
+///    {
+///        CascadesOptimizer cascades_optimizer(query_plan);
+///        cascades_optimizer.optimize();
+///    }
+
+    bool join_runtime_filters_were_added = false;
+    traverseQueryPlan(stack, root,
+        [&](auto & /*frame_node*/)
+        {
+//            optimizeJoinLogical(frame_node, nodes, optimization_settings);
+//            optimizeJoinLegacy(frame_node, nodes, optimization_settings);
+//            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -317,7 +331,7 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (make_distributed_plan)
+            if (make_distributed_plan && !optimization_settings.enable_cascades_optimizer)
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
@@ -326,11 +340,13 @@ void optimizeTreeSecondPass(
             }
         });
 
+
     if (optimization_settings.enable_cascades_optimizer)
     {
         CascadesOptimizer cascades_optimizer(query_plan);
         cascades_optimizer.optimize();
     }
+
 
     stack.push_back({.node = &root});
 

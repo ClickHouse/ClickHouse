@@ -828,6 +828,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
         QueryPlanOptimizationSettings local_settings = optimization_settings;
         local_settings.make_distributed_plan = false;
+        local_settings.enable_cascades_optimizer = false;
         QueryPlanOptimizations::optimizeTreeSecondPass(local_settings, *root, nodes, *this);
     }
     else

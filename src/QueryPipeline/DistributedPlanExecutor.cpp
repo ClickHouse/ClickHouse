@@ -767,6 +767,7 @@ protected:
         auto new_context = Context::createCopy(ctx);
         /// We will execute tasks with local plan fragments. They should not be converted into distributed plan themselves.
         new_context->setSetting("make_distributed_plan", false);
+        new_context->setSetting("enable_cascades_optimizer", false);
         return new_context;
     }
 
