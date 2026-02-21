@@ -24,6 +24,7 @@ from .info import Info
 
 class _Colors:
     """ANSI color codes for terminal output"""
+
     RESET = "\033[0m"
     BOLD = "\033[1m"
     GREEN = "\033[92m"
