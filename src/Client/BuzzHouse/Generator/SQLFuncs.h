@@ -10,7 +10,11 @@ class CHAggregate
 {
 public:
     const bool support_nulls_clause;
-    const uint32_t fnum, min_params, max_params, min_args, max_args;
+    const uint32_t fnum;
+    const uint32_t min_params;
+    const uint32_t max_params;
+    const uint32_t min_args;
+    const uint32_t max_args;
 
     CHAggregate(const uint32_t f, const uint32_t min_p, const uint32_t max_p, const uint32_t min_a, const uint32_t m_args, const bool snc)
         : support_nulls_clause(snc)
@@ -26,7 +30,11 @@ public:
 class CHFunction
 {
 public:
-    const uint32_t fnum, min_lambda_param, max_lambda_param, min_args, max_args;
+    const uint32_t fnum;
+    const uint32_t min_lambda_param;
+    const uint32_t max_lambda_param;
+    const uint32_t min_args;
+    const uint32_t max_args;
 
     CHFunction(const uint32_t f, const uint32_t min_lambda, const uint32_t max_lambda, const uint32_t min_a, const uint32_t m_args)
         : fnum(f)
@@ -202,6 +210,7 @@ const std::vector<CHAggregate> CHAggrs = {
 
 const std::vector<CHFunction> CommonCHFuncs
     = {CHFunction(SQLFunc::FUNCarrayJoin, 0, 0, 1, 1),
+       CHFunction(SQLFunc::FUNCif, 0, 0, 3, 3),
        CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1),
        CHFunction(SQLFunc::FUNCtoNullable, 0, 0, 1, 1),
        CHFunction(SQLFunc::FUNCtoLowCardinality, 0, 0, 1, 1)};
@@ -384,7 +393,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNClessOrEquals, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCgreaterOrEquals, 0, 0, 2, 2),
     /// Conditional functions
-    CHFunction(SQLFunc::FUNCif, 0, 0, 3, 3),
     CHFunction(SQLFunc::FUNCmultiIf, 0, 0, 3, ulimited_params),
     CHFunction(SQLFunc::FUNCgreatest, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCleast, 0, 0, 2, ulimited_params),
@@ -568,6 +576,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmurmurHash3_64, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCmurmurHash3_128, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCxxh3, 0, 0, 1, ulimited_params),
+    CHFunction(SQLFunc::FUNCxxh3_128, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCxxHash32, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCxxHash64, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCngramSimHash, 0, 0, 1, 2),

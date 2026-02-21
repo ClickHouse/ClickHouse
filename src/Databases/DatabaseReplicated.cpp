@@ -1851,6 +1851,31 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     UInt32 & max_log_ptr) const
 {
     std::map<String, String> table_name_to_metadata;
+
+    if (zookeeper->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST) &&
+        zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) &&
+        zookeeper->isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) &&
+        !filter_by_table_name)
+    {
+        auto paths = {
+            zookeeper_path + "/metadata",
+            zookeeper_path
+        };
+
+        auto responses = zookeeper->getChildren(paths, Coordination::ListRequestType::ALL, /* with_stat = */ false, /* with_data = */ true);
+
+        for (size_t i = 0; i < responses[0].names.size(); ++i)
+            table_name_to_metadata.emplace(unescapeForFileName(responses[0].names[i]), std::move(responses[0].data[i]));
+
+        auto it = std::find(responses[1].names.begin(), responses[1].names.end(), "max_log_ptr");
+        if (it == responses[1].names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "max_log_ptr node not found in ZooKeeper path {}", zookeeper_path);
+
+        max_log_ptr = parse<UInt32>(responses[1].data[it - responses[1].names.begin()]);
+        LOG_DEBUG(log, "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
+        return table_name_to_metadata;
+    }
+
     size_t iteration = 0;
     auto metadata_path = zookeeper_path + "/metadata";
     while (++iteration <= max_retries)

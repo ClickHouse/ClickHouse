@@ -216,6 +216,7 @@ The first argument must be a constant array of Strings determining the names of 
 The other arguments must be arrays of the same size.
 )",
         .examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])", ""}},
+        .introduced_in = {23, 2},
         .category = FunctionDocumentation::Category::Other
     });
 }

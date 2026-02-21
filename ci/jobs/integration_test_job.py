@@ -13,6 +13,7 @@ from ci.jobs.scripts.integration_tests_configs import (
     LLVM_COVERAGE_SKIP_PREFIXES,
     get_optimal_test_batch,
 )
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -37,7 +38,9 @@ def _start_docker_in_docker():
         )
     retries = 20
     for i in range(retries):
-        if Shell.check("docker info > /dev/null", verbose=True):
+        # On last retry, show errors; otherwise suppress them
+        cmd = "docker info > /dev/null" if i == retries - 1 else "docker info > /dev/null 2>&1"
+        if Shell.check(cmd, verbose=True):
             break
         if i == retries - 1:
             raise RuntimeError(
@@ -220,6 +223,17 @@ def get_parallel_sequential_tests_to_run(
     # 1) test suit (e.g. test_directory or test_directory/)
     # 2) test module (e.g. test_directory/test_module or test_directory/test_module.py)
     # 3) test case (e.g. test_directory/test_module.py::test_case or test_directory/test_module::test_case[test_param])
+    def normalize_test_path(test_arg: str) -> str:
+        """Normalize test path by removing integration test directory prefixes."""
+        # Handle: tests/integration/, integration/, ./tests/integration/, or full paths
+        if "tests/integration/" in test_arg:
+            # Extract everything after tests/integration/
+            test_arg = test_arg.split("tests/integration/", 1)[1]
+        elif test_arg.startswith("integration/"):
+            # Handle integration/ prefix
+            test_arg = test_arg[len("integration/"):]
+        return test_arg
+
     def test_match(test_file: str, test_arg: str) -> bool:
         if "/" not in test_arg:
             return f"{test_arg}/" in test_file
@@ -231,14 +245,16 @@ def get_parallel_sequential_tests_to_run(
     parallel_tests = []
     sequential_tests = []
     for test_arg in args_test:
+        # Normalize the test path first
+        normalized_test_arg = normalize_test_path(test_arg)
         matched = False
         for test_file in parallel_test_modules:
-            if test_match(test_file, test_arg):
-                parallel_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                parallel_tests.append(normalized_test_arg)
                 matched = True
         for test_file in sequential_test_modules:
-            if test_match(test_file, test_arg):
-                sequential_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                sequential_tests.append(normalized_test_arg)
                 matched = True
         if not no_strict:
             assert matched, f"Test [{test_arg}] not found"
@@ -248,13 +264,25 @@ def get_parallel_sequential_tests_to_run(
 
 def tail(filepath: str, buff_len: int = 1024) -> List[str]:
     with open(filepath, "rb") as f:
-        f.seek(-buff_len, os.SEEK_END)
-        f.readline()
+        # Get file size to avoid seeking before start of file
+        f.seek(0, os.SEEK_END)
+        file_size = f.tell()
+
+        if file_size <= buff_len:
+            # File is smaller than buffer, read from beginning
+            f.seek(0)
+        else:
+            # File is larger, seek from end
+            f.seek(-buff_len, os.SEEK_END)
+            f.readline()  # Skip partial line
+
         data = f.read()
         return data.decode(errors="replace")
 
 
-def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> Result:
+def run_pytest_and_collect_results(
+    command: str, env: str, report_name: str, timeout: int = None
+) -> Result:
     """
     Does xdist timeout check.
     """
@@ -266,6 +294,7 @@ def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> 
         pytest_report_file=f"{temp_path}/pytest_{report_name}.jsonl",
         pytest_logfile=f"{temp_path}/pytest_{report_name}.log",
         logfile=f"{temp_path}/{report_name}.log",
+        timeout=timeout,
     )
 
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
@@ -412,16 +441,22 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            # TODO: reduce scope to modified test cases instead of entire modules
-            changed_files = info.get_changed_files()
-            for file in changed_files:
-                if (
-                    file.startswith("tests/integration/test")
-                    and Path(file).name.startswith("test")
-                    and file.endswith(".py")
-                    and Path(file).is_file()
-                ):
-                    changed_test_modules.append(file.removeprefix("tests/integration/"))
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+                # Not a bugfix PR - run a simple sanity test
+                changed_test_modules = ["test_accept_invalid_certificate/test.py"]
+            else:
+                # TODO: reduce scope to modified test cases instead of entire modules
+                changed_files = info.get_changed_files()
+                for file in changed_files:
+                    if (
+                        file.startswith("tests/integration/test")
+                        and Path(file).name.startswith("test")
+                        and file.endswith(".py")
+                        and Path(file).is_file()
+                    ):
+                        changed_test_modules.append(
+                            file.removeprefix("tests/integration/")
+                        )
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -473,7 +508,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )  # remove parametrization - does not work with test repeat with --count
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
-    if not Shell.check("docker info > /dev/null", verbose=True):
+    if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
@@ -563,6 +598,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                 env=test_env,
                 report_name="parallel",
+                timeout=session_timeout_parallel + 600,
             )
             if is_flaky_check and not test_result_parallel.is_ok():
                 print(
@@ -591,6 +627,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
+                timeout=session_timeout_sequential + 600,
             )
 
             if is_flaky_check and not test_result_sequential.is_ok():
@@ -653,6 +690,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
+            timeout=1200 + 600,
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
@@ -713,7 +751,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation:
+    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
