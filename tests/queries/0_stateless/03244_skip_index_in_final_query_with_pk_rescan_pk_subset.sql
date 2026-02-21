@@ -1,3 +1,4 @@
+-- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 DROP TABLE IF EXISTS rmt1;
 
 SET use_skip_indexes=1;
@@ -10,7 +11,7 @@ CREATE TABLE rmt1
     id UInt32,
     val UInt32,
     INDEX vidx val TYPE minmax
-) Engine = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 64;
+) Engine = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 64, add_minmax_index_for_numeric_columns=0;
 
 
 SYSTEM STOP MERGES rmt1;

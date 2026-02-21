@@ -621,10 +621,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
-        if (ast_literal->custom_type)
-            result = std::make_shared<ConstantNode>(ast_literal->value, ast_literal->custom_type);
-        else if (context->getSettingsRef()[Setting::use_variant_as_common_type])
-            result = std::make_shared<ConstantNode>(ast_literal->value, ast_literal->custom_type ? ast_literal->custom_type : applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
+        if (context->getSettingsRef()[Setting::use_variant_as_common_type])
+            result = std::make_shared<ConstantNode>(ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
         else
             result = std::make_shared<ConstantNode>(ast_literal->value);
     }

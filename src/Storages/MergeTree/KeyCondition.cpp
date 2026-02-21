@@ -3381,6 +3381,65 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
     return true;
 }
 
+/// Extract a conservative union of ranges implied by this condition for the only key column.
+///
+/// We want to extract useful bounds even when the whole predicate cannot be represented as "plain ranges".
+/// Example: `x % 2 = 0 AND x < 100` is not fully plain due to `%`, but the conjunct `x < 100` still provides
+/// a finite upper bound. To support this, we:
+///  - split the condition into top-level conjuncts (A AND B AND ...),
+///  - run `extractPlainRanges()` on each conjunct independently,
+///  - intersect all successfully extracted conjunct ranges (because the whole condition is AND),
+///  - ignore conjuncts that cannot be converted to plain ranges.
+///
+/// We return `Ranges` (a union of intervals), because bounds may be disjoint:
+/// `x != 5` => (-Inf, 4] OR [6, +Inf). See `KeyCondition::extractBounds()` docs in `KeyCondition.h` for examples.
+Ranges KeyCondition::extractBounds() const
+{
+    /// We only support single column
+    if (key_columns.size() != 1)
+        return {Range::createWholeUniverseWithoutNull()};
+
+    if (!has_filter)
+        return {Range::createWholeUniverseWithoutNull()};
+
+    PlainRanges bounds = PlainRanges::makeUniverse();
+
+    /// Track whether we extracted at least one conjunct into plain ranges.
+    bool extracted_any = false;
+
+    for (const auto & [start, end] : topLevelConjunction())
+    {
+        /// Evaluate a single top-level conjunct in isolation, because `extractPlainRanges()` requires
+        /// the whole RPN to be representable by plain range operations.
+        KeyCondition one_conjunct(ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+        one_conjunct.rpn.assign(rpn.begin() + start, rpn.begin() + end);
+
+        Ranges conjunct_ranges;
+
+        /// Unsupported conjunct: ignore it (it provides no safely extractable bounds).
+        if (!one_conjunct.extractPlainRanges(conjunct_ranges))
+            continue;
+
+        extracted_any = true;
+
+        /// If any conjunct is unsatisfiable, the whole AND is unsatisfiable.
+        if (conjunct_ranges.empty())
+            return {};
+
+        bounds = bounds.intersectWith(PlainRanges(conjunct_ranges));
+
+        /// Contradictory bounds between conjuncts (e.g. `x < 5 AND x > 10`).
+        if (bounds.ranges.empty())
+            return {};
+    }
+
+    /// No useful information could be extracted from any conjunct.
+    if (!extracted_any)
+        return {Range::createWholeUniverseWithoutNull()};
+
+    return std::move(bounds.ranges);
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,

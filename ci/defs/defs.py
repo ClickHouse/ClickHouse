@@ -29,10 +29,10 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
+    MACOS_ARM_SMALL = ["self-hosted", "arm_macos_small"]
+    MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
-    # GitHub-hosted macOS runners for native smoke tests
-    MACOS_ARM = ["macos-14"]  # Apple Silicon (M1/M2/M3)
 
 
 class CIFiles:
@@ -328,6 +328,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     PR_BODY = "PR formatter"
     FAST_TEST = "Fast test"
+    SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -354,7 +355,8 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
-    MACOS_SMOKE_TEST = "macOS smoke test"
+    BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
+    UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
 
 
 class ToolSet:
@@ -374,6 +376,7 @@ class ArtifactNames:
     LLVM_COVERAGE_HTML_REPORT = (
         "LLVM_COVERAGE_HTML_REPORT"  # .tar.gz file with html report
     )
+    LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     CH_AMD_ASAN = "CH_AMD_ASAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
@@ -423,6 +426,9 @@ class ArtifactNames:
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
     PARSER_MEMORY_PROFILER = "PARSER_MEMORY_PROFILER"
+
+    TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
+    TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
 
 
 LLVM_FT_NUM_BATCHES = 3
@@ -504,6 +510,11 @@ class ArtifactConfigs:
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
     )
+    llvm_coverage_info_file = Artifact.Config(
+        name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/llvm_coverage.info",
+    )
     clickhouse_debians = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
@@ -572,4 +583,14 @@ class ArtifactConfigs:
         name=ArtifactNames.PARSER_MEMORY_PROFILER,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/src/Parsers/examples/parser_memory_profiler",
+    )
+    toolchain_pgo_bolt_amd = Artifact.Config(
+        name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
+    )
+    toolchain_pgo_bolt_arm = Artifact.Config(
+        name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
     )
