@@ -52,6 +52,8 @@ protected:
     /// Will execute a part of inner MergeTask or MutateTask
     virtual bool executeInnerTask() = 0;
 
+    ContextMutablePtr createTaskContext() const;
+
     StorageReplicatedMergeTree & storage;
 
     /// A callback to reschedule merge_selecting_task after destroying merge_mutate_entry
@@ -69,8 +71,6 @@ protected:
     ThreadGroupPtr thread_group;
 
 private:
-    ContextMutablePtr createTaskContext() const;
-
     enum class CheckExistingPartResult : uint8_t
     {
         PART_EXISTS,
