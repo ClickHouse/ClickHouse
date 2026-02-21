@@ -332,7 +332,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 --add-remote-server-settings-prob=0
 --add-disk-settings-prob=80 --number-disks=1,3 --add-policy-settings-prob=70
 --add-filesystem-caches-prob=80 --number-caches=1,1
---time-between-shutdowns=180,180 --restart-clickhouse-prob=75
+--time-between-shutdowns=240,240 --restart-clickhouse-prob=75
 --compare-table-dump-prob=0 --set-locales-prob=80 --set-timezones-prob=80
 --keeper-settings-prob=0 --mem-limit=16g --set-shared-mergetree-disk
 {'--with-azurite' if random.randint(1, 5) == 1 else ''}

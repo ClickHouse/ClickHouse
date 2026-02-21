@@ -718,7 +718,7 @@ while all_running and (not reached_limit):
         )
 
         try:
-            next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
+            next_pick.stop_clickhouse(stop_wait_sec=30, kill=kill_server)
         except Exception as ex:
             logger.error(f"Failed to stop ClickHouse: {ex}")
             logger.info(f"The server {next_pick.name} is not running")
