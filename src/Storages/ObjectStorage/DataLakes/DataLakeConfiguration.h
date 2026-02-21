@@ -167,11 +167,11 @@ public:
 
     }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
     {
         if (ready_object_storage)
             return ready_object_storage;
-        return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
+        return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
@@ -182,9 +182,9 @@ public:
         return std::nullopt;
     }
 
-    bool supportsTotalRows() const override
+    bool supportsTotalRows(ContextPtr context, ObjectStorageType storage_type) const override
     {
-        return DataLakeMetadata::supportsTotalRows();
+        return DataLakeMetadata::supportsTotalRows(context, storage_type);
     }
 
     std::optional<size_t> totalRows(ContextPtr local_context) override
@@ -193,9 +193,9 @@ public:
         return current_metadata->totalRows(local_context);
     }
 
-    bool supportsTotalBytes() const override
+    bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
     {
-        return DataLakeMetadata::supportsTotalBytes();
+        return DataLakeMetadata::supportsTotalBytes(context, storage_type);
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override

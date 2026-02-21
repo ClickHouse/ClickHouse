@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
+#include <Core/ServerSettings.h>
 #include <boost/algorithm/string/replace.hpp>
 
 
@@ -21,6 +22,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
+}
 
 namespace MergeTreeSetting
 {
@@ -174,6 +180,9 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
+
+    if (storage.getContext()->getServerSettings()[ServerSetting::insert_deduplication_version].value != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
+        storage.deduplication_hashes_cache.start();
 
     LOG_DEBUG(log, "Table started successfully");
     return true;

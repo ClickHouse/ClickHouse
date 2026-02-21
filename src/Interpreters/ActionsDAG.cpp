@@ -169,7 +169,16 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
     hash_state.update(is_deterministic_constant);
 
     if (column)
+    {
         hash_state.update(column->getName());
+
+        /// We must also hash the actual constant value, not just the column type name.
+        /// Otherwise, two different constants with the same type and the same expression-based
+        /// result_name (e.g. from CTE constant folding) would produce identical hashes,
+        /// leading to query condition cache collisions and incorrect results.
+        if (isColumnConst(*column))
+            column->updateHashWithValue(0, hash_state);
+    }
 
     for (const auto & child : children)
         child->updateHash(hash_state);
@@ -556,6 +565,15 @@ void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 
     if (!replaced)
         outputs.push_back(&node);
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getNodesPointers() const
+{
+    NodeRawConstPtrs result;
+    result.reserve(nodes.size());
+    for (const auto & node : nodes)
+        result.push_back(&node);
+    return result;
 }
 
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
@@ -3780,12 +3798,18 @@ static MutableColumnPtr deserializeConstant(
         readBinary(hash, in);
 
         auto column_set = ColumnSet::create(1, nullptr);
-        registry.sets[hash].push_back(column_set.get());
 
         if (!is_constant)
+        {
+            registry.sets[hash].push_back(column_set.get());
             return column_set;
+        }
 
-        return ColumnConst::create(std::move(column_set), 0);
+        auto column_const = ColumnConst::create(std::move(column_set), 0);
+        /// After move, get the pointer from ColumnConst
+        const auto * set_column = typeid_cast<const ColumnSet *>(column_const->getDataColumnPtr().get());
+        registry.sets[hash].push_back(const_cast<ColumnSet *>(set_column));
+        return column_const;
     }
 
     if (WhichDataType(type).isFunction())

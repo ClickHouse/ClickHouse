@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} --query="
+DROP TABLE IF EXISTS t;
 CREATE TABLE t
 (
     item_id UInt64,
@@ -16,6 +17,7 @@ CREATE TABLE t
 ENGINE = MergeTree
 ORDER BY item_id;
 
+DROP TABLE IF EXISTS t1;
 CREATE TABLE t1
 (
     item_id UInt64,

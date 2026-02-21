@@ -1,4 +1,4 @@
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Common/PODArray.h>
@@ -16,19 +16,19 @@ using namespace DB;
 using namespace std::literals::string_literals;
 }
 
-struct SplitByNonAlphaTokenExtractorTestCase
+struct SplitByNonAlphaTokenizerTestCase
 {
     const std::string_view description;
     const std::string source;
     const std::vector<std::string> tokens;
 };
 
-std::ostream & operator<<(std::ostream & ostr, const SplitByNonAlphaTokenExtractorTestCase & test_case)
+std::ostream & operator<<(std::ostream & ostr, const SplitByNonAlphaTokenizerTestCase & test_case)
 {
     return ostr << test_case.description;
 }
 
-class SplitByNonAlphaTokenExtractorTest : public ::testing::TestWithParam<SplitByNonAlphaTokenExtractorTestCase>
+class SplitByNonAlphaTokenizerTest : public ::testing::TestWithParam<SplitByNonAlphaTokenizerTestCase>
 {
 public:
     void SetUp() override
@@ -47,11 +47,11 @@ public:
     std::unique_ptr<PaddedPODArray<char>> data;
 };
 
-TEST_P(SplitByNonAlphaTokenExtractorTest, next)
+TEST_P(SplitByNonAlphaTokenizerTest, next)
 {
     const auto & param = GetParam();
 
-    SplitByNonAlphaTokenExtractor token_extractor;
+    SplitByNonAlphaTokenizer tokenizer;
 
     size_t i = 0;
 
@@ -62,19 +62,19 @@ TEST_P(SplitByNonAlphaTokenExtractorTest, next)
     for (const auto & expected_token : param.tokens)
     {
         SCOPED_TRACE(++i);
-        ASSERT_TRUE(token_extractor.nextInStringPadded(data->data(), data->size(), pos, token_start, token_len));
+        ASSERT_TRUE(tokenizer.nextInStringPadded(data->data(), data->size(), pos, token_start, token_len));
 
         EXPECT_EQ(expected_token, std::string_view(data->data() + token_start, token_len))
                 << " token_start:" << token_start << " token_len: " << token_len;
     }
-    ASSERT_FALSE(token_extractor.nextInStringPadded(data->data(), data->size(), pos, token_start, token_len))
+    ASSERT_FALSE(tokenizer.nextInStringPadded(data->data(), data->size(), pos, token_start, token_len))
             << "\n\t=> \"" << param.source.substr(token_start, token_len) << "\""
             << "\n\t" << token_start << ", " << token_len << ", " << pos << ", " << data->size();
 }
 
 INSTANTIATE_TEST_SUITE_P(NoTokens,
-    SplitByNonAlphaTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenExtractorTestCase>{
+    SplitByNonAlphaTokenizerTest,
+    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenizerTestCase>{
         {
             "Empty input sequence produces no tokens.",
             "",
@@ -94,8 +94,8 @@ INSTANTIATE_TEST_SUITE_P(NoTokens,
 );
 
 INSTANTIATE_TEST_SUITE_P(ShortSingleToken,
-    SplitByNonAlphaTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenExtractorTestCase>{
+    SplitByNonAlphaTokenizerTest,
+    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenizerTestCase>{
         {
             "Short single token",
             "foo",
@@ -110,8 +110,8 @@ INSTANTIATE_TEST_SUITE_P(ShortSingleToken,
 );
 
 INSTANTIATE_TEST_SUITE_P(UTF8,
-    SplitByNonAlphaTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenExtractorTestCase>{
+    SplitByNonAlphaTokenizerTest,
+    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenizerTestCase>{
         {
             "Single token with mixed ASCII and UTF-8 chars",
             "abc\u0442" "123\u0447XYZ\u043A",
@@ -126,8 +126,8 @@ INSTANTIATE_TEST_SUITE_P(UTF8,
 );
 
 INSTANTIATE_TEST_SUITE_P(MultipleTokens,
-    SplitByNonAlphaTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenExtractorTestCase>{
+    SplitByNonAlphaTokenizerTest,
+    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenizerTestCase>{
         {
             "Multiple tokens separated by whitespace",
             "\nabc 123\tXYZ\r",
@@ -170,8 +170,8 @@ INSTANTIATE_TEST_SUITE_P(MultipleTokens,
 
 
 INSTANTIATE_TEST_SUITE_P(SIMD_Cases,
-    SplitByNonAlphaTokenExtractorTest,
-    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenExtractorTestCase>{
+    SplitByNonAlphaTokenizerTest,
+    ::testing::ValuesIn(std::initializer_list<SplitByNonAlphaTokenizerTestCase>{
         {
             "First 16 bytes are empty, then a shor token",
             "                abcdef",

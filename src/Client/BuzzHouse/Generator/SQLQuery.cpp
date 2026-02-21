@@ -128,7 +128,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
     chassert(nclauses);
     for (uint32_t i = 0; i < nclauses; i++)
     {
-        const String ncname = getNextAlias();
+        const String ncname = getNextAlias(rg);
         ExprColAlias * eca = i == 0 ? aj->mutable_constraint() : aj->add_other_constraints();
         Expr * expr = eca->mutable_expr();
 
@@ -666,7 +666,7 @@ bool StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::Table)] = has_table;
     queryMask[static_cast<size_t>(QueryOp::View)] = this->peer_query != PeerQuery::ClickHouseOnly && has_view;
     queryMask[static_cast<size_t>(QueryOp::RemoteUDF)] = this->allow_engine_udf && can_recurse;
-    /// queryMask[static_cast<size_t>(QueryOp::GenerateSeriesUDF)] = true;
+    /// queryMask[static_cast<size_t>(QueryOp::NumbersUDF)] = true;
     queryMask[static_cast<size_t>(QueryOp::SystemTable)] = this->allow_not_deterministic && !systemTables.empty();
     queryMask[static_cast<size_t>(QueryOp::MergeUDF)] = this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::ClusterUDF)] = this->allow_engine_udf && !fc.clusters.empty() && can_recurse;
@@ -744,18 +744,16 @@ bool StatementGenerator::joinedTableOrFunction(
             }
         }
         break;
-        case QueryOp::GenerateSeriesUDF: {
+        case QueryOp::NumbersUDF: {
             SQLRelation rel(rel_name);
             std::unordered_map<uint32_t, QueryLevel> levels_backup;
             std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
             const uint32_t noption = rg.nextSmallNumber();
             Expr * limit = nullptr;
-            GenerateSeriesFunc * gsf = tof->mutable_tfunc()->mutable_gseries();
-            std::uniform_int_distribution<uint32_t> gsf_range(1, static_cast<uint32_t>(GenerateSeriesFunc_GSName_GSName_MAX));
-            const GenerateSeriesFunc_GSName gname = static_cast<GenerateSeriesFunc_GSName>(gsf_range(rg.generator));
-            const String & cname
-                = gname > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries ? "number" : "generate_series";
-            std::uniform_int_distribution<uint32_t> numbers_range(1, UINT32_C(1000000));
+            NumbersFunc * gsf = tof->mutable_tfunc()->mutable_numbers();
+            std::uniform_int_distribution<uint32_t> gsf_range(1, static_cast<uint32_t>(NumbersFunc_NumbersName_NumbersName_MAX));
+            const NumbersFunc_NumbersName gname = static_cast<NumbersFunc_NumbersName>(gsf_range(rg.generator));
+            std::uniform_int_distribution<uint32_t> numbers_range(1, UINT32_C(100000));
 
             gsf->set_fname(gname);
             for (const auto & [key, val] : this->levels)
@@ -771,7 +769,7 @@ bool StatementGenerator::joinedTableOrFunction(
 
             this->current_level++;
             this->levels[this->current_level] = QueryLevel(this->current_level);
-            if (gname > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries)
+            if (gname > NumbersFunc_NumbersName::NumbersFunc_NumbersName_generateSeries)
             {
                 if (noption < 4)
                 {
@@ -843,7 +841,20 @@ bool StatementGenerator::joinedTableOrFunction(
                 this->ctes[key] = val;
             }
 
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {cname}));
+            switch (gname)
+            {
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_generate_series:
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_generateSeries:
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"generate_series"}));
+                    break;
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_numbers:
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_numbers_mt:
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"number"}));
+                    break;
+                case NumbersFunc_NumbersName::NumbersFunc_NumbersName_primes:
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"prime"}));
+                    break;
+            }
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;
@@ -1724,8 +1735,9 @@ void StatementGenerator::generateGroupByExpr(
 }
 
 bool StatementGenerator::generateGroupBy(
-    RandomGenerator & rg, const uint32_t ncols, const bool enforce_having, const bool allow_settings, GroupByStatement * gbs)
+    RandomGenerator & rg, const uint32_t ncols, const bool enforce_having, const bool allow_settings, SelectStatementCore * ssc)
 {
+    GroupByStatement * gbs = ssc->mutable_groupby();
     std::vector<SQLRelationCol> available_cols;
 
     if (!this->levels[this->current_level].rels.empty())
@@ -1805,11 +1817,21 @@ bool StatementGenerator::generateGroupBy(
 
         if (!has_gsm && !has_totals && allow_settings && (enforce_having || rg.nextSmallNumber() < 5))
         {
-            const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
+            WhereStatement * whr = gbs->mutable_having_expr();
 
-            this->levels[this->current_level].allow_aggregates = true;
-            generateWherePredicate(rg, gbs->mutable_having_expr()->mutable_expr()->mutable_expr());
-            this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
+            if ((ssc->has_pre_where() || ssc->has_where()) && rg.nextMediumNumber() < 16)
+            {
+                /// Sometimes use the same predicate for having and where
+                whr->CopyFrom((!ssc->has_pre_where() || rg.nextBool()) ? ssc->where() : ssc->pre_where());
+            }
+            else
+            {
+                const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
+
+                this->levels[this->current_level].allow_aggregates = true;
+                generateWherePredicate(rg, whr->mutable_expr()->mutable_expr());
+                this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
+            }
         }
     }
     else
@@ -2067,7 +2089,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
         {
             /// Use CTE expression
             CTEexpr * expr = scte->mutable_cte_expr();
-            const String ncname = getNextAlias();
+            const String ncname = getNextAlias(rg);
             SQLRelation rel("");
 
             generateExpression(rg, expr->mutable_expr());
@@ -2211,13 +2233,23 @@ void StatementGenerator::generateSelect(
         {
             addWindowDefs(rg, ssc);
         }
-        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 3)
+        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextMediumNumber() < 35)
         {
             generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
         }
-        if ((allowed_clauses & allow_where) && this->depth < this->fc.max_depth && rg.nextSmallNumber() < 5)
+        if ((allowed_clauses & allow_where) && this->depth < this->fc.max_depth && rg.nextMediumNumber() < 35)
         {
-            generateWherePredicate(rg, ssc->mutable_where()->mutable_expr()->mutable_expr());
+            WhereStatement * whr = ssc->mutable_where();
+
+            if (ssc->has_pre_where() && rg.nextMediumNumber() < 16)
+            {
+                /// Sometimes use the same predicate for prewhere and where
+                whr->CopyFrom(ssc->pre_where());
+            }
+            else
+            {
+                generateWherePredicate(rg, whr->mutable_expr()->mutable_expr());
+            }
         }
 
         if (this->inside_projection)
@@ -2240,7 +2272,7 @@ void StatementGenerator::generateSelect(
         if ((allowed_clauses & allow_groupby) && !force_global_agg && this->depth < this->fc.max_depth && this->width < this->fc.max_width
             && (force_group_by || rg.nextSmallNumber() < 4))
         {
-            generateGroupBy(rg, ncols, false, (allowed_clauses & allow_groupby_settings), ssc->mutable_groupby());
+            generateGroupBy(rg, ncols, false, (allowed_clauses & allow_groupby_settings), ssc);
         }
         else
         {
@@ -2260,7 +2292,7 @@ void StatementGenerator::generateSelect(
                 generateExpression(rg, eca->mutable_expr());
                 if (!top && rg.nextBool())
                 {
-                    const String ncname = getNextAlias();
+                    const String ncname = getNextAlias(rg);
 
                     SQLRelation rel("");
                     rel.cols.emplace_back(SQLRelationCol("", {ncname}));
@@ -2277,7 +2309,24 @@ void StatementGenerator::generateSelect(
         if ((allowed_clauses & allow_qualify) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
             && rg.nextSmallNumber() < 3)
         {
-            generateWherePredicate(rg, ssc->mutable_qualify_expr()->mutable_expr()->mutable_expr());
+            WhereStatement * whr = ssc->mutable_qualify_expr();
+
+            if ((ssc->has_pre_where() || ssc->has_where() || (ssc->has_groupby() && ssc->groupby().has_having_expr()))
+                && rg.nextMediumNumber() < 16)
+            {
+                const uint32_t choice = rg.nextSmallNumber();
+
+                /// Sometimes use the same predicate for having and where
+                whr->CopyFrom(
+                    ((!ssc->has_pre_where() && (!ssc->has_groupby() || !ssc->groupby().has_having_expr())) || choice < 5) ? ssc->where()
+                        : ((ssc->has_pre_where() && (!ssc->has_groupby() || !ssc->groupby().has_having_expr())) || choice < 8)
+                        ? ssc->pre_where()
+                        : ssc->groupby().having_expr());
+            }
+            else
+            {
+                generateWherePredicate(rg, whr->mutable_expr()->mutable_expr());
+            }
         }
         if ((allowed_clauses & allow_orderby) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
             && (force_order_by || rg.nextSmallNumber() < 4))
@@ -2301,7 +2350,7 @@ void StatementGenerator::generateSelect(
         }
     }
     /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
-    if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextSmallNumber() < 3)
+    if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextMediumNumber() < 35)
     {
         generateSettingValues(rg, serverSettings, sel->mutable_setting_values());
     }

@@ -19,7 +19,7 @@ configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_versi
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
-if (NO_SSE3_OR_HIGHER)
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)
     # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
     # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
     # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
@@ -106,6 +106,7 @@ add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 add_headers_and_sources(clickhouse_common_io Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
@@ -113,8 +114,10 @@ add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhous
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/DiskObjectStorage)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/Replication)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Cache)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Local)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Plain)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable)
@@ -263,7 +266,10 @@ if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_access_ssh Access/SSH)
 endif()
 add_object_library(clickhouse_backups Backups)
+
 add_object_library(clickhouse_core Core)
+list (APPEND dbms_sources Common/ExceptionExt.cpp)
+
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
@@ -299,6 +305,7 @@ add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
+add_object_library(clickhouse_storages_time_series_prometheus_query_to_sql Storages/TimeSeries/PrometheusQueryToSQL)
 add_object_library(clickhouse_storages_arrowflight Storages/ArrowFlight)
 add_object_library(clickhouse_client Client)
 # Always compile this file with the highest possible level of optimizations, even in Debug builds.
@@ -335,6 +342,15 @@ add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
+# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
+# TUs where libcxx hardening needs to be disabled are specified here.
+set_property(SOURCE
+    Columns/IColumn.cpp                        # hashjoin_with_large_output
+    Processors/Transforms/WindowTransform.cpp  # window functions
+    Interpreters/Aggregator.cpp                # destroy_aggregate_states
+    Common/IntervalTree.cpp                    # range_hashed_dictionary
+    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
+
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
 endif()
@@ -344,7 +360,9 @@ if (TARGET ch_contrib::nuraft)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
@@ -390,15 +408,6 @@ target_link_libraries (clickhouse_compression
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
 endif()
-
-# Use X86 AVX2/AVX512 instructions to accelerate filter operations
-set_source_files_properties(
-        Columns/ColumnFixedString.cpp
-        Columns/ColumnsCommon.cpp
-        Columns/ColumnVector.cpp
-        Columns/ColumnDecimal.cpp
-        Columns/ColumnString.cpp
-        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 target_link_libraries(clickhouse_common_io
         PUBLIC
@@ -752,7 +761,7 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
-    
+
     if (TARGET ch_contrib::simdcomp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdcomp)
     endif()

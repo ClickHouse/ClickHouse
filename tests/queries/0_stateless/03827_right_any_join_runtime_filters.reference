@@ -1,0 +1,18 @@
+Type: RIGHT
+Strictness: ANY
+Filter column: __applyFilter(_runtime_filter_UNIQ_ID_0, __table1.c_nationkey) (removed)
+BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey)
+3
+3
+No runtime filter for LEFT ANY
+0
+1 element in filter
+1
+0 elements in filter
+0
+Again 1 element in filter
+1
+2 elements in filter
+2
+2 elements in filter in bloom filter
+2

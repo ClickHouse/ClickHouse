@@ -486,22 +486,45 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
-    std::lock_guard lock{mutex};
-
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-
     RowPolicyFilterPtr filter;
-    if (enabled_row_policies)
-        filter = enabled_row_policies->getFilter(database, table_name, filter_type);
 
-    if (row_policies_of_initial_user)
     {
-        /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
-        /// TODO: we need a better solution here. It seems we should pass the initial row policy
-        /// because a shard is allowed to not have the initial user or it might be another user
-        /// with the same name.
-        filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+        std::lock_guard lock{mutex};
+
+        if (initialized && !user && !user_was_dropped)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
+
+        if (enabled_row_policies)
+            filter = enabled_row_policies->getFilter(database, table_name, filter_type);
+
+        if (row_policies_of_initial_user)
+        {
+            /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
+            /// TODO: we need a better solution here. It seems we should pass the initial row policy
+            /// because a shard is allowed to not have the initial user or it might be another user
+            /// with the same name.
+            filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+        }
+    }
+
+    if (filter && filter->policies.empty())
+    {
+        if (access_control->shouldThrowOnUnmatchedRowPolicies())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                            "{}: Table {}.{} has row policies, but none of them are for the current user",
+                            getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name));
+        }
+        else
+        {
+            chassert(filter->isAlwaysTrue() || filter->isAlwaysFalse());
+            std::string_view filter_info =
+                filter->isAlwaysTrue() ? ", no filters will be used" :
+                (filter->isAlwaysFalse() ? ", no rows will be shown" : "");
+
+            LOG_TRACE(trace_log, "{}: Table {}.{} has row policies, but none of them are for the current user{}",
+                      getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name), filter_info);
+        }
     }
 
     return filter;
@@ -675,25 +698,29 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
             }
 
-            AccessRights difference;
-            difference.grant(flags, fmt_args...);
-            AccessRights original_rights = difference;
-            difference.makeDifference(*getAccessRights());
-
-            if (difference == original_rights)
+            if constexpr (!throw_if_denied)
+                return false;
+            else
             {
+                AccessRights difference;
+                difference.grant(flags, fmt_args...);
+                AccessRights original_rights = difference;
+                difference.makeDifference(*getAccessRights());
+
+                if (difference == original_rights)
+                {
+                    return access_denied(ErrorCodes::ACCESS_DENIED,
+                        "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
+                        AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                }
+
                 return access_denied(ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
+                    "(Missing permissions: {}){}",
+                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                    difference.getElements().toStringWithoutOptions(),
+                    grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
             }
-
-
-            return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
-                "(Missing permissions: {}){}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
-                difference.getElements().toStringWithoutOptions(),
-                grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
 
         return access_denied_no_grant(flags, args...);

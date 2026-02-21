@@ -38,7 +38,6 @@
 #include <Common/setThreadName.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/sleep.h>
 #include <base/sort.h>
 
 #include <memory>
@@ -621,6 +620,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
         task.entry.tracing_context,
         this->context->getOpenTelemetrySpanLog());
     tracing_ctx_holder.root_span.kind = OpenTelemetry::SpanKind::CONSUMER;
+    tracing_ctx_holder.root_span.addAttribute("clickhouse.ddl_entry.initial_query_id", task.entry.initial_query_id);
 
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
@@ -1178,7 +1178,9 @@ bool DDLWorker::initializeMainThread()
         }
 
         /// Avoid busy loop when ZooKeeper is not available.
-        sleepForSeconds(5);
+        /// Use an interruptible wait so that shutdown() can wake us up immediately
+        /// instead of waiting for the full sleep duration.
+        queue_updated_event->tryWait(5000);
     }
 
     return false;
@@ -1258,7 +1260,7 @@ void DDLWorker::runMainThread()
                 LOG_ERROR(log, "Unexpected ZooKeeper error, will try to restart main thread: {}", getCurrentExceptionMessage(true));
                 reset_state();
             }
-            sleepForSeconds(1);
+            queue_updated_event->tryWait(1000);
         }
         catch (...)
         {
@@ -1283,8 +1285,9 @@ void DDLWorker::runMainThread()
 
             LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count.load(), message);
 
-            /// Sleep before retrying
-            sleepForSeconds(5);
+            /// Sleep before retrying, but use an interruptible wait
+            /// so that shutdown() can wake us up promptly.
+            queue_updated_event->tryWait(5000);
             /// Reset state after sleeping, so DatabaseReplicated::canExecuteReplicatedMetadataAlter()
             /// will have a chance even when the database got stuck in infinite retries
             reset_state();
