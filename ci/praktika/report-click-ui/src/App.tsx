@@ -1221,6 +1221,27 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
               />
             </div>
           )}
+
+          {/* Watermark footer */}
+          <div style={{
+            textAlign: 'center',
+            marginTop: '48px',
+            paddingBottom: '24px',
+            opacity: 0.5,
+            fontSize: '13px'
+          }}>
+            <Text>
+              made with{' '}
+              <Link
+                href="https://clickhouse.design/click-ui"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ textDecoration: 'none', opacity: 0.7 }}
+              >
+                Click UI
+              </Link>
+            </Text>
+          </div>
         </div>
       </Container>
   )
