@@ -47,6 +47,8 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "The hash of normalized query - with wiped constanstans, etc."},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — Query was initiated by the client, 0 — Query was initiated by another query for distributed query execution."},
+        {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which connection was made."},
+        {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which connection was made."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},

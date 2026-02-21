@@ -346,7 +346,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_string_length", [&](const JSONObjectType & value) { max_string_length = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_depth", [&](const JSONObjectType & value) { max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_width", [&](const JSONObjectType & value) { max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
-        {"max_columns", [&](const JSONObjectType & value) { max_columns = static_cast<uint32_t>(std::max(UINT64_C(1), value.getUInt64())); }},
+        {"max_columns",
+         [&](const JSONObjectType & value) { max_columns = static_cast<uint32_t>(std::max(UINT64_C(1), value.getUInt64())); }},
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
@@ -387,6 +388,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
         {"enable_memory_settings", [&](const JSONObjectType & value) { enable_memory_settings = value.getBool(); }},
+        {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
+        {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
@@ -525,6 +528,14 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
+    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
+    /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    loadServerSettings<String>(
+        this->failpoints,
+        "failpoints",
+        "SELECT \"name\" FROM \"system\".\"fail_points\""
+        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
@@ -663,6 +674,23 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
     return res.empty() ? "-1" : res;
 }
 
+String FuzzConfig::getRandomFileSystemCacheValue()
+{
+    String res;
+
+    /// Can't use sampling here either
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res;
+}
+
 String FuzzConfig::tableGetRandomPartitionOrPart(
     const uint64_t rand_val, const bool detached, const bool partition, const String & database, const String & table)
 {
@@ -769,8 +797,8 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, Performan
             if (val.enabled)
             {
                 if (val.minimum < server.metrics.at(key)
-                    && server.metrics.at(key)
-                        > static_cast<uint64_t>(peer.metrics.at(key) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
+                    && server.metrics.at(key) > static_cast<uint64_t>(
+                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::BUZZHOUSE,

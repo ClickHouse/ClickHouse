@@ -2,7 +2,7 @@
 -- Tag no-parallel: Messes with internal cache
 
 -- Start with empty query cache (QC).
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- By default, don't write query result into QC.
 SELECT 1;
@@ -36,4 +36,4 @@ WHERE type = 'QueryFinish'
   AND query LIKE '%\nSELECT 1 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;'
 ORDER BY event_time_microseconds;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

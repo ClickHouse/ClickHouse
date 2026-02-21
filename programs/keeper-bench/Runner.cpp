@@ -12,6 +12,7 @@
 #include <Disks/DiskLocal.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadBuffer.h>
@@ -30,6 +31,8 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Core/UUID.h>
 
 
 namespace CurrentMetrics
@@ -145,6 +148,10 @@ Runner::Runner(
     std::cerr << "Continue on error: " << continue_on_error << std::endl;
 
     if (config)
+        enable_tracing = config->getBool("enable_tracing", false);
+    std::cerr << "Enable tracing: " << enable_tracing << std::endl;
+
+    if (config)
     {
         benchmark_context.initializeFromConfig(*config);
 
@@ -222,7 +229,7 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
 
 void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers)
 {
-    Coordination::ZooKeeperRequestPtr request;
+    ZooKeeperRequestWithCallbacks request_with_callbacks;
     /// Randomly choosing connection index
     pcg64 rng(randomSeed());
     std::uniform_int_distribution<size_t> distribution(0, zookeepers.size() - 1);
@@ -242,7 +249,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         while (!extracted)
         {
-            extracted = queue->tryPop(request, 100);
+            extracted = queue->tryPop(request_with_callbacks, 100);
 
             if (shutdown
                 || (max_iterations && requests_executed >= max_iterations))
@@ -256,32 +263,15 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         auto promise = std::make_shared<std::promise<size_t>>();
         auto future = promise->get_future();
-        Coordination::ResponseCallback callback = [&request, promise](const Coordination::Response & response)
+        Coordination::ResponseCallback callback = [&request_with_callbacks, promise](const Coordination::Response & response)
         {
             bool set_exception = true;
 
             if (response.error == Coordination::Error::ZOK)
             {
+                for (const auto & success_callback : request_with_callbacks.on_success_callbacks)
+                    success_callback();
                 set_exception = false;
-            }
-            else if (response.error == Coordination::Error::ZNONODE)
-            {
-                /// remove can fail with ZNONODE because of different order of execution
-                /// of generated create and remove requests
-                /// this is okay for concurrent runs
-                if (dynamic_cast<const Coordination::ZooKeeperRemoveResponse *>(&response))
-                    set_exception = false;
-                else if (const auto * multi_response = dynamic_cast<const Coordination::ZooKeeperMultiResponse *>(&response))
-                {
-                    const auto & responses = multi_response->responses;
-                    size_t i = 0;
-                    while (responses[i]->error != Coordination::Error::ZNONODE)
-                        ++i;
-
-                    const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*request);
-                    if (dynamic_cast<const Coordination::ZooKeeperRemoveRequest *>(&*multi_request.requests[i]))
-                        set_exception = false;
-                }
             }
 
             if (set_exception)
@@ -290,12 +280,21 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
                 promise->set_value(response.bytesSize());
         };
 
+        const auto & request = request_with_callbacks.request;
         Stopwatch watch;
 
-        zk->executeGenericRequest(request, callback);
+        if (enable_tracing)
+        {
+            DB::OpenTelemetry::TracingContext tracing_context;
+            tracing_context.trace_id = DB::UUIDHelpers::generateV4();
+            tracing_context.span_id = 0;
+            tracing_context.trace_flags = DB::OpenTelemetry::TRACE_FLAG_SAMPLED | DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS;
+            request->tracing_context = tracing_context;
+        }
 
         try
         {
+            zk->executeGenericRequest(request, callback);
             auto response_size = future.get();
             auto microseconds = watch.elapsedMicroseconds();
 
@@ -308,12 +307,15 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         }
         catch (...)
         {
+            std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
+            if (request)
+                std::cerr << "For request:\n" << request->toString() << std::endl;
+
             if (!continue_on_error)
             {
                 shutdown = true;
                 throw;
             }
-            std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
 
             bool got_expired = false;
             for (const auto & connection : zookeepers)
@@ -345,13 +347,13 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
     }
 }
 
-bool Runner::tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener)
+bool Runner::tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener)
 {
     bool inserted = false;
 
     while (!inserted)
     {
-        inserted = queue->tryPush(std::move(request), 100);
+        inserted = queue->tryPush(request, 100);
 
         if (shutdown)
         {
@@ -964,7 +966,7 @@ void dumpStats(std::string_view type, const RequestFromLogStats::Stats & stats_f
         type,
         stats_for_type.total.load(),
         stats_for_type.unexpected_results.load(),
-        stats_for_type.total != 0 ? static_cast<double>(stats_for_type.unexpected_results) / stats_for_type.total * 100 : 0.0)
+        stats_for_type.total != 0 ? static_cast<double>(stats_for_type.unexpected_results) / static_cast<double>(stats_for_type.total) * 100 : 0.0)
               << std::endl;
 };
 
@@ -1211,11 +1213,12 @@ void Runner::runBenchmarkWithGenerator()
             path = file_output->parent_path() / filename;
         }
 
-        std::cerr << "Storing output to " << path << std::endl;
+        std::cerr << "Storing output to " << fs::absolute(path) << std::endl;
 
         DB::WriteBufferFromFile file_output_buffer(path);
         DB::ReadBufferFromString read_buffer(output_string);
         DB::copyData(read_buffer, file_output_buffer);
+        file_output_buffer.finalize();
     }
 }
 
@@ -1249,7 +1252,7 @@ void Runner::createConnections()
     std::cerr << "---- Done creating connections ----\n" << std::endl;
 }
 
-std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx)
+std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const
 {
     zkutil::ShuffleHost host;
     host.host = connection_info.host;
@@ -1264,6 +1267,7 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     args.operation_timeout_ms = connection_info.operation_timeout_ms;
     args.use_compression = connection_info.use_compression;
     args.use_xid_64 = connection_info.use_xid_64;
+    args.pass_opentelemetry_tracing_context = enable_tracing;
     return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr, nullptr);
 }
 
@@ -1318,7 +1322,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         children = response.names;
         promise->set_value();
     };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {});
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {}, false, false);
     future.get();
 
     std::span children_span(children);

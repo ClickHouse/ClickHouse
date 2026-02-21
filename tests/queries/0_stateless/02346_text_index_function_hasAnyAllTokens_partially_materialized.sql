@@ -1,4 +1,3 @@
-SET enable_full_text_index = 1;
 SET parallel_replicas_local_plan = 1; -- this setting may skip index analysis when false
 SET use_skip_indexes_on_data_read = 0;
 SET mutations_sync = 2; -- want synchronous materialize

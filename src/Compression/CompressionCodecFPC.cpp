@@ -1,6 +1,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -74,7 +75,7 @@ CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_l
     : float_width(float_width_)
     , compression_level(compression_level_)
 {
-    setCodecDescription("FPC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(compression_level))});
+    setCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
 UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const

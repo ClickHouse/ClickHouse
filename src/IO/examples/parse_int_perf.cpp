@@ -53,10 +53,9 @@ int main(int argc, char ** argv)
                 data[i] = static_cast<T>(rng());
 
             watch.stop();
-            std::cerr << std::fixed << std::setprecision(2)
-                << "Generated " << n << " numbers (" << data.size() * sizeof(data[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-                << data.size() * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s."
-                << std::endl;
+            std::cerr << std::fixed << std::setprecision(2) << "Generated " << n << " numbers ("
+                      << static_cast<double>(data.size()) * sizeof(data[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                      << static_cast<double>(data.size()) * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s." << std::endl;
         }
 
         std::vector<char> formatted;
@@ -80,9 +79,9 @@ int main(int argc, char ** argv)
 
             watch.stop();
             std::cerr << std::fixed << std::setprecision(2)
-                << "Written " << n << " numbers (" << wb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-                << n / watch.elapsedSeconds() << " num/s., "
-                << wb.count() / watch.elapsedSeconds() / 1000000 << " MB/s., "
+                << "Written " << n << " numbers (" << static_cast<double>(wb.count()) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << static_cast<double>(n) / watch.elapsedSeconds() << " num/s., "
+                << static_cast<double>(wb.count()) / watch.elapsedSeconds() / 1000000 << " MB/s., "
                 << watch.elapsed() / n << " ns/num., "  // NOLINT
                 << tsc / n << " ticks/num., "  // NOLINT
                 << watch.elapsed() / wb.count() << " ns/byte., "
@@ -102,8 +101,8 @@ int main(int argc, char ** argv)
 
             watch.stop();
             std::cerr << std::fixed << std::setprecision(2)
-                << "Read " << n << " numbers (" << rb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-                << rb.count() / watch.elapsedSeconds() / 1000000 << " MB/s."
+                << "Read " << n << " numbers (" << static_cast<double>(rb.count()) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << static_cast<double>(rb.count()) / watch.elapsedSeconds() / 1000000 << " MB/s."
                 << std::endl;
         }
 

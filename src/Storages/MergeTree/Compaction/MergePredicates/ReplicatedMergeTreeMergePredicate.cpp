@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -154,7 +155,10 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeZooKeeperMergePredicate:
     /// We cannot mutate part if it's being inserted with quorum and it's not
     /// already reached.
     if (inprogress_quorum_part && part->name == *inprogress_quorum_part)
+    {
+        queue.addPartsPostponeReasons(part->name, PostponeReasons::QUORUM_NOT_REACHED);
         return {};
+    }
 
     std::lock_guard lock(queue.state_mutex);
 

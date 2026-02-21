@@ -588,6 +588,10 @@ The server uptime in seconds. It includes the time spent for server initializati
 
 The last ZXID seen by the current ZooKeeper client session. This value increases monotonically as the client observes transactions from ZooKeeper.
 
+### LongestRunningMerge {#longestrunningmerge}
+
+Elapsed time in seconds of the longest currently running background merge.
+
 ### jemalloc.active {#jemallocactive}
 
 An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html

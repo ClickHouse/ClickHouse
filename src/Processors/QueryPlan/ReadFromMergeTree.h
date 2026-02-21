@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -30,7 +31,7 @@ struct MergeTreeDataSelectSamplingData
     bool use_sampling = false;
     bool read_nothing = false;
     Float64 used_sample_factor = 1.0;
-    std::shared_ptr<ASTFunction> filter_function;
+    boost::intrusive_ptr<ASTFunction> filter_function;
     std::shared_ptr<const ActionsDAG> filter_expression;
 };
 
@@ -281,6 +282,8 @@ public:
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
+            , use_skip_indexes_if_final_exact_mode(false)
+            , use_skip_indexes_on_data_read(false)
         {}
 
         KeyCondition key_condition;
@@ -292,6 +295,8 @@ public:
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
+        bool use_skip_indexes_if_final_exact_mode;
+        bool use_skip_indexes_on_data_read;
         std::optional<std::unordered_set<String>> part_values;
     };
 
@@ -312,7 +317,10 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
-        bool allow_query_condition_cache_);
+        bool allow_query_condition_cache_,
+        bool supports_skip_indexes_on_data_read);
+
+    static bool areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -368,7 +376,7 @@ public:
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
@@ -386,10 +394,16 @@ public:
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
+    bool canRemoveUnusedColumns() const override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
+
+    void deferFiltersAfterFinalIfNeeded();
 
 private:
     MergeTreeSettingsPtr data_settings;
@@ -417,6 +431,10 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Row policy / prewhere deferred to after FINAL, if needed
+    FilterDAGInfoPtr deferred_row_level_filter;
+    PrewhereInfoPtr deferred_prewhere_info;
 
     LoggerPtr log;
     UInt64 selected_parts = 0;

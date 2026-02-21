@@ -1604,7 +1604,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
 
     const auto * join_node = join_tree->as<JoinNode>();
-    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(join_node);
+    bool join_node_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(join_node);
     if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
     {
         const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
@@ -1625,6 +1625,18 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
                 const auto & join_using_column_nodes_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
                 const auto & join_using_column_nodes = join_using_column_nodes_list.getNodes();
+                for (const auto & join_using_column_inner_node : join_using_column_nodes)
+                {
+                    const auto * join_using_column_inner_column_node = join_using_column_inner_node->as<ColumnNode>();
+                    if (!join_using_column_inner_column_node || !join_using_column_inner_column_node->hasExpression())
+                        continue;
+                    if (matched_column_node_typed.getColumnSource().get() == join_using_column_inner_column_node->getColumnSource().get())
+                    {
+                        /// If the USING key was taken from the SELECT projection (`analyzer_compatibility_join_using_top_level_identifier`),
+                        /// do not override the matched column type, keep one based on table columns in this case.
+                        return;
+                    }
+                }
 
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
@@ -1663,7 +1675,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
         while (true)
         {
-            if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(result_type.get()))
+                result_type = nullable_type->getNestedType();
+            else if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
                 result_type = array_type->getNestedType();
             else if (const auto * map_type = typeid_cast<const DataTypeMap *>(result_type.get()))
                 result_type = map_type->getNestedType();
@@ -4067,7 +4081,33 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
 
-    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr);
+    /// Always use getQueryContext() for table function result caching (shared across all subqueries).
+    /// The execution context is used for the actual table function execution and its settings
+    /// are incorporated into the cache key (so identical settings still reuse the cache,
+    /// while different settings get separate entries).
+    /// If a parent *subquery* has per-subquery SETTINGS, use the nearest query scope's
+    /// context (which has accumulated settings applied). We only consider subqueries
+    /// (not the outermost query) because the outermost query's SETTINGS are already on
+    /// the query context, and switching to the QueryNode's own context copy could change
+    /// non-settings state (e.g. isDistributed) and break table function execution
+    /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    ContextPtr execution_context = scope_context->getQueryContext();
+    {
+        const IdentifierResolveScope * scope_to_check = &scope;
+        while (scope_to_check != nullptr)
+        {
+            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>();
+                query_node && query_node->hasSettingsChanges() && query_node->isSubquery())
+            {
+                auto * nearest_query_scope = scope.getNearestQueryScope();
+                if (nearest_query_scope)
+                    execution_context = nearest_query_scope->scope_node->as<QueryNode &>().getMutableContext();
+                break;
+            }
+            scope_to_check = scope_to_check->parent_scope;
+        }
+    }
+    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
@@ -4248,7 +4288,7 @@ static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
                 for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 
@@ -4412,6 +4452,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                             auto [expression_source, is_single_source] = getExpressionSource(resolved_nodes.front());
                             /// Do not support `SELECT t1.a + t2.a AS id ... USING id`
                             if (!is_single_source)
+                                return nullptr;
+
+                            /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
+                            /// and left_table_expression is a JOIN node, we must not assign the JOIN as the column source.
+                            /// That would create a ColumnNode with a JOIN source and non-ListNode expression,
+                            /// which CollectSourceColumnsVisitor doesn't expect (it assumes ListNode for JOIN USING).
+                            if (!expression_source && left_table_expression->getNodeType() == QueryTreeNodeType::JOIN)
                                 return nullptr;
 
                             /// Create ColumnNode with expression from parent projection
@@ -4954,6 +5001,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         auto node = node_with_duplicated_alias;
         auto node_alias = node->getAlias();
+
+        /** The alias might have already been removed by another scope's duplicate processing.
+          * This happens because when global_with_aliases is copied between scopes,
+          * the QueryTreeNodePtr smart pointers reference the same underlying nodes.
+          * If a child scope processes a duplicate and removes its alias, the parent scope's
+          * reference to the same node will also see the empty alias.
+          */
+        if (node_alias.empty())
+            continue;
 
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
