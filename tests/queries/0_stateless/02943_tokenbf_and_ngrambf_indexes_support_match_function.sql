@@ -1,3 +1,5 @@
+SET optimize_rewrite_regexp_functions = 1;
+
 DROP TABLE IF EXISTS tokenbf_tab;
 DROP TABLE IF EXISTS ngrambf_tab;
 

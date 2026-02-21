@@ -1,4 +1,6 @@
 set allow_reorder_prewhere_conditions=0;
+set optimize_move_to_prewhere=1;
+set query_plan_optimize_prewhere=1;
 
 drop table if exists t1;
 drop table if exists t2;

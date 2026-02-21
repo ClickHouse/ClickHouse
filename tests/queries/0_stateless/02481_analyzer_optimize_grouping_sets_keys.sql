@@ -1,5 +1,6 @@
 set enable_analyzer = 1;
 set optimize_syntax_fuse_functions = 0;
+SET optimize_group_by_constant_keys = 1, optimize_group_by_function_keys = 1;
 
 EXPLAIN QUERY TREE run_passes=1
 SELECT avg(log(2) * number) AS k FROM numbers(10000000)

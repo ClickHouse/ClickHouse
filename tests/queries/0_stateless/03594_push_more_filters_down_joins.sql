@@ -35,6 +35,7 @@ FROM generateRandom(1, 2, 2) LIMIT 1000;
 
 SET enable_parallel_replicas = 0;
 SET enable_analyzer = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 SELECT 1
 FROM t2

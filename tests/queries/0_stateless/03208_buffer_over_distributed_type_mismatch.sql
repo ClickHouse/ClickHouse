@@ -1,3 +1,4 @@
+SET optimize_skip_unused_shards = 0;
 
 DROP TABLE IF EXISTS realtimedrep;
 CREATE TABLE realtimedrep (`amount` Int32) ENGINE = MergeTree() ORDER BY tuple();

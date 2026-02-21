@@ -1,3 +1,5 @@
+SET optimize_on_insert = 1;
+
 CREATE TABLE 03094_grouparrysorted_dest
 (
     ServiceName LowCardinality(String) CODEC(ZSTD(1)),

@@ -1,6 +1,8 @@
 -- Test that check the correctness of the result for optimize_aggregation_in_order and projections,
 -- not that this optimization will take place.
 
+SET optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1;
+
 DROP TABLE IF EXISTS normal;
 
 CREATE TABLE normal

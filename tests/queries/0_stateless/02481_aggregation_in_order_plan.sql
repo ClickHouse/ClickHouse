@@ -1,3 +1,5 @@
+SET optimize_aggregators_of_group_by_keys = 1;
+
 drop table if exists tab;
 create table tab (a Int32, b Int32, c Int32, d Int32) engine = MergeTree order by (a, b, c);
 

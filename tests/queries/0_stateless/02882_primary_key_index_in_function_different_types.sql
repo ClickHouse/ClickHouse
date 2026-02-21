@@ -8,6 +8,8 @@ CREATE TABLE test_table
 
 INSERT INTO test_table SELECT number, number FROM numbers(10);
 
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+
 set enable_analyzer = 0;
 
 EXPLAIN indexes = 1, description=0 SELECT id FROM test_table WHERE id <= 10 AND value IN (SELECT 5);
