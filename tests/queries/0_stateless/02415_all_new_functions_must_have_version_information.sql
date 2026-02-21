@@ -1,5 +1,6 @@
 -- This outputs the list of functions without version information.
 -- No new items in the list should appear. Please help shorten this list down to zero elements.
+-- Internal functions (= functions starting with __ prefix) are not documented externally and an exception from the rule.
 SELECT name FROM system.functions WHERE NOT is_aggregate AND origin = 'System' AND alias_to = '' AND introduced_in == ''
 AND name NOT IN (
      -- these functions are not enabled in fast test
