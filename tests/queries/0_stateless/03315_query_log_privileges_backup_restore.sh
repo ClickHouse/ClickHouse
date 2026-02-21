@@ -32,8 +32,8 @@ ${CLICKHOUSE_CLIENT} --user ${user_name} --query "${backup_query}" 2>&1 >/dev/nu
 
 ${CLICKHOUSE_CLIENT} --query "system flush logs query_log"
 ${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${backup_query_prefix}%' and type = 'ExceptionBeforeStart' and current_database = currentDatabase() order by event_time desc limit 1"
-${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where query ilike '${backup_query_prefix}%' and type = 'QueryStart' and current_database = currentDatabase() order by event_time desc limit 1"
-${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where query ilike '${backup_query_prefix}%' and type = 'QueryFinish' and current_database = currentDatabase() order by event_time desc limit 1"
+${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${backup_query_prefix}%' and type = 'QueryStart' and current_database = currentDatabase() order by event_time desc limit 1"
+${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${backup_query_prefix}%' and type = 'QueryFinish' and current_database = currentDatabase() order by event_time desc limit 1"
 
 ${CLICKHOUSE_CLIENT} --query "drop table ${table_name}"
 
