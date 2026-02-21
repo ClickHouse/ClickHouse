@@ -1,4 +1,5 @@
 set enable_analyzer = 1;
+SET optimize_injective_functions_inside_uniq = 1;
 
 EXPLAIN QUERY TREE
 SELECT toString(toString(number + 1)) as val, count()

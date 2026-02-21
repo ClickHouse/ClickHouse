@@ -1,4 +1,6 @@
 -- add_minmax_index_for_numeric_columns=0: Different plan
+SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
+
 create table test1
 (
     c UInt32,

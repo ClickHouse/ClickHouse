@@ -3,6 +3,7 @@ drop table if exists distributed_table;
 drop table if exists distributed_table2;
 
 set optimize_skip_unused_shards = true;
+SET optimize_skip_unused_shards_rewrite_in = 1;
 set prefer_localhost_replica=0;
 SET allow_experimental_analyzer = 1;
 

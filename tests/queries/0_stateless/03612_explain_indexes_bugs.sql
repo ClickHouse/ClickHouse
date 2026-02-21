@@ -2,6 +2,7 @@
 -- no-parallel-replicas because the output of explain is different.
 -- add_minmax_index_for_numeric_columns=0: Different plan
 set enable_analyzer = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 create table points (x Int64, y Int64) engine MergeTree order by (x, y) SETTINGS add_minmax_index_for_numeric_columns=0;
 insert into points values (100, 100);

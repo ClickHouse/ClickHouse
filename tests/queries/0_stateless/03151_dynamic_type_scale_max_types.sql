@@ -2,6 +2,7 @@ SET allow_experimental_dynamic_type = 1;
 SET allow_suspicious_types_in_order_by = 1;
 SET optimize_read_in_order = 1;
 SET optimize_sorting_by_input_stream_properties = 1;
+SET optimize_on_insert = 1;
 
 drop table if exists to_table;
 

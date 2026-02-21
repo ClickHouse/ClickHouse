@@ -2,6 +2,7 @@
 -- not that this optimization will take place.
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1;
+SET optimize_syntax_fuse_functions = 0;
 
 DROP TABLE IF EXISTS normal;
 
