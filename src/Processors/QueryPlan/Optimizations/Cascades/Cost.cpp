@@ -41,12 +41,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<FilterStep *>(expression_plan_step))
     {
         auto input_group = memo.getGroup(expression->inputs[0].group_id);
-        total_cost.subtree_cost = 0.1 * input_group->statistics->estimated_row_count;
+        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count;
     }
     else if (typeid_cast<ExpressionStep *>(expression_plan_step))
     {
         auto input_group = memo.getGroup(expression->inputs[0].group_id);
-        total_cost.subtree_cost = 0.1 * input_group->statistics->estimated_row_count;
+        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count;
     }
     else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
     {
@@ -58,9 +58,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         if (expression->inputs.empty())
         {
             /// Some default non-zero cost
-            total_cost.subtree_cost = 100500;
+            total_cost.cost.cpu = 100500;
         }
     }
+
+    /// Subtree cost starts with the own cost of this expression, then children are added
+    total_cost.subtree_cost = total_cost.cost;
 
     /// Add costs of all inputs
     for (const auto & input : expression->inputs)
@@ -83,33 +86,33 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
     const bool is_shuffle = join_step.getStepDescription().contains("Shuffle");
 
     ExpressionCost join_cost;
-    join_cost.subtree_cost = this_step_statistics.estimated_row_count;       /// Number of output rows
+    join_cost.cost.cpu = this_step_statistics.estimated_row_count;       /// Number of output rows
 
     const size_t node_count = 4;
 
     if (is_broadcast)
     {
         /// Add the cost of sending right table
-        join_cost.subtree_cost += right_statistics.estimated_row_count * node_count;
+        join_cost.cost.network += right_statistics.estimated_row_count * node_count;
         /// Add the cost of memory consumed by right table
-        join_cost.subtree_cost += right_statistics.estimated_row_count * node_count;
+        join_cost.cost.memory += right_statistics.estimated_row_count * node_count;
     }
     else if (is_shuffle)
     {
         /// Add the cost of sending right table
-        join_cost.subtree_cost += right_statistics.estimated_row_count;
+        join_cost.cost.network += right_statistics.estimated_row_count;
         /// Add the cost of sending left table
-        join_cost.subtree_cost += left_statistics.estimated_row_count;
+        join_cost.cost.network += left_statistics.estimated_row_count;
     }
     else
     {
-        join_cost.subtree_cost +=
+        join_cost.cost.cpu +=
             left_statistics.estimated_row_count +           /// Scan of left table
             2.0 * right_statistics.estimated_row_count;     /// Right table contributes more because we build hash table from it
 
         /// HACK: Simulate spilling to disk if right table is too big
         if (right_statistics.estimated_row_count > 1)
-            join_cost.subtree_cost += 30 * right_statistics.estimated_row_count;
+            join_cost.cost.memory += 30 * right_statistics.estimated_row_count;
     }
 
     return join_cost;
@@ -122,12 +125,14 @@ ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & read_st
     {
         const size_t node_count = 4;
         return ExpressionCost{
-            .subtree_cost = this_step_statistics.estimated_row_count / node_count,
+            .cost = Cost{.io = this_step_statistics.estimated_row_count / node_count},
+            .subtree_cost = {},
         };
     }
 
     return ExpressionCost{
-        .subtree_cost = Cost(this_step_statistics.estimated_row_count),
+        .cost = Cost{.io = this_step_statistics.estimated_row_count},
+        .subtree_cost = {},
     };
 }
 
@@ -146,19 +151,20 @@ ExpressionCost CostEstimator::estimateAggregationCost(
 
     if (is_local)
     {
-        aggregation_cost.subtree_cost +=
+        aggregation_cost.cost.cpu +=
             this_step_statistics.estimated_row_count +
             input_statistics.estimated_row_count;
     }
     else if (is_shuffle)
     {
-        aggregation_cost.subtree_cost +=
+        aggregation_cost.cost.cpu +=
             this_step_statistics.estimated_row_count / node_count +
             input_statistics.estimated_row_count / node_count;
+        aggregation_cost.cost.network += input_statistics.estimated_row_count;
     }
     else if (is_partial)
     {
-        aggregation_cost.subtree_cost +=
+        aggregation_cost.cost.cpu +=
             this_step_statistics.estimated_row_count / node_count +
             input_statistics.estimated_row_count / node_count;
     }

@@ -92,7 +92,7 @@ void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
     auto cost = cost_estimator.estimateCost(expression);
     expression->cost = cost;
     LOG_TEST(log, "group #{} expression '{}' cost {}",
-        group_id, expression->getDescription(), cost.subtree_cost);
+        group_id, expression->getDescription(), cost.subtree_cost.total());
     group->updateBestImplementation(expression);
 }
 

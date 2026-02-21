@@ -3,16 +3,48 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Common/Logger.h>
 #include <base/types.h>
+#include <limits>
 #include <memory>
 
 namespace DB
 {
 
-using Cost = Float64;
+struct Cost
+{
+    Float64 cpu = 0;
+    Float64 memory = 0;
+    Float64 network = 0;
+    Float64 io = 0;
+    Float64 wallclock_time = 0;
+
+    Float64 total() const { return cpu + memory + network + io; }
+
+    static Cost infinity()
+    {
+        return Cost{
+            .cpu = std::numeric_limits<Float64>::infinity(),
+            .memory = std::numeric_limits<Float64>::infinity(),
+            .network = std::numeric_limits<Float64>::infinity(),
+            .io = std::numeric_limits<Float64>::infinity(),
+            .wallclock_time = std::numeric_limits<Float64>::infinity(),
+        };
+    }
+
+    Cost & operator+=(const Cost & other)
+    {
+        cpu += other.cpu;
+        memory += other.memory;
+        network += other.network;
+        io += other.io;
+        wallclock_time += other.wallclock_time;
+        return *this;
+    }
+};
 
 struct ExpressionCost
 {
-    Cost subtree_cost = 0;
+    Cost cost;          /// Cost of this expression only
+    Cost subtree_cost;  /// Total cost of the whole subtree (this expression and all its children)
 };
 
 

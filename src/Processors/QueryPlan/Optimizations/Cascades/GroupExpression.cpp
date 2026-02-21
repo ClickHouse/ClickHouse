@@ -60,7 +60,7 @@ void GroupExpression::dump(WriteBuffer & out) const
     for (const auto & input : inputs)
         out << " #" << input.group_id;
     if (cost.has_value())
-        out << " cost: " << cost->subtree_cost;
+        out << " cost: " << cost->subtree_cost.total();
 }
 
 String GroupExpression::dump() const
