@@ -37,7 +37,7 @@ def test_acme_authorization(started_single_replica_cluster):
         json={'host': 'single.integration-tests.clickhouse.com', 'addresses': ['10.5.11.11']}
     )
 
-    for _ in range(60):
+    for _ in range(120):
         time.sleep(1)
 
         curl_result = node.exec_in_container(

@@ -5,7 +5,6 @@
 SET log_queries = 1;
 
 -- Affects the number of read rows.
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET max_rows_to_read = 0; -- system.text_log can be really big
@@ -43,7 +42,7 @@ SYSTEM FLUSH LOGS text_log;
 SELECT message
 FROM (
      SELECT event_time_microseconds, message FROM system.text_log
-     WHERE logger_name = 'optimizeDirectReadFromTextIndex' AND startsWith(message, 'Added:')
+     WHERE logger_name = 'processAndOptimizeTextIndexFunctions' AND startsWith(message, 'Added:')
      ORDER BY event_time_microseconds DESC LIMIT 8
 )
 ORDER BY event_time_microseconds ASC;

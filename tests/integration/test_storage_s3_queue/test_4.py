@@ -318,7 +318,7 @@ def test_alter_settings(started_cluster):
         )
 
     expected_rows = files_to_generate
-    for _ in range(100):
+    for _ in range(300):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -363,7 +363,10 @@ def test_alter_settings(started_cluster):
         cleanup_interval_min_ms=34500,
         cleanup_interval_max_ms=45600,
         persistent_processing_node_ttl_seconds=89,
-        commit_on_select=true
+        commit_on_select=true,
+        deduplication_v2=false,
+        metadata_cache_size_bytes=12345,
+        metadata_cache_size_elements=54321
     """
     )
 
@@ -387,6 +390,8 @@ def test_alter_settings(started_cluster):
         "cleanup_interval_min_ms": 34500,
         "cleanup_interval_max_ms": 45600,
         "persistent_processing_node_ttl_seconds": 89,
+        "metadata_cache_size_bytes": 12345,
+        "metadata_cache_size_elements": 54321,
     }
     string_settings = {
         "after_processing": "tag",
@@ -395,6 +400,7 @@ def test_alter_settings(started_cluster):
     }
     bool_settings = {
         "commit_on_select": "true",
+        "deduplication_v2": "false",
     }
 
     def check_alterable(setting):

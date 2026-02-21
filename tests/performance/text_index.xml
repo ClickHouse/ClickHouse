@@ -1,6 +1,5 @@
 <test>
   <settings>
-      <enable_full_text_index>1</enable_full_text_index>
       <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
       <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
       <force_data_skipping_indices>idx_sp</force_data_skipping_indices>

@@ -1,40 +1,58 @@
 <test>
-    <settings>
-        <validate_polygons>0</validate_polygons>
-    </settings>
     <drop_query>
-        DROP TABLE IF EXISTS random_polys;
+        DROP TABLE IF EXISTS polys;
     </drop_query>
 
     <create_query>
-        CREATE TABLE random_polys
+        CREATE TABLE polys
         (
-            id  UInt32,
             poly Array(Array(Tuple(Int32,Int32)))
-        ) ENGINE = MergeTree ORDER BY id;
+        ) ENGINE = Memory;
     </create_query>
     <create_query>
-        INSERT INTO random_polys
+        INSERT INTO polys
         SELECT
-            number AS id,
+            CAST(
                 [
-                  /* outer ring */
-                  arrayMap(i -> tuple(
-                      toInt32(rand64(number*17 + i) % 2001 - 1000),
-                      toInt32(rand64(number*19 + i) % 2001 - 1000)
-                  ), range(5)),
-                  /* hole 1 */
-                  arrayMap(i -> tuple(
-                      toInt32(rand64(number*23 + i) % 2001 - 1000),
-                      toInt32(rand64(number*29 + i) % 2001 - 1000)
-                  ), range(5)),
-                  /* hole 2 */
-                  arrayMap(i -> tuple(
-                      toInt32(rand64(number*31 + i) % 2001 - 1000),
-                      toInt32(rand64(number*37 + i) % 2001 - 1000)
-                  ), range(5))
-            ] AS poly
-        FROM numbers(1000);
+                    /* outer ring (closed) */
+                    [
+                        tuple(cx - r, cy - r),
+                        tuple(cx + r, cy - r),
+                        tuple(cx + r, cy + r),
+                        tuple(cx - r, cy + r),
+                        tuple(cx - r, cy - r)
+                    ],
+                    /* hole 1 (closed, CW) */
+                    [
+                        tuple(cx - dx - h1, cy - h1),
+                        tuple(cx - dx - h1, cy + h1),
+                        tuple(cx - dx + h1, cy + h1),
+                        tuple(cx - dx + h1, cy - h1),
+                        tuple(cx - dx - h1, cy - h1)
+                    ],
+                    /* hole 2 (closed, CW) */
+                    [
+                        tuple(cx + dx - h2, cy - h2),
+                        tuple(cx + dx - h2, cy + h2),
+                        tuple(cx + dx + h2, cy + h2),
+                        tuple(cx + dx + h2, cy - h2),
+                        tuple(cx + dx - h2, cy - h2)
+                    ]
+                ] AS Array(Array(Tuple(Int32, Int32)))
+            ) AS poly
+        FROM
+        (
+            SELECT
+                number % 40 AS col,
+                intDiv(number, 40) AS row,
+                toInt32(toInt32(col) * 50 - 975) AS cx,
+                toInt32(toInt32(row) * 50 - 600) AS cy,
+                toInt32(20 + intHash64(number) % 5) AS r,
+                toInt32(intDiv(r, 3)) AS dx,
+                toInt32(intDiv(r, 3)) AS h1,
+                toInt32(intDiv(r, 4)) AS h2
+            FROM numbers(1000)
+        );
     </create_query>
     <drop_query>
         DROP TABLE IF EXISTS multipoly_holder;
@@ -43,21 +61,21 @@
         CREATE TABLE multipoly_holder
         (
             poly Array(Array(Array(Tuple(Int32,Int32))))
-        ) ENGINE = TinyLog;
+        ) ENGINE = Memory;
     </create_query>
     
     <create_query>
         INSERT INTO multipoly_holder
         SELECT groupArray(poly) AS poly
-        FROM   random_polys;
+        FROM   polys;
     </create_query>
     
     <drop_query>
-        DROP TABLE IF EXISTS random_pts;
+        DROP TABLE IF EXISTS points;
     </drop_query>
     
     <create_query>
-        CREATE TABLE random_pts
+        CREATE TABLE points
         (
             id UInt32,
             pt Tuple(Int32,Int32)
@@ -65,12 +83,12 @@
     </create_query>
   
     <create_query>
-        INSERT INTO random_pts
+        INSERT INTO points
         SELECT
             number AS id,
             tuple(
-                toInt32(rand64(number*41) % 2001 - 1000),
-                toInt32(rand64(number*43) % 2001 - 1000)
+                toInt32(toInt64(intHash64(number * 41) % 2001) - 1000),
+                toInt32(toInt64(intHash64(number * 43) % 2001) - 1000)
             ) AS pt
         FROM numbers(500_000);
     </create_query>
@@ -79,10 +97,10 @@
         WITH
             (SELECT poly FROM multipoly_holder LIMIT 1) AS mp
         SELECT count()
-        FROM random_pts
+        FROM points
         WHERE NOT ignore(pointInPolygon(pt, mp));
     </query>
-    <drop_query>DROP TABLE IF EXISTS random_polys;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS polys;</drop_query>
     <drop_query>DROP TABLE IF EXISTS multipoly_holder;</drop_query>
-    <drop_query>DROP TABLE IF EXISTS random_pts;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS points;</drop_query>
 </test>

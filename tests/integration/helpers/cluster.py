@@ -661,6 +661,7 @@ class ClickHouseCluster:
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
         self.minio_bucket_db_disk = "root-db-disk"
+        self.minio_s3_port = 9000
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
@@ -674,8 +675,11 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
+        self.iceberg_rest_catalog_port = 8182
         self.with_glue_catalog = False
+        self.glue_catalog_port = 3000
         self.with_hms_catalog = False
+        self.hms_catalog_port = 9083
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -2507,8 +2511,15 @@ class ClickHouseCluster:
             exec_cmd += [container_id]
             exec_cmd += list(cmd)
 
+            timeout = kwargs.get("timeout", None)
+            extra_kwargs = {}
+            if env is not None:
+                extra_kwargs["env"] = env
+            if timeout is not None:
+                extra_kwargs["timeout"] = timeout
+
             result = subprocess_check_call(
-                exec_cmd, detach=detach, nothrow=nothrow, env=env
+                exec_cmd, detach=detach, nothrow=nothrow, **extra_kwargs
             )
             return result
         else:
@@ -3016,7 +3027,12 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 for node in nodes:
-                    conn = self.get_kazoo_client(node)
+                    # Use low retries/timeout per attempt since the outer loop
+                    # already retries. This avoids kazoo's internal thread join
+                    # hanging indefinitely (a known kazoo bug where
+                    # ConnectionHandler.stop joins the connection thread
+                    # without a timeout).
+                    conn = self.get_kazoo_client(node, timeout=5.0, retries=1)
                     conn.get_children("/")
                     conn.stop()
                 logging.debug("All instances of ZooKeeper started: %s", nodes)
@@ -3030,7 +3046,7 @@ class ClickHouseCluster:
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         ) from err
 
-    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=50):
+    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=120):
         retries = 0
         while True:
             if check_kafka_is_available(kafka_docker_id, kafka_port):
@@ -3315,7 +3331,7 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
-    def start(self):
+    def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
         if not os.path.exists(self.instances_dir):
@@ -3450,6 +3466,10 @@ class ClickHouseCluster:
                                     "check_not_exists",
                                     "create_if_not_exists",
                                     "remove_recursive",
+                                    "multi_watches",
+                                    "check_stat",
+                                    "try_remove",
+                                    "list_with_stat_and_data",
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
@@ -3513,7 +3533,7 @@ class ClickHouseCluster:
                     shutil.rmtree(self.mysql57_dir, ignore_errors=True)
                 os.makedirs(self.mysql57_logs_dir, exist_ok=True)
                 os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql57_cmd + common_opts)
+                subprocess_check_call(self.base_mysql57_cmd + common_opts + ["--renew-anon-volumes"])
                 self.up_called = True
                 self.wait_mysql57_to_start()
 
@@ -3523,7 +3543,7 @@ class ClickHouseCluster:
                     shutil.rmtree(self.mysql8_dir, ignore_errors=True)
                 os.makedirs(self.mysql8_logs_dir, exist_ok=True)
                 os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql8_cmd + common_opts)
+                subprocess_check_call(self.base_mysql8_cmd + common_opts + ["--renew-anon-volumes"])
                 self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
@@ -3533,7 +3553,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
-                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
+                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts + ["--renew-anon-volumes"])
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
@@ -3887,7 +3907,7 @@ class ClickHouseCluster:
                 logging.debug(
                     f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
                 )
-                instance.wait_for_start(start_timeout)
+                instance.wait_for_start(start_timeout, connection_timeout=connection_timeout)
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(
@@ -4097,7 +4117,7 @@ class ClickHouseCluster:
             certfile=self.zookeeper_certfile,
             keyfile=self.zookeeper_keyfile,
         )
-        zk.start()
+        zk.start(timeout=timeout)
         return zk
 
     def run_kazoo_commands_with_retries(
@@ -4471,7 +4491,7 @@ class ClickHouseInstance:
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return "NDEBUG" not in build_opts
-    
+
     def is_built_with_llvm_coverage(self):
         with_coverage = self.query(
             "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"

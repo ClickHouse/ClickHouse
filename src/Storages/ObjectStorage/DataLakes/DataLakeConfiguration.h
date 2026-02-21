@@ -53,6 +53,8 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
     extern DataLakeStorageSettingsString storage_aws_secret_access_key;
     extern DataLakeStorageSettingsString storage_region;
+    extern DataLakeStorageSettingsString storage_aws_role_arn;
+    extern DataLakeStorageSettingsString storage_aws_role_session_name;
     extern DataLakeStorageSettingsString storage_catalog_url;
     extern DataLakeStorageSettingsString storage_warehouse;
     extern DataLakeStorageSettingsString storage_catalog_credential;
@@ -165,11 +167,11 @@ public:
 
     }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
     {
         if (ready_object_storage)
             return ready_object_storage;
-        return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
+        return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
@@ -180,9 +182,9 @@ public:
         return std::nullopt;
     }
 
-    bool supportsTotalRows() const override
+    bool supportsTotalRows(ContextPtr context, ObjectStorageType storage_type) const override
     {
-        return DataLakeMetadata::supportsTotalRows();
+        return DataLakeMetadata::supportsTotalRows(context, storage_type);
     }
 
     std::optional<size_t> totalRows(ContextPtr local_context) override
@@ -191,9 +193,9 @@ public:
         return current_metadata->totalRows(local_context);
     }
 
-    bool supportsTotalBytes() const override
+    bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
     {
-        return DataLakeMetadata::supportsTotalBytes();
+        return DataLakeMetadata::supportsTotalBytes(context, storage_type);
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
@@ -328,6 +330,8 @@ public:
                 .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
                 .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
                 .region = (*settings)[DataLakeStorageSetting::storage_region].value,
+                .aws_role_arn = (*settings)[DataLakeStorageSetting::storage_aws_role_arn].value,
+                .aws_role_session_name = (*settings)[DataLakeStorageSetting::storage_aws_role_session_name].value
             };
 
             return std::make_shared<DataLake::GlueCatalog>(

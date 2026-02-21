@@ -213,11 +213,11 @@ namespace
             return true;
         }
 
-        bool parseSubqueryRange(const antlr4::tree::TerminalNode * ctx, DurationType & res_range, std::optional<DurationType> & res_resolution)
+        bool parseSubqueryRange(const antlr4::tree::TerminalNode * ctx, DurationType & res_range, std::optional<DurationType> & res_step)
         {
             String error_message;
             size_t error_pos;
-            if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), timestamp_scale, res_range, res_resolution, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), timestamp_scale, res_range, res_step, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -393,7 +393,7 @@ namespace
             if (!subquery_range_ctx)
                 throwInconsistentSchema("SubqueryOp", ctx->getText());
 
-            if (!parseSubqueryRange(subquery_range_ctx, new_node->range, new_node->resolution))
+            if (!parseSubqueryRange(subquery_range_ctx, new_node->range, new_node->step))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
@@ -940,7 +940,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     if (!parsed_root)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing promql query '{}' failed without setting any error message", input);
 
-    res_query = PrometheusQueryTree{String{input}, timestamp_scale, parsed_root, std::move(parsed_nodes)};
+    res_query = PrometheusQueryTree{std::move(parsed_nodes), parsed_root, timestamp_scale};
     return true;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ANTLR4 support is disabled");

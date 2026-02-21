@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int LOGICAL_ERROR;
 }
 
 /// Reasonable thresholds.
@@ -61,16 +60,6 @@ public:
             return ColumnArray::create(col_value->replicate(offsets)->convertToFullColumnIfConst(), std::move(offsets_col));
 
         offsets.reserve(num_rows);
-        auto element_size = col_value->byteSizeAt(0);
-        if (!isColumnConst(*col_value) && (col_value->byteSize() != element_size * col_value->size()))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Unexpected variable size of data for type {}. Column size {}. Element size {}. Number of elements {}",
-                arguments[1].type->getPrettyName(),
-                col_value->byteSize(),
-                element_size,
-                col_value->size());
-
         ColumnArray::Offset offset = 0;
         for (size_t i = 0; i < num_rows; ++i)
         {
@@ -79,6 +68,7 @@ public:
             if (unlikely(array_size < 0))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} cannot be negative: while executing function {}", array_size, getName());
 
+            auto element_size = col_value->byteSizeAt(i);
             Int64 estimated_size = 0;
             if (unlikely(common::mulOverflow(array_size, element_size, estimated_size)))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, element_size, getName());
