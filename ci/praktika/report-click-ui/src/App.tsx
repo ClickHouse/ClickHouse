@@ -64,11 +64,10 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
       const width = 64 // Higher resolution for sharper rendering
       const height = 64
       const lineColor = 'rgb(0, 0, 0)' // Black
-      const lineWidth = 6 // Thicker lines
-      const spaceWidth = 4 // Narrower spacing between lines
-      const lineNumber = 5 // 5 lines
+      const lineWidth = 6
+      const spaceWidth = 4
+      const lineNumber = 5
 
-      // Create a canvas
       const canvas = document.createElement('canvas')
       canvas.width = width
       canvas.height = height
@@ -76,27 +75,22 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
 
       if (!ctx) return
 
-      // Set transparent background
       ctx.clearRect(0, 0, width, height)
 
-      // Draw vertical lines
       let xStart = spaceWidth
       for (let i = 0; i < lineNumber; i++) {
-        const yStart = Math.floor(Math.random() * height) // Random Y start position
+        const yStart = Math.floor(Math.random() * height)
 
         ctx.fillStyle = lineColor
         for (let y = 0; y < height - spaceWidth; y++) {
           const yPos = (y + yStart) % height
-          ctx.fillRect(xStart, yPos, lineWidth, 1) // Draw a 1-pixel high line segment
+          ctx.fillRect(xStart, yPos, lineWidth, 1)
         }
 
         xStart += lineWidth + spaceWidth
       }
 
-      // Convert canvas to Data URL (PNG format)
       const faviconURL = canvas.toDataURL('image/png')
-
-      // Set the favicon dynamically
       let link = document.querySelector("link[rel='icon']") as HTMLLinkElement
       if (!link) {
         link = document.createElement('link')
@@ -516,7 +510,6 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
   }
 
   const getLastPartOfUrl = (url: string): string => {
-    // Extract the last part of the URL (filename)
     const parts = url.split('/')
     return parts[parts.length - 1] || url
   }
@@ -602,16 +595,15 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
   }
 
   const getColorForStatus = (status: string): string => {
-    // Fixed colors based on status
     const colorMap: Record<string, string> = {
-      success: '#22c55e',   // green
-      failure: '#ef4444',   // red
-      error: '#ef4444',     // red
-      pending: '#eab308',   // yellow
-      skipped: '#94a3b8',   // gray
-      running: '#3b82f6',   // blue
+      success: '#22c55e',
+      failure: '#ef4444',
+      error: '#ef4444',
+      pending: '#eab308',
+      skipped: '#94a3b8',
+      running: '#3b82f6',
     }
-    return colorMap[status.toLowerCase()] || '#64748b' // default gray
+    return colorMap[status.toLowerCase()] || '#64748b'
   }
 
   const drawTimeline = () => {
@@ -1096,22 +1088,22 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
           </div>
         </div>
 
-        {/* Main Content */}
-        <Container orientation='vertical' gap='none' style={{ marginTop: '56px', paddingTop: '24px', paddingBottom: '24px' }}>
+        {/* Main Content - using plain div instead of Click UI Container to prevent overflow issues
+            with Panel padding. TODO: improve responsive layout for narrow viewports */}
+        <div style={{ marginTop: '56px', padding: '24px', width: '100%', boxSizing: 'border-box' }}>
 
-          {loading && <Text style={{ paddingLeft: '24px' }}>Loading test results...</Text>}
+          {loading && <Text>Loading test results...</Text>}
 
           {error && (
-            <Text color='danger' style={{ paddingLeft: '24px' }}>Error: {error}</Text>
+            <Text color='danger'>Error: {error}</Text>
           )}
 
           {data && !loading && (
-            <Container orientation='vertical' gap='none' style={{ maxWidth: '100%', overflow: 'hidden' }}>
-              <Panel hasBorder padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
-                {/* Line 1: PR or commit info (from top-level, cached across navigation) with SHA selector */}
+            <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+              <Panel hasBorder padding='md' orientation='vertical' gap='xs' alignItems='start' style={{ marginBottom: '16px', boxSizing: 'border-box' }}>
                 {topLevelExt && (topLevelExt.pr_number > 0 || topLevelExt.commit_sha) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', width: '100%' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', width: '100%', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0, overflow: 'hidden' }}>
                       <Icon name="git-merge" size="md" />
                       {topLevelExt.pr_number && topLevelExt.pr_number > 0 ? (
                         <>
@@ -1119,7 +1111,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                             #{topLevelExt.pr_number}
                           </Link>
                           <Text>:</Text>
-                          <Text>{topLevelExt.pr_title}</Text>
+                          <Text style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{topLevelExt.pr_title}</Text>
                         </>
                       ) : topLevelExt.commit_sha ? (
                         <>
@@ -1127,7 +1119,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                             {topLevelExt.commit_sha.substring(0, 7)}
                           </Link>
                           <Text>:</Text>
-                          <Text>{topLevelExt.commit_message}</Text>
+                          <Text style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{topLevelExt.commit_message}</Text>
                         </>
                       ) : null}
                     </div>
@@ -1172,11 +1164,9 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                     )}
                   </div>
                 )}
-                  {/* Line 2: Current result name */}
                   <div style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Text><strong>{data.name}</strong></Text>
                   </div>
-                  {/* Line 3: Status overview with GitHub link */}
                   <div style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Text>status:</Text>
                     {getStatusBadge(data.status)}
@@ -1196,13 +1186,13 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                 </Panel>
 
               {data.info && (
-                <Panel hasShadow padding='md' orientation='vertical' gap='xs' alignItems='start' fillWidth style={{ marginBottom: '16px' }}>
+                <Panel hasShadow padding='md' orientation='vertical' gap='xs' alignItems='start' style={{ marginBottom: '16px', boxSizing: 'border-box' }}>
                   <Text style={{ whiteSpace: 'pre-wrap', fontSize: '13px' }}>{data.info}</Text>
                 </Panel>
               )}
 
               {data.links && data.links.length > 0 && (
-                <Panel hasShadow padding='md' fillWidth style={{ marginBottom: '16px' }}>
+                <Panel hasShadow padding='md' style={{ marginBottom: '16px', boxSizing: 'border-box' }}>
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -1229,9 +1219,9 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                 rows={rows}
                 loading={loading}
               />
-            </Container>
+            </div>
           )}
-        </Container>
+        </div>
       </Container>
   )
 }
