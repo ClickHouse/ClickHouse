@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: async inserts are processed after the query returns, DETACH/ATTACH causes UNKNOWN_TABLE
 # Test that concurrent async inserts with same param names but different values
 # don't cross-contaminate data
 
