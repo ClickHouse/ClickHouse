@@ -328,9 +328,4 @@ ReplicatedMergeMutateTaskBase::ReplicatedMergeMutateTaskBase(
 {
 }
 
-ReplicatedMergeMutateTaskBase::PrepareResult ReplicatedMergeMutateTaskBase::prepare()
-{
-    task_context = createTaskContext();
-    thread_group = ThreadGroup::createForBackgroundOps(task_context);
-}
 }

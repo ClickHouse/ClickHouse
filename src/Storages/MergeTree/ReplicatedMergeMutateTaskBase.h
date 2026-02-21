@@ -44,7 +44,7 @@ protected:
         PartLogWriter part_log_writer;
     };
 
-    virtual PrepareResult prepare();
+    virtual PrepareResult prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
 
     void maybeSleepBeforeZeroCopyLock(uint64_t estimated_space_for_result);

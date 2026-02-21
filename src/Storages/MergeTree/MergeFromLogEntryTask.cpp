@@ -63,7 +63,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
-    ReplicatedMergeMutateTaskBase::prepare();
+    task_context = createTaskContext();
+    thread_group = ThreadGroup::createForBackgroundOps(task_context);
 
     fiu_do_on(FailPoints::rmt_merge_task_sleep_in_prepare,
     {

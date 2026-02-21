@@ -44,7 +44,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     const auto storage_settings_ptr = storage.getSettings();
     LOG_TRACE(log, "Executing log entry to mutate part {} to {}", source_part_name, entry.new_part_name);
 
-    ReplicatedMergeMutateTaskBase::prepare();
+    task_context = createTaskContext();
+    thread_group = ThreadGroup::createForBackgroundOps(task_context);
 
     FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_in_prepare);
 
