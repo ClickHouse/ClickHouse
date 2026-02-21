@@ -58,6 +58,57 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
   const [commits, setCommits] = useState<Array<{ sha: string; message: string }>>([])
   const [currentSha, setCurrentSha] = useState<string>('')
 
+  // Generate dynamic favicon on mount
+  useEffect(() => {
+    const createFavicon = () => {
+      const width = 64 // Higher resolution for sharper rendering
+      const height = 64
+      const lineColor = 'rgb(251, 255, 129)' // Bright yellow-green
+      const lineWidth = 8 // Doubled for higher resolution
+      const spaceWidth = 6 // Doubled for higher resolution
+      const lineNumber = 4
+
+      // Create a canvas
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+
+      if (!ctx) return
+
+      // Set transparent background
+      ctx.clearRect(0, 0, width, height)
+
+      // Draw vertical lines
+      let xStart = spaceWidth
+      for (let i = 0; i < lineNumber; i++) {
+        const yStart = Math.floor(Math.random() * height) // Random Y start position
+
+        ctx.fillStyle = lineColor
+        for (let y = 0; y < height - spaceWidth; y++) {
+          const yPos = (y + yStart) % height
+          ctx.fillRect(xStart, yPos, lineWidth, 1) // Draw a 1-pixel high line segment
+        }
+
+        xStart += lineWidth + spaceWidth
+      }
+
+      // Convert canvas to Data URL (PNG format)
+      const faviconURL = canvas.toDataURL('image/png')
+
+      // Set the favicon dynamically
+      let link = document.querySelector("link[rel='icon']") as HTMLLinkElement
+      if (!link) {
+        link = document.createElement('link')
+        link.rel = 'icon'
+        document.head.appendChild(link)
+      }
+      link.href = faviconURL
+    }
+
+    createFavicon()
+  }, [])
+
   // Initialize sortByStatus from localStorage
   useEffect(() => {
     const savedSort = localStorage.getItem('sortByStatus')
