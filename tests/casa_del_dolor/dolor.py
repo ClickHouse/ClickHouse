@@ -13,7 +13,7 @@ import signal
 import sys
 
 logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 from tests.integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
@@ -345,12 +345,6 @@ parser.add_argument(
     default=UNSET,
     help="Total time to run the test in minutes (the test will stop after this time)",
 )
-parser.add_argument(
-    "--tmp-files-dir",
-    type=pathlib.Path,
-    default=pathlib.Path("/tmp"),
-    help="Path to temporary files dir",
-)
 
 args = parser.parse_args()
 
@@ -418,7 +412,7 @@ keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
 
 if args.with_minio:
     # Set environment variables before cluster starts
-    credentials_file = tempfile.NamedTemporaryFile(dir=args.tmp_files_dir)
+    credentials_file = tempfile.NamedTemporaryFile()
     os.environ["AWS_ACCESS_KEY_ID"] = "testing"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
     os.environ["AWS_SESSION_TOKEN"] = "testing"
@@ -441,7 +435,6 @@ cluster = ClickHouseCluster(
     server_bin_path=first_server,
     client_bin_path=args.client_binary,
     server_binaries=sorted_binaries,
-    with_dolor=True,
 )
 
 # Set environment variables such as locales and timezones
@@ -458,7 +451,7 @@ if server_settings is not None:
     )
     if generated_clusters > 0:
         modified_user_settings, user_settings = modify_user_settings(
-            args, user_settings, generated_clusters
+            user_settings, generated_clusters
         )
 
 dolor_main_configs = [
@@ -478,6 +471,7 @@ for i in range(0, len(args.replica_values)):
     servers.append(
         cluster.add_instance(
             f"node{i}",
+            with_dolor=True,
             stay_alive=True,
             copy_common_configs=False,
             with_zookeeper=args.with_zookeeper,
@@ -543,7 +537,7 @@ if args.with_postgresql:
 catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
 
 # Start the load generator, at the moment only BuzzHouse is available
-generator: Generator = Generator(pathlib.Path(), pathlib.Path(), pathlib.Path(), None)
+generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
     generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
 logger.info("Starting load generator")
@@ -623,7 +617,6 @@ if args.with_kafka:
 
 # This is the main loop, run while client and server are running
 all_running = True
-good_exit = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 # Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -673,9 +666,6 @@ while all_running and (not reached_limit):
                 f"Load generator finished {explain_returncode(client.process.returncode)}"
             )
             all_running = False
-            good_exit = good_exit and generator.validate_exit_code(
-                client.process.returncode
-            )
         for server in servers:
             pid = server.get_process_pid("clickhouse")
             if pid is None:
@@ -725,8 +715,7 @@ while all_running and (not reached_limit):
         time.sleep(1)
         # Replace server binary, using a new temporary symlink
         if (
-            all_running
-            and len(sorted_binaries) > 1
+            len(sorted_binaries) > 1
             and random.randint(1, 100) <= args.change_server_version_prob
         ):
             if len(servers) == 1 and len(sorted_binaries) == 2:
@@ -788,8 +777,6 @@ while all_running and (not reached_limit):
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
-    if all_running:
-        tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
 if not all_running:
     for server in servers:

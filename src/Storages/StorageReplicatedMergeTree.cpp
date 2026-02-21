@@ -609,7 +609,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already contains data parts - probably it was unclean DROP table "
                         "or manual intervention. You must either clear directory by hand "
-                        "or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.");
+                        "or use ATTACH TABLE instead of CREATE TABLE if you need to use those parts");
 
     try
     {

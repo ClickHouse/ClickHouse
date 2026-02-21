@@ -87,6 +87,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 
 #include <ranges>
@@ -943,11 +944,50 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
+                    /// Collect columns needed by row policy and additional filters
+                    NameSet columns_needed_by_other_filters;
+
+                    /// Pre-build additional table filter to know what columns it needs
+                    const auto & table_expression_alias = table_expression->getOriginalAlias();
+                    auto additional_filters_info_temp = buildAdditionalFiltersIfNeeded(
+                        storage, table_expression_alias, table_expression_query_info, prewhere_info, planner_context);
+                    if (additional_filters_info_temp)
+                    {
+                        for (const auto * input : additional_filters_info_temp->actions.getInputs())
+                            columns_needed_by_other_filters.insert(input->result_name);
+                    }
+
+                    /// Clone prewhere actions and add required columns to outputs
+                    auto prewhere_actions_clone = prewhere_actions->clone();
+                    const auto prewhere_column_name = prewhere_actions_clone.getOutputs().at(0)->result_name;
+
+                    /// Add columns needed by other filters to prewhere outputs
+                    auto & prewhere_outputs = prewhere_actions_clone.getOutputs();
+
+                    /// Build set of existing outputs for fast lookup
+                    std::unordered_set<const ActionsDAG::Node *> existing_outputs(
+                        prewhere_outputs.begin(), prewhere_outputs.end());
+
+                    /// Iterate inputs in deterministic order and add missing nodes
+                    for (const auto * input : prewhere_actions_clone.getInputs())
+                    {
+                        if (columns_needed_by_other_filters.contains(input->result_name)
+                            && !existing_outputs.contains(input))
+                        {
+                            prewhere_outputs.push_back(input);
+                        }
+                    }
+
+                    /// Check if prewhere filter column should be removed
+                    const bool keep_for_query = std::ranges::contains(columns_names, prewhere_column_name);
+                    const bool keep_for_filters = columns_needed_by_other_filters.contains(prewhere_column_name);
+                    const bool remove_prewhere_column = !keep_for_query && !keep_for_filters;
+
                     where_filters.emplace_back(
                         FilterDAGInfo{
-                            prewhere_actions->clone(),
-                            prewhere_actions->getOutputs().at(0)->result_name,
-                            true},
+                            std::move(prewhere_actions_clone),
+                            prewhere_column_name,
+                            remove_prewhere_column},
                         makeDescription("Prewhere"));
                 }
                 else if (prewhere_actions)
@@ -2599,8 +2639,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     bool is_full_join = false;
     bool is_global_join = false;
     bool is_right_join_with_remote_table = false;
-    int first_left_or_inner_join_pos = -1;
-    int first_right_join_pos = -1;
+    int first_join_pos = -1;
+    int last_right_join_pos = -1;
     bool is_cross_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
@@ -2621,23 +2661,25 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         {
             ++joins_count;
             const auto & join_node = table_expression->as<const JoinNode &>();
-            if (join_node.getKind() == JoinKind::Full)
+            const auto join_kind = join_node.getKind();
+
+            if (join_kind == JoinKind::Full)
                 is_full_join = true;
 
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
 
-            // if right join position is after left/inner join then we can't parallelize the left/inner join
-            if (first_left_or_inner_join_pos < 0 && (join_node.getKind() == JoinKind::Left || join_node.getKind() == JoinKind::Inner))
-                first_left_or_inner_join_pos = static_cast<int>(i);
-            if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
-                first_right_join_pos = static_cast<int>(i);
+            // save join positions for later check
+            if (first_join_pos < 0 && (join_kind == JoinKind::Left || join_kind == JoinKind::Inner || join_kind == JoinKind::Right))
+                first_join_pos = static_cast<int>(i);
+            if (join_kind == JoinKind::Right)
+                last_right_join_pos = static_cast<int>(i);
 
             /// For RIGHT JOIN with a distributed table on the right side, disable parallel replicas.
             /// The distributed table on the right side would be wrapped into a subquery,
             /// causing parallel replicas to incorrectly choose the left table for parallel reading.
             /// Each replica would then independently read the full distributed table, resulting in duplicate data.
-            if (join_node.getKind() == JoinKind::Right)
+            if (join_kind == JoinKind::Right)
             {
                 const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpression());
                 is_right_join_with_remote_table = right_expression_data.isRemote();
@@ -2651,8 +2693,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     auto should_disable_parallel_replicas = [&]() -> bool
     {
-        /// n-way join like LEFT/INNER ... RIGHT ...
-        if (first_left_or_inner_join_pos >= 0 && first_right_join_pos >= 0 && first_left_or_inner_join_pos < first_right_join_pos)
+        /// n-way join like LEFT/INNER/RIGHT ... RIGHT ...
+        /// if last RIGHT join position is after LEFT/INNER/RIGHT(another) join then the left side of the RIGHT join can't be parallelized
+        if (first_join_pos >= 0 && last_right_join_pos >= 0 && first_join_pos < last_right_join_pos)
             return true;
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN

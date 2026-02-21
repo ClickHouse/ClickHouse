@@ -24,7 +24,7 @@ def test_writes_complex_types(started_cluster_iceberg_with_spark, format_version
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
     map_value = "{5:6}"
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ([1,2], {map_value}, (3,4));", settings={"allow_insert_into_iceberg": 1})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ([1,2], {map_value}, (3,4));", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '[1,2]\t{5:6}\t(3,4)\n'
 
     if storage_type == "azure":

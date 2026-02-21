@@ -1127,6 +1127,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        needs_jobs_from_requires=True,
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     docker_keeper = Job.Config(
@@ -1141,6 +1142,7 @@ class JobConfigs:
             ],
         ),
         requires=["Build (amd_release)", "Build (arm_release)"],
+        needs_jobs_from_requires=True,
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     )
     sqlancer_master_jobs = Job.Config(
