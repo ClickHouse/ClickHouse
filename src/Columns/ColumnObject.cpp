@@ -1542,7 +1542,7 @@ bool ColumnObject::isFinalized() const
     return finalized;
 }
 
-void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
+void ColumnObject::getExtremes(DB::Field & min, DB::Field & max, size_t, size_t) const
 {
     if (empty())
     {
