@@ -592,7 +592,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     ContextPtr context_,
     LoadingStrictnessLevel mode,
     bool is_restore_from_backup,
-    bool preserve_explicit_not_null)
+    InterpreterCreateQuery::ColumnModifiersPolicy column_modifiers_policy)
 {
     /// First, deduce implicit types.
 
@@ -635,6 +635,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
     bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
     bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
+    bool preserve_column_modifiers = column_modifiers_policy == ColumnModifiersPolicy::PreserveForReplicatedDatabaseMetadata;
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -645,7 +646,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         auto & col_decl = (*ast_it)->as<ASTColumnDeclaration &>();
 
         column.name = col_decl.name;
-        if (preserve_explicit_not_null && col_decl.null_modifier.has_value() && !*col_decl.null_modifier)
+        if (preserve_column_modifiers && col_decl.null_modifier.has_value() && !*col_decl.null_modifier)
             column.null_modifier = false;
 
         /// ignore or not other database extensions depending on compatibility settings
@@ -656,7 +657,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                             "AUTO_INCREMENT is not supported. To ignore the keyword "
                             "in column declaration, set `compatibility_ignore_auto_increment_in_create_table` to true");
         }
-        else if (col_decl.default_specifier == ColumnDefaultSpecifier::AutoIncrement)
+        else if (preserve_column_modifiers && col_decl.default_specifier == ColumnDefaultSpecifier::AutoIncrement)
             column.auto_increment = true;
 
         if (auto default_expression = col_decl.getDefaultExpression())
@@ -694,8 +695,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (auto comment = col_decl.getComment())
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
-        if (auto collation = col_decl.getCollation())
-            column.collation = collation->clone();
+        if (preserve_column_modifiers)
+            if (auto collation = col_decl.getCollation())
+                column.collation = collation->clone();
 
         if (auto codec = col_decl.getCodec())
         {
@@ -782,16 +784,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            bool preserve_explicit_not_null = false;
+            ColumnModifiersPolicy column_modifiers_policy = ColumnModifiersPolicy::Normalize;
             if (!create.isTemporary())
             {
                 String target_database_name = create.database ? create.getDatabase() : getContext()->getCurrentDatabase();
                 if (auto target_database = DatabaseCatalog::instance().tryGetDatabase(target_database_name))
-                    preserve_explicit_not_null = (target_database->getEngineName() == "Replicated");
+                    if (target_database->getEngineName() == "Replicated")
+                        column_modifiers_policy = ColumnModifiersPolicy::PreserveForReplicatedDatabaseMetadata;
             }
 
             properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, preserve_explicit_not_null);
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, column_modifiers_policy);
         }
 
         if (create.columns_list->indices)

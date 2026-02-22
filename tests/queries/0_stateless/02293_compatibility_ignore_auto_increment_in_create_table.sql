@@ -20,6 +20,11 @@ CREATE TABLE ignore_auto_increment (
     id int AUTO_INCREMENT
 ) ENGINE=MergeTree() ORDER BY tuple();
 
+select 'show create strips AUTO_INCREMENT in compatibility mode';
+SELECT match(create_table_query, '(?i)\\bAUTO_INCREMENT\\b')
+FROM system.tables
+WHERE database = currentDatabase() AND name = 'ignore_auto_increment';
+
 select 'create table, column +AUTO_INCREMENT -type';
 DROP TABLE IF EXISTS ignore_auto_increment SYNC;
 CREATE TABLE ignore_auto_increment (
