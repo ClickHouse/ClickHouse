@@ -722,12 +722,12 @@ void IMergeTreeDataPart::clearColumnsDescription() const
     if (cleared_columns_description.exchange(true))
         return;
 
+    /// Only deref the cache entry; do NOT reset the shared_ptrs.
+    /// Background tasks (e.g. MutateTask) may still hold references to this part
+    /// and access columns_description concurrently. The shared_ptrs will be
+    /// released naturally when the part is destroyed.
     if (columns_description)
-    {
-        columns_description.reset();
-        columns_description_with_collected_nested.reset();
         storage.decrefColumnsDescriptionForColumns(columns);
-    }
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
