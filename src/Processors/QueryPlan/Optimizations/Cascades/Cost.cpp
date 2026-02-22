@@ -15,12 +15,32 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+static GroupPtr getInputGroupWithStats(Memo & memo, const GroupExpressionPtr & expression, size_t input_index)
+{
+    auto input_group = memo.getGroup(expression->inputs[input_index].group_id);
+    if (!input_group->statistics.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "CostEstimator: statistics not derived for input group #{} of expression '{}' (group #{}).\n"
+            "Input group state:\n{}",
+            expression->inputs[input_index].group_id, expression->getDescription(), expression->group_id, input_group->dump());
+    return input_group;
+}
+
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
     auto group = memo.getGroup(expression->group_id);
 
     /// Statistics should have been derived before calling estimateCost
-    chassert(group->statistics.has_value());
+    if (!group->statistics.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "CostEstimator: statistics not derived for group #{} (expression '{}') before estimateCost.\n"
+            "Group state:\n{}",
+            expression->group_id, expression->getDescription(), group->dump());
 
     ExpressionCost total_cost;
     IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
@@ -40,17 +60,17 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     }
     else if (typeid_cast<FilterStep *>(expression_plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        auto input_group = getInputGroupWithStats(memo, expression, 0);
         total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count;
     }
     else if (typeid_cast<ExpressionStep *>(expression_plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        auto input_group = getInputGroupWithStats(memo, expression, 0);
         total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count;
     }
     else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        auto input_group = getInputGroupWithStats(memo, expression, 0);
         total_cost = estimateAggregationCost(*aggregating_step, *group->statistics, *input_group->statistics);
     }
     else
