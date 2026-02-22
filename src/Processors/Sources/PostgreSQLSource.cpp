@@ -1,5 +1,5 @@
-#include <Processors/Sources/PostgreSQLSource.h>
-#include <Common/Exception.h>
+#include "PostgreSQLSource.h"
+#include "Common/Exception.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
@@ -32,14 +32,14 @@ template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
-    SharedHeader sample_block,
+    const Block & sample_block,
     UInt64 max_block_size_)
-    : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
+    : ISource(sample_block.cloneEmpty())
     , max_block_size(max_block_size_)
     , connection_holder(std::move(connection_holder_))
     , query_str(query_str_)
 {
-    init(*sample_block);
+    init(sample_block);
 }
 
 
@@ -47,16 +47,16 @@ template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
     std::shared_ptr<T> tx_,
     const std::string & query_str_,
-    SharedHeader sample_block,
+    const Block & sample_block,
     UInt64 max_block_size_,
     bool auto_commit_)
-    : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
+    : ISource(sample_block.cloneEmpty())
     , max_block_size(max_block_size_)
     , auto_commit(auto_commit_)
     , query_str(query_str_)
     , tx(std::move(tx_))
 {
-    init(*sample_block);
+    init(sample_block);
 }
 
 template<typename T>
@@ -77,9 +77,6 @@ void PostgreSQLSource<T>::init(const Block & sample_block)
 template<typename T>
 void PostgreSQLSource<T>::onStart()
 {
-    if (is_completed.load())
-        return;
-
     if (!tx)
     {
         try
@@ -94,30 +91,21 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
-    LOG_TEST(getLogger("PostgreSQLSource"), "Stream data from database");
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
 }
 
 template<typename T>
 IProcessor::Status PostgreSQLSource<T>::prepare()
 {
-    if (!started.load())
+    if (!started)
     {
         onStart();
-        started.store(true);
+        started = true;
     }
 
     auto status = ISource::prepare();
     if (status == Status::Finished)
-    {
-        if (stream)
-            stream->close();
-
-        if (tx && auto_commit)
-            tx->commit();
-
-        is_completed.store(true);
-    }
+        onFinish();
 
     return status;
 }
@@ -125,12 +113,6 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 template<typename T>
 Chunk PostgreSQLSource<T>::generate()
 {
-    LOG_TEST(getLogger("PostgreSQLSource"), "Generate a chuck from stream");
-
-    /// Check if source was cancelled or completed
-    if (is_completed.load() || isCancelled())
-        return {};
-
     /// Check if pqxx::stream_from is finished
     if (!stream || !(*stream))
         return {};
@@ -138,7 +120,7 @@ Chunk PostgreSQLSource<T>::generate()
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
 
-    while (!isCancelled()  && !is_completed.load())
+    while (!isCancelled())
     {
         const std::vector<pqxx::zview> * row{stream->read_row()};
 
@@ -167,7 +149,7 @@ Chunk PostgreSQLSource<T>::generate()
                             column_nullable.getNestedColumn(), (*row)[idx],
                             description.types[idx].first, data_type.getNestedType(), array_info, idx);
 
-                    column_nullable.getNullMapData().emplace_back(false);
+                    column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
                 {
@@ -191,54 +173,49 @@ Chunk PostgreSQLSource<T>::generate()
 
 
 template<typename T>
-void PostgreSQLSource<T>::onCancel() noexcept
+void PostgreSQLSource<T>::onFinish()
 {
-    /// Use atomic flag to prevent double-cancellation
-    if (is_completed.exchange(true))
-        return;
+    if (stream)
+        stream->close();
 
-    /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
-    if (!started.load() && tx && tx->conn().is_open())
-    {
-        tx->conn().cancel_query();
-        if (connection_holder)
-            connection_holder->setBroken();
-    }
+    if (tx && auto_commit)
+        tx->commit();
+
+    is_completed = true;
 }
 
 template<typename T>
 PostgreSQLSource<T>::~PostgreSQLSource()
 {
-    /// Use atomic flag to prevent double cleanup
-    if (is_completed.exchange(true))
-        return;
-
-    try
+    if (!is_completed)
     {
-        if (stream)
+        try
         {
-            /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
-                 * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
-                 * copy query is not cancelled, we wait until it finishes.
-                 */
-            tx->conn().cancel_query();
+            if (stream)
+            {
+                /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
+                  * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
+                  * copy query is not cancelled, we wait until it finishes.
+                  */
+                tx->conn().cancel_query();
 
-            /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
-                 * exception is added into transaction pending error and we can potentially ignore exception message.
-                 */
-            stream->close();
+                /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
+                  * exception is added into transaction pending error and we can potentially ignore exception message.
+                  */
+                stream->close();
+            }
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
 
-    stream.reset();
-    tx.reset();
+        stream.reset();
+        tx.reset();
 
-    if (connection_holder)
-        connection_holder->setBroken();
+        if (connection_holder)
+            connection_holder->setBroken();
+    }
 }
 
 template

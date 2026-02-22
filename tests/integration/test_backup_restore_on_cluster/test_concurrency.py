@@ -26,7 +26,7 @@ main_configs = [
 # No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 
-nodes = add_nodes_to_cluster(cluster, num_nodes, main_configs, user_configs, cpu_limit=12)
+nodes = add_nodes_to_cluster(cluster, num_nodes, main_configs, user_configs)
 
 node0 = nodes[0]
 
@@ -98,12 +98,10 @@ def test_concurrent_backups_on_same_node():
 
     ids_list = "[" + ", ".join([f"'{id}'" for id in ids]) + "]"
 
-    # Wait until all the concurrent BACKUP commands have finished.
     assert_eq_with_retry(
         node0,
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id IN {ids_list}",
         "",
-        retry_count=100,
     )
 
     assert node0.query(
@@ -133,13 +131,11 @@ def test_concurrent_backups_on_different_nodes():
         )
         ids.append(id)
 
-    # Wait until all the concurrent BACKUP commands have finished.
     for i in range(num_concurrent_backups):
         assert_eq_with_retry(
             nodes[i],
             f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{ids[i]}'",
             "",
-            retry_count=100,
         )
 
     for i in range(num_concurrent_backups):
@@ -162,11 +158,15 @@ def test_concurrent_backups_on_different_nodes():
         ("Atomic", "MergeTree"),
         ("Replicated", "ReplicatedMergeTree"),
         ("Memory", "MergeTree"),
+        ("Lazy", "Log"),
     ],
 )
 def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     if db_engine == "Replicated":
         db_engine = "Replicated('/clickhouse/path/','{shard}','{replica}')"
+
+    if db_engine == "Lazy":
+        db_engine = "Lazy(20)"
 
     if table_engine.endswith("MergeTree"):
         table_engine += " ORDER BY tuple()"

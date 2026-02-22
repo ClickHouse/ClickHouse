@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTFunction.h>
-#include <IO/WriteHelpers.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/ColumnsDescription.h>
@@ -43,7 +43,7 @@ private:
         const ASTPtr & ast_function, ContextPtr context,
         const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "Redis"; }
+    const char * getStorageTypeName() const override { return "Redis"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -61,7 +61,7 @@ StoragePtr TableFunctionRedis::executeImpl(
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
 
-    String db_name = fmt::format("redis{}_db_{}", getDatabaseName(), configuration.db_index);
+    String db_name = "redis" + getDatabaseName() + "_db_" + toString(configuration.db_index);
     auto storage = std::make_shared<StorageRedis>(
         StorageID(db_name, table_name), configuration, context, metadata, primary_key);
     storage->startup();

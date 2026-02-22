@@ -1,7 +1,7 @@
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include "ReadBufferFromRemoteFSGather.h"
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -16,8 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int LOGICAL_ERROR;
-
 }
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
@@ -126,13 +124,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
         nextimpl_working_buffer_offset = current_buf->offset();
 
         chassert(current_buf->available());
-        chassert(
-            blobs_to_read.size() != 1
-            || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd(),
-            fmt::format(
-                "offset: {}, buf offset: {}, available: {}, nextimpl offset: {}",
-                file_offset_of_buffer_end, current_buf->getFileOffsetOfBufferEnd(),
-                current_buf->available(), nextimpl_working_buffer_offset));
+        chassert(blobs_to_read.size() != 1 || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd());
     }
 
     return result;
@@ -142,27 +134,6 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 {
     if (position == read_until_position)
         return;
-
-    if (!use_external_buffer && position < file_offset_of_buffer_end)
-    {
-        /// file has been read beyond new read until position already
-        if (available() >= file_offset_of_buffer_end - position)
-        {
-            /// new read until position is after the current position in the working buffer
-            working_buffer.resize(working_buffer.size() - (file_offset_of_buffer_end - position));
-            file_offset_of_buffer_end = position;
-            pos = std::min(pos, working_buffer.end());
-        }
-        else
-        {
-            /// new read until position is before the current position in the working buffer
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Attempt to set read until position before already read data ({} < {})",
-                position,
-                getPosition());
-        }
-    }
 
     reset();
     read_until_position = position;

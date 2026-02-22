@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace
 {
 
@@ -22,42 +17,33 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
 {
     ParserIdentifier disk_name_p;
 
-    ResourceAccessMode mode;
+    ASTCreateResourceQuery::AccessMode mode;
     ASTPtr node;
     std::optional<String> disk;
 
     if (ParserKeyword(Keyword::WRITE).ignore(pos, expected))
-        mode = ResourceAccessMode::DiskWrite;
+        mode = ASTCreateResourceQuery::AccessMode::Write;
     else if (ParserKeyword(Keyword::READ).ignore(pos, expected))
-        mode = ResourceAccessMode::DiskRead;
-    else if (ParserKeyword(Keyword::MASTER_THREAD).ignore(pos, expected))
-        mode = ResourceAccessMode::MasterThread;
-    else if (ParserKeyword(Keyword::WORKER_THREAD).ignore(pos, expected))
-        mode = ResourceAccessMode::WorkerThread;
-    else if (ParserKeyword(Keyword::QUERY).ignore(pos, expected))
-        mode = ResourceAccessMode::Query;
+        mode = ASTCreateResourceQuery::AccessMode::Read;
     else
         return false;
 
-    if (mode == ResourceAccessMode::DiskWrite || mode == ResourceAccessMode::DiskRead)
+    if (ParserKeyword(Keyword::ANY).ignore(pos, expected))
     {
-        if (ParserKeyword(Keyword::ANY).ignore(pos, expected))
-        {
-            if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
-                return false;
-        }
-        else
-        {
-            if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
-                return false;
+        if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
+            return false;
+    }
+    else
+    {
+        if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
+            return false;
 
-            if (!disk_name_p.parse(pos, node, expected))
-                return false;
+        if (!disk_name_p.parse(pos, node, expected))
+            return false;
 
-            disk.emplace();
-            if (!tryGetIdentifierNameInto(node, *disk))
-                return false;
-        }
+        disk.emplace();
+        if (!tryGetIdentifierNameInto(node, *disk))
+            return false;
     }
 
     operation.mode = mode;
@@ -83,8 +69,6 @@ bool parseOperations(IParser::Pos & pos, Expected & expected, ASTCreateResourceQ
             ASTCreateResourceQuery::Operation operation;
             if (!parseOneOperation(operation, pos, expected))
                 return false;
-            if (!res_operations.empty() && res_operations.front().unit() != operation.unit())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resource definition could not mix CPU and IO operations.");
             res_operations.push_back(std::move(operation));
             return true;
         };
@@ -142,7 +126,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     if (!parseOperations(pos, expected, operations))
         return false;
 
-    auto create_resource_query = make_intrusive<ASTCreateResourceQuery>();
+    auto create_resource_query = std::make_shared<ASTCreateResourceQuery>();
     node = create_resource_query;
 
     create_resource_query->resource_name = resource_name;
@@ -152,7 +136,6 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     create_resource_query->if_not_exists = if_not_exists;
     create_resource_query->cluster = std::move(cluster_str);
 
-    create_resource_query->unit = operations.empty() ? CostUnit::IOByte : operations.front().unit();
     create_resource_query->operations = std::move(operations);
 
     return true;

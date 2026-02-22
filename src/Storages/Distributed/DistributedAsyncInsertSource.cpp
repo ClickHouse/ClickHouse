@@ -1,10 +1,9 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Common/Logger.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <Core/Settings.h>
 #include <Formats/NativeReader.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -35,7 +34,7 @@ DistributedAsyncInsertSource::DistributedAsyncInsertSource(const String & file_n
 }
 
 DistributedAsyncInsertSource::DistributedAsyncInsertSource(std::unique_ptr<Data> data_)
-    : ISource(std::make_shared<const Block>(data_->first_block.cloneEmpty()))
+    : ISource(data_->first_block.cloneEmpty())
     , data(std::move(data_))
 {
 }
@@ -44,7 +43,7 @@ DistributedAsyncInsertSource::~DistributedAsyncInsertSource() = default;
 
 Chunk DistributedAsyncInsertSource::generate()
 {
-    if (!data->first_block.empty())
+    if (data->first_block)
     {
         size_t num_rows = data->first_block.rows();
         Chunk res(data->first_block.getColumns(), num_rows);
@@ -53,7 +52,7 @@ Chunk DistributedAsyncInsertSource::generate()
     }
 
     auto block = data->block_in.read();
-    if (block.empty())
+    if (!block)
         return {};
 
     size_t num_rows = block.rows();

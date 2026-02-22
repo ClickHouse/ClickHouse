@@ -4,7 +4,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <fmt/core.h>
@@ -48,20 +47,12 @@ void fillJemallocBins(MutableColumns & res_columns)
         auto ndalloc = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.ndalloc", MALLCTL_ARENAS_ALL, bin).c_str());
         auto nmalloc = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.nmalloc", MALLCTL_ARENAS_ALL, bin).c_str());
 
-        auto nregs = getJeMallocValue(fmt::format("arenas.bin.{}.nregs", bin).c_str());
-        auto curslabs = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.curslabs", MALLCTL_ARENAS_ALL, bin).c_str());
-        auto curregs = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.curregs", MALLCTL_ARENAS_ALL, bin).c_str());
-
         size_t col_num = 0;
         res_columns.at(col_num++)->insert(bin_index);
         res_columns.at(col_num++)->insert(0);
         res_columns.at(col_num++)->insert(size);
         res_columns.at(col_num++)->insert(nmalloc);
         res_columns.at(col_num++)->insert(ndalloc);
-
-        res_columns.at(col_num++)->insert(nregs);
-        res_columns.at(col_num++)->insert(curslabs);
-        res_columns.at(col_num++)->insert(curregs);
     }
 
     /// Bins for large allocations
@@ -78,10 +69,6 @@ void fillJemallocBins(MutableColumns & res_columns)
         res_columns.at(col_num++)->insert(size);
         res_columns.at(col_num++)->insert(nmalloc);
         res_columns.at(col_num++)->insert(ndalloc);
-
-        res_columns.at(col_num++)->insertDefault();
-        res_columns.at(col_num++)->insertDefault();
-        res_columns.at(col_num++)->insertDefault();
     }
 }
 
@@ -106,24 +93,14 @@ StorageSystemJemallocBins::StorageSystemJemallocBins(const StorageID & table_id_
 
 ColumnsDescription StorageSystemJemallocBins::getColumnsDescription()
 {
-    auto description = ColumnsDescription
+    return ColumnsDescription
     {
         { "index",          std::make_shared<DataTypeUInt16>(), "Index of the bin ordered by size."},
         { "large",          std::make_shared<DataTypeUInt8>(), "True for large allocations and False for small."},
         { "size",           std::make_shared<DataTypeUInt64>(), "Size of allocations in this bin."},
         { "allocations",    std::make_shared<DataTypeInt64>(), "Number of allocations."},
         { "deallocations",  std::make_shared<DataTypeInt64>(), "Number of deallocations."},
-        { "nregs",          std::make_shared<DataTypeInt64>(), "Number of regions per slab."},
-        { "curslabs",       std::make_shared<DataTypeInt64>(), "Current number of slabs."},
-        { "curregs",        std::make_shared<DataTypeInt64>(), "Current number of regions for this size class."},
     };
-
-    description.setAliases({
-        {"availregs", std::make_shared<DataTypeUInt64>(), "nregs * curslabs"},
-        {"util", std::make_shared<DataTypeFloat64>(), "curregs / availregs"},
-    });
-
-    return description;
 }
 
 Pipe StorageSystemJemallocBins::read(
@@ -145,7 +122,7 @@ Pipe StorageSystemJemallocBins::read(
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
 }
 
 }

@@ -25,47 +25,37 @@ namespace JoinCommon
 class JoinMask
 {
 public:
-    enum class Kind
-    {
-        AllTrue,
-        AllFalse,
-        Unknown,
-    };
-
     explicit JoinMask()
         : column(nullptr)
-        , size(0)
-        , kind(Kind::Unknown)
     {}
 
-    JoinMask(bool value, size_t size_)
-        : column(nullptr)
-        , size(size_)
-        , kind(value ? Kind::AllTrue : Kind::AllFalse)
+    explicit JoinMask(bool value, size_t size)
+        : column(ColumnUInt8::create(size, value))
     {}
 
     explicit JoinMask(ColumnPtr col)
         : column(col)
-        , size(col ? col->size() : 0)
-        , kind(Kind::Unknown)
     {}
 
-    bool hasData() { return column != nullptr || kind != Kind::Unknown; }
+    bool hasData()
+    {
+        return column != nullptr;
+    }
 
-    size_t getSize() const { return size; }
+    UInt8ColumnDataPtr getData()
+    {
+        if (column)
+            return &assert_cast<const ColumnUInt8 &>(*column).getData();
+        return nullptr;
+    }
 
     bool isRowFiltered(size_t row) const
     {
-        chassert(!column || row < size);
-        return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
+        return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
     }
-
-    Kind getKind() const { return kind; }
 
 private:
     ColumnPtr column;
-    size_t size;
-    Kind kind;
 };
 
 
