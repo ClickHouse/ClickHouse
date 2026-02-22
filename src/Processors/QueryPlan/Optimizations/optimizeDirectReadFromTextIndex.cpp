@@ -351,8 +351,13 @@ const ActionsDAG::Node * applyTextIndexDirectReadToDAG(
     FullTextMatchingFunctionDAGReplacer replacer(filter_dag, text_index_conditions);
     auto result = replacer.replace(read_from_merge_tree_step->getContext(), filter_column_name);
 
+    /// Even when no virtual columns are added (added_columns is empty),
+    /// the DAG may have been modified by text index preprocessing
+    /// (e.g. applying tokenizer/preprocessor to hasAnyTokens).
+    /// In that case, result.filter_node is non-null and we must return it
+    /// so the caller can update the filter column name to match the modified DAG.
     if (result.added_columns.empty())
-        return nullptr;
+        return result.filter_node;
 
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
