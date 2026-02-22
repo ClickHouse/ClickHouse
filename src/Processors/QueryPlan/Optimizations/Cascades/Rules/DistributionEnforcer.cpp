@@ -77,8 +77,8 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             QueryPlanStepPtr(std::make_unique<ShuffleExchangeStep>(
                 expression->getQueryPlanStep()->getOutputHeader(),
                 std::move(shuffle_columns),
-                required_properties.distribution.node_count,
-                expression->properties.distribution.node_count));
+                expression->properties.distribution.node_count,
+                required_properties.distribution.node_count));
 
         implementation_expression->property_enforcer_steps.push_back(std::move(exchange_step));
     }
