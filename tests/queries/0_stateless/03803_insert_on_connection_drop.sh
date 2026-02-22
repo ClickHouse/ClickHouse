@@ -36,7 +36,9 @@ sleep 15
 
 kill -9 $PIPELINE_PID 2>/dev/null
 
-wait $PIPELINE_PID 2>/dev/null
+# Wait for all background processes (both the data-generating subshell and curl)
+# to suppress "Broken pipe" and "Killed" messages on stderr.
+wait 2>/dev/null
 
 
 sleep 5
