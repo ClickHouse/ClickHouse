@@ -36,6 +36,21 @@ SELECT TODAY + 1 > TODAY;
 SELECT 1 WHERE NOW > '2000-01-01';
 SELECT 1 WHERE TODAY > '2000-01-01';
 
+-- Column name takes precedence over niladic function
+CREATE TABLE t (now UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (42);
+SELECT now FROM t; -- must return 42, not the current timestamp
+DROP TABLE t;
+
+-- Parameterized view: niladic function name used as a parameter should NOT resolve as a function
+CREATE VIEW test_param_view AS SELECT {currentUser:String} AS value;
+SELECT * FROM test_param_view(currentUser = 'currentUser');
+DROP VIEW test_param_view;
+
+-- Ensure niladic function names passed as collection keys stay as identifiers
+CREATE NAMED COLLECTION IF NOT EXISTS test_niladic_coll AS currentUser = 'admin_user';
+DROP NAMED COLLECTION test_niladic_coll;
+
 -- Verify error for functions that don't allow omitting parentheses
 SELECT concat; -- { serverError UNKNOWN_IDENTIFIER }
 

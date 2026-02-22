@@ -1407,7 +1407,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             auto function_node = std::make_shared<FunctionNode>(identifier_name);
             function_node->resolveAsFunction(function_resolver->build({}));
             resolve_result.resolved_identifier = std::move(function_node);
-            resolve_result.resolve_place = IdentifierResolvePlace::ALIASES;
+            resolve_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
         }
     }
 
@@ -3844,6 +3844,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             auto fake_table_node = std::make_shared<TableNode>(parameterized_view_storage, scope_context);
             fake_table_node->setAlias(table_function_node->getAlias());
             table_function_node = fake_table_node;
+            scope.allow_to_resolve_niladic_functions = old_scope_allow_to_resolve_niladic_functions;
             return;
         }
 

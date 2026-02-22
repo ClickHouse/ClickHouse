@@ -94,7 +94,8 @@ enum class IdentifierResolvePlace : UInt8
     /// Valid only for table lookup
     CTE,
     /// Valid only for table lookup
-    DATABASE_CATALOG
+    DATABASE_CATALOG,
+    NILADIC_FUNCTION
 };
 
 inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
@@ -107,6 +108,7 @@ inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
         case IdentifierResolvePlace::JOIN_TREE: return "JOIN_TREE";
         case IdentifierResolvePlace::CTE: return "CTE";
         case IdentifierResolvePlace::DATABASE_CATALOG: return "DATABASE_CATALOG";
+        case IdentifierResolvePlace::NILADIC_FUNCTION: return "NILADIC_FUNCTION";
     }
 }
 
