@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -74,6 +75,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         total_cost = estimateAggregationCost(*aggregating_step, *group->statistics, *input_group->statistics);
+    }
+    else if (typeid_cast<MergingAggregatedStep *>(expression_plan_step))
+    {
+        auto input_group = getInputGroupWithStats(memo, expression, 0);
+        /// Merging intermediate aggregate states: CPU proportional to input + output rows.
+        total_cost.cost.cpu = group->statistics->estimated_row_count + input_group->statistics->estimated_row_count;
     }
     else
     {
@@ -207,6 +214,15 @@ ExpressionCost CostEstimator::estimateAggregationCost(
         aggregation_cost.cost.cpu +=
             this_step_statistics.estimated_row_count / node_count +
             input_statistics.estimated_row_count / node_count;
+    }
+    else
+    {
+        /// Default single-phase aggregation (e.g. when description has "IMPL:" prefix
+        /// that causes the Local/Shuffle/Partial checks above to miss).
+        /// Same cost model as Local.
+        aggregation_cost.cost.cpu +=
+            this_step_statistics.estimated_row_count +
+            input_statistics.estimated_row_count;
     }
 
     return aggregation_cost;

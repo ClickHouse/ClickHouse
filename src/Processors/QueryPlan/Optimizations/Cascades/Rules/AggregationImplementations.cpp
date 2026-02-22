@@ -4,11 +4,18 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Produces all applicable single-phase aggregation implementations:
 ///   - Local: gather all data to one node, aggregate there (always applicable)
@@ -56,15 +63,50 @@ bool AggregationImplementation::checkPattern(GroupExpressionPtr expression, cons
 {
     const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
     return agg_step != nullptr &&
-        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:") &&
-        agg_step->getFinal();   /// applies to both original Agg and FinalMergeAgg from two-phase split
+        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:");
 }
 
 std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
-    chassert(agg_step);
-    chassert(expression->inputs.size() == 1);
+    if (!agg_step)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "AggregationImplementation::applyImpl called for non-AggregatingStep expression '{}'",
+            expression->getDescription());
+    if (expression->inputs.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "AggregationImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
+            expression->inputs.size(), expression->getDescription());
+
+    /// Partial (non-final) aggregation: create a single distributed implementation on
+    /// cluster_node_count nodes. The output distribution is `{node_count, []}` (no column
+    /// guarantee). When the parent (MergingAggregated) requires `{1 node}`, the
+    /// DistributionEnforcer bridges the gap via GatherExchange — crucially on the PARTIAL
+    /// output (~25 rows) rather than the raw input (~1M rows). This produces:
+    ///   ParallelRead → Expression → PartialAgg({N nodes}) → GatherExchange → MergeAgg
+    /// We intentionally do NOT create a `{1 node}` variant here: if one existed, it would
+    /// become the best for `{1 node}` immediately, preventing the enforcer from ever running
+    /// and producing the cheaper GatherExchange-on-partial-output plan.
+    if (!agg_step->getFinal())
+    {
+        const size_t cluster_node_count = 4;    /// TODO: get actual cluster topology
+        const size_t node_count = std::max(required_properties.distribution.node_count, cluster_node_count);
+
+        auto new_step = agg_step->clone();
+        new_step->setStepDescription(fmt::format("IMPL: {}", agg_step->getStepDescription()), 200);
+
+        GroupExpressionPtr partial_impl = std::make_shared<GroupExpression>(*expression);
+        partial_impl->plan_step = std::move(new_step);
+
+        DistributionDescription dist;
+        dist.node_count = node_count;
+        partial_impl->inputs[0].required_properties.distribution = dist;
+        partial_impl->properties.distribution = dist;
+
+        partial_impl->setApplied(*this, required_properties);
+        memo.getGroup(expression->group_id)->addPhysicalExpression(partial_impl);
+        return {partial_impl};
+    }
 
     const size_t cluster_node_count = 4;    /// TODO: get actual cluster topology
 
@@ -134,30 +176,49 @@ bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expressi
         !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:") &&
         !expression->getQueryPlanStep()->getStepDescription().contains("Partial:") &&
         agg_step->getFinal() &&
-        !agg_step->getParams().only_merge &&    /// don't split a merge step that's already from a prior split
-        agg_step->canUseProjection();           /// needed for requestOnlyMergeForAggregateProjection
+        !agg_step->getParams().only_merge;       /// don't split a merge step that's already from a prior split
 }
 
 std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
-    chassert(agg_step);
-    chassert(expression->inputs.size() == 1);
+    if (!agg_step)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "TwoPhaseAggregationTransformation::applyImpl called for non-AggregatingStep expression '{}'",
+            expression->getDescription());
+    if (expression->inputs.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "TwoPhaseAggregationTransformation::applyImpl: expected 1 input, got {} for expression '{}'",
+            expression->inputs.size(), expression->getDescription());
 
     /// Phase 1: partial aggregation — takes raw rows, outputs intermediate aggregate states.
     auto partial_step_ptr = agg_step->clone();
     auto * partial_step = dynamic_cast<AggregatingStep *>(partial_step_ptr.get());
-    chassert(partial_step);
+    if (!partial_step)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "TwoPhaseAggregationTransformation: clone of AggregatingStep '{}' did not produce an AggregatingStep",
+            agg_step->getStepDescription());
     partial_step->setFinal(false);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
 
-    /// Phase 2: merge aggregation — takes aggregate states from Phase 1, produces final results.
-    /// requestOnlyMergeForAggregateProjection sets only_merge=true and adapts the input header.
-    auto merge_step_ptr = agg_step->clone();
-    auto * merge_step = dynamic_cast<AggregatingStep *>(merge_step_ptr.get());
-    chassert(merge_step);
-    merge_step->requestOnlyMergeForAggregateProjection(partial_step->getOutputHeader());
-    merge_step->setStepDescription(fmt::format("Merge: {}", agg_step->getStepDescription()), 200);
+    /// Phase 2: merge aggregation — takes intermediate aggregate states from Phase 1, produces
+    /// final results. Uses MergingAggregatedStep which natively expects intermediate state types
+    /// (e.g. AggregateFunction(count)) in the input header, unlike AggregatingStep with
+    /// requestOnlyMergeForAggregateProjection which adapts them to finalized types.
+    auto merge_params = agg_step->getParams();
+    merge_params.only_merge = true;
+    auto merge_step_ptr = std::make_unique<MergingAggregatedStep>(
+        partial_step->getOutputHeader(),
+        std::move(merge_params),
+        agg_step->getGroupingSetsParamsList(),
+        /*final_=*/true,
+        /*memory_efficient_aggregation_=*/false,
+        /*memory_efficient_merge_threads_=*/0,
+        agg_step->shouldProduceResultsInBucketOrder(),
+        agg_step->getMaxBlockSize(),
+        agg_step->getMaxBlockSizeForAggregationInOrder(),
+        agg_step->usingMemoryBoundMerging());
+    merge_step_ptr->setStepDescription(fmt::format("Merge: {}", agg_step->getStepDescription()), 200);
 
     /// Create a new group for the partial aggregation, referencing the original inputs.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step_ptr));

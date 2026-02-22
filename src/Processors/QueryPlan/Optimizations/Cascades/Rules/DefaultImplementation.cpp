@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Common/typeid_cast.h>
 #include <memory>
 
 namespace DB
@@ -20,9 +22,10 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
-bool DefaultImplementation::checkPattern(GroupExpressionPtr /*expression*/, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
+bool DefaultImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
-    return true;
+    /// AggregatingStep is handled exclusively by AggregationImplementation.
+    return typeid_cast<AggregatingStep *>(expression->getQueryPlanStep()) == nullptr;
 }
 
 std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
@@ -55,6 +58,14 @@ std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpression
         if (!has_construction_time_sorting)
             input_props.distribution = required_properties.distribution;
     }
+
+    /// The output distribution of a pass-through step (Expression, Filter, etc.)
+    /// matches the distribution it requires from its input. Without this, the
+    /// output stays at the default {1 node} from the logical expression copy,
+    /// which allows a parent requiring {1 node} to match an implementation whose
+    /// input is actually on N nodes — getting the IO reduction of ParallelRead
+    /// without paying any exchange cost.
+    implementation_expression->properties.distribution = required_properties.distribution;
 
     memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
     return {implementation_expression};
