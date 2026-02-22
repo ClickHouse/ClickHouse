@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/Logger.h>
 #include <stack>
+#include <utility>
 
 
 namespace DB
@@ -23,7 +24,7 @@ class OptimizerContext
 public:
     explicit OptimizerContext(IOptimizerStatistics & statistics);
 
-    GroupId addGroup(QueryPlan::Node & node);
+    std::pair<GroupId, ExpressionProperties> addGroup(QueryPlan::Node & node);
     void pushTask(OptimizationTaskPtr task);
     GroupPtr getGroup(GroupId group_id);
 

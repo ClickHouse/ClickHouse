@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <memory>
@@ -55,7 +56,7 @@ void OptimizerContext::addEnforcerRule(OptimizationRulePtr rule)
     enforcer_rules.push_back(std::move(rule));
 }
 
-GroupId OptimizerContext::addGroup(QueryPlan::Node & node)
+std::pair<GroupId, ExpressionProperties> OptimizerContext::addGroup(QueryPlan::Node & node)
 {
     /// TODO: Currently CommonSubplanReferenceStep is expected to be resolved before Cascades optimizer.
     /// But it seem that we can resolve it here by just mapping the target Node to a corresponding Group.
@@ -63,21 +64,35 @@ GroupId OptimizerContext::addGroup(QueryPlan::Node & node)
     if (subplan_reference)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");
 
+    /// Strip SortingStep::Full — sorting is a physical property, not a logical one.
+    /// Return the child's GroupId along with the sorting as required properties, so the caller
+    /// can attach them to the input link of the parent group expression.
+    auto * sorting_step = typeid_cast<SortingStep *>(node.step.get());
+    if (sorting_step && sorting_step->getType() == SortingStep::Type::Full)
+    {
+        chassert(node.children.size() == 1);
+        auto [child_group_id, _] = addGroup(*node.children.front());
+        ExpressionProperties stripped_props;
+        stripped_props.sorting = sorting_step->getSortDescription();
+        stripped_props.sort_limit = sorting_step->getLimit();
+        return {child_group_id, stripped_props};
+    }
+
     std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);
 
     auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
     auto group_id = memo.addGroup(group_expression);
     for (auto * child_node : node.children)
     {
-        auto input_group_id = addGroup(*child_node);
-        group_expression->inputs.push_back({input_group_id, {}});
+        auto [input_group_id, pending_props] = addGroup(*child_node);
+        group_expression->inputs.push_back({input_group_id, pending_props});
     }
 
     /// Set statistics on the group (shared by all expressions in the group)
     auto group = memo.getGroup(group_id);
     group->statistics = std::move(prepopulated_statistics);
 
-    return group_id;
+    return {group_id, {}};
 }
 
 void OptimizerContext::pushTask(OptimizationTaskPtr task)

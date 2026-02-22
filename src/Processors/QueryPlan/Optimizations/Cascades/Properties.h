@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -22,6 +23,7 @@ struct DistributionDescription
 struct ExpressionProperties
 {
     SortDescription sorting;
+    UInt64 sort_limit = 0;  /// Limit applied together with ORDER BY. Passed to SortingStep; 0 means no limit.
     DistributionDescription distribution;
 
     bool isSatisfiedBy(const ExpressionProperties & existing_properties) const;

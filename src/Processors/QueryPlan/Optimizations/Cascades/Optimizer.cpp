@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/JoinOperator.h>
@@ -101,21 +102,43 @@ bool collectJoins(QueryPlan::Node * node, JoinGraphBuilder & join_graph_builder)
     return false;
 }
 
-GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_context)
+std::pair<GroupId, ExpressionProperties> CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_context)
 {
-    /// Traverse from the root till the first join node
-    /// Create groups for plan steps above JOIN graph
+    /// Traverse from the root till the first join node.
+    /// Create groups for plan steps above the JOIN graph, stripping SortingStep::Full nodes:
+    /// instead of putting them into the memo as separate groups, their sort description and
+    /// limit are captured as ExpressionProperties requirements on the input link of the
+    /// parent group expression (or as the root required properties when there is no parent).
     QueryPlan::Node * node = query_plan.getRootNode();
     GroupExpressionPtr expression_above_join_graph;
     std::optional<GroupId> root_group_id;
+
+    /// Sorting requirements accumulated from stripped SortingStep::Full nodes,
+    /// to be attached as required_properties on the input link to the next non-sorting group.
+    ExpressionProperties pending_child_props;
+
     while (node && node->children.size() == 1)
     {
+        auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
+        if (sorting_step && sorting_step->getType() == SortingStep::Type::Full)
+        {
+            /// Do not create a group — sorting is a physical property, not a logical one.
+            /// Capture it as a required property for the child group.
+            pending_child_props.sorting = sorting_step->getSortDescription();
+            pending_child_props.sort_limit = sorting_step->getLimit();
+            node = node->children.front();
+            continue;
+        }
+
         auto group_expression = std::make_shared<GroupExpression>(std::move(node->step));
         auto group_id = optimizer_context.memo.addGroup(group_expression);
         if (!root_group_id.has_value())
             root_group_id = group_id;
         if (expression_above_join_graph)
-            expression_above_join_graph->inputs = {{group_id, {}}};
+        {
+            expression_above_join_graph->inputs = {{group_id, pending_child_props}};
+            pending_child_props = {};
+        }
         expression_above_join_graph = group_expression;
         node = node->children.front();
     }
@@ -131,12 +154,13 @@ GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_co
 
     if (expression_above_join_graph)
     {
-        expression_above_join_graph->inputs = {{join_graph_group_id, {}}};
-        return root_group_id.value();
+        expression_above_join_graph->inputs = {{join_graph_group_id, pending_child_props}};
+        return {root_group_id.value(), {}};
     }
     else
     {
-        return join_graph_group_id;
+        /// The join graph root is the plan root; any pending sorting becomes the root requirement.
+        return {join_graph_group_id, pending_child_props};
     }
 }
 
@@ -222,7 +246,7 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
     {
         QueryPlan::Node & relation_node = join_graph.getRelationNode(relation_id);
         auto header = relation_node.step->getOutputHeader();
-        auto relation_group_id = optimizer_context.addGroup(relation_node);
+        auto [relation_group_id, _] = optimizer_context.addGroup(relation_node);
         join_groups_by_size[1].push_back(GroupInfo{relation_group_id, {relation_id}, header});
     }
 
@@ -401,13 +425,13 @@ void CascadesOptimizer::optimize()
 
     LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
 
-    auto root_group_id = fillMemoFromQueryPlan(optimizer_context);
+    auto [root_group_id, root_required_properties] = fillMemoFromQueryPlan(optimizer_context);
 
     LOG_TEST(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
 
     /// Add task to optimize root group
     CostLimit initial_cost_limit = CostLimit::infinity();
-    optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, ExpressionProperties{}, initial_cost_limit));
+    optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, root_required_properties, initial_cost_limit));
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
     /// Guys from MS SQL Server describe this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
@@ -423,7 +447,7 @@ void CascadesOptimizer::optimize()
     LOG_TEST(optimizer_context.log, "Executed {} tasks, Memo after:\n{}", executed_tasks_count, optimizer_context.memo.dump());
 
     /// Get the best plan for the root group
-    auto best_plan = buildBestPlan(root_group_id, {}, optimizer_context.memo);
+    auto best_plan = buildBestPlan(root_group_id, root_required_properties, optimizer_context.memo);
 
     LOG_TEST(optimizer_context.log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));
 
