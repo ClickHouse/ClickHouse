@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Common/Exception.h>
 #include <memory>
 
@@ -66,12 +67,20 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             /// TODO: take the column that is present in the expression and is equivalent to required distribution column
             shuffle_columns.push_back(*distribution_column.begin());
         }
-        auto shuffle_exchange_step = std::make_unique<ShuffleExchangeStep>(
-            expression->getQueryPlanStep()->getOutputHeader(),
-            std::move(shuffle_columns),
-            required_properties.distribution.node_count,
-            expression->properties.distribution.node_count);
-        implementation_expression->property_enforcer_steps.push_back(std::move(shuffle_exchange_step));
+
+        auto exchange_step =
+            (expression->properties.distribution.node_count == 1) ?
+            QueryPlanStepPtr(std::make_unique<ScatterExchangeStep>(
+                expression->getQueryPlanStep()->getOutputHeader(),
+                std::move(shuffle_columns),
+                required_properties.distribution.node_count)) :
+            QueryPlanStepPtr(std::make_unique<ShuffleExchangeStep>(
+                expression->getQueryPlanStep()->getOutputHeader(),
+                std::move(shuffle_columns),
+                required_properties.distribution.node_count,
+                expression->properties.distribution.node_count));
+
+        implementation_expression->property_enforcer_steps.push_back(std::move(exchange_step));
     }
     implementation_expression->properties.distribution = required_properties.distribution;
     implementation_expression->inputs = expression->inputs;
