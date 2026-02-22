@@ -1146,6 +1146,23 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
     const StorageID replica_table_id = table->getStorageID();
+
+    /// The `replica` StorageID may contain a UUID resolved before the DDL guard was acquired.
+    /// If a concurrent RENAME moved the table to a different name, UUID-based resolution in
+    /// `getTableImpl` finds the table at its new name, while the DDL guard only protects
+    /// `replica.table_name`. Verify that the resolved table is actually at the guarded name;
+    /// otherwise we would detach/attach the wrong table.
+    if (replica_table_id.table_name != replica.getTableName())
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table {} was concurrently renamed to {} during RESTART REPLICA",
+                replica.getNameForLogs(), replica_table_id.getNameForLogs());
+        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: table was concurrently renamed to {}",
+            replica.getNameForLogs(), replica_table_id.getNameForLogs());
+        return nullptr;
+    }
+
     if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
     {
         if (throw_on_error)
@@ -1171,9 +1188,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        create_ast = database->getCreateTableQuery(replica.table_name, getContext());
+        create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
 
-        database->detachTable(system_context, replica.table_name);
+        database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
     database->waitDetachedTableNotInUse(replica_table_id.uuid);
@@ -1219,7 +1236,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
-                fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+                fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
 
             /// Check if the query was cancelled (e.g. server is shutting down)
             if (auto process_list_element = getContext()->getProcessListElementSafe())
@@ -1235,7 +1252,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
                 fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
-                    replica.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+                    replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
 
             if (auto process_list_element = getContext()->getProcessListElementSafe())
                 process_list_element->checkTimeLimit();
@@ -1244,7 +1261,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         }
     }
 
-    database->attachTable(system_context, replica.table_name, new_table, data_path);
+    database->attachTable(system_context, replica_table_id.table_name, new_table, data_path);
     restart_guard.reset();
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);

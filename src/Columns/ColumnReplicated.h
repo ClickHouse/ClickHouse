@@ -158,7 +158,7 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     void getIndicesOfNonDefaultRows(Offsets & result_indexes, size_t from, size_t limit) const override;
     UInt64 getNumberOfDefaultRows() const override;

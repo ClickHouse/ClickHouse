@@ -515,9 +515,10 @@ def main():
 
         # For flaky check, set a soft time limit so that the test runner stops
         # gracefully before the job hard timeout, allowing results to be posted.
-        # The job timeout is 2.5 hours (9000s); leave a 5-minute margin.
+        # The job timeout is 2.5 hours (9000s); leave a 1-hour margin for cleanup
+        # (server shutdown, system table export, log collection — all slow under sanitizers).
         job_timeout = int(3600 * 2.5)
-        soft_limit_margin = 300
+        soft_limit_margin = 3600
         global_time_limit = 0
         if is_flaky_check or is_targeted_check:
             global_time_limit = max(
