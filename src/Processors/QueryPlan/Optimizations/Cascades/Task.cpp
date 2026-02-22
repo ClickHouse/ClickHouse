@@ -1,4 +1,5 @@
 #include <memory>
+#include <unordered_set>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
@@ -31,6 +32,14 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     }
     else if (!group->getBestImplementation(required_properties).expression)
     {
+        /// Track which (enforcer, base output properties) pairs have been tried.
+        /// Multiple base expressions can have identical output properties (e.g., when
+        /// Stage 2 creates implementations for different required_properties that all
+        /// produce the same output). The enforcer result depends only on the base
+        /// expression's output properties and the target required_properties, so
+        /// applying it to duplicates just creates identical physical expressions.
+        std::unordered_set<String> applied_enforcer_keys;
+
         /// Copy the list of physical expression because we are going to add new ones while iterating
         auto existing_implementations = group->physical_expressions;
         for (auto & expression : existing_implementations)
@@ -44,6 +53,10 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
             /// Try to add enforcer to satisfy the required properties
             for (const auto & enforcer : optimizer_context.getEnforcerRules())
             {
+                String key = enforcer->getName() + '@' + expression->properties.dump();
+                if (applied_enforcer_keys.contains(key))
+                    continue;
+
                 /// TODO: how to handle a combination of enforcers, e.g. modify both sorting and distribution?
                 if (enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
                 {
@@ -51,6 +64,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
                     auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
                     for (const auto & new_expression : new_expressions)
                         optimizer_context.updateBestPlan(new_expression);
+                    applied_enforcer_keys.insert(key);
                 }
             }
         }
