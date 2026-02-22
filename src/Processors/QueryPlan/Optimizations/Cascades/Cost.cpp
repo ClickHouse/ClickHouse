@@ -9,6 +9,8 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/BroadcastExchangeStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/Exception.h>
 #include <base/types.h>
 
@@ -79,6 +81,24 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         {
             /// Some default non-zero cost
             total_cost.cost.cpu = 100500;
+        }
+    }
+
+    /// Add network cost for property enforcer steps (exchanges added by DistributionEnforcer).
+    /// The exchange moves `estimated_row_count` rows across the network.
+    /// Note: dynamic_cast is used because typeid_cast requires exact type match and
+    /// would fail for derived types like GatherExchangeStep when checking LogicalExchangeStep.
+    for (const auto & enforcer_step : expression->property_enforcer_steps)
+    {
+        if (auto * broadcast = dynamic_cast<BroadcastExchangeStep *>(enforcer_step.get()))
+        {
+            /// Broadcast replicates all rows to every destination node.
+            total_cost.cost.network += group->statistics->estimated_row_count * static_cast<Float64>(broadcast->getResultBucketCount());
+        }
+        else if (dynamic_cast<LogicalExchangeStep *>(enforcer_step.get()))
+        {
+            /// Gather, Shuffle, Scatter: each row is sent exactly once.
+            total_cost.cost.network += group->statistics->estimated_row_count;
         }
     }
 
