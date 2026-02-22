@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -45,10 +46,61 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
         if (const DataTypeNullable * t = typeid_cast<const DataTypeNullable *>(type))
             type = t->getNestedType().get();
 
-        /// If the input is signed, assume monotonic.
-        /// Not fully correct because of the corner case -INT64_MIN == INT64_MIN and similar.
         if (!type->isValueRepresentedByUnsignedInteger())
+        {
+            /// For signed integers, `negate(TYPE_MIN)` overflows to TYPE_MIN, breaking monotonicity.
+            /// Only claim monotonic if the range provably excludes the type minimum.
+            if (type->isValueRepresentedByInteger())
+            {
+                if (left.isNull())
+                    return {};
+
+                /// Check if the left bound equals the type's minimum value.
+                bool left_is_type_min = false;
+                WhichDataType which(*type);
+                if (left.getType() == Field::Types::Int64)
+                {
+                    Int64 v = left.safeGet<Int64>();
+                    if (which.isInt8())
+                        left_is_type_min = (v == std::numeric_limits<Int8>::min());
+                    else if (which.isInt16())
+                        left_is_type_min = (v == std::numeric_limits<Int16>::min());
+                    else if (which.isInt32())
+                        left_is_type_min = (v == std::numeric_limits<Int32>::min());
+                    else if (which.isInt64())
+                        left_is_type_min = (v == std::numeric_limits<Int64>::min());
+                }
+                else if (left.getType() == Field::Types::Int128)
+                    left_is_type_min = (left.safeGet<Int128>() == std::numeric_limits<Int128>::min());
+                else if (left.getType() == Field::Types::Int256)
+                    left_is_type_min = (left.safeGet<Int256>() == std::numeric_limits<Int256>::min());
+
+                if (left_is_type_min)
+                    return {};
+            }
+
+            /// For floating-point types, negate is monotonic (no overflow), but NaN or
+            /// NULL in the range breaks monotonicity because negate(NaN) = NaN and
+            /// negate(NULL) = NULL stay at the bottom of the sort order instead of
+            /// flipping to the top.
+            if (!type->isValueRepresentedByInteger())
+            {
+                if (left.isNull() || right.isNull())
+                    return {};
+                auto toFloat = [](const Field & f) -> Float64
+                {
+                    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), f);
+                };
+                if (std::isnan(toFloat(left)) || std::isnan(toFloat(right)))
+                    return {};
+            }
             return { .is_monotonic = true, .is_positive = false, .is_strict = true };
+        }
+
+        /// negate is always decreasing, and negate(NULL) = NULL stays at the bottom
+        /// of the sort order instead of flipping to the top, breaking monotonicity.
+        if (left.isNull())
+            return {};
 
         /// negate(UInt64) -> Int64:
         ///  * monotonically decreases on [0, 2^63] (no overflow),
