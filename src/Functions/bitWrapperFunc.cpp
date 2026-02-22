@@ -42,7 +42,7 @@ struct NameBitWrapperFunc { static constexpr auto name = "__bitWrapperFunc"; };
 /// Override `getReturnTypeForDefaultImplementationForDynamic` so that Dynamic arguments
 /// produce Nullable(UInt8) instead of Dynamic. This is needed for set index evaluation
 /// where the result column must be UInt8.
-class FunctionBitWrapperFunc : public FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, true>
+class FunctionBitWrapperFunc : public FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, false>
 {
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitWrapperFunc>(); }
