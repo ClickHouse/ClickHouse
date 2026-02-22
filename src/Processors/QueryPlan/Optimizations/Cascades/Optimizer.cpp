@@ -453,6 +453,12 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
 {
     auto group = memo.getGroup(subtree_root_group_id);
     auto group_best_expression = group->getBestImplementation(required_properties).expression;
+    if (!group_best_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cascades optimizer: no implementation found for group #{} satisfying required properties {}.\n"
+            "Group state:\n{}",
+            subtree_root_group_id, required_properties.dump(), group->dump());
+
     QueryPlanPtr plan_for_group;
     if (group_best_expression->inputs.empty())
     {
