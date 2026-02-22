@@ -1,9 +1,16 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.defs import (
+    BASE_BRANCH,
+    DOCKERS,
+    SECRETS,
+    ArtifactConfigs,
+    ArtifactNames,
+    JobNames,
+)
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
-from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
+from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
 ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
 
@@ -55,6 +62,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
+        JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
         JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
@@ -70,6 +78,10 @@ workflow = Workflow.Config(
                 else []
             )
             for j in JobConfigs.functional_tests_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_jobs_azure
         ],
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
@@ -114,6 +126,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -123,6 +136,9 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        ArtifactConfigs.parser_memory_profiler,
+        ArtifactConfigs.toolchain_pgo_bolt_amd,
+        ArtifactConfigs.toolchain_pgo_bolt_arm,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
@@ -137,7 +153,7 @@ workflow = Workflow.Config(
     enable_open_issues_check=True,
     enable_slack_feed=True,
     pre_hooks=[
-        can_be_trusted,
+        can_be_tested,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
@@ -154,7 +170,9 @@ workflow = Workflow.Config(
         "integration": JobConfigs.integration_test_jobs_non_required[
             0
         ].name,  # plain integration test job, no old analyzer, no dist plan
+        "fast": "Fast test",
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+        "build_debug": "Build (amd_debug)",
         "build": "Build (amd_binary)",
     },
 )

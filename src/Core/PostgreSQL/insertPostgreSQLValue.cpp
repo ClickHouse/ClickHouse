@@ -193,7 +193,16 @@ void preparePostgreSQLArrayInfo(
     WhichDataType which(nested);
     std::function<Field(std::string & fields)> parser;
 
-    if (which.isUInt8() || which.isUInt16())
+    if (which.isUInt8())
+        parser = [](std::string & field) -> Field
+        {
+            if (field == "t")
+                return UInt8(1);
+            else if (field == "f")
+                return UInt8(0);
+            return pqxx::from_string<uint16_t>(field);
+        };
+    else if (which.isUInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<uint16_t>(field); };
     else if (which.isInt8() || which.isInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int16_t>(field); };
@@ -215,6 +224,8 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
+    else if (which.isDate32())
+        parser = [](std::string & field) -> Field { return Int32{LocalDate{field}.getExtenedDayNum()}; };
     else if (which.isDateTime())
         parser = [nested](std::string & field) -> Field
         {

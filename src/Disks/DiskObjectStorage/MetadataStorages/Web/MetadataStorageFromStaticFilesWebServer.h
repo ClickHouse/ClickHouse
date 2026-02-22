@@ -6,12 +6,8 @@
 #include <Common/SharedMutex.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 
-#include <filesystem>
-
 namespace DB
 {
-
-struct PartitionCommand;
 
 class MetadataStorageFromStaticFilesWebServer final : public IMetadataStorage
 {

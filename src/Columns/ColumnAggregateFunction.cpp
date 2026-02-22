@@ -701,7 +701,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (size == 0)
+    if (size == 0 || offsets.back() == 0)
         return cloneEmpty();
 
     auto res = createView();
@@ -755,7 +755,7 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
 void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,
                                             size_t, int, Permutation &, EqualRanges&) const {}
 
-void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
+void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
 {
     /// Place serialized default values into min/max.
 

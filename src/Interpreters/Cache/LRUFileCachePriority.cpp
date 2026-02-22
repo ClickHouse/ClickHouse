@@ -352,7 +352,6 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t elements,
     IFileCachePriority::Iterator *,
     bool is_total_space_cleanup,
-    bool is_dynamic_resize,
     const IFileCachePriority::OriginInfo & origin_info,
     const CacheStateGuard::Lock & lock)
 {
@@ -361,7 +360,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
         return std::make_unique<EvictionInfo>(queue_id, std::move(info));
 
     /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
-    if (is_total_space_cleanup || is_dynamic_resize)
+    if (is_total_space_cleanup)
     {
         info->size_to_evict = std::min(size, getSize(lock));
         info->elements_to_evict = std::min(elements, getElementsCount(lock));
@@ -566,6 +565,23 @@ bool LRUFileCachePriority::modifySizeLimits(
     max_size = max_size_;
     max_elements = max_elements_;
     return true;
+}
+
+EvictionInfoPtr LRUFileCachePriority::collectEvictionInfoForResize(
+    size_t desired_max_size,
+    size_t desired_max_elements,
+    const OriginInfo & origin_info,
+    const CacheStateGuard::Lock & lock)
+{
+    size_t current_size = getSize(lock);
+    size_t current_elements = getElementsCount(lock);
+    size_t size_to_evict = current_size > desired_max_size ? current_size - desired_max_size : 0;
+    size_t elements_to_evict = current_elements > desired_max_elements ? current_elements - desired_max_elements : 0;
+    return collectEvictionInfo(
+        size_to_evict, elements_to_evict,
+        /* reservee */ nullptr,
+        /* is_total_space_cleanup */ true,
+        origin_info, lock);
 }
 
 bool LRUFileCachePriority::tryIncreasePriority(

@@ -416,6 +416,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 keeper_server_socket_send_timeout_sec;
     extern const ServerSettingsString hdfs_libhdfs3_conf;
     extern const ServerSettingsString config_file;
+    extern const ServerSettingsString users_to_ignore_early_memory_limit_check;
 }
 
 namespace ErrorCodes
@@ -689,9 +690,10 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Server::options());
+        std::string app_name = (commandName() == "clickhouse-server") ? "clickhouse-server" : "clickhouse server";
         auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName());
+                                      app_name);
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -1208,6 +1210,22 @@ try
         LOG_INFO(log, "Starting root logger in level {}", logger_startup_level_setting.value);
     }
 
+    // If the startup_console_log_level is set in the config, we override the console logger level.
+    // Specific loggers can still override it.
+    std::string original_console_log_level_config = config().getString("logger.startup_console_log_level", "");
+    bool should_restore_console_log_level = false;
+    if (config().has("logger.startup_console_log_level") && !config().getString("logger.startup_console_log_level").empty())
+    {
+        /// Set the console logger level to the startup console level.
+        /// This is useful for debugging startup issues.
+        /// The console logger level will be reset to the default level after the server is fully initialized.
+        config().setString("logger.console_log_level", config().getString("logger.startup_console_log_level"));
+        Loggers::updateLevels(config(), logger());
+        should_restore_console_log_level = true;
+
+        LOG_INFO(log, "Starting console logger in level {}", config().getString("logger.startup_console_log_level"));
+    }
+
     MainThreadStatus::getInstance();
 
 #if USE_JEMALLOC
@@ -1347,8 +1365,8 @@ try
         server_settings[ServerSetting::max_thread_pool_size],
         server_settings[ServerSetting::max_thread_pool_free_size],
         server_settings[ServerSetting::thread_pool_queue_size],
-        has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns] : 0,
-        has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns] : 0);
+        has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
+        has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
 
     if (has_trace_collector)
     {
@@ -1628,14 +1646,11 @@ try
     Coordination::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
-        auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
             main_config_zk_node_cache.get(), main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
         config_processor.savePreprocessedConfig(loaded_config, path_str);
-        config().removeConfiguration(old_configuration.get());
-        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-        global_context->setConfig(loaded_config.configuration);
+        config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
@@ -2093,6 +2108,7 @@ try
             extra_paths.emplace_back(key_path);
     }
 
+    DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
     /// and thus this object must be created after the SCOPE_EXIT object where shared
     /// context is destroyed.
@@ -2108,7 +2124,6 @@ try
     else
     {
         DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
-        DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
@@ -2122,12 +2137,14 @@ try
         server_settings[ServerSetting::path],
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading)
+        [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
-            Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
+            config().replace("default", loaded_config, PRIO_DEFAULT, true);
+
+            Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
             ServerSettings new_server_settings;
-            new_server_settings.loadSettingsFromConfig(*config);
+            new_server_settings.loadSettingsFromConfig(config());
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
@@ -2194,23 +2211,23 @@ try
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
-            updateLevels(*config, logger());
-            global_context->setClustersConfig(config, has_zookeeper);
-            global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
-            global_context->setExternalAuthenticatorsConfig(*config);
+            updateLevels(config(), logger());
+            global_context->setClustersConfig(loaded_config, has_zookeeper);
+            global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+            global_context->setExternalAuthenticatorsConfig(config());
 
-            global_context->setDashboardsConfig(config);
+            global_context->setDashboardsConfig(config());
 
             if (global_context->isServerCompletelyStarted())
             {
                 /// It does not make sense to reload anything before server has started.
                 /// Moreover, it may break initialization order.
-                global_context->loadOrReloadDictionaries(*config);
-                global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+                global_context->loadOrReloadDictionaries(config());
+                global_context->loadOrReloadUserDefinedExecutableFunctions(config());
             }
 
-            global_context->setRemoteHostFilter(*config);
-            global_context->setHTTPHeaderFilter(*config);
+            global_context->setRemoteHostFilter(config());
+            global_context->setHTTPHeaderFilter(config());
 
             global_context->setMaxTableSizeToDrop(new_server_settings[ServerSetting::max_table_size_to_drop]);
             global_context->setMaxPartitionSizeToDrop(new_server_settings[ServerSetting::max_partition_size_to_drop]);
@@ -2223,6 +2240,8 @@ try
             global_context->setMaxPendingMutationsToWarn(new_server_settings[ServerSetting::max_pending_mutations_to_warn]);
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
+            global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
+            global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
 
@@ -2258,8 +2277,8 @@ try
             global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings[ServerSetting::max_concurrent_select_queries]);
             global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
 
-            if (config->has("keeper_server"))
-                global_context->updateKeeperConfiguration(*config);
+            if (config().has("keeper_server"))
+                global_context->updateKeeperConfiguration(config());
 
             /// Reload the number of threads for global pools.
             /// Note: If you specified it in the top level config (not it config of default profile)
@@ -2353,51 +2372,50 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            if (config->has("resources"))
+            if (config().has("resources"))
             {
-                global_context->getResourceManager()->updateConfiguration(*config);
+                global_context->getResourceManager()->updateConfiguration(config());
             }
 
             /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStorage().loadEntities(*config);
+            global_context->getWorkloadEntityStorage().loadEntities(config());
 
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(*config))
-                    global_context->reloadZooKeeperIfChanged(config);
+                if (zkutil::hasZooKeeperConfig(config()))
+                    global_context->reloadZooKeeperIfChanged(loaded_config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
-
-                global_context->reloadQueryMaskingRulesIfChanged(config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);
+                global_context->reloadQueryMaskingRulesIfChanged(loaded_config);
 
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
-                    updateServers(*config, new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
+                    updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
             }
 
-            global_context->updateStorageConfiguration(*config);
-            global_context->updateInterserverCredentials(*config);
+            global_context->updateStorageConfiguration(config());
+            global_context->updateInterserverCredentials(config());
 
-            global_context->updateUncompressedCacheConfiguration(*config);
-            global_context->updateMarkCacheConfiguration(*config);
-            global_context->updatePrimaryIndexCacheConfiguration(*config);
-            global_context->updateIndexUncompressedCacheConfiguration(*config);
-            global_context->updateIndexMarkCacheConfiguration(*config);
-            global_context->updateVectorSimilarityIndexCacheConfiguration(*config);
-            global_context->updateMMappedFileCacheConfiguration(*config);
-            global_context->updateQueryResultCacheConfiguration(*config);
-            global_context->updateQueryConditionCacheConfiguration(*config);
+            global_context->updateUncompressedCacheConfiguration(config());
+            global_context->updateMarkCacheConfiguration(config());
+            global_context->updatePrimaryIndexCacheConfiguration(config());
+            global_context->updateIndexUncompressedCacheConfiguration(config());
+            global_context->updateIndexMarkCacheConfiguration(config());
+            global_context->updateVectorSimilarityIndexCacheConfiguration(config());
+            global_context->updateMMappedFileCacheConfiguration(config());
+            global_context->updateQueryResultCacheConfiguration(config());
+            global_context->updateQueryConditionCacheConfiguration(config());
 
 #if USE_SSL
-            CertificateReloader::instance().tryReloadAll(*config);
+            CertificateReloader::instance().tryReloadAll(config());
 #endif
-            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
-            NamedCollectionFactory::instance().reloadFromConfig(*config);
-            FileCacheFactory::instance().updateSettingsFromConfig(*config);
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
+            NamedCollectionFactory::instance().reloadFromConfig(config());
+            FileCacheFactory::instance().updateSettingsFromConfig(config());
 
             HTTPConnectionPools::instance().setLimits(
                 HTTPConnectionPools::Limits{
@@ -2424,10 +2442,21 @@ try
             if (global_context->isServerCompletelyStarted())
                 CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
 
+            /// Update core dump size limit.
+            {
+                rlimit rlim;
+                if (getrlimit(RLIMIT_CORE, &rlim) == 0)
+                {
+                    rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+                    if (setrlimit(RLIMIT_CORE, &rlim))
+                        LOG_WARNING(log, "Cannot set max size of core file to {}", rlim.rlim_cur);
+                }
+            }
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
-            latest_config = config;
+            latest_config = loaded_config;
         });
 
     const auto listen_hosts = getListenHosts(config());
@@ -2942,18 +2971,30 @@ try
 
         {
             std::lock_guard lock(servers_lock);
-            for (auto & server : servers)
-            {
-                server.start();
-                LOG_INFO(log, "Listening for {}", server.getDescription());
-            }
 
-            // Restore the root logger level to the default level after the server is fully initialized.
+            /// Restore the startup log level overrides before accepting connections,
+            /// so that no requests are served with an elevated (startup) log level.
+            /// This must happen before server.start() because the config reload callback
+            /// (ConfigReloader) reads from config() which includes the writable layer
+            /// where startup level overrides are stored.
             if (should_restore_default_logger_level)
             {
                 config().setString("logger.level", default_logger_level_config);
                 Loggers::updateLevels(config(), logger());
                 LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
+            }
+
+            if (should_restore_console_log_level)
+            {
+                config().setString("logger.console_log_level", original_console_log_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+            }
+
+            for (auto & server : servers)
+            {
+                server.start();
+                LOG_INFO(log, "Listening for {}", server.getDescription());
             }
 
             global_context->setServerCompletelyStarted();
@@ -2999,6 +3040,17 @@ try
 
                 LOG_INFO(log, "Set root logger in level {} before shutdown", logger_shutdown_level_setting.value);
             }
+
+            if (config().has("logger.shutdown_console_log_level") && !config().getString("logger.shutdown_console_log_level").empty())
+            {
+                /// Set the root logger level to the shutdown level.
+                /// This is useful for debugging shutdown issues.
+                config().setString("logger.console_log_level", config().getString("logger.shutdown_console_log_level"));
+                Loggers::updateLevels(config(), logger());
+
+                LOG_INFO(log, "Set console logger in level {} before shutdown", config().getString("logger.shutdown_console_log_level"));
+            }
+
             LOG_DEBUG(log, "Received termination signal.");
 
             CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
@@ -3677,7 +3729,7 @@ void Server::updateServers(
 
     std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
 
-    Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : this->config();
+    Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : config;
 
     std::vector<ProtocolServerAdapter *> all_servers;
     all_servers.reserve(servers.size() + servers_to_start_before_tables.size());

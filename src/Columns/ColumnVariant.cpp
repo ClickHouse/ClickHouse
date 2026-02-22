@@ -215,6 +215,8 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
             global_to_local_discriminators[local_to_global_discriminators[i]] = i;
         }
     }
+
+    validateState();
 }
 
 namespace
@@ -942,8 +944,16 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// In this case we can just filter this variant and resize discriminators/offsets.
     if (auto non_empty_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
     {
-        Columns new_variants(variants.begin(), variants.end());
-        new_variants[*non_empty_discr] = variants[*non_empty_discr]->filter(filt, result_size_hint);
+        const size_t num_variants = variants.size();
+        Columns new_variants;
+        new_variants.reserve(num_variants);
+        for (size_t i = 0; i != num_variants; ++i)
+        {
+            if (i == *non_empty_discr)
+                new_variants.emplace_back(variants[i]->filter(filt, result_size_hint));
+            else
+                new_variants.emplace_back(variants[i]->cloneEmpty());
+        }
         size_t new_size = new_variants[*non_empty_discr]->size();
         ColumnPtr new_discriminators = local_discriminators->cloneResized(new_size);
         ColumnPtr new_offsets = offsets->cloneResized(new_size);
@@ -1085,7 +1095,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->permute(perm, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->assumeMutable());
+                new_variants.emplace_back(variants[i]->cloneEmpty());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1115,7 +1125,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->index(indexes, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->assumeMutable());
+                new_variants.emplace_back(variants[i]->cloneEmpty());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1181,7 +1191,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     if (size() != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", replicate_offsets.size(), size());
 
-    if (empty())
+    if (empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
 
     /// If we have only NULLs, just resize column to the new size.
@@ -1492,7 +1502,7 @@ void ColumnVariant::protect()
         variant->protect();
 }
 
-void ColumnVariant::getExtremes(Field & min, Field & max) const
+void ColumnVariant::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
 {
     min = Null();
     max = Null();
@@ -1841,6 +1851,36 @@ void ColumnVariant::fixDynamicStructure()
 {
     for (auto & variant : variants)
         variant->fixDynamicStructure();
+}
+
+void ColumnVariant::validateState() const
+{
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    const auto & offsets_data = getOffsets();
+    if (local_discriminators_data.size() != offsets_data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of discriminators and offsets should be equal, but {} and {} were given", local_discriminators_data.size(), offsets_data.size());
+
+    std::vector<size_t> actual_variant_sizes(variants.size());
+    for (size_t i = 0; i != variants.size(); ++i)
+        actual_variant_sizes[i] = variants[i]->size();
+
+    std::vector<size_t> expected_variant_sizes(variants.size(), 0);
+    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
+    {
+        auto local_discr = local_discriminators_data[i];
+        if (local_discr != NULL_DISCRIMINATOR)
+        {
+            ++expected_variant_sizes[local_discr];
+            if (offsets_data[i] >= actual_variant_sizes[local_discr])
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[local_discr]->getName(), variants[local_discr]->size());
+        }
+    }
+
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        if (variants[i]->size() != expected_variant_sizes[i])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
+    }
 }
 
 

@@ -177,9 +177,11 @@ public:
 
     std::vector<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        /// TODO: optimize to avoid materializing the full indexed column
+        auto indexed = dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0);
+        indexed->getExtremes(min, max, start, end);
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
@@ -354,8 +356,11 @@ private:
 
         /// Create new dictionary with only keys that are mentioned in indexes.
         void compact(MutableColumnPtr & indexes);
+        /// Create nullable dictionary with only keys that are mentioned in indexes.
+        void compactToNullable(MutableColumnPtr & indexes);
 
         static MutableColumnPtr compact(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
+        static MutableColumnPtr compactToNullable(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
 
     private:
         WrappedPtr column_unique;
@@ -366,6 +371,7 @@ private:
     ColumnIndex idx;
 
     void compactInplace();
+    void compactInplaceToNullable();
     void compactIfSharedDictionary();
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;

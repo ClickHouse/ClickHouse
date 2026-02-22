@@ -8,6 +8,18 @@
 namespace BuzzHouse
 {
 
+String StatementGenerator::getNextAlias(RandomGenerator & rg)
+{
+    /// Most of the times, use a new alias
+    const uint32_t noption = rg.nextMediumNumber();
+
+    if (noption < 81)
+    {
+        return "a" + std::to_string(aliases_counter++);
+    }
+    return (noption < 91 ? "a" : "c") + std::to_string(rg.randomInt<uint32_t>(0, noption < 91 ? 2 : 3));
+}
+
 void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const uint32_t nested_prob)
 {
     if (rg.nextMediumNumber() < nested_prob)
@@ -901,7 +913,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         else
         {
             /// Use a default catalog function
-            const CHFunction & func = rg.nextMediumNumber() < 6 ? rg.pickRandomly(CommonCHFuncs) : CHFuncs[nopt];
+            const CHFunction & func = rg.nextMediumNumber() < 10 ? rg.pickRandomly(CommonCHFuncs) : CHFuncs[nopt];
 
             n_lambda = ((func.min_lambda_param == func.max_lambda_param && func.max_lambda_param == 1)
                         || (func.max_lambda_param == 1 && rg.nextBool()))
@@ -1083,9 +1095,12 @@ static const auto has_rel_name_lambda = [](const SQLRelation & rel) { return !re
 void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 {
     ExprColAlias * eca = nullptr;
+    const bool allTables = rg.nextMediumNumber() < 4;
     const auto & level_rels = this->levels[this->current_level].rels;
     const auto has_dictionary_lambda
         = [&](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || this->allow_not_deterministic); };
+    const auto has_join_table_lambda = [&](const SQLTable & t)
+    { return t.isAttached() && (allTables || t.isJoinEngine()) && (t.is_deterministic || this->allow_not_deterministic); };
 
     /// expMask[static_cast<size_t>(ExpOp::Literal)] = true;
     /// expMask[static_cast<size_t>(ExpOp::ColumnRef)] = true;
@@ -1109,6 +1124,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     expMask[static_cast<size_t>(ExpOp::LambdaExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > this->width;
     expMask[static_cast<size_t>(ExpOp::ProjectionExpr)] = this->inside_projection;
     expMask[static_cast<size_t>(ExpOp::DictExpr)] = this->fc.max_depth > this->depth && collectionHas<SQLDictionary>(has_dictionary_lambda);
+    expMask[static_cast<size_t>(ExpOp::JoinExpr)] = this->fc.max_depth > this->depth && collectionHas<SQLTable>(has_join_table_lambda);
     expMask[static_cast<size_t>(ExpOp::StarExpr)] = this->allow_not_deterministic || this->levels[this->current_level].inside_aggregate;
     expGen.setEnabled(expMask);
 
@@ -1421,6 +1437,29 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             this->depth--;
         }
         break;
+        case ExpOp::JoinExpr: {
+            /// Join table functions
+            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_join_table_lambda));
+            const uint32_t nkeys
+                = std::max<uint32_t>(1, std::min<uint32_t>(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)));
+
+            sfc->mutable_func()->set_catalog_func(rg.nextBool() ? SQLFunc::FUNCjoinGet : SQLFunc::FUNCjoinGetOrNull);
+            sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'" + t.getFullName(true) + "'");
+            flatTableColumnPath(
+                flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
+                t.cols,
+                [](const SQLColumn &) { return true; });
+            sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(this->table_entries).columnPathRef("'"));
+            this->table_entries.clear();
+            this->depth++;
+            for (uint32_t i = 0; i < nkeys; i++)
+            {
+                this->generateExpression(rg, sfc->add_args()->mutable_expr());
+            }
+            this->depth--;
+        }
+        break;
         case ExpOp::StarExpr:
             /// Star expression
             expr->mutable_lit_val()->mutable_special_val()->set_val(SpecialVal_SpecialValEnum_VAL_STAR);
@@ -1431,7 +1470,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     if (eca && this->allow_in_expression_alias && !this->inside_projection && rg.nextSmallNumber() < 4)
     {
         SQLRelation rel("");
-        const String ncname = this->getNextAlias();
+        const String ncname = this->getNextAlias(rg);
 
         rel.cols.emplace_back(SQLRelationCol("", {ncname}));
         this->levels[this->current_level].rels.emplace_back(rel);

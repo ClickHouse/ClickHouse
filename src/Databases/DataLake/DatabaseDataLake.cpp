@@ -10,6 +10,11 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
 
 
 #if USE_AVRO && USE_PARQUET
@@ -41,6 +46,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -58,11 +64,21 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
     extern const DatabaseDataLakeSettingsString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
+    extern const DatabaseDataLakeSettingsString aws_role_arn;
+    extern const DatabaseDataLakeSettingsString aws_role_session_name;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
+    extern const DatabaseDataLakeSettingsString google_project_id;
+    extern const DatabaseDataLakeSettingsString google_service_account;
+    extern const DatabaseDataLakeSettingsString google_metadata_service;
+    extern const DatabaseDataLakeSettingsString google_adc_client_id;
+    extern const DatabaseDataLakeSettingsString google_adc_client_secret;
+    extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
+    extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
+    extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
 }
 
 namespace Setting
@@ -92,6 +108,11 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char lightweight_show_tables[];
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -142,6 +163,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
         .aws_secret_access_key = settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
         .region = settings[DatabaseDataLakeSetting::region].value,
+        .aws_role_arn = settings[DatabaseDataLakeSetting::aws_role_arn].value,
+        .aws_role_session_name = settings[DatabaseDataLakeSetting::aws_role_session_name].value,
     };
 
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)
@@ -161,7 +184,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
-            catalog_impl = std::make_shared<DataLake::RestCatalog>(
+            catalog_impl = std::make_shared<DataLake::OneLakeCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
@@ -170,6 +193,75 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        {
+            std::string google_project_id = settings[DatabaseDataLakeSetting::google_project_id].value;
+            std::string google_service_account = settings[DatabaseDataLakeSetting::google_service_account].value;
+            std::string google_metadata_service = settings[DatabaseDataLakeSetting::google_metadata_service].value;
+            std::string google_adc_client_id = settings[DatabaseDataLakeSetting::google_adc_client_id].value;
+            std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
+            std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
+            std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
+
+            if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
+            {
+                try
+                {
+                    const std::string & credentials_file_path = settings[DatabaseDataLakeSetting::google_adc_credentials_file].value;
+                    DB::ReadBufferFromFile file_buf(credentials_file_path);
+                    std::string json_str;
+                    DB::readStringUntilEOF(json_str, file_buf);
+
+                    Poco::JSON::Parser parser;
+                    Poco::Dynamic::Var json = parser.parse(json_str);
+                    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+                    if (object->has("type"))
+                    {
+                        String type = object->get("type").extract<String>();
+                        if (type != "authorized_user")
+                        {
+                            throw DB::Exception(
+                                DB::ErrorCodes::BAD_ARGUMENTS,
+                                "Unsupported credentials type '{}' in Google ADC credentials file. Expected 'authorized_user'",
+                                type);
+                        }
+                    }
+
+                    if (google_adc_client_id.empty() && object->has("client_id"))
+                        google_adc_client_id = object->get("client_id").extract<String>();
+                    if (google_adc_client_secret.empty() && object->has("client_secret"))
+                        google_adc_client_secret = object->get("client_secret").extract<String>();
+                    if (google_adc_refresh_token.empty() && object->has("refresh_token"))
+                        google_adc_refresh_token = object->get("refresh_token").extract<String>();
+                    if (google_adc_quota_project_id.empty() && object->has("quota_project_id"))
+                        google_adc_quota_project_id = object->get("quota_project_id").extract<String>();
+                    if (google_project_id.empty() && object->has("project_id"))
+                        google_project_id = object->get("project_id").extract<String>();
+                }
+                catch (const DB::Exception & e)
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Failed to load Google ADC credentials from file '{}': {}",
+                        settings[DatabaseDataLakeSetting::google_adc_credentials_file].value,
+                        e.message());
+                }
+            }
+
+            catalog_impl = std::make_shared<DataLake::BigLakeCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                google_project_id,
+                google_service_account,
+                google_metadata_service,
+                google_adc_client_id,
+                google_adc_client_secret,
+                google_adc_refresh_token,
+                google_adc_quota_project_id,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -268,6 +360,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         }
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
+        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
         {
             switch (type)
             {
@@ -443,8 +536,14 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
 
+    /// This is added to test that lightweight queries like 'SHOW TABLES' dont end up fetching the table
+    fiu_do_on(FailPoints::lightweight_show_tables,
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+    });
+
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
-    if (!lightweight && with_vended_credentials)
+    if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
@@ -483,7 +582,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// so we have a separate setting to know whether we should even try to fetch them.
     if (args.size() == 1)
     {
-        std::array<DatabaseDataLakeCatalogType, 2> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
+        std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
         if (table_metadata.hasStorageCredentials())
         {
             LOG_DEBUG(log, "Getting credentials");
@@ -552,7 +651,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto azure_configuration = std::static_pointer_cast<StorageAzureIcebergConfiguration>(configuration);
         if (!azure_configuration)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
-        auto rest_catalog = std::static_pointer_cast<DataLake::RestCatalog>(catalog);
+        auto rest_catalog = std::static_pointer_cast<DataLake::OneLakeCatalog>(catalog);
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
         azure_configuration->setInitializationAsOneLake(
@@ -581,11 +680,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     if (can_use_parallel_replicas && !is_secondary_query)
     {
+        auto storage_id = StorageID(getDatabaseName(), name);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
-            configuration->createObjectStorage(context_copy, /* is_readonly */ false),
-            StorageID(getDatabaseName(), name),
+            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
+            storage_id,
             columns,
             ConstraintsDescription{},
             nullptr,
@@ -604,7 +704,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
         context_copy,
         StorageID(getDatabaseName(), name),
         /* columns */columns,
@@ -642,14 +742,13 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     bool skip_not_loaded) const
 {
     Tables tables;
-    auto catalog = getCatalog();
     DB::Names iceberg_tables;
 
     /// Do not throw here, because this might be, for example, a query to system.tables.
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = catalog->getTables();
+        iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
@@ -673,15 +772,33 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
             pool.scheduleOrThrow(
                 [this, table_name, skip_not_loaded, context_, promise=promises.back()]() mutable
                 {
+                    StoragePtr storage = nullptr;
                     try
                     {
-                        auto storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
-                        promise->set_value(storage);
+                        LOG_INFO(log, "Get table information for table {}", table_name);
+                        storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
                     }
                     catch (...)
                     {
-                        promise->set_exception(std::current_exception());
+                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access])
+                        {
+                            auto error_code = getCurrentExceptionCode();
+                            auto error_message = getCurrentExceptionMessage(true, false, true, true);
+                            auto enhanced_message = fmt::format(
+                                "Received error {} while fetching table metadata for existing table '{}'. "
+                                "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
+                                error_code,
+                                table_name,
+                                error_message);
+                            promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
+                                error_code,
+                                enhanced_message)));
+                            return;
+                        }
+                        else
+                            tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                     }
+                    promise->set_value(storage);
                 });
         }
         catch (...)
@@ -709,105 +826,33 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
-DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
-    ContextPtr context_,
+std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIterator(
+    ContextPtr /*context_*/,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded) const
+    bool /*skip_not_loaded*/) const
 {
-    Tables tables;
-
-    auto catalog = getCatalog();
     DB::Names iceberg_tables;
+    std::vector<LightWeightTableDetails> result;
 
     /// Do not throw here, because this might be, for example, a query to system.tables.
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = catalog->getTables();
+        iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
-
-    std::vector<std::shared_ptr<std::promise<StoragePtr>>> promises;
-    std::vector<std::future<StoragePtr>> futures;
-
     for (const auto & table_name : iceberg_tables)
     {
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
-
-        /// NOTE: There are one million of different ways how we can receive
-        /// weird response from different catalogs. tryGetTableImpl will not
-        /// throw only in case of expected errors, but sometimes we can receive
-        /// completely unexpected results for some objects which can be stored
-        /// in catalogs. But this function is used in SHOW TABLES query which
-        /// should return at least properly described tables. That is why we
-        /// have this try/catch here.
-        try
-        {
-            promises.emplace_back(std::make_shared<std::promise<StoragePtr>>());
-            futures.emplace_back(promises.back()->get_future());
-
-            pool.scheduleOrThrow(
-                [this, table_name, skip_not_loaded, context_, promise = promises.back()] mutable
-                {
-                    StoragePtr storage = nullptr;
-                    try
-                    {
-                        storage = tryGetTableImpl(table_name, context_, true, skip_not_loaded);
-                    }
-                    catch (...)
-                    {
-                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access])
-                        {
-                            auto error_code = getCurrentExceptionCode();
-                            auto error_message = getCurrentExceptionMessage(true, false, true, true);
-                            auto enhanced_message = fmt::format(
-                                "Received error {} while fetching table metadata for existing table '{}'. "
-                                "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
-                                error_code,
-                                table_name,
-                                error_message);
-                            promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
-                                error_code,
-                                enhanced_message)));
-                            return;
-                        }
-                        else
-                            tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
-                    }
-                    promise->set_value(storage);
-                });
-        }
-        catch (...)
-        {
-            promises.back()->set_value(nullptr);
-            tryLogCurrentException(log, "Failed to schedule task into pool");
-        }
+        result.emplace_back(table_name);
     }
 
-    for (const auto & future : futures)
-        future.wait();
-
-    size_t future_index = 0;
-    for (const auto & table_name : iceberg_tables)
-    {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-
-        if (auto storage_ptr = futures[future_index].get(); storage_ptr != nullptr)
-        {
-            [[maybe_unused]] bool inserted = tables.emplace(table_name, storage_ptr).second;
-            chassert(inserted);
-        }
-        future_index++;
-    }
-
-    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
+    return result;
 }
 
 ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
@@ -940,6 +985,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         {
             case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
+            case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])

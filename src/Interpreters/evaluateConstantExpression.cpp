@@ -140,6 +140,12 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         {
             result_column = output->column;
             result_type = output->result_type;
+
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+            if (result_column->empty() && isColumnConst(*result_column))
+                result_column = result_column->cloneResized(1);
         }
     }
     else

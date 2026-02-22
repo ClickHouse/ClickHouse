@@ -1484,6 +1484,15 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
     });
 }
 
+std::vector<JoinActionRef> JoinStepLogical::getInputActions() const
+{
+    std::vector<JoinActionRef> input_actions;
+    const auto & raw_inputs = expression_actions.getActionsDAG()->getInputs();
+    for (const auto * node : raw_inputs)
+        input_actions.emplace_back(node, expression_actions);
+    return input_actions;
+}
+
 
 std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 {
@@ -1549,7 +1558,7 @@ static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const A
     return nodes;
 }
 
-std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & ctx)
+QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");

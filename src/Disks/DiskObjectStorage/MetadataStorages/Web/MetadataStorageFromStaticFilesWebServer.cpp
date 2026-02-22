@@ -1,18 +1,12 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
-#include <IO/ReadHelpers.h>
+
 #include <IO/WriteHelpers.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
-#include <Interpreters/Context.h>
-#include <Storages/PartitionCommands.h>
+
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
-
-#include <Poco/Exception.h>
-
-#include <filesystem>
 
 namespace DB
 {

@@ -41,7 +41,7 @@ $CLICKHOUSE_CLIENT -q "
     drop table d;
     truncate src;
     insert into src values (1);
-    create materialized view e refresh every 1 second (x Int64) engine MergeTree order by x as select x + sleepEachRow(1) as x from src settings max_block_size = 1;
+    create materialized view e refresh every 1 second (x Int64) engine MergeTree order by x as select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system wait view e;"
 # Stop refreshes.
 $CLICKHOUSE_CLIENT -q "
@@ -54,7 +54,7 @@ done
 # Make refreshes slow, wait for a slow refresh to start. (We stopped refreshes first to make sure
 # we wait for a slow refresh, not a previous fast one.)
 $CLICKHOUSE_CLIENT -q "
-    insert into src select * from numbers(1000) settings max_block_size=1;
+    insert into src select * from numbers(20) settings max_block_size=1;
     system start view e;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes -- $LINENO" | xargs`" != 'Running' ]
 do

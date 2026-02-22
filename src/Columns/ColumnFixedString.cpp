@@ -3,6 +3,7 @@
 #include <Columns/ColumnCompressed.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -47,6 +48,14 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 
     return new_col_holder;
 }
+
+DataTypePtr ColumnFixedString::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const
+{
+    if (options.notFull(name_buf))
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
+    return std::make_shared<DataTypeString>();
+}
+
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
@@ -438,7 +447,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 
     auto res = ColumnFixedString::create(n);
 
-    if (0 == col_size)
+    if (col_size == 0 || offsets.back() == 0)
         return res;
 
     Chars & res_chars = res->chars;
@@ -452,21 +461,19 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
     return res;
 }
 
-void ColumnFixedString::getExtremes(Field & min, Field & max) const
+void ColumnFixedString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = String();
     max = String();
 
-    size_t col_size = size();
-
-    if (col_size == 0)
+    if (start >= end)
         return;
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
     auto cmp_less = ComparatorAscendingUnstable(*this);
-    for (size_t i = 1; i < col_size; ++i)
+    for (size_t i = start + 1; i < end; ++i)
     {
         if (cmp_less(i, min_idx))
             min_idx = i;

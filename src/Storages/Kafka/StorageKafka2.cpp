@@ -5,6 +5,7 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -210,6 +211,11 @@ void StorageKafka2::partialShutdown()
         task->holder->deactivate();
     }
     is_active = false;
+    /// Reset the active node holder while the old ZooKeeper session is still alive (even if expired).
+    /// EphemeralNodeHolder stores a raw ZooKeeper reference, so resetting it here prevents a
+    /// use-after-free: setZooKeeper() called afterwards may free the old session, and the holder's
+    /// destructor would then access a dangling reference when checking zookeeper.expired().
+    replica_is_active_node = nullptr;
 }
 
 bool StorageKafka2::activate()

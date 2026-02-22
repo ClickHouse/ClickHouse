@@ -472,9 +472,8 @@ void StorageBuffer::read(
                     std::move(pipe_from_buffers),
                     *getVirtualsPtr());
 
-            auto interpreter = InterpreterSelectQueryAnalyzer(
-                    query_info.query, local_context, storage,
-                    SelectQueryOptions(processed_stage));
+            auto interpreter
+                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
             interpreter.addStorageLimits(*query_info.storage_limits);
             buffers_plan = std::move(interpreter).extractQueryPlan();
         }
@@ -938,7 +937,8 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (runner)
         {
-            runner->enqueueAndKeepTrack([&]()
+            /// Passing buf as a reference is fine since it's a reference to this, which outlives the runner
+            runner->enqueueAndKeepTrack([this, &buf, check_thresholds]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });
