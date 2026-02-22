@@ -1988,12 +1988,15 @@ struct FunctionsStressTestThread
 
                         if (cmp == 0)
                         {
-                            if (mono.is_strict)
+                            /// For strict monotonicity, equal outputs are only a problem if inputs are different.
+                            /// Equal inputs naturally produce equal outputs even for strictly monotonic functions.
+                            int input_cmp = arg.column->compareAt(perm[row], perm[row + 1], *arg.column, /*nan_direction_hint=*/ -1);
+                            if (mono.is_strict && input_cmp != 0)
                                 stats.reportProblem(P_BROKEN_MONOTONICITY, fmt::format("{} said strictly monotonic, but f({}) = {} == {} = f({}); {}", monotonicity_call_description(), valueToString(arg.type, arg.column, perm[row]), valueToString(result_type, result, perm[row]), valueToString(result_type, result, perm[row + 1]), valueToString(arg.type, arg.column, perm[row + 1]), operation.describe()));
                         }
                         else
                         {
-                            if ((cmp > 0) != mono.is_positive)
+                            if ((cmp > 0) == mono.is_positive)
                                 stats.reportProblem(P_BROKEN_MONOTONICITY, fmt::format("{} said {} monotonicity, but f({}) = {} {} {} = f({}); {}", monotonicity_call_description(), mono.is_positive ? "positive" : "negative", valueToString(arg.type, arg.column, perm[row]), valueToString(result_type, result, perm[row]), cmp > 0 ? ">" : "<", valueToString(result_type, result, perm[row + 1]), valueToString(arg.type, arg.column, perm[row + 1]), operation.describe()));
                         }
                     }
