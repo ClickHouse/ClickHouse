@@ -50,7 +50,7 @@ ColumnPtr ColumnConst::convertToFullColumn() const
     return data->replicate(Offsets(1, s));
 }
 
-ColumnPtr ColumnConst::removeLowCardinality() const
+ColumnPtr ColumnConst::convertToFullColumnIfLowCardinality() const
 {
     return ColumnConst::create(data->convertToFullColumnIfLowCardinality(), s);
 }
