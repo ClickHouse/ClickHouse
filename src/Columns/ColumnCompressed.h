@@ -129,7 +129,7 @@ public:
     ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }
     MutableColumns scatter(size_t, const Selector &) const override { throwMustBeDecompressed(); }
     void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
-    void getExtremes(Field &, Field &) const override { throwMustBeDecompressed(); }
+    void getExtremes(Field &, Field &, size_t, size_t) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
     UInt64 getNumberOfDefaultRows() const override { throwMustBeDecompressed(); }

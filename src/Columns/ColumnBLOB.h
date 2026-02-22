@@ -193,7 +193,7 @@ public:
     ColumnPtr replicate(const Offsets &) const override { throwInapplicable(); }
     MutableColumns scatter(size_t, const Selector &) const override { throwInapplicable(); }
     void gather(ColumnGathererStream &) override { throwInapplicable(); }
-    void getExtremes(Field &, Field &) const override { throwInapplicable(); }
+    void getExtremes(Field &, Field &, size_t, size_t) const override { throwInapplicable(); }
     size_t byteSizeAt(size_t) const override { throwInapplicable(); }
     double getRatioOfDefaultRows(double) const override { throwInapplicable(); }
     UInt64 getNumberOfDefaultRows() const override { throwInapplicable(); }

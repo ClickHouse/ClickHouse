@@ -263,9 +263,9 @@ public:
 
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        data->getExtremes(min, max);
+        data->getExtremes(min, max, start, end);
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override
