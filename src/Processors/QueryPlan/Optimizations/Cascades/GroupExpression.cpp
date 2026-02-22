@@ -70,4 +70,19 @@ String GroupExpression::dump() const
     return out.str();
 }
 
+String GroupExpression::fingerprint() const
+{
+    WriteBufferFromOwnString buf;
+    buf << getDescription();
+    properties.dump(buf);
+    for (const auto & enforcer_step : property_enforcer_steps)
+        buf << ' ' << enforcer_step->getName();
+    for (const auto & input : inputs)
+    {
+        buf << " #" << input.group_id << ':';
+        input.required_properties.dump(buf);
+    }
+    return buf.str();
+}
+
 }

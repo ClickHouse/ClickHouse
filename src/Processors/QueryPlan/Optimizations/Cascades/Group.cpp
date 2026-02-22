@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 //#include <iostream>
 
@@ -18,6 +19,10 @@ void Group::addLogicalExpression(GroupExpressionPtr group_expression)
 void Group::addPhysicalExpression(GroupExpressionPtr group_expression)
 {
     group_expression->group_id = group_id;
+
+    if (!physical_fingerprints.insert(group_expression->fingerprint()).second)
+        return;
+
     physical_expressions.push_back(std::move(group_expression));
 }
 

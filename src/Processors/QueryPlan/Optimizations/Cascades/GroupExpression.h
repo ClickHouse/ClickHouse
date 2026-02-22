@@ -38,6 +38,7 @@ public:
 
     void dump(WriteBuffer & out) const;
     String dump() const;
+    String fingerprint() const;
 
     GroupId group_id = INVALID_GROUP_ID;
     QueryPlanStepPtr plan_step;             /// Main implementation step

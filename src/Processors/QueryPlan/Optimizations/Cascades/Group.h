@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -59,6 +60,7 @@ private:
     const GroupId group_id;
     bool is_explored = false;
     std::set<String> optimized_properties;  /// Tracks which required properties have had implementation rules applied
+    std::unordered_set<String> physical_fingerprints;  /// Deduplicates identical physical expressions
 };
 
 using GroupPtr = std::shared_ptr<Group>;
