@@ -14,7 +14,7 @@ CREATE TABLE t0(a Int, b Int) Engine=ReplacingMergeTree order by (a desc, b desc
 INSERT INTO t0 select number, number from numbers(5);
 INSERT INTO t0 select number, number from numbers(5, 2);
 set max_threads = 2;
-explain pipeline select * from t0 final SETTINGS enable_vertical_final = 0;
+explain pipeline select * from t0 final SETTINGS enable_vertical_final = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 DROP TABLE t0;
 
 -- PartsSplitter is disabled when some keys are in ascending order while others are in descending order.
