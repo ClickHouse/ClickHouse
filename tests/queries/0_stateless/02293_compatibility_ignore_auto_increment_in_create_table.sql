@@ -20,8 +20,11 @@ CREATE TABLE ignore_auto_increment (
     id int AUTO_INCREMENT
 ) ENGINE=MergeTree() ORDER BY tuple();
 
-select 'show create strips AUTO_INCREMENT in compatibility mode';
-SELECT match(create_table_query, '(?i)\\bAUTO_INCREMENT\\b')
+select 'AUTO_INCREMENT serialization follows current database engine';
+SELECT if(
+    (SELECT engine FROM system.databases WHERE name = currentDatabase()) = 'Replicated',
+    positionCaseInsensitive(create_table_query, '`id` Int32 AUTO_INCREMENT') > 0,
+    positionCaseInsensitive(create_table_query, '`id` Int32 AUTO_INCREMENT') = 0)
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'ignore_auto_increment';
 
