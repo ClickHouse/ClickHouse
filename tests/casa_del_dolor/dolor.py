@@ -559,8 +559,6 @@ def dolor_cleanup():
         if client.process.poll() is None:
             client.process.kill()
             client.process.wait()
-        logger.info(f"Load generator exited with code: {client.process.returncode}")
-
         try:
             cluster.shutdown(kill=True)
         except:
