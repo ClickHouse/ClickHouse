@@ -1196,6 +1196,16 @@ public:
             if (has_distinct)
                 function_name += "Distinct";
 
+            /// When NOT is followed by '(' the parser creates a function call not(...).
+            /// If there are multiple comma-separated arguments like NOT (1, 2, 3), this
+            /// produces not(1, 2, 3) which is semantically wrong — NOT is unary.
+            /// Wrap multiple arguments into a tuple: not(tuple(1, 2, 3)).
+            if (function_name == "not" && elements.size() > 1)
+            {
+                auto tuple_node = makeASTFunction("tuple", std::move(elements));
+                elements = {std::move(tuple_node)};
+            }
+
             auto function_node = makeASTFunction(function_name, std::move(elements));
             function_node->setIsCompoundName(is_compound_name);
             function_node->setIsOperator(is_operator);
@@ -2702,11 +2712,16 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        /// Always treat NOT as a unary prefix operator, even when followed by '('.
-        /// This ensures correct SQL-standard precedence: NOT (col) IS NULL → NOT (col IS NULL),
-        /// not (NOT col) IS NULL. The parenthesized expression is parsed as a primary,
-        /// and postfix operators like IS NULL (priority 6) bind tighter than NOT (priority 5).
-        layers.back()->pushOperator(cur_op->second);
+        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+            auto identifier = make_intrusive<ASTIdentifier>(cur_op->second.function_name);
+            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, isFirstIdentifier(layers)));
+        }
+        else
+        {
+            layers.back()->pushOperator(cur_op->second);
+        }
         return Action::OPERAND;
     }
 
