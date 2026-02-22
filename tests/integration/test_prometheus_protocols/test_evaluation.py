@@ -447,13 +447,6 @@ def test_function_over_time():
                 "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.06666666666666667),('1970-01-01 00:02:30.000',0.1),('1970-01-01 00:02:45.000',0.05555555555555555),('1970-01-01 00:03:30.000',0.08333333333333333)]",
             ]
         ],
-        # FIXME: Results are different!
-        # | E   assert '{"resultType..., "0.08"]]}]}' == '{"resultType...3333333"]]}]}'
-        # | E
-        # | E     - {"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.06666666666666667"], [150, "0.1"], [165, "0.05555555555555555"], [210, "0.08333333333333333"]]}]}
-        # | E     ?                                                                                     ---------------                             ^^^^^^^^^^^^^^^^               ---------------
-        # | E     + {"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.07"], [150, "0.1"], [165, "0.06"], [210, "0.08"]]}]}
-        False,
     )
 
     do_query_test(
@@ -466,6 +459,109 @@ def test_function_over_time():
                 "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',1),('1970-01-01 00:03:30.000',3)]",
             ]
         ],
+    )
+
+
+def test_literals():
+    timestamp = 250
+    do_query_test(
+        "23",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "23"]}',
+        [["1970-01-01 00:04:10.000", 23]],
+    )
+
+    # FIXME: Support unary operator '-'
+    # do_query_test(
+    #     "-2.43",
+    #     timestamp,
+    #     '{"resultType": "scalar", "result": [250, "-2.43"]}',
+    #     [["1970-01-01 00:04:10.000", -2.43]],
+    # )
+
+    do_query_test(
+        "3.4e-5",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "0.000034"]}',
+        [["1970-01-01 00:04:10.000", "0.000034"]],
+    )
+
+    do_query_test(
+        "0x8f",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "143"]}',
+        [["1970-01-01 00:04:10.000", 143]],
+    )
+
+    # FIXME: Support unary operator '-'
+    # do_query_test(
+    #     "-Inf",
+    #     timestamp,
+    #     '{"resultType": "scalar", "result": [250, "-Inf"]}',
+    #     [["1970-01-01 00:04:10.000", "-inf"]],
+    # )
+
+    do_query_test(
+        "NaN",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "NaN"]}',
+        [["1970-01-01 00:04:10.000", "nan"]],
+    )
+
+    do_query_test(
+        "1_000_000",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "1000000"]}',
+        [["1970-01-01 00:04:10.000", "1000000"]],
+    )
+
+    do_query_test(
+        ".123_456_789",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "0.123456789"]}',
+        [["1970-01-01 00:04:10.000", "0.123456789"]],
+    )
+
+    do_query_test(
+        "0x_53_AB_F3_82",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "1403777922"]}',
+        [["1970-01-01 00:04:10.000", 1403777922]],
+    )
+
+    do_query_test(
+        "1h30m",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "5400"]}',
+        [["1970-01-01 00:04:10.000", 5400]],
+    )
+
+    do_query_test(
+        "12h34m56s",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "45296"]}',
+        [["1970-01-01 00:04:10.000", 45296]],
+    )
+
+    do_query_test(
+        "54s321ms",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "54.321"]}',
+        [["1970-01-01 00:04:10.000", "54.321"]],
+    )
+
+    do_query_test(
+        "1y2w3d",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "33004800"]}',
+        [["1970-01-01 00:04:10.000", "33004800"]],
+    )
+
+    do_query_test(
+        "\"this is a string\"",
+        timestamp,
+        '{"resultType": "string", "result": [250, "this is a string"]}',
+        [["1970-01-01 00:04:10.000", "this is a string"]],
     )
 
 

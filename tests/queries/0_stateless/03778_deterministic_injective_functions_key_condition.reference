@@ -1,0 +1,437 @@
+-- { echo }
+
+DROP TABLE IF EXISTS test_deterministic_injective_function_chain;
+CREATE TABLE test_deterministic_injective_function_chain
+(
+    p String
+)
+ENGINE = MergeTree
+ORDER BY reverse(p)
+SETTINGS index_granularity = 1;
+INSERT INTO test_deterministic_injective_function_chain
+SELECT if(number < 9000, 'abc', concat('x', toString(number)))
+FROM numbers(10000);
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE p = 'abc';
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(p)
+            Condition: (reverse(p) in [\'cba\', \'cba\'])
+            Parts: 1/1
+            Granules: 9001/10000
+            Search Algorithm: binary search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE p = 'abc';
+9000
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE p != 'abc';
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(p)
+            Condition: (reverse(p) not in [\'cba\', \'cba\'])
+            Parts: 1/1
+            Granules: 1000/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE p != 'abc';
+1000
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE p IN ('abc', 'x9999');
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(p)
+            Condition: (reverse(p) in 2-element set)
+            Parts: 1/1
+            Granules: 9002/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE p IN ('abc', 'x9999');
+9001
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE has(['abc', 'x9999'], p);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(p)
+            Condition: (reverse(p) in 2-element set)
+            Parts: 1/1
+            Granules: 9002/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE has(['abc', 'x9999'], p);
+9001
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE p NOT IN ('abc', 'x9999');
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(p)
+            Condition: (reverse(p) notIn 2-element set)
+            Parts: 1/1
+            Granules: 1000/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE p NOT IN ('abc', 'x9999');
+999
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE NOT has(['abc', 'x9999'], p);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(p)
+            Condition: not((reverse(p) in 2-element set))
+            Parts: 1/1
+            Granules: 1000/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test_deterministic_injective_function_chain
+WHERE NOT has(['abc', 'x9999'], p);
+999
+DROP TABLE IF EXISTS test_deterministic_injective_function_dag;
+CREATE TABLE test_deterministic_injective_function_dag
+(
+    p String
+)
+ENGINE = MergeTree
+ORDER BY reverse(tuple(reverse(p), hex(p)))
+SETTINGS index_granularity = 1;
+INSERT INTO test_deterministic_injective_function_dag
+SELECT if(number < 9000, 'abc', concat('x', toString(number)))
+FROM numbers(10000);
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE p = 'abc';
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(p), hex(p)))
+            Condition: (reverse(tuple(reverse(p), hex(p))) in [(\'616263\', \'cba\'), (\'616263\', \'cba\')])
+            Parts: 1/1
+            Granules: 9000/10000
+            Search Algorithm: binary search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE p = 'abc';
+9000
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE p != 'abc';
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(p), hex(p)))
+            Condition: (reverse(tuple(reverse(p), hex(p))) not in [(\'616263\', \'cba\'), (\'616263\', \'cba\')])
+            Parts: 1/1
+            Granules: 1001/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE p != 'abc';
+1000
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE p IN ('abc', 'x9999');
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(p), hex(p)))
+            Condition: (reverse(tuple(reverse(p), hex(p))) in 2-element set)
+            Parts: 1/1
+            Granules: 9002/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 2
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE p IN ('abc', 'x9999');
+9001
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE has(['abc', 'x9999'], p);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(p), hex(p)))
+            Condition: (reverse(tuple(reverse(p), hex(p))) in 2-element set)
+            Parts: 1/1
+            Granules: 9002/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 2
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE has(['abc', 'x9999'], p);
+9001
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE p NOT IN ('abc', 'x9999');
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(p), hex(p)))
+            Condition: (reverse(tuple(reverse(p), hex(p))) notIn 2-element set)
+            Parts: 1/1
+            Granules: 1000/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE p NOT IN ('abc', 'x9999');
+999
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE NOT has(['abc', 'x9999'], p);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(p), hex(p)))
+            Condition: not((reverse(tuple(reverse(p), hex(p))) in 2-element set))
+            Parts: 1/1
+            Granules: 1000/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test_deterministic_injective_function_dag
+WHERE NOT has(['abc', 'x9999'], p);
+999
+DROP TABLE IF EXISTS test_deterministic_injective_function_dag_complex;
+CREATE TABLE test_deterministic_injective_function_dag_complex
+(
+    p String
+)
+ENGINE = MergeTree
+ORDER BY reverse(tuple(reverse(lower(p)), hex(lower(p))))
+SETTINGS index_granularity = 1;
+INSERT INTO test_deterministic_injective_function_dag_complex
+SELECT if(number < 9000, 'abc', concat('x', toString(number)))
+FROM numbers(10000);
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE lower(p) = 'abc';
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag_complex)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(lower(p)), hex(lower(p))))
+            Condition: (reverse(tuple(reverse(lower(p)), hex(lower(p)))) in [(\'616263\', \'cba\'), (\'616263\', \'cba\')])
+            Parts: 1/1
+            Granules: 9000/10000
+            Search Algorithm: binary search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE lower(p) = 'abc';
+9000
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE lower(p) != 'abc';
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag_complex)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(lower(p)), hex(lower(p))))
+            Condition: (reverse(tuple(reverse(lower(p)), hex(lower(p)))) not in [(\'616263\', \'cba\'), (\'616263\', \'cba\')])
+            Parts: 1/1
+            Granules: 1001/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE lower(p) != 'abc';
+1000
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE lower(p) IN ('abc', 'x9999');
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag_complex)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(lower(p)), hex(lower(p))))
+            Condition: (reverse(tuple(reverse(lower(p)), hex(lower(p)))) in 2-element set)
+            Parts: 1/1
+            Granules: 9002/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 2
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE lower(p) IN ('abc', 'x9999');
+9001
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE has(['abc', 'x9999'], lower(p));
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag_complex)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(lower(p)), hex(lower(p))))
+            Condition: (reverse(tuple(reverse(lower(p)), hex(lower(p)))) in 2-element set)
+            Parts: 1/1
+            Granules: 9002/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 2
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE has(['abc', 'x9999'], lower(p));
+9001
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE lower(p) NOT IN ('abc', 'x9999');
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag_complex)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(lower(p)), hex(lower(p))))
+            Condition: (reverse(tuple(reverse(lower(p)), hex(lower(p)))) notIn 2-element set)
+            Parts: 1/1
+            Granules: 1000/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE lower(p) NOT IN ('abc', 'x9999');
+999
+EXPLAIN indexes=1
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE NOT has(['abc', 'x9999'], lower(p));
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_deterministic_injective_function_dag_complex)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(lower(p)), hex(lower(p))))
+            Condition: not((reverse(tuple(reverse(lower(p)), hex(lower(p)))) in 2-element set))
+            Parts: 1/1
+            Granules: 1000/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test_deterministic_injective_function_dag_complex
+WHERE NOT has(['abc', 'x9999'], lower(p));
+999

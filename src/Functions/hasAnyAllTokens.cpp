@@ -123,15 +123,13 @@ DataTypePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::getReturnT
     FunctionArgumentDescriptors mandatory_args
     {
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString), nullptr, "String, FixedString, Array(String) or Array(FixedString)"},
-        {"needles",
-         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType),
-         isColumnConst,
-         "const String or const Array(String)"}
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType), isColumnConst, "const String or const Array(String)"}
     };
 
-    FunctionArgumentDescriptors optional_args;
-    if (arguments.size() == 3)
-        optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+    FunctionArgumentDescriptors optional_args
+    {
+        {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
+    };
 
     validateFunctionArguments(name, arguments, mandatory_args, optional_args);
     return std::make_shared<DataTypeNumber<UInt8>>();

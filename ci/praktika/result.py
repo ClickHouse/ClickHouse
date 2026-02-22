@@ -24,6 +24,7 @@ from .info import Info
 
 class _Colors:
     """ANSI color codes for terminal output"""
+
     RESET = "\033[0m"
     BOLD = "\033[1m"
     GREEN = "\033[92m"
@@ -74,6 +75,7 @@ class Result(MetaClasses.Serializable):
         FAILED_ON_RETRY = "retry_failed"
         BLOCKER = "blocker"
         ISSUE = "issue"
+        INFRA = "infra"
 
     name: str
     status: str

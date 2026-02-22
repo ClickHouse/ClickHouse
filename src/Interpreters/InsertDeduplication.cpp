@@ -712,6 +712,9 @@ void DeduplicationInfo::setUserToken(const String & token, size_t count)
 {
     chassert(level == Level::SOURCE);
 
+    if (count == 0)
+        return;
+
     tokens.push_back(TokenDefinition::asUserToken(token));
     offsets.push_back(getRows() + count);
 

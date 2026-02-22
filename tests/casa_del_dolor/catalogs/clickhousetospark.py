@@ -18,13 +18,6 @@ from pyiceberg.transforms import (
     VoidTransform,
 )
 
-try:
-    from pyspark.sql.types import VariantType
-
-    HAS_VARIANT_TYPE = True
-except ImportError:
-    HAS_VARIANT_TYPE = False
-
 
 class ClickHouseMapping(Enum):
     Unkown = 0
@@ -336,7 +329,7 @@ class ClickHouseTypeMapper:
 
         # Handle Variant(T1, T2, ...) → Spark VariantType / Iceberg Struct with nullable fields
         if ch_type.startswith("Variant("):
-            if HAS_VARIANT_TYPE and mapping == ClickHouseMapping.Spark:
+            if mapping == ClickHouseMapping.Spark:
                 return ("VARIANT", inside_nullable, sp.VariantType())
 
             # Iceberg has no Variant type; expand into a Struct with nullable fields
@@ -374,11 +367,7 @@ class ClickHouseTypeMapper:
         # Handle JSON, Dynamic → Spark 4.0 VariantType (untyped semi-structured)
         for val in ["JSON", "Dynamic", "Enum"]:
             if ch_type.startswith(val):
-                if (
-                    HAS_VARIANT_TYPE
-                    and val != "Enum"
-                    and mapping == ClickHouseMapping.Spark
-                ):
+                if val != "Enum" and mapping == ClickHouseMapping.Spark:
                     return ("VARIANT", inside_nullable, sp.VariantType())
                 else:
                     is_text = random.randint(1, 2) == 1
@@ -655,7 +644,7 @@ class ClickHouseTypeMapper:
         if roll <= 60 or current_depth >= max_depth:
             factory = random.choice(primitive_factories)
             return factory() if callable(factory) else factory
-        elif HAS_VARIANT_TYPE and roll <= 70 and allow_variant:
+        elif roll <= 70 and allow_variant:
             return sp.VariantType()
         elif roll <= 80:
             elem = self.generate_random_spark_type(

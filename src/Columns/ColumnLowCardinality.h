@@ -11,10 +11,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+[[noreturn]] void throwUnexpectedLowCardinalityIndexType(size_t size);
 
 /**
  * How data is stored (in a nutshell):
@@ -177,9 +174,11 @@ public:
 
     std::vector<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        /// TODO: optimize to avoid materializing the full indexed column
+        auto indexed = dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0);
+        indexed->getExtremes(min, max, start, end);
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
@@ -307,7 +306,7 @@ public:
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
-            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+            default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
         }
     }
 
