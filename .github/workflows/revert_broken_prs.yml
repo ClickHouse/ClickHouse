@@ -86,7 +86,9 @@ jobs:
               select(.conclusion == "failure") |
               select((.name | startswith("Performance Comparison")) | not) |
               select((.name | startswith("libFuzzer")) | not) |
-              select(.name != "Config Workflow" and .name != "Finish Workflow" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
+              select((.name | startswith("Nightly")) | not) |
+              select((.name | startswith("ClickBench")) | not) |
+              select(.name != "Config Workflow" and .name != "Finish Workflow" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
               .name
             ' 2>/dev/null || true)
 
@@ -96,7 +98,9 @@ jobs:
               select(.state == "failure") |
               select((.context | startswith("Performance Comparison")) | not) |
               select((.context | startswith("libFuzzer")) | not) |
-              select(.context != "Config Workflow" and .context != "Finish Workflow" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
+              select((.context | startswith("Nightly")) | not) |
+              select((.context | startswith("ClickBench")) | not) |
+              select(.context != "Config Workflow" and .context != "Finish Workflow" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "SQLTest" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
               .context
             ' 2>/dev/null || true)
 
@@ -131,7 +135,9 @@ jobs:
               .check_runs[] |
               select((.name | startswith("Performance Comparison")) | not) |
               select((.name | startswith("libFuzzer")) | not) |
-              select(.name != "CH Inc sync" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
+              select((.name | startswith("Nightly")) | not) |
+              select((.name | startswith("ClickBench")) | not) |
+              select(.name != "CH Inc sync" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
               select(.conclusion == "failure" or .status != "completed") |
               (if .conclusion == "failure" then .name + " (failed)"
                elif .status != "completed" then .name + " (incomplete)"
@@ -143,7 +149,9 @@ jobs:
               .statuses[] |
               select((.context | startswith("Performance Comparison")) | not) |
               select((.context | startswith("libFuzzer")) | not) |
-              select(.context != "CH Inc sync" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
+              select((.context | startswith("Nightly")) | not) |
+              select((.context | startswith("ClickBench")) | not) |
+              select(.context != "CH Inc sync" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "SQLTest" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
               select(.state == "failure" or .state == "pending") |
               (if .state == "failure" then .context + " (failed)"
                elif .state == "pending" then .context + " (pending)"
