@@ -2702,16 +2702,11 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
-        {
-            ++pos;
-            auto identifier = make_intrusive<ASTIdentifier>(cur_op->second.function_name);
-            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, isFirstIdentifier(layers)));
-        }
-        else
-        {
-            layers.back()->pushOperator(cur_op->second);
-        }
+        /// Always treat NOT as a unary prefix operator, even when followed by '('.
+        /// This ensures correct SQL-standard precedence: NOT (col) IS NULL → NOT (col IS NULL),
+        /// not (NOT col) IS NULL. The parenthesized expression is parsed as a primary,
+        /// and postfix operators like IS NULL (priority 6) bind tighter than NOT (priority 5).
+        layers.back()->pushOperator(cur_op->second);
         return Action::OPERAND;
     }
 
