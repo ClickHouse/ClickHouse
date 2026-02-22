@@ -8,15 +8,23 @@ namespace DB
 template <iota_supported_types T>
 void iota(T * begin, size_t count, T first_value)
 {
+    T value = first_value;
     for (size_t i = 0; i < count; i++)
-        *(begin + i) = static_cast<T>(first_value + i);
+    {
+        *(begin + i) = value;
+        ++value;
+    }
 }
 
 template <iota_supported_types T>
 void iotaWithStep(T * begin, size_t count, T first_value, T step)
 {
+    T value = first_value;
     for (size_t i = 0; i < count; i++)
-        *(begin + i) = static_cast<T>(first_value + i * step);
+    {
+        *(begin + i) = value;
+        value += step;
+    }
 }
 
 template void iota(UInt8 * begin, size_t count, UInt8 first_value);
