@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET enable_vertical_final = 1;
 
 -- Test special columns handling in ReadFromMergeTree::removeUnusedColumns with FINAL and PREWHERE
 -- Similar to https://github.com/ClickHouse/ClickHouse/issues/45804
