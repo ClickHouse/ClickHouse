@@ -6,8 +6,8 @@ SET enable_analyzer = 1;
 -- NOW and CURRENT_TIMESTAMP are the same function, so we test both
 SELECT toTypeName(NOW);
 SELECT toTypeName(CURRENT_TIMESTAMP);
-SELECT NOW = now();
-SELECT CURRENT_TIMESTAMP = now();
+SELECT abs(toInt64(NOW) - toInt64(now())) <= 1;
+SELECT abs(toInt64(CURRENT_TIMESTAMP) - toInt64(now())) <= 1;
 
 -- Case insensitivity
 SELECT toTypeName(now);
