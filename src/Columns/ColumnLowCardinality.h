@@ -177,9 +177,11 @@ public:
 
     std::vector<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        /// TODO: optimize to avoid materializing the full indexed column
+        auto indexed = dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0);
+        indexed->getExtremes(min, max, start, end);
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
