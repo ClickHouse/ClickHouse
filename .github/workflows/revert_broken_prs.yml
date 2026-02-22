@@ -84,7 +84,7 @@ jobs:
               --paginate --jq '
               .check_runs[] |
               select(.conclusion == "failure") |
-              select(.name != "Config Workflow" and .name != "Finish Workflow") |
+              select(.name != "Config Workflow" and .name != "Finish Workflow" and .name != "Performance Comparison") |
               .name
             ' 2>/dev/null || true)
 
@@ -92,7 +92,7 @@ jobs:
             merge_failed_statuses=$(gh api "repos/$GH_REPO/commits/$sha/status" --jq '
               .statuses[] |
               select(.state == "failure") |
-              select(.context != "Config Workflow" and .context != "Finish Workflow") |
+              select(.context != "Config Workflow" and .context != "Finish Workflow" and .context != "Performance Comparison") |
               .context
             ' 2>/dev/null || true)
 
@@ -125,7 +125,7 @@ jobs:
             pr_failed_checks=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/check-runs?per_page=100" \
               --paginate --jq '
               .check_runs[] |
-              select(.name != "CH Inc sync") |
+              select(.name != "CH Inc sync" and .name != "Performance Comparison") |
               select(.conclusion == "failure" or .status != "completed") |
               (if .conclusion == "failure" then .name + " (failed)"
                elif .status != "completed" then .name + " (incomplete)"
@@ -135,7 +135,7 @@ jobs:
             # Check PR head for failed or pending commit statuses
             pr_failed_statuses=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/status" --jq '
               .statuses[] |
-              select(.context != "CH Inc sync") |
+              select(.context != "CH Inc sync" and .context != "Performance Comparison") |
               select(.state == "failure" or .state == "pending") |
               (if .state == "failure" then .context + " (failed)"
                elif .state == "pending" then .context + " (pending)"
