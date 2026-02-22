@@ -220,6 +220,12 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "jemalloc")
+            {
+                auto handler = createWebUIHandlerFactory<JemallocWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
             else if (handler_type == "js")
             {
                 // NOTE: JavaScriptWebUIRequestHandler only makes sense for paths other then /js/uplot.js, /js/lz-string.js
@@ -356,10 +362,22 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/merges");
     factory.addHandler(merges_handler);
 
+    auto jemalloc_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JemallocWebUIRequestHandler>>(server);
+    jemalloc_handler->attachNonStrictPath("/jemalloc");
+    jemalloc_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/jemalloc");
+    factory.addHandler(jemalloc_handler);
+
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
+
+    auto clickstack_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ClickStackUIRequestHandler>>(server);
+    clickstack_handler->attachNonStrictPath("/clickstack");
+    clickstack_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/clickstack");
+    factory.addHandler(clickstack_handler);
 
 #if USE_SSL
     if (server.config().has("acme"))

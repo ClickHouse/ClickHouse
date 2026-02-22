@@ -398,6 +398,31 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             }
         },
         {
+            "startsWithUTF8",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
+                    return false;
+
+                String prefix = value.safeGet<String>();
+                if (prefix.empty())
+                    return false;
+
+                const bool is_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(prefix.data()), prefix.size());
+                if (is_ascii == false)
+                    return false;
+
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = !right_bound.empty()
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
+
+                return true;
+            }
+        },
+        {
             "match",
             [] (RPNElement & out, const Field & value)
             {
@@ -2413,7 +2438,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     func_name = "greaterOrEquals";
                 else if (func_name == "like" || func_name == "notLike" ||
                          func_name == "ilike" || func_name == "notILike" ||
-                         func_name == "startsWith" || func_name == "match")
+                         func_name == "startsWith" || func_name == "startsWithUTF8" || func_name == "match")
                     return false;
             }
 

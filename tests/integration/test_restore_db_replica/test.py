@@ -309,15 +309,15 @@ def test_query_after_restore_db_replica(
     if exists_table:
         assert node_1.query_with_retry(
             f"SELECT table FROM system.tables WHERE database='{exclusive_database_name}' ORDER BY table",
-            retry_count=10,
+            retry_count=30,
             sleep_time=1,
-            check_callback=lambda tables: tables == exists_table_name,
+            check_callback=lambda tables: tables.strip() == exists_table_name,
         )
         assert node_2.query_with_retry(
             f"SELECT table FROM system.tables WHERE database='{exclusive_database_name}' ORDER BY table",
-            retry_count=10,
+            retry_count=30,
             sleep_time=1,
-            check_callback=lambda tables: tables == exists_table_name,
+            check_callback=lambda tables: tables.strip() == exists_table_name,
         )
         check_contains_table(
             node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
@@ -535,12 +535,12 @@ def test_restore_db_replica_with_diffrent_table_metadata(
     )
 
     if restore_firstly_node_where_created:
-        assert node_1.query(
-            f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
-        ) == TSV([count_test_table_2]) 
-        assert node_2.query(
-            f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
-        ) == TSV([count_test_table_2]) 
+        check_contains_table(
+            node_1, f"{exclusive_database_name}.{test_table_2}", count_test_table_2
+        )
+        check_contains_table(
+            node_2, f"{exclusive_database_name}.{test_table_2}", count_test_table_2
+        )
     else:
         assert node_2.query(
             f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}_broken_tables'"

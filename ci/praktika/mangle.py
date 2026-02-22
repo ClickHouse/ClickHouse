@@ -6,8 +6,18 @@ from typing import List
 from praktika import Workflow
 
 from . import Job
+from .info import Info
 from .settings import Settings
 from .utils import Utils
+
+
+def _is_local_run():
+    """Check if running locally. Returns False if can't determine (e.g., during workflow generation)."""
+    try:
+        return Info().is_local_run
+    except Exception:
+        # During workflow generation, Info can't be initialized - treat as CI mode
+        return False
 
 
 def _get_workflows(
@@ -50,9 +60,8 @@ def _get_workflows(
             if file and str(file) not in str(py_file):
                 continue
         elif py_file.name != Settings.DEFAULT_LOCAL_TEST_WORKFLOW:
-            print(
-                f"Skip [{py_file.name}]"
-            )
+            if not _is_local_run():
+                print(f"Skip [{py_file.name}]")
             continue
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
@@ -165,17 +174,21 @@ def _update_workflow_with_native_jobs(workflow):
 
         if not Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB:
             aux_job = copy.deepcopy(_docker_build_amd_linux_job)
-            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if not _is_local_run():
+                print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
             if workflow.enable_cache:
-                print(f"Add automatic digest config for [{aux_job.name}] job")
+                if not _is_local_run():
+                    print(f"Add automatic digest config for [{aux_job.name}] job")
                 aux_job.digest_config = docker_digest_config
             workflow.jobs.insert(len(docker_job_names), aux_job)
             docker_job_names.append(aux_job.name)
 
             aux_job = copy.deepcopy(_docker_build_arm_linux_job)
-            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if not _is_local_run():
+                print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
             if workflow.enable_cache:
-                print(f"Add automatic digest config for [{aux_job.name}] job")
+                if not _is_local_run():
+                    print(f"Add automatic digest config for [{aux_job.name}] job")
                 aux_job.digest_config = docker_digest_config
             workflow.jobs.insert(len(docker_job_names), aux_job)
             docker_job_names.append(aux_job.name)
@@ -185,9 +198,11 @@ def _update_workflow_with_native_jobs(workflow):
             or Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB
         ):
             aux_job = copy.deepcopy(_docker_build_manifest_job)
-            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if not _is_local_run():
+                print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
             if workflow.enable_cache:
-                print(f"Add automatic digest config for [{aux_job.name}] job")
+                if not _is_local_run():
+                    print(f"Add automatic digest config for [{aux_job.name}] job")
                 aux_job.digest_config = docker_digest_config
             aux_job.requires = copy.deepcopy(docker_job_names)
             workflow.jobs.insert(len(docker_job_names), aux_job)
@@ -200,7 +215,10 @@ def _update_workflow_with_native_jobs(workflow):
     if workflow._enabled_workflow_config():
         from .native_jobs import _workflow_config_job
 
-        print(f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]")
+        if not _is_local_run():
+            print(
+                f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]"
+            )
         aux_job = copy.deepcopy(_workflow_config_job)
         workflow.jobs.insert(0, aux_job)
         for job in workflow.jobs[1:]:
@@ -214,36 +232,10 @@ def _update_workflow_with_native_jobs(workflow):
     ):
         from .native_jobs import _final_job
 
-        print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")
+        if not _is_local_run():
+            print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_final_job)
         for job in workflow.jobs:
             aux_job.requires.append(job.name)
         workflow.jobs.append(aux_job)
 
-    # Propagate transitive dependencies: if B depends on A and C depends on B, then C should also depend on A
-    # To enable complex scenarios in GH Actions: do not block pipeline on failed job/action
-    job_map = {job.name: job for job in workflow.jobs}
-    artifact_map = _get_artifact_to_providing_job_map(workflow)
-    workflow.jobs = copy.deepcopy(
-        workflow.jobs
-    )  # same Job.Config objects may be used in other workflows, thus deep copy
-    for job in workflow.jobs:
-        all_deps = set(
-            job.requires
-        )  # init with original content to preserve artifacts (vs job names) set in .requires
-        to_visit = list(job.requires)
-        visited = set()
-        while to_visit:
-            dep_name = to_visit.pop()
-            if dep_name in visited:
-                continue
-            visited.add(dep_name)
-            if dep_name in job_map:
-                to_visit.extend(job_map[dep_name].requires)
-                all_deps.add(dep_name)
-            elif dep_name in artifact_map:
-                to_visit.extend(job_map[artifact_map[dep_name]].requires)
-                all_deps.add(artifact_map[dep_name])
-            else:
-                assert False, f"dependency [{dep_name}] not found, [{job.name}]"
-        job.requires = sorted(list(all_deps))

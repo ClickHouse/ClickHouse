@@ -3,7 +3,6 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
@@ -274,7 +273,7 @@ public:
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
