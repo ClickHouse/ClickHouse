@@ -6,6 +6,7 @@
 #include <base/types.h>
 #include <memory>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace DB
@@ -36,8 +37,8 @@ public:
     void addPhysicalExpression(GroupExpressionPtr group_expression);
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
-    bool isImplemented() const { return is_implemented; }
-    void setImplemented() { is_implemented = true; }
+    bool isOptimizedFor(const ExpressionProperties & required_properties) const;
+    void setOptimizedFor(const ExpressionProperties & required_properties);
     void updateBestImplementation(GroupExpressionPtr expression);
     ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties) const;
 
@@ -57,7 +58,7 @@ public:
 private:
     const GroupId group_id;
     bool is_explored = false;
-    bool is_implemented = false;
+    std::set<String> optimized_properties;  /// Tracks which required properties have had implementation rules applied
 };
 
 using GroupPtr = std::shared_ptr<Group>;

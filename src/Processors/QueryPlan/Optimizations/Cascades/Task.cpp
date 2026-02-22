@@ -20,14 +20,14 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties, cost_limit));
         optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(group_id, cost_limit));
     }
-    else if (!group->isImplemented())
+    else if (!group->isOptimizedFor(required_properties))
     {
         optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties, cost_limit));
 
         for (auto & expression : group->logical_expressions)
             optimizer_context.pushTask(std::make_shared<OptimizeExpressionTask>(expression, required_properties, cost_limit));
 
-        group->setImplemented();
+        group->setOptimizedFor(required_properties);
     }
     else if (!group->getBestImplementation(required_properties).expression)
     {

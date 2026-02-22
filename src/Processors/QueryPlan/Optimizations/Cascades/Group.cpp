@@ -21,6 +21,16 @@ void Group::addPhysicalExpression(GroupExpressionPtr group_expression)
     physical_expressions.push_back(std::move(group_expression));
 }
 
+bool Group::isOptimizedFor(const ExpressionProperties & required_properties) const
+{
+    return optimized_properties.contains(required_properties.dump());
+}
+
+void Group::setOptimizedFor(const ExpressionProperties & required_properties)
+{
+    optimized_properties.insert(required_properties.dump());
+}
+
 void Group::updateBestImplementation(GroupExpressionPtr expression)
 {
     /// Remove all known best expressions with higher cost and properties satisfied by the new expression
