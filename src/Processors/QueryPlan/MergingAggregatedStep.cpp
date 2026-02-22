@@ -178,6 +178,21 @@ void MergingAggregatedStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(MergingAggregatedTransform::appendGroupingIfNeeded(*in_header, params.getHeader(*in_header, final)));
 }
 
+QueryPlanStepPtr MergingAggregatedStep::clone() const
+{
+    return std::make_unique<MergingAggregatedStep>(
+        input_headers.front(),
+        params,
+        grouping_sets_params,
+        final,
+        memory_efficient_aggregation,
+        memory_efficient_merge_threads,
+        should_produce_results_in_order_of_bucket_number,
+        max_block_size,
+        memory_bound_merging_max_block_bytes,
+        memory_bound_merging_of_aggregation_results_enabled);
+}
+
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const
 {
     return memory_bound_merging_of_aggregation_results_enabled && !group_by_sort_description.empty();
