@@ -34,38 +34,33 @@ std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpression
     implementation_expression->plan_step->setStepDescription(fmt::format("IMPL: {}", expression->plan_step->getStepDescription()), 200);
     implementation_expression->setApplied(*this, required_properties);
 
+    bool propagate_distribution = true;
+
     if (implementation_expression->inputs.size() == 1)
     {
         auto & input_props = implementation_expression->inputs[0].required_properties;
-        /// Check before modifying whether the input already has a sorting requirement
-        /// from construction time (i.e. a SortingStep was stripped between this step and
-        /// its child). Sorting requires a single stream on one node, so this distribution
-        /// must remain single-node; the parent's distribution requirement applies to this
-        /// step's output and will be enforced by DistributionEnforcer.
         const bool has_construction_time_sorting = !input_props.sorting.empty();
-        /// Keep construction-time sorting if set, otherwise propagate from parent.
-        if (input_props.sorting.empty())
-            input_props.sorting = required_properties.sorting;
-        /// Keep construction-time sort_limit if set, otherwise propagate from parent.
-        if (input_props.sort_limit == 0)
-            input_props.sort_limit = required_properties.sort_limit;
-        /// Propagate the parent's distribution to the input only when there is no
-        /// construction-time sorting requirement. When there is one, forcing the input
-        /// into a multi-node distribution alongside a sort requirement would produce
-        /// an unsatisfiable combined requirement (no enforcer can sort and scatter
-        /// simultaneously). Leave the input single-node; DistributionEnforcer will
-        /// add the necessary exchange on top of this step's output instead.
+
+        /// Don't propagate the parent's sorting to the child - `SortingEnforcer`
+        /// handles it on this group's output. Propagating would cause double sorting.
+        /// Construction-time sorting (already on `input_props`) is kept as-is.
+
+        /// Don't propagate distribution when the input has construction-time sorting:
+        /// the combined {sorting + multi-node} requirement is unsatisfiable.
+        /// Both input and output stay at {1 node}; `DistributionEnforcer` adds
+        /// an exchange on this step's output if the parent needs multi-node.
         if (!has_construction_time_sorting)
             input_props.distribution = required_properties.distribution;
+        else
+            propagate_distribution = false;
     }
 
-    /// The output distribution of a pass-through step (Expression, Filter, etc.)
-    /// matches the distribution it requires from its input. Without this, the
-    /// output stays at the default {1 node} from the logical expression copy,
-    /// which allows a parent requiring {1 node} to match an implementation whose
-    /// input is actually on N nodes — getting the IO reduction of ParallelRead
-    /// without paying any exchange cost.
-    implementation_expression->properties.distribution = required_properties.distribution;
+    /// Output distribution matches what was propagated to the input.
+    /// Without this, the output stays at the default {1 node}, which allows
+    /// a parent requiring {1 node} to match an implementation whose input
+    /// is actually on N nodes - getting IO reduction without exchange cost.
+    if (propagate_distribution)
+        implementation_expression->properties.distribution = required_properties.distribution;
 
     memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
     return {implementation_expression};
