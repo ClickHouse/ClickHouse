@@ -150,7 +150,8 @@ public:
                     : is_not_monotonic;
             }
 
-            assert(checkAndGetDataType<DataTypeDateTime64>(type_ptr));
+            if (!checkAndGetDataType<DataTypeDateTime64>(type_ptr))
+                return is_not_monotonic;
 
             const auto & left_date_time = left.safeGet<DateTime64>();
             TransformDateTime64<typename Transform::FactorTransform> transformer_left(left_date_time.getScale());
