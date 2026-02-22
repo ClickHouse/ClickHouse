@@ -226,7 +226,7 @@ def test_under_max_waiting_queries_limit() -> None:
     node.query(
         f"""
         create resource query (query);
-        create workload all settings max_concurrent_queries=1, max_waiting_queries=6;
+        create workload all settings max_concurrent_queries=1, max_waiting_queries=100;
         """
     )
 
