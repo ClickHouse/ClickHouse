@@ -31,6 +31,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
@@ -1452,6 +1453,20 @@ bool applyDeterministicDagToColumn(
 
         if (!cast_without_nulls(input_column, input_type, dag_input_type))
             return false;
+    }
+
+    /// The DAG's ExpressionActions were built with the original types from the key expression,
+    /// which may include LowCardinality. Functions like CAST handle LowCardinality internally
+    /// (useDefaultImplementationForLowCardinalityColumns() = false) and expect to receive
+    /// LowCardinality columns. Since we stripped LowCardinality from the input above,
+    /// we need to wrap it back before executing the DAG.
+    if (dag.input_type->lowCardinality())
+    {
+        auto lc_type = std::make_shared<DataTypeLowCardinality>(input_type);
+        auto lc_column = lc_type->createColumn();
+        assert_cast<ColumnLowCardinality &>(*lc_column).insertRangeFromFullColumn(*input_column, 0, input_column->size());
+        input_column = std::move(lc_column);
+        input_type = std::move(lc_type);
     }
 
     Block block;
