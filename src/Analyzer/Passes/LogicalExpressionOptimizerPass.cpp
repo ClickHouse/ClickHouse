@@ -980,7 +980,7 @@ private:
 
                 if (collapse_to_false)
                 {
-                    auto false_node = std::make_shared<ConstantNode>(ConstantValue(Field(0u), function_node.getResultType()), node);
+                    auto false_node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
                     node = std::move(false_node);
                     return;
                 }
