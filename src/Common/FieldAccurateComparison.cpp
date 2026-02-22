@@ -4,6 +4,7 @@
 #include <Core/AccurateComparison.h>
 #include <base/demangle.h>
 #include <Common/FieldVisitors.h>
+#include <Common/NaNUtils.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
@@ -43,10 +44,23 @@ public:
         else
         {
             if constexpr (std::is_same_v<T, U>)
+            {
+                /// Match IColumn::compareAt behavior: NaN == NaN is true.
+                if constexpr (is_floating_point<T>)
+                {
+                    if (isNaN(l) && isNaN(r))
+                        return true;
+                }
                 return l == r;
+            }
 
             if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
+            {
+                /// Match IColumn::compareAt behavior: NaN == NaN is true.
+                if (isNaN(l) && isNaN(r))
+                    return true;
                 return accurate::equalsOp(l, r);
+            }
 
             /// TODO This is wrong (does not respect scale).
             if constexpr (is_decimal_field<T> && is_decimal_field<U>)
@@ -93,7 +107,10 @@ public:
         }
         else if constexpr (std::is_same_v<T, Null>)
         {
-            return l.isNegativeInfinity();
+            /// Match IColumn::compareAt behavior with nan_direction_hint=-1:
+            /// NULL sorts before non-NULL. Plain Null and negative-infinity Null
+            /// are both "less than" any non-Null value; only positive-infinity is not.
+            return !l.isPositiveInfinity();
         }
         else if constexpr (std::is_same_v<U, Null>)
         {
@@ -110,10 +127,29 @@ public:
         else
         {
             if constexpr (std::is_same_v<T, U>)
+            {
+                /// Match IColumn::compareAt behavior with nan_direction_hint=-1:
+                /// NaN sorts before everything.
+                if constexpr (is_floating_point<T>)
+                {
+                    bool l_nan = isNaN(l);
+                    bool r_nan = isNaN(r);
+                    if (l_nan || r_nan)
+                        return l_nan && !r_nan;
+                }
                 return l < r;
+            }
 
             if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
+            {
+                /// Match IColumn::compareAt behavior with nan_direction_hint=-1:
+                /// NaN sorts before everything.
+                bool l_nan = isNaN(l);
+                bool r_nan = isNaN(r);
+                if (l_nan || r_nan)
+                    return l_nan && !r_nan;
                 return accurate::lessOp(l, r);
+            }
 
             /// TODO This is wrong (does not respect scale).
             if constexpr (is_decimal_field<T> && is_decimal_field<U>)
