@@ -130,7 +130,32 @@ public:
 
     [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
-        return convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
+        Ptr converted = convertToFullColumnIfConst()
+            ->convertToFullColumnIfReplicated()
+            ->convertToFullColumnIfSparse()
+            ->convertToFullColumnIfLowCardinality();
+
+        Columns new_subcolumns;
+        bool any_changed = false;
+
+        converted->forEachSubcolumn([&](const WrappedPtr & subcolumn)
+        {
+            auto new_sub = subcolumn->convertToFullIfNeeded();
+            any_changed |= (new_sub.get() != subcolumn.get());
+            new_subcolumns.push_back(std::move(new_sub));
+        });
+
+        if (!any_changed)
+            return converted;
+
+        auto mutable_column = IColumn::mutate(std::move(converted));
+        size_t i = 0;
+        mutable_column->forEachMutableSubcolumn([&](WrappedPtr & subcolumn)
+        {
+            subcolumn = std::move(new_subcolumns[i++]);
+        });
+
+        return std::move(mutable_column);
     }
 
     /// Creates empty column with the same type.
