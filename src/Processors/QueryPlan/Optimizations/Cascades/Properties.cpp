@@ -27,9 +27,9 @@ bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionDescripti
     if (required.is_replicated != existing.is_replicated)
         return false;
 
-    /// Required distribution is satisfied if existing has all the columns from required
-    if (required.columns.size() > existing.columns.size())
+    if (required.columns.size() != existing.columns.size())
         return false;
+
     for (const auto & required_column : required.columns)
     {
         bool found = false;
