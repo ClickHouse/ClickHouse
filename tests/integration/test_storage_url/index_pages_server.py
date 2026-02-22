@@ -1,5 +1,5 @@
 import sys
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -20,6 +20,9 @@ DATA_PARTS = {
 
 
 class RequestHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
     def do_HEAD(self):
         parsed = urlparse(self.path)
         path = parsed.path

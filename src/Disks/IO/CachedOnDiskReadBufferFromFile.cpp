@@ -135,19 +135,14 @@ size_t CachedOnDiskReadBufferFromFile::getFileSize()
 
 std::optional<Field> CachedOnDiskReadBufferFromFile::getMetadata(const String & name) const
 {
-    if (implementation_buffer)
+    if (state && state->buf)
     {
-        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(implementation_buffer.get()))
+        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(state->buf.get()))
             return provider->getMetadata(name);
     }
-    if (remote_file_reader)
+    if (info.remote_file_reader)
     {
-        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(remote_file_reader.get()))
-            return provider->getMetadata(name);
-    }
-    if (cache_file_reader)
-    {
-        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(cache_file_reader.get()))
+        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(info.remote_file_reader.get()))
             return provider->getMetadata(name);
     }
     return std::nullopt;

@@ -41,7 +41,7 @@ bool WebObjectStorage::exists(const StoredObject & object) const
 
 bool WebObjectStorage::exists(const std::string & path) const
 {
-    LOG_TRACE(getLogger("DiskWeb"), "Checking existence of path: {}", path);
+    LOG_TRACE(log, "Checking existence of path: {}", path);
     return tryGetObjectMetadata(path, /* with_tags */ false).has_value();
 }
 

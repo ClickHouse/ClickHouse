@@ -1,6 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 
-#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -188,7 +188,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     re2::StringPiece match;
     bool used_href_extraction = false;
 
-    const re2::RE2 href_regex(R"((?i)(?:href|src)\s*=\s*['"]([^'"]+)['"])");
+    static const re2::RE2 href_regex(R"((?i)(?:href|src)\s*=\s*['"]([^'"]+)['"])");
     re2::StringPiece href_input(page_body);
     re2::StringPiece href_match;
     while (re2::RE2::FindAndConsume(&href_input, href_regex, &href_match))

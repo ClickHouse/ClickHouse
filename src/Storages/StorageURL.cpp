@@ -129,7 +129,7 @@ bool urlPathHasListableGlobs(const String & uri)
 
     const size_t path_end = uri.find_first_of("?#", path_start);
     const auto path = uri.substr(path_start, path_end - path_start);
-    return path.find('*') != String::npos;
+    return path.contains('*');
 }
 
 String getSampleURI(String uri, ContextPtr context)
@@ -1739,7 +1739,7 @@ void registerStorageURL(StorageFactory & factory)
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            auto config = StorageURL::getConfiguration(engine_args, context);
+            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
             const bool use_object_storage
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
@@ -1771,7 +1771,7 @@ void registerStorageURL(StorageFactory & factory)
 
             return std::make_shared<StorageObjectStorage>(
                 configuration,
-                configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE),
+                configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
                 context_copy,
                 args.table_id,
                 args.columns,

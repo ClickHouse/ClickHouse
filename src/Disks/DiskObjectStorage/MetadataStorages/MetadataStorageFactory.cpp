@@ -226,9 +226,14 @@ void registerMetadataStorageFromIndexPages(MetadataStorageFactory & factory)
         const std::string & /* name */,
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* config_prefix */,
-        ObjectStoragePtr object_storage) -> MetadataStoragePtr
+        const ClusterConfigurationPtr & cluster,
+        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
     {
-        return std::make_shared<MetadataStorageFromIndexPages>(assert_cast<const WebObjectStorage &>(*object_storage));
+        checkSingleLocation(cluster);
+
+        const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
+
+        return std::make_shared<MetadataStorageFromIndexPages>(assert_cast<const WebObjectStorage &>(*local_object_storage));
     });
 }
 

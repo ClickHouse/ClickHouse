@@ -19,14 +19,14 @@ struct WebStorageParsedArguments : private StorageParsedArguments
           " - url, format\n"
           " - url, format, structure\n"
           " - url, format, structure, compression_method\n"
-          "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+          "All signatures support optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     static constexpr auto max_number_of_arguments_without_structure = max_number_of_arguments_with_structure - 1;
     static constexpr auto signatures_without_structure
         = " - url\n"
           " - url, format\n"
           " - url, format, compression_method\n"
-          "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+          "All signatures support optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     static constexpr std::string getSignatures(bool with_structure = true)
     {
@@ -75,7 +75,7 @@ public:
 
     void check(ContextPtr context) override;
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,

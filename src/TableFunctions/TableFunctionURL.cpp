@@ -134,13 +134,13 @@ StoragePtr TableFunctionURL::getStorage(
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
 
         ASTs engine_args;
-        engine_args.emplace_back(ASTPtr(new ASTLiteral(source)));
-        engine_args.emplace_back(ASTPtr(new ASTLiteral(format_)));
+        engine_args.emplace_back(make_intrusive<ASTLiteral>(source));
+        engine_args.emplace_back(make_intrusive<ASTLiteral>(format_));
 
         if (structure != "auto" || compression_method_ != "auto")
-            engine_args.emplace_back(ASTPtr(new ASTLiteral(structure)));
+            engine_args.emplace_back(make_intrusive<ASTLiteral>(structure));
         if (compression_method_ != "auto")
-            engine_args.emplace_back(ASTPtr(new ASTLiteral(compression_method_)));
+            engine_args.emplace_back(make_intrusive<ASTLiteral>(compression_method_));
 
         if (!configuration.headers.empty())
         {
@@ -149,25 +149,24 @@ StoragePtr TableFunctionURL::getStorage(
             for (const auto & [header_name, header_value] : configuration.headers)
             {
                 ASTs equals_args;
-                equals_args.emplace_back(ASTPtr(new ASTLiteral(header_name)));
-                equals_args.emplace_back(ASTPtr(new ASTLiteral(header_value)));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
                 header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
             }
 
-            ASTPtr headers_list = ASTPtr(new ASTExpressionList());
+            auto headers_list = make_intrusive<ASTExpressionList>();
             headers_list->children = std::move(header_equals);
 
-            ASTPtr headers_func = ASTPtr(new ASTFunction());
-            auto * headers_func_node = headers_func->as<ASTFunction>();
-            headers_func_node->name = "headers";
-            headers_func_node->arguments = headers_list;
-            headers_func_node->children.push_back(headers_func_node->arguments);
+            auto headers_func = make_intrusive<ASTFunction>();
+            headers_func->name = "headers";
+            headers_func->arguments = headers_list;
+            headers_func->children.push_back(headers_func->arguments);
             engine_args.emplace_back(std::move(headers_func));
         }
 
         StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
 
-        ObjectStoragePtr object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true);
+        ObjectStoragePtr object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
 
         return std::make_shared<StorageObjectStorage>(
             object_storage_configuration,

@@ -95,7 +95,7 @@ void StorageWebConfiguration::check(ContextPtr context)
     context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
 }
 
-ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context, bool) /// NOLINT
+ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context, bool, CredentialsConfigurationCallback) /// NOLINT
 {
     assertInitialized();
     return std::make_shared<WebObjectStorage>(base_url, query_fragment, context, headers_from_ast);
@@ -113,16 +113,16 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
             ASTs format_equal_func_args;
-            format_equal_func_args.emplace_back(ASTPtr(new ASTIdentifier("format")));
-            format_equal_func_args.emplace_back(ASTPtr(new ASTLiteral(format_)));
+            format_equal_func_args.emplace_back(make_intrusive<ASTIdentifier>("format"));
+            format_equal_func_args.emplace_back(make_intrusive<ASTLiteral>(format_));
             auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
         if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
         {
             ASTs structure_equal_func_args;
-            structure_equal_func_args.emplace_back(ASTPtr(new ASTIdentifier("structure")));
-            structure_equal_func_args.emplace_back(ASTPtr(new ASTLiteral(structure_)));
+            structure_equal_func_args.emplace_back(make_intrusive<ASTIdentifier>("structure"));
+            structure_equal_func_args.emplace_back(make_intrusive<ASTLiteral>(structure_));
             auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
             args.push_back(structure_equal_func);
         }
@@ -142,8 +142,8 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 
     size_t count = args.size();
-    ASTPtr format_literal = ASTPtr(new ASTLiteral(format_));
-    ASTPtr structure_literal = ASTPtr(new ASTLiteral(structure_));
+    ASTPtr format_literal = make_intrusive<ASTLiteral>(format_);
+    ASTPtr structure_literal = make_intrusive<ASTLiteral>(structure_);
 
     if (count == 1)
     {
