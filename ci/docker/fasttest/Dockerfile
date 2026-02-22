@@ -1,4 +1,5 @@
 # docker build -t clickhouse/fasttest .
+# rebuilt in https://github.com/ClickHouse/ClickHouse/pull/96564
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
