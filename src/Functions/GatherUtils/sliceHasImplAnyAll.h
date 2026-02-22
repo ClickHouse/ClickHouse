@@ -413,6 +413,148 @@ bool sliceHasImplAnyAllImplInt16(
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
 }
 
+// SSE Int8, UInt8 specialization
+// Int8 uses SSE rather than AVX2 because with 16 elements per register we need 16 shuffle rotations,
+// which already covers all combinations. AVX2 would need cross-lane shuffles for 32 elements,
+// making it more complex without clear benefit.
+template<typename IntType>
+requires (std::is_same_v<IntType, Int8> || std::is_same_v<IntType, UInt8>)
+bool sliceHasImplAnyAllImplInt8(
+    const NumericArraySlice<IntType> & first,
+    const NumericArraySlice<IntType> & second,
+    const UInt8 * first_null_map,
+    const UInt8 * second_null_map)
+{
+    if (second.size == 0)
+        return true;
+
+    if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
+        return false;
+
+    const bool has_first_null_map = first_null_map != nullptr;
+    const bool has_second_null_map = second_null_map != nullptr;
+
+    size_t j = 0;
+    int has_mask = 1;
+    static constexpr int8_t full = -1;
+    static constexpr int8_t none = 0;
+    const __m128i zeros = _mm_setzero_si128();
+
+    if (second.size > 15 && first.size > 15)
+    {
+        for (; j < second.size - 15 && has_mask; j += 16)
+        {
+            has_mask = 0;
+            const __m128i second_data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(second.data + j));
+            __m128i bitmask = has_second_null_map ?
+                _mm_set_epi8(
+                    (second_null_map[j + 15]) ? full : none, (second_null_map[j + 14]) ? full : none,
+                    (second_null_map[j + 13]) ? full : none, (second_null_map[j + 12]) ? full : none,
+                    (second_null_map[j + 11]) ? full : none, (second_null_map[j + 10]) ? full : none,
+                    (second_null_map[j + 9]) ? full : none, (second_null_map[j + 8]) ? full : none,
+                    (second_null_map[j + 7]) ? full : none, (second_null_map[j + 6]) ? full : none,
+                    (second_null_map[j + 5]) ? full : none, (second_null_map[j + 4]) ? full : none,
+                    (second_null_map[j + 3]) ? full : none, (second_null_map[j + 2]) ? full : none,
+                    (second_null_map[j + 1]) ? full : none, (second_null_map[j]) ? full : none)
+                : zeros;
+
+            size_t i = 0;
+            for (; i < first.size - 15 && !has_mask; has_mask = _mm_test_all_ones(bitmask), i += 16)
+            {
+                const __m128i first_data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(first.data + i));
+                const __m128i first_nm_mask = has_first_null_map ?
+                    _mm_loadu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))
+                    : zeros;
+                bitmask =
+                    _mm_or_si128(
+                        _mm_or_si128(
+                            _mm_or_si128(
+                                _mm_or_si128(
+                                    _mm_or_si128(
+                                        _mm_andnot_si128(
+                                            first_nm_mask,
+                                            _mm_cmpeq_epi8(second_data, first_data)),
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,15)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,15))))),
+                                    _mm_or_si128(
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(13,12,11,10,9,8,7,6,5,4,3,2,1,0,15,14)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(13,12,11,10,9,8,7,6,5,4,3,2,1,0,15,14)))),
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(12,11,10,9,8,7,6,5,4,3,2,1,0,15,14,13)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(12,11,10,9,8,7,6,5,4,3,2,1,0,15,14,13)))))
+                                ),
+                                _mm_or_si128(
+                                    _mm_or_si128(
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(11,10,9,8,7,6,5,4,3,2,1,0,15,14,13,12)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(11,10,9,8,7,6,5,4,3,2,1,0,15,14,13,12)))),
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(10,9,8,7,6,5,4,3,2,1,0,15,14,13,12,11)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(10,9,8,7,6,5,4,3,2,1,0,15,14,13,12,11))))),
+                                    _mm_or_si128(
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(9,8,7,6,5,4,3,2,1,0,15,14,13,12,11,10)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(9,8,7,6,5,4,3,2,1,0,15,14,13,12,11,10)))),
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(8,7,6,5,4,3,2,1,0,15,14,13,12,11,10,9)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(8,7,6,5,4,3,2,1,0,15,14,13,12,11,10,9))))))),
+                            _mm_or_si128(
+                                _mm_or_si128(
+                                    _mm_or_si128(
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(7,6,5,4,3,2,1,0,15,14,13,12,11,10,9,8)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(7,6,5,4,3,2,1,0,15,14,13,12,11,10,9,8)))),
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(6,5,4,3,2,1,0,15,14,13,12,11,10,9,8,7)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(6,5,4,3,2,1,0,15,14,13,12,11,10,9,8,7))))),
+                                    _mm_or_si128(
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(5,4,3,2,1,0,15,14,13,12,11,10,9,8,7,6)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(5,4,3,2,1,0,15,14,13,12,11,10,9,8,7,6)))),
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(4,3,2,1,0,15,14,13,12,11,10,9,8,7,6,5)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(4,3,2,1,0,15,14,13,12,11,10,9,8,7,6,5)))))),
+                                _mm_or_si128(
+                                    _mm_or_si128(
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(3,2,1,0,15,14,13,12,11,10,9,8,7,6,5,4)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(3,2,1,0,15,14,13,12,11,10,9,8,7,6,5,4)))),
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(2,1,0,15,14,13,12,11,10,9,8,7,6,5,4,3)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(2,1,0,15,14,13,12,11,10,9,8,7,6,5,4,3))))),
+                                    _mm_or_si128(
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(1,0,15,14,13,12,11,10,9,8,7,6,5,4,3,2)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(1,0,15,14,13,12,11,10,9,8,7,6,5,4,3,2)))),
+                                        _mm_andnot_si128(
+                                            _mm_shuffle_epi8(first_nm_mask, _mm_set_epi8(0,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1)),
+                                            _mm_cmpeq_epi8(second_data, _mm_shuffle_epi8(first_data, _mm_set_epi8(0,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1)))))))),
+                        bitmask);
+            }
+
+            if (i < first.size)
+            {
+                for (; i < first.size && !has_mask; ++i)
+                {
+                    if (has_first_null_map && first_null_map[i])
+                        continue;
+
+                    __m128i v_i = _mm_set1_epi8(first.data[i]);
+                    bitmask = _mm_or_si128(bitmask, _mm_cmpeq_epi8(second_data, v_i));
+                    has_mask = _mm_test_all_ones(bitmask);
+                }
+            }
+        }
+    }
+
+    if (!has_mask && second.size > 15)
+        return false;
+
+    return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
+}
+
 #endif
 
 template <
@@ -479,7 +621,11 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const
     {
         if (isArchSupported(TargetArch::x86_64_v3))
         {
-            if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>)
+            if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int8>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt8>>)
+            {
+                return sliceHasImplAnyAllImplInt8(first, second, first_null_map, second_null_map);
+            }
+            else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>)
             {
                 return sliceHasImplAnyAllImplInt16(first, second, first_null_map, second_null_map);
             }
