@@ -102,7 +102,7 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
-    void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { column_holder->getExtremes(min, max, start, end); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return column_holder->isFixedAndContiguous(); }
     size_t sizeOfValueIfFixed() const override { return column_holder->sizeOfValueIfFixed(); }

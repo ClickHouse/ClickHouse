@@ -255,7 +255,6 @@ std::unordered_map<String, CHSetting> performanceSettings
             },
             {},
             false)},
-       {"text_index_use_bloom_filter", trueOrFalseSetting},
        {"use_concurrency_control", trueOrFalseSetting},
        {"use_iceberg_partition_pruning", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
