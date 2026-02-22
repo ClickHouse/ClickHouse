@@ -88,7 +88,8 @@ void fillBufferWithRandomBytes(char * __restrict data, size_t size, pcg64 & rng)
 
 void fillBufferWithRandomPrintableASCIIBytes(char * __restrict data, size_t size, pcg64 & rng)
 {
-    for (size_t pos = 0; pos < size; pos += 4)    /// We have padding in column buffers that we can overwrite.
+    size_t pos = 0;
+    for (; pos + 4 <= size; pos += 4)
     {
         UInt64 rand = rng();
 
@@ -106,6 +107,16 @@ void fillBufferWithRandomPrintableASCIIBytes(char * __restrict data, size_t size
         data[pos + 3] = static_cast<char>(32 + ((rand4 * 95) >> 16));
 
         /// NOTE gcc failed to vectorize this code (aliasing of char?)
+    }
+
+    if (pos < size)
+    {
+        UInt64 rand = rng();
+        for (; pos < size; ++pos)
+        {
+            data[pos] = static_cast<char>(32 + ((static_cast<UInt16>(rand) * 95) >> 16));
+            rand >>= 16;
+        }
     }
 }
 
@@ -250,7 +261,8 @@ void appendFuzzyRandomString(ColumnString::Chars & out, size_t max_length, pcg64
 
         size = rng() % (max_length + 1);
         /// Generate short size more often.
-        size &= (1ul << (rng() % (65 - getLeadingZeroBits(max_length)))) - 1;
+        UInt64 shift = rng() % (65 - getLeadingZeroBits(max_length));
+        size &= (shift < 64 ? (1ull << shift) : 0) - 1;
 
         out.resize(initial_size + size);
         if (size == 0)

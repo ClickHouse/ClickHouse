@@ -351,9 +351,9 @@ void SignalListener::run()
 
                 crashing = terminate_requested > 1;
                 if (crashing)
-                    LOG_INFO(log, "Received termination signal ({})", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
-                else
                     LOG_INFO(log, "Received second termination signal ({}). Immediately terminate.", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
+                else
+                    LOG_INFO(log, "Received termination signal ({})", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
 
                 if (terminate_request_callback)
                     terminate_request_callback(sig, crashing);

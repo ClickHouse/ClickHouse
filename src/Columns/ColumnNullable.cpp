@@ -638,7 +638,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
             ssize_t read_idx = last - 1;
             ssize_t write_idx = last - 1;
-            ssize_t begin_idx = first - 1;
+            ssize_t begin_idx = static_cast<ssize_t>(first) - 1;
 
             while (read_idx > begin_idx && !isNullAt(res[read_idx]))
             {

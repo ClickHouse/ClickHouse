@@ -642,7 +642,7 @@ public:
         {
             if (problems[p].empty() && !options.ignore_problem.at(p))
             {
-                UInt64 bit = 1ul << function_idx;
+                UInt64 bit = 1ull << static_cast<size_t>(p);
                 UInt64 m = reported_problems.at(function_idx).fetch_or(bit);
                 if (!(m & bit))
                     LOG_ERROR(logger, "{}: {}\n", problemInfo(Problem(p)).first, error);

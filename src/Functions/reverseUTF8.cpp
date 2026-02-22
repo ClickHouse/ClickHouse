@@ -61,16 +61,22 @@ struct ReverseUTF8Impl
                 }
                 else if (data_ptr[j] < 0xE0)
                 {
+                    if (j + 2 > offsets[i])
+                        throw Exception(ErrorCodes::UNICODE_ERROR, "String ends in the middle of a UTF8 character");
                     memcpy(&res_data_ptr[ssize_t(offsets[i] + prev_offset - 1 - j - 1)], &data_ptr[j], 2);
                     j += 2;
                 }
                 else if (data_ptr[j] < 0xF0)
                 {
+                    if (j + 3 > offsets[i])
+                        throw Exception(ErrorCodes::UNICODE_ERROR, "String ends in the middle of a UTF8 character");
                     memcpy(&res_data_ptr[ssize_t(offsets[i] + prev_offset - 1 - j - 2)], &data_ptr[j], 3);
                     j += 3;
                 }
                 else
                 {
+                    if (j + 4 > offsets[i])
+                        throw Exception(ErrorCodes::UNICODE_ERROR, "String ends in the middle of a UTF8 character");
                     memcpy(&res_data_ptr[ssize_t(offsets[i] + prev_offset - 1 - j - 3)], &data_ptr[j], 4);
                     j += 4;
                 }

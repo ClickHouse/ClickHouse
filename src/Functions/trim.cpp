@@ -12,7 +12,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -66,7 +65,7 @@ public:
             }
             else
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column type of argument 2 of function {}: {}", getName(), arguments[1].column->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column type of argument 2 of function {}: {}", getName(), arguments[1].column->getName());
             }
 
             /// Throw a nicer exception type than SearchSymbols constructor.
