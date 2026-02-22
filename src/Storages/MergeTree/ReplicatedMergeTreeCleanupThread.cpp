@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/ServerSettings.h>
 #include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
@@ -191,6 +192,10 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
     if (storage.is_leader)
     {
         cleaned_logs = clearOldLogs();
+
+        size_t deduplication_blocks = clearOldBlocks("deduplication_hashes", (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds],
+                                   (*storage_settings)[MergeTreeSetting::replicated_deduplication_window], cached_stats_for_insert_deduplication_hashes);
+
         size_t normal_blocks = clearOldBlocks("blocks", (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds],
                                    (*storage_settings)[MergeTreeSetting::replicated_deduplication_window], cached_block_stats_for_sync_inserts);
 
@@ -202,7 +207,7 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         /// Many async blocks are transformed into one ordinary block
         Float32 async_blocks_per_block = static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window]) /
             static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] + 1);
-        cleaned_blocks = (static_cast<Float32>(normal_blocks) + static_cast<Float32>(async_blocks) * async_blocks_per_block) / 2;
+        cleaned_blocks = (static_cast<Float32>(deduplication_blocks) + static_cast<Float32>(normal_blocks) + static_cast<Float32>(async_blocks) * async_blocks_per_block) / 2;
 
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();

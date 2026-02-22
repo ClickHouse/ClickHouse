@@ -1,8 +1,6 @@
 #pragma once
 
 #include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/PODArray.h>
 #include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
@@ -15,11 +13,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /** A column of values of "fixed-length string" type.
   * If you insert a smaller string, it will be padded with zero bytes.
@@ -95,12 +88,7 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override
-    {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
-        return std::make_shared<DataTypeString>();
-    }
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
 
     std::string_view getDataAt(size_t index) const override
     {
@@ -140,7 +128,7 @@ public:
     void popBack(size_t elems) override
     {
         if (elems > size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+            throwCannotPopBack(n, getName(), size());
 
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
@@ -217,7 +205,7 @@ public:
         chars.resize(n * size);
     }
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {

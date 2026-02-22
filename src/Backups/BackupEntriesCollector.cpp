@@ -29,6 +29,10 @@
 
 #include <filesystem>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -433,6 +437,11 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 {
     checkIsQueryCancelled();
 
+#if CLICKHOUSE_CLOUD
+    if (database_name == SharedDatabaseCatalog::INTERNAL_DATABASE_TO_DROP)
+        return;
+#endif
+
     auto it = database_infos.find(database_name);
     if (it == database_infos.end())
     {
@@ -801,11 +810,13 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
         return;
 
     ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
-    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
+    /// Using a lambda with references is fine, since it only uses `this` and `it.first` which is part of table_infos (`this`)
+    /// So they will outlive runner even if an exception is thrown
+    for (const auto & it : table_infos)
     {
         runner.enqueueAndKeepTrack([&]()
         {
-            makeBackupEntriesForTableData(table_name);
+            makeBackupEntriesForTableData(it.first);
         });
     }
     runner.waitForAllToFinishAndRethrowFirstError();

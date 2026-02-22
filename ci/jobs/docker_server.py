@@ -264,7 +264,6 @@ def build_and_push_image(
             "Merging is available only on push, separate %s images are created",
             f"{image.name}:{tag}-$arch",
         )
-
     return result
 
 

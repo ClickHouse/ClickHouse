@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/IThrottler.h>
@@ -10,7 +11,6 @@
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
-#include <Core/ParallelReplicasMode.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -19,15 +19,12 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/ColumnsDescription.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"
 
@@ -42,6 +39,12 @@ namespace Poco::Net
 class IPAddress;
 class SocketAddress;
 }
+
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -63,6 +66,7 @@ class ASTSelectQuery;
 
 class SystemLogs;
 
+class ColumnsDescription;
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
@@ -286,12 +290,22 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+class SystemAllocatedMemoryHolder;
+using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
+
 /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
 /// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
 /// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
+
+class QueryMetadataCache;
+using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
+using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
+
+using DatabasePtr = std::shared_ptr<IDatabase>;
+using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -367,7 +381,7 @@ protected:
     {
         StorageID table = StorageID::createEmpty();
         std::optional<Names> column_names;
-        std::optional<ColumnsDescription> columns_description;
+        std::shared_ptr<ColumnsDescription> columns_description;
     };
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
@@ -560,6 +574,29 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
+    struct StorageCache
+    {
+        static constexpr size_t NumShards = 6;
+
+        struct Shard
+        {
+            std::mutex mutex;
+            std::unordered_set<
+                StorageID,
+                StorageID::DatabaseAndTableNameHash,
+                StorageID::DatabaseAndTableNameEqual
+            > set;
+        };
+
+        std::array<Shard, NumShards> shards;
+
+        static size_t shardIndex(const StorageID & id)
+        {
+            return StorageID::DatabaseAndTableNameHash{}(id) & (NumShards - 1);
+        }
+    };
+
+    mutable StorageCache storage_cache;
     /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
     /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
@@ -664,6 +701,10 @@ private:
     Context();
     Context(const Context &);
 
+#if USE_NURAFT
+    void setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const;
+#endif
+
 public:
     /// Create initial Context with ContextShared and etc.
     static ContextMutablePtr createGlobal(ContextSharedPart * shared_part);
@@ -682,6 +723,8 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
+
+    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const;
 
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
@@ -979,8 +1022,15 @@ public:
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
-    /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
-    StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
+    /// Overload for the analyzer. Structure inference is performed in QueryAnalysisPass.
+    /// The execution_context is used for the actual table function execution
+    /// (to respect per-subquery SETTINGS), while `this` context is used for caching.
+    /// The cache key incorporates a hash of the settings changes so that identical table functions
+    /// with the same settings are still reused from cache.
+    StoragePtr executeTableFunction(
+        const ASTPtr & table_expression,
+        const TableFunctionPtr & table_function_ptr,
+        const ContextPtr & execution_context);
 
     StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
 
@@ -994,6 +1044,9 @@ public:
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
+    /// Set current_database without validating that database exists.
+    /// Use during bootstrap/restore scenarios where database may not be loaded yet.
+    void setCurrentDatabaseUnchecked(const String & name);
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
@@ -1004,11 +1057,11 @@ public:
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
-    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description.has_value(); }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::optional<ColumnsDescription> column_description = std::nullopt);
+    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description != nullptr; }
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::shared_ptr<ColumnsDescription> column_description = nullptr);
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
-    const std::optional<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
+    const std::shared_ptr<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -1259,7 +1312,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
-    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -1298,6 +1351,14 @@ public:
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
+
+    /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
+    SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;
+    void allowSystemAllocateMemory(bool allow);
+
+    /// See users_to_ignore_early_memory_limit_check in ServerSettings
+    std::shared_ptr<std::unordered_set<std::string>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
+    void setUsersToIgnoreEarlyMemoryLimitCheck(std::string users);
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1450,7 +1511,7 @@ public:
 
     using Dashboards = std::vector<std::map<String, String>>;
     std::optional<Dashboards> getDashboards() const;
-    void setDashboardsConfig(const ConfigurationPtr & config);
+    void setDashboardsConfig(const Poco::Util::AbstractConfiguration & config);
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

@@ -21,7 +21,7 @@ uint64_t getTimestampMillisecond()
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
@@ -88,8 +88,8 @@ public:
         selector.registerImplementation<TargetArch::Default, Parent>();
 
 #if USE_MULTITARGET_CODE
-        using ParentAVX2 = TargetSpecific::AVX2::FunctionGenerateUUIDv7Base;
-        selector.registerImplementation<TargetArch::AVX2, ParentAVX2>();
+        using Parentv3 = TargetSpecific::x86_64_v3::FunctionGenerateUUIDv7Base;
+        selector.registerImplementation<TargetArch::x86_64_v3, Parentv3>();
 #endif
     }
 

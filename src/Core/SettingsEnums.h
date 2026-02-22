@@ -428,6 +428,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     GLUE,
     ICEBERG_HIVE,
     ICEBERG_ONELAKE,
+    ICEBERG_BIGLAKE,
     PAIMON_REST,
 };
 
@@ -437,6 +438,8 @@ enum class FileCachePolicy : uint8_t
 {
     LRU,
     SLRU,
+    SLRU_OVERCOMMIT,
+    LRU_OVERCOMMIT,
 };
 
 DECLARE_SETTING_ENUM(FileCachePolicy)
@@ -529,4 +532,12 @@ enum class DeduplicateInsertMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateInsertMode)
 
+enum class InsertDeduplicationVersions : uint8_t
+{
+    OLD_SEPARATE_HASHES = 0,
+    COMPATIBLE_DOUBLE_HASHES,
+    NEW_UNIFIED_HASHES,
+};
+
+DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
 }
