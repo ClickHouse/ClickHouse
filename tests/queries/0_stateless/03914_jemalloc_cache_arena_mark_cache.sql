@@ -14,7 +14,7 @@ SETTINGS min_bytes_for_wide_part = 0, prewarm_mark_cache = 0;
 CREATE TABLE t_cache_arena_pactive (stage String, pactive Float64)
 ENGINE = Memory;
 
-INSERT INTO t_cache_arena_marks SELECT number, toString(number), number * 1.1 FROM numbers(10000);
+INSERT INTO t_cache_arena_marks SELECT number, toString(number), number * 1.1 FROM numbers(5000000);
 
 SYSTEM CLEAR MARK CACHE;
 
