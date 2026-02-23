@@ -50,25 +50,27 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
     {
         if (required_properties.distribution.is_replicated)
         {
-            /// BroadcastExchangeStep only supports a single source shard (1->N).
-            /// When the source is already on multiple nodes, skip the broadcast
-            /// enforcer entirely — the optimizer should use Shuffle join instead.
-            if (expression->properties.distribution.node_count > 1)
-                return {};
+            /// BroadcastExchangeStep only supports single-source input (1->N).
+            /// The input always requires {1 node}; the optimizer will recursively
+            /// create a GatherExchange to satisfy this when the source has multiple nodes.
+            ExpressionProperties input_required;
+            input_required.distribution.node_count = 1;
 
             auto enforcer_expr = std::make_shared<GroupExpression>(
                 std::make_unique<BroadcastExchangeStep>(
                     input_header,
                     required_properties.distribution.node_count));
             enforcer_expr->group_id = expression->group_id;
-            enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = expression->properties});
+            enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
             enforcer_expr->properties.distribution = required_properties.distribution;
 
             enforcer_expr->setApplied(*this, required_properties);
             memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
             result.push_back(enforcer_expr);
         }
-        else if (required_properties.distribution.node_count == 1 && expression->properties.distribution.node_count > 1)
+        else if (required_properties.distribution.node_count == 1
+                 && expression->properties.distribution.node_count > 1
+                 && !expression->properties.distribution.is_replicated)
         {
             /// Regular gather: N nodes -> 1 node, sorting NOT preserved.
             {
