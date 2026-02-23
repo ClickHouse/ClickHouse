@@ -109,13 +109,14 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
 
 def test_defining_columns_with_special_character(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = "demo_event" + "_" + get_uuid_str()
     spark = started_cluster_iceberg_with_spark.spark_session
 
     spark.conf.set("spark.sql.iceberg.commit.sync", "true")
 
     spark.sql(
         f"""
-            CREATE TABLE demo_events 
+            CREATE TABLE {table_name} 
             ( 
             `#event` STRING NOT NULL ,
             `#data_lifecycle` STRING NOT NULL, 
@@ -131,4 +132,4 @@ def test_defining_columns_with_special_character(started_cluster_iceberg_with_sp
         """
     )
 
-    instance.query(f"SELECT * FROM icebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/demo_events', url = 'http://minio1:9001/{started_cluster_iceberg.minio_bucket}/')")
+    instance.query(f"SELECT * FROM icebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/demo_events', url = 'http://minio1:9001/{started_cluster_iceberg_with_spark.minio_bucket}/')")
