@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-parallel, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET optimize_functions_to_subcolumns = 1;
+
 -- { echoOn }
 
 DROP TABLE IF EXISTS table_basic;
