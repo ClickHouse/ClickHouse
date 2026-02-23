@@ -1,4 +1,4 @@
 1
-Filter column: __text_index_idx_equals_888efda921680e32e66fe44752bfa9ba (removed)
+Filter column: _CAST(__text_index_idx_equals_888efda921680e32e66fe44752bfa9ba, \'LowCardinality(UInt8)\'_String) (removed)
 1
-Filter column: __text_index_idx_hasToken_3acc763368028663e66c262e993962ad (removed)
+Filter column: _CAST(__text_index_idx_hasToken_3acc763368028663e66c262e993962ad, \'LowCardinality(UInt8)\'_String) (removed)

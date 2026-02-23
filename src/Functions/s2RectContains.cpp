@@ -137,7 +137,22 @@ public:
 
 REGISTER_FUNCTION(S2RectContains)
 {
-    factory.registerFunction<FunctionS2RectContains>();
+    FunctionDocumentation::Description description = R"(
+Determines if an S2 latitude-longitude rectangle contains the given S2 point. The rectangle is represented by a pair of S2 cell identifiers for its low and high corners.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2RectContains(s2RectLow, s2RectHigh, s2Point)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2RectLow", "S2 cell identifier of the low vertex of the rectangle.", {"UInt64"}},
+        {"s2RectHigh", "S2 cell identifier of the high vertex of the rectangle.", {"UInt64"}},
+        {"s2Point", "S2 cell identifier of the point to test.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the rectangle contains the point and 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectContains(5765131099823669248, 5765131099956887552, 5765131099880128512)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2RectContains>(documentation);
 }
 
 

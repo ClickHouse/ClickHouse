@@ -1,7 +1,5 @@
 -- Test that the text index works correctly when the number of rows in a part is smaller than the index_granularity.
 
-SET enable_full_text_index = 1;
-
 SET use_skip_indexes_on_data_read=1;
 
 DROP TABLE IF EXISTS tab;

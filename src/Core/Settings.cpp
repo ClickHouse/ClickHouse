@@ -234,6 +234,11 @@ This may reduce memory usage in case of row with many matches in right table, bu
 Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
 The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
 )", 0) \
+    DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
+Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
+This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
+When disabled, non-joined rows are processed by a single thread.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -1471,12 +1476,10 @@ Enables usage of the thread pool for parallel prefixes reading in Wide parts in 
 Improve FINAL queries by avoiding merges across different partitions.
 
 When enabled, during SELECT FINAL queries, parts from different partitions will not be merged together. Instead, merging will only occur within each partition separately. This can significantly improve query performance when working with partitioned tables.
-
-If not explicitly set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
-
+)", 0) \
+    DECLARE(Bool, enable_automatic_decision_for_merging_across_partitions_for_final, true, R"(
+If set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
 This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
-
-**Default value:** `false` (but may be automatically enabled based on table structure if not set explicitly)
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
@@ -1484,7 +1487,7 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
     DECLARE(Bool, split_intersecting_parts_ranges_into_layers_final, true, R"(
 Split intersecting parts ranges into layers during FINAL optimization
 )", 0) \
-    DECLARE(Bool, apply_row_policy_after_final, false, R"(
+    DECLARE(Bool, apply_row_policy_after_final, true, R"(
 When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
 When disabled, row policies are applied before FINAL, which can cause different results when the policy
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
@@ -1680,9 +1683,6 @@ ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly
 
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
-)", 0) \
-    DECLARE(Bool, text_index_use_bloom_filter, true, R"(
-For testing purposes, enables or disables usage of bloom filter in text index.
 )", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
@@ -1967,7 +1967,7 @@ Possible values:
 ```
 )", 0) \
 \
-    DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE, R"(
+    DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::ENABLE, R"(
 Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
 The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
 That setting has three possible values:
@@ -2509,6 +2509,9 @@ Possible values:
 - 1 — Throwing an exception is enabled.
 - 0 — Throwing an exception is disabled.
 )", 0) \
+    DECLARE(Bool, optimize_dry_run_check_part, true, R"(
+When enabled, `OPTIMIZE ... DRY RUN` validates the resulting merged part using `checkDataPart`. If the check fails, an exception is thrown.
+)", 0) \
     DECLARE(Bool, use_index_for_in_with_subqueries, true, R"(
 Try using an index if there is a subquery or a table expression on the right side of the IN operator.
 )", 0) \
@@ -2583,6 +2586,15 @@ Possible values:
 - 0 — The trace for all executed queries is disabled (if no parent trace context is supplied).
 - Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
 - 1 — The trace for all executed queries is enabled.
+)", 0) \
+    DECLARE(FloatAuto, opentelemetry_start_keeper_trace_probability, Field("auto"), R"(
+Probability to start a trace for ZooKeeper request - whether there is a parent trace or not.
+
+Possible values:
+- 'auto' - Equals the opentelemetry_start_trace_probability setting
+- 0 — Tracing is disabled
+- 0 to 1 — Probability (e.g., 1.0 = always enable)
+
 )", 0) \
     DECLARE(Bool, opentelemetry_trace_processors, false, R"(
 Collect OpenTelemetry spans for processors.
@@ -3112,6 +3124,21 @@ but the query will fail.
     DECLARE(UInt64, max_expanded_ast_elements, 500000, R"(
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
 )", 0) \
+    \
+    DECLARE(Float, ast_fuzzer_runs, 0, R"(
+Enables the server-side AST fuzzer that runs randomized queries after each normal query, discarding their results.
+- 0: disabled (default).
+- A value between 0 and 1 (exclusive): probability of running a single fuzzed query.
+- A value >= 1: the number of fuzzed queries to run per normal query.
+
+The fuzzer accumulates AST fragments from all queries across all sessions, producing increasingly interesting mutations over time. Fuzzed queries that fail are silently discarded; results are never returned to the client.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, ast_fuzzer_any_query, false, R"(
+When false (default), the server-side AST fuzzer (controlled by `ast_fuzzer_runs`) only fuzzes read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). When true, all query types including DDL and INSERT are fuzzed.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_fuzz_query_functions, false, R"(
+Enables the `fuzzQuery` function that applies random AST mutations to a query string.
+)", EXPERIMENTAL) \
     \
     DECLARE(UInt64, readonly, 0, R"(
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
@@ -4456,7 +4483,7 @@ Normalize function names to their canonical names
     DECLARE(Bool, enable_early_constant_folding, true, R"(
 Enable query optimization where we analyze function and subqueries results and rewrite query if there are constants there
 )", 0) \
-    DECLARE(Bool, deduplicate_blocks_in_dependent_materialized_views, false, R"(
+    DECLARE(Bool, deduplicate_blocks_in_dependent_materialized_views, true, R"(
 Enables or disables the deduplication check for materialized views that receive data from Replicated\* tables.
 
 Possible values:
@@ -4785,7 +4812,7 @@ Propagate WITH statements to UNION queries and all subqueries
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
 If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
 
-Note that this is a compatibility setting for new analyzer to allow running some invalid queries that old analyzer could execute.
+Note that this is a compatibility setting for the analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0) \
     DECLARE(Bool, aggregate_functions_null_for_empty, false, R"(
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -5158,14 +5185,6 @@ Whether to delete all iceberg files on drop or not.
 )", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, use_parquet_metadata_cache, true, R"(
-If turned on, parquet format may utilize the parquet metadata cache.
 
 Possible values:
 
@@ -6166,6 +6185,9 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
     DECLARE(Bool, check_referential_table_dependencies, false, R"(
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
 )", 0) \
+    DECLARE(Bool, check_named_collection_dependencies, true, R"(
+Check that DROP NAMED COLLECTION will not break tables that depend on it
+)", 0) \
     \
     DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(
 Allow unrestricted (without condition on path) reads from system.zookeeper table, can be handy, but is not safe for zookeeper
@@ -7013,7 +7035,7 @@ Uses replicas from cluster_for_parallel_replicas.
 
 - [distributed_index_analysis_for_non_shared_merge_tree](#distributed_index_analysis_for_non_shared_merge_tree)
 - [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
-- [distributed_index_analysis_min_indexes_size_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_size_to_activate)
+- [distributed_index_analysis_min_indexes_bytes_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_bytes_to_activate)
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
@@ -7298,6 +7320,15 @@ See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
 Collect jemalloc allocation and deallocation samples in trace log.
     )", 0) \
+    DECLARE(JemallocProfileFormat, jemalloc_profile_text_output_format, JemallocProfileFormat::Collapsed, R"(
+Output format for jemalloc heap profile in system.jemalloc_profile_text table. Can be: 'raw' (raw profile), 'symbolized' (jeprof format with symbols), or 'collapsed' (FlameGraph format).
+    )", 0) \
+    DECLARE(Bool, jemalloc_profile_text_symbolize_with_inline, true, R"(
+Whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included which can slow down symbolization process drastically; when disabled, they are skipped. Only affects 'symbolized' and 'collapsed' output formats.
+    )", 0) \
+    DECLARE(Bool, jemalloc_profile_text_collapsed_use_count, false, R"(
+When using the 'collapsed' output format for jemalloc heap profile, aggregate by allocation count instead of bytes. When false (default), each stack is weighted by live bytes; when true, by live allocation count.
+    )", 0) \
     DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
 
@@ -7409,9 +7440,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
     \
-    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
-)", BETA, allow_experimental_full_text_index) \
+)", 0, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \
@@ -7477,9 +7508,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
-    DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
-)", EXPERIMENTAL) \
+)", BETA, allow_experimental_insert_into_iceberg) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
@@ -7532,7 +7563,7 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", BETA) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
-Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
+Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
 Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
@@ -7691,6 +7722,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_s3queue, true) \
+    MAKE_OBSOLETE(M, Bool, text_index_use_bloom_filter, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
