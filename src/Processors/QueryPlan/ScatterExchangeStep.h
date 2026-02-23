@@ -23,6 +23,11 @@ public:
 
     String getName() const override { return "ScatterExchange"; }
 
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ScatterExchangeStep>(input_headers.front(), key_names, result_bucket_count);
+    }
+
     void transformPipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings &) override
     {
         /// Doesn't change the pipeline if executed directly

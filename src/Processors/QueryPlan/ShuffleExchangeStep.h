@@ -25,6 +25,11 @@ public:
 
     String getName() const override { return "ShuffleExchange"; }
 
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ShuffleExchangeStep>(input_headers.front(), key_names, source_bucket_count, result_bucket_count);
+    }
+
     void transformPipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings &) override
     {
         /// Doesn't change the pipeline if executed directly
