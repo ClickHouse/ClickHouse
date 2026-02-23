@@ -4,9 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "praktika"
-version = "0.1.0"
+version = "0.1.1"
 description = "CI Infrastructure Toolbox"
-readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "Apache-2.0"}
 authors = [
@@ -69,9 +68,10 @@ Issues = "https://github.com/ClickHouse/ClickHouse/issues"
 praktika = "praktika.__main__:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = [".."]
 include = ["praktika*"]
 exclude = ["tests*", "*.tests", "*.tests.*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 praktika = ["*.html", "*.html.gz", "py.typed"]

@@ -5,7 +5,6 @@ import subprocess
 import sys
 import os
 from pathlib import Path
-from ci.praktika.info import Info
 
 VENV_DIR = Path(".venv-pypy")
 PRAKTIKA_DIR = Path("ci/praktika")

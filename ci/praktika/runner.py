@@ -269,7 +269,7 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if Info().env.WORKFLOW_CONFIG:
+        if env.WORKFLOW_CONFIG:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
                     RunConfig.from_workflow_data().digest_dockers
