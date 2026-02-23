@@ -3,8 +3,13 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+namespace ProfileEvents
+{
+extern const Event JoinSpilledToDisk;
+}
 
 namespace DB
 {
@@ -107,6 +112,8 @@ void SpillingHashJoin::switchToGraceHashJoin()
         if (state.load(std::memory_order_relaxed) != SpillingState::COLLECTING)
             return;
 
+        ProfileEvents::increment(ProfileEvents::JoinSpilledToDisk);
+
         LOG_DEBUG(
             log,
             "Memory limit exceeded ({} bytes, {} rows), "
@@ -157,6 +164,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
     }
 
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
+    ProfileEvents::increment(ProfileEvents::JoinSpilledToDisk);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/ false);
 
     inner_join = std::make_shared<GraceHashJoin>(
