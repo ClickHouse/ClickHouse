@@ -7,7 +7,7 @@ CREATE TABLE t(
 )
 ENGINE = MergeTree()
 ORDER BY x SETTINGS index_granularity = 999999999, index_granularity_bytes = 99999999999, use_const_adaptive_granularity = 0, min_bytes_for_wide_part = 0;
-ALTER TABLE t ADD PROJECTION p1 (SELECT x, y ORDER BY x) WITH SETTINGS (index_granularity = 0); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t ADD PROJECTION p1 (SELECT x, y ORDER BY x) WITH SETTINGS (index_granularity = 0, index_granularity_bytes = 0); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t ADD PROJECTION p2 (SELECT x ORDER BY x) WITH SETTINGS (index_granularity_bytes = 512); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t ADD PROJECTION p2 (SELECT x ORDER BY x) WITH SETTINGS (index_granularity_bytes = 0); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t ADD PROJECTION p3 (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 2, index_granularity_bytes = 999999999);
