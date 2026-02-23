@@ -1305,9 +1305,7 @@ public:
                 return std::make_shared<DataTypeUInt8>();
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
-            if (has_null)
-                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-            if (has_nullable)
+            if (has_null || has_nullable)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
 
