@@ -4,6 +4,7 @@
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
+#include <Common/Logger_fwd.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -14,15 +15,8 @@
 
 #include <atomic>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <unordered_set>
-
-
-namespace Poco
-{
-    class Logger;
-}
 
 
 template <class T>

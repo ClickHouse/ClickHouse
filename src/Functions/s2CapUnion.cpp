@@ -161,7 +161,23 @@ public:
 
 REGISTER_FUNCTION(S2CapUnion)
 {
-    factory.registerFunction<FunctionS2CapUnion>();
+    FunctionDocumentation::Description description = R"(
+Returns the smallest cap that contains both of the input S2 caps. A cap represents a portion of the sphere that has been cut off by a plane, defined by a center point and a radius in degrees.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2CapUnion(center1, radius1, center2, radius2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"center1", "S2 cell identifier of the first cap center.", {"UInt64"}},
+        {"radius1", "Radius of the first cap in degrees.", {"Float64"}},
+        {"center2", "S2 cell identifier of the second cap center.", {"UInt64"}},
+        {"radius2", "Radius of the second cap in degrees.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (center, radius) representing the smallest cap containing both input caps.", {"Tuple(UInt64, Float64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2CapUnion(1157339245694594829, 1.0, 1157347770437378819, 1.0)", "(1157339245694594829,1.0049841409301968)"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2CapUnion>(documentation);
 }
 
 }

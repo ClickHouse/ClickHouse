@@ -43,7 +43,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 1. **Determine build configuration:**
    - Build type: `$0` or `RelWithDebInfo` if not specified
    - Target: `$1` or `clickhouse` if not specified
-   - Build directory: `build/${buildType}` (e.g., `build/RelWithDebInfo`, `build/Debug`, `build/ASAN`)
+   - Build directory: `build` (e.g., `build`, `build_debug`, `build_asan`)
 
 2. **Create log file and start the build:**
 
@@ -62,7 +62,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
    **Step 2b: Start the ninja build:**
    ```bash
-   cd build/${buildType} && ninja [target] > [log file path] 2>&1
+   cd build && ninja [target] > [log file path] 2>&1
    ```
 
     When using ninja you can pass `-k{num}` to continue building even if some targets fail. For example, `-k20` will keep going after 20 failures. Adjust this number based on your needs.
@@ -90,7 +90,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
      **If build succeeds:**
      - Confirm build completed successfully
-     - Report binary location: `build/${buildType}/programs/[target]`
+     - Report binary location: `build/programs/[target]`
      - Mention any warnings if present
      - Report build time if available
      - Keep response concise
@@ -161,7 +161,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
         - Run: pkill -f \"clickhouse[- ]server\"
         - Wait 1 second: sleep 1
         - Verify stopped: pgrep -f \"clickhouse[- ]server\" should return nothing
-        - Report: \"Server stopped. To start the new version, run: ./build/${buildType}/programs/clickhouse server --config-file ./programs/server/config.xml\"
+        - Report: \"Server stopped. To start the new version, run: ./build/programs/clickhouse server --config-file ./programs/server/config.xml\"
       - If user chooses \"No, keep it running\":
         - Report: \"Server remains running with the old binary. You'll need to manually restart it to use the new build.\"
 
@@ -180,7 +180,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
    **For successful builds:**
    - Confirm the build completed successfully
-   - Report the binary location: `build/${buildType}/programs/[target]`
+   - Report the binary location: `build/programs/[target]`
    - Report the server status outcome from step 5
 
    **For failed builds:**
@@ -207,11 +207,11 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
 - Always run from repository root
 - **NEVER** create build directories or run `cmake` - the build directory must already be configured
-- Build directories follow pattern: `build/${buildType}` (e.g., `build/Debug`, `build/ASAN`)
-- Binaries are located in: `build/${buildType}/programs/`
+- Build directories follow pattern: `build` (e.g., `build_debug`, `build_asan`)
+- Binaries are located in: `build/programs/`
 - This skill only runs incremental builds with `ninja`
 - To configure a new build directory, the user must manually run CMake first
-- For a clean build, the user should remove `build/${buildType}` and reconfigure manually
+- For a clean build, the user should remove `build` and reconfigure manually
 - **MANDATORY:** After successful builds, this skill MUST check for running ClickHouse servers and ask the user if they want to stop them to use the new build
 - **MANDATORY:** ALL build output (success or failure) MUST be analyzed by a Task agent with `subagent_type=general-purpose`
 - **MANDATORY:** ALWAYS provide a final summary to the user at the end of the skill execution (step 6)

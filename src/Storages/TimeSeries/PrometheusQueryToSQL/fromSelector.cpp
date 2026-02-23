@@ -19,9 +19,9 @@ namespace
                                     const Node * node,
                                     ConverterContext & context)
     {
-        auto evaluation_range = context.node_evaluation_range_getter.get(node);
+        auto node_range = context.node_range_getter.get(node);
 
-        if (evaluation_range.start_time > evaluation_range.end_time)
+        if (node_range.start_time > node_range.end_time)
             return SQLQueryPiece{node, ResultType::RANGE_VECTOR, StoreMethod::EMPTY};
 
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};
@@ -36,8 +36,8 @@ namespace
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
 
-        TimestampType min_time = evaluation_range.start_time - evaluation_range.window + 1;
-        TimestampType max_time = evaluation_range.end_time;
+        TimestampType min_time = node_range.start_time - node_range.window + 1;
+        TimestampType max_time = node_range.end_time;
 
         builder.from_table_function = makeASTFunction(
             "timeSeriesSelector",
