@@ -1,4 +1,5 @@
 #include <IO/AIO.h>
+#include <Common/ErrnoException.h>
 
 #if defined(OS_LINUX)
 

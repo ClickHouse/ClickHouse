@@ -225,6 +225,16 @@
             background-color: var(--button-color);
         }
 
+        .loading-hourglass
+        {
+            display: inline-block;
+            margin-left: 0.5em;
+            color: var(--misc-text-color);
+            animation: hourglass-animation 2s linear infinite;
+            line-height: 0;
+            vertical-align: middle;
+        }
+
         .no-tables
         {
             color: var(--misc-text-color);
@@ -2036,7 +2046,14 @@ async function loadDatabases(server_address, user, password) {
 
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
-                loadTables(server_address, user, password, elem.database, database).then(ok => { if (ok !== false) database.dataset['opened'] = 1; });
+                let hourglass = document.createElement('span');
+                hourglass.className = 'loading-hourglass';
+                hourglass.textContent = '\u29D7';
+                database_link.after(hourglass);
+                loadTables(server_address, user, password, elem.database, database).then(ok => {
+                    hourglass.remove();
+                    if (ok !== false) database.dataset['opened'] = 1;
+                });
             } else {
                 delete database.dataset['opened'];
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
@@ -2157,7 +2174,7 @@ databases_toggle.addEventListener('click', e => {
 });
 
 document.getElementById('menu').addEventListener('click', e => {
-    if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('#databases')) {
+    if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('button')) {
         toggleDatabases();
     }
 });
