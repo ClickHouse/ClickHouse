@@ -58,7 +58,7 @@ void * JemallocCacheAllocator::alloc(size_t size, size_t alignment)
     if (unlikely(!ptr))
     {
         [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(size);
-        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocCacheAllocator: Cannot mallocx {}.", ReadableSize(size));
+        throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocCacheAllocator: Cannot mallocx {}.", ReadableSize(size));
     }
 
     trace.onAlloc(ptr, size);
@@ -94,7 +94,7 @@ void * JemallocCacheAllocator::realloc(void * buf, size_t old_size, size_t new_s
     if (unlikely(!new_buf))
     {
         [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
-        throw DB::ErrnoException(
+        throw DB::Exception(
             DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
             "JemallocCacheAllocator: Cannot rallocx from {} to {}",
             ReadableSize(old_size),
