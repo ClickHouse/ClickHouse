@@ -30,6 +30,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Columns/FilterDescription.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -562,8 +563,21 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
             break;
         }
     }
+
     if (!has_virtual_column_input)
+    {
+        /// If no virtual columns are referenced the the filter is a constant expression.
+        /// A constant-false filter (e.g. pushed down from a UNION ALL branch that can never
+        /// match) must still exclude all parts, so check for that before skipping.
+        const auto & output_node = *dag->getOutputs().front();
+        if (output_node.column)
+        {
+            ConstantFilterDescription filter_description(*output_node.column);
+            if (filter_description.always_false)
+                return std::unordered_set<String>{};
+        }
         return {};
+    }
 
     auto start_time = std::chrono::steady_clock::now();
 
