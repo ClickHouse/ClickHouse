@@ -29,6 +29,7 @@ SELECT 'after_select', value > 0 FROM system.metrics WHERE metric = 'MarkCacheBy
 
 -- Wait for asynchronous_metrics to update
 SELECT sleep(3) FORMAT Null;
+SYSTEM RELOAD ASYNCHRONOUS METRICS;
 
 -- Verify cache arena has active pages (guarded for non-jemalloc builds)
 WITH (SELECT value IN ('ON', '1') FROM system.build_options WHERE name = 'USE_JEMALLOC') AS jemalloc_enabled
@@ -52,6 +53,7 @@ SELECT 'after_clear', value FROM system.metrics WHERE metric = 'MarkCacheBytes';
 
 -- Wait for asynchronous_metrics to update
 SELECT sleep(3) FORMAT Null;
+SYSTEM RELOAD ASYNCHRONOUS METRICS;
 
 -- Snapshot pactive after clear
 INSERT INTO t_cache_arena_pactive
