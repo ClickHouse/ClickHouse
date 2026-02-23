@@ -116,10 +116,11 @@ public:
 
         if (DatabaseCatalog::instance().isTableExist(inner_storage->getStorageID(), context))
         {
+            auto inner_context = Context::createCopy(context);
             const auto & storage_id = inner_storage->getStorageID();
             buildInterpreterQueryPlan(
                 plan, storage_id.database_name, storage_id.table_name,
-                column_names, query_info, context);
+                column_names, query_info, inner_context);
         }
         else
         {
