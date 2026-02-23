@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/WeakHash.h>
 
 
