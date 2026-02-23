@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- Correlated subquery with a table function should not fail with "Context has expired".
 -- https://github.com/ClickHouse/ClickHouse/issues/92991
 
