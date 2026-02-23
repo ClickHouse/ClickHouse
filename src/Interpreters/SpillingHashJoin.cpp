@@ -372,13 +372,39 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
     return inner_join->alwaysReturnsEmptySet();
 }
 
+bool SpillingHashJoin::supportParallelNonJoinedBlocksProcessing() const
+{
+    return concurrent_join && concurrent_join->supportParallelNonJoinedBlocksProcessing();
+}
+
 IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
     const Block & left_sample_block_,
     const Block & result_sample_block,
     UInt64 max_block_size) const
 {
     chassert(inner_join);
+    /// When parallel non-joined processing is active and we stayed in memory,
+    /// non-joined blocks are emitted by `NonJoinedBlocksTransform` (partitioned version),
+    /// not by `JoiningTransform` or `DelayedJoinedBlocksWorkerTransform`.
+    if (state.load(std::memory_order_acquire) == SpillingState::IN_MEMORY_JOIN
+        && supportParallelNonJoinedBlocksProcessing())
+        return {};
     return inner_join->getNonJoinedBlocks(left_sample_block_, result_sample_block, max_block_size);
+}
+
+IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
+    const Block & left_sample_block_,
+    const Block & result_sample_block,
+    UInt64 max_block_size,
+    size_t stream_idx,
+    size_t num_streams) const
+{
+    chassert(inner_join);
+    /// When spilled to `GraceHashJoin`, non-joined blocks are emitted per-bucket
+    /// by `JoiningTransform` and `DelayedJoinedBlocksWorkerTransform` (basic version).
+    if (state.load(std::memory_order_acquire) == SpillingState::GRACE_HASH_JOIN)
+        return {};
+    return inner_join->getNonJoinedBlocks(left_sample_block_, result_sample_block, max_block_size, stream_idx, num_streams);
 }
 
 IBlocksStreamPtr SpillingHashJoin::getDelayedBlocks()

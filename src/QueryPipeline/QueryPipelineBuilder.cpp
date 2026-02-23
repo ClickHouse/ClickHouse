@@ -488,14 +488,21 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             delayed_root_output_ports.emplace_back(&outport);
     }
 
-    /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel
-    /// when false, the last JoiningTransform to finish emits them (via finish_counter)
-    bool use_parallel_non_joined = !delayed_root && join->supportParallelNonJoinedBlocksProcessing();
+    /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel.
+    /// Can be combined with delayed_root: in that case two DelayedPortsProcessors are created —
+    /// the first delays the delayed-block workers until all JoiningTransforms finish,
+    /// the second delays the NonJoinedBlocksTransforms until all delayed-block workers finish.
+    bool use_parallel_non_joined = join->supportParallelNonJoinedBlocksProcessing();
 
-    /// nullptr disables non-joined emission inside JoiningTransform (parallel path handles it)
-    auto joining_finish_counter = use_parallel_non_joined
+    /// When delayed blocks exist, JoiningTransform still needs a finish_counter so it can emit
+    /// non-joined rows for the main bucket (GraceHashJoin spilled case).
+    /// When only parallel non-joined (no delayed blocks), nullptr disables non-joined emission
+    /// inside JoiningTransform entirely (the parallel NonJoinedBlocksTransform handles it).
+    auto joining_finish_counter = (use_parallel_non_joined && !delayed_root)
         ? nullptr
         : std::make_shared<FinishCounter>(num_streams);
+
+    std::vector<OutputPort *> non_joined_output_ports;
 
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)
@@ -532,6 +539,18 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             if (collected_processors)
                 collected_processors->emplace_back(delayed);
             left->pipe.processors->emplace_back(std::move(delayed));
+
+            if (use_parallel_non_joined)
+            {
+                auto non_joined = std::make_shared<NonJoinedBlocksTransform>(
+                    output_header, join, *left_header, max_block_size, i, num_streams);
+
+                non_joined_output_ports.push_back(&non_joined->getPort());
+
+                if (collected_processors)
+                    collected_processors->emplace_back(non_joined);
+                left->pipe.processors->emplace_back(std::move(non_joined));
+            }
         }
         else if (use_parallel_non_joined)
         {
@@ -562,7 +581,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     if (delayed_root || use_parallel_non_joined)
     {
-        // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
+        // First DelayedPortsProcessor: delays the delayed-block workers (or non-joined sources)
+        // until all JoiningTransforms finish.
         DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
@@ -582,6 +602,34 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             left->pipe.output_ports.push_back(&port);
         left->pipe.header = output_header;
         left->resize(num_streams);
+
+        // Second DelayedPortsProcessor: when both delayed blocks and parallel non-joined are active,
+        // delays the NonJoinedBlocksTransforms until all delayed-block workers finish.
+        if (delayed_root && use_parallel_non_joined)
+        {
+            DelayedPortsProcessor::PortNumbers non_joined_delayed_ports;
+            non_joined_delayed_ports.reserve(num_streams);
+            for (size_t i = 0; i < num_streams; ++i)
+                non_joined_delayed_ports.push_back(2 * i + 1);
+
+            auto non_joined_processor = std::make_shared<DelayedPortsProcessor>(
+                output_header, 2 * num_streams, non_joined_delayed_ports);
+            if (collected_processors)
+                collected_processors->emplace_back(non_joined_processor);
+            left->pipe.processors->emplace_back(non_joined_processor);
+
+            auto next_input = non_joined_processor->getInputs().begin();
+            for (size_t i = 0; i < num_streams; ++i)
+            {
+                connect(*left->pipe.output_ports[i], *next_input++);
+                connect(*non_joined_output_ports[i], *next_input++);
+            }
+            left->pipe.output_ports.clear();
+            for (OutputPort & port : non_joined_processor->getOutputs())
+                left->pipe.output_ports.push_back(&port);
+            left->pipe.header = output_header;
+            left->resize(num_streams);
+        }
     }
 
     if (left->hasTotals())

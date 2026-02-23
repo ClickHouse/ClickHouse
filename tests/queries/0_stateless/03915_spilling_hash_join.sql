@@ -82,7 +82,40 @@ FROM (SELECT number AS k FROM numbers(100)) AS t1
 LEFT JOIN (SELECT number + 50 AS k, number AS v FROM numbers(100)) AS t2
 ON t1.k = t2.k;
 
--- Test 11: INNER JOIN that exceeds max_bytes_in_join and must spill (concurrent).
+-- Test 11: Small RIGHT JOIN that fits in memory (concurrent, no spill).
+SELECT 'concurrent right join small';
+SELECT count()
+FROM (SELECT number + 50 AS k FROM numbers(100)) AS t1
+RIGHT JOIN (SELECT number AS k FROM numbers(100)) AS t2
+ON t1.k = t2.k;
+
+-- Test 12: Small FULL JOIN that fits in memory (concurrent, no spill).
+SELECT 'concurrent full join small';
+SELECT count()
+FROM (SELECT number AS k FROM numbers(100)) AS t1
+FULL JOIN (SELECT number + 50 AS k FROM numbers(100)) AS t2
+ON t1.k = t2.k;
+
+-- Test 13: Concurrent RIGHT JOIN (in-memory) — verify non-joined rows from right table.
+-- t1.k = [5000..14999], t2.k = [0..9999]
+-- Matched: 5000, Non-joined from right: 5000, Total: 10000
+SELECT 'concurrent right join non-joined';
+SELECT count(), countIf(t1.k != 0) AS matched, countIf(t1.k = 0) AS right_only
+FROM (SELECT number + 5000 AS k FROM numbers(10000)) AS t1
+RIGHT JOIN (SELECT number AS k FROM numbers(10000)) AS t2
+ON t1.k = t2.k;
+
+-- Test 14: Concurrent FULL JOIN (in-memory) — verify non-joined rows from both sides.
+-- t1.k = [1..10000], t2.k = [5001..15000]
+-- Matched: 5000, Left-only: 5000, Right-only: 5000, Total: 15000
+SELECT 'concurrent full join non-joined';
+SELECT count(), countIf(t1.k != 0 AND t2.k != 0 ) AS matched,
+       countIf(t2.k = 0) AS left_only, countIf(t1.k = 0) AS right_only
+FROM (SELECT number + 1 AS k FROM numbers(10000)) AS t1
+FULL JOIN (SELECT number + 5001 AS k FROM numbers(10000)) AS t2
+ON t1.k = t2.k;
+
+-- Test 15: INNER JOIN that exceeds max_bytes_in_join and must spill (concurrent).
 SELECT 'concurrent inner join spill';
 SET max_bytes_in_join = 100000;
 SELECT count(), sum(t2.v)
@@ -90,21 +123,21 @@ FROM (SELECT number AS k FROM numbers(10000)) AS t1
 INNER JOIN (SELECT number AS k, number AS v FROM numbers(10000)) AS t2
 ON t1.k = t2.k;
 
--- Test 12: LEFT JOIN that spills (concurrent).
+-- Test 16: LEFT JOIN that spills (concurrent).
 SELECT 'concurrent left join spill';
 SELECT count()
 FROM (SELECT number AS k FROM numbers(10000)) AS t1
 LEFT JOIN (SELECT number + 5000 AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k;
 
--- Test 13: RIGHT JOIN that spills (concurrent).
+-- Test 17: RIGHT JOIN that spills (concurrent).
 SELECT 'concurrent right join spill';
 SELECT count()
 FROM (SELECT number + 5000 AS k FROM numbers(10000)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k;
 
--- Test 14: FULL JOIN that spills (concurrent).
+-- Test 18: FULL JOIN that spills (concurrent).
 SELECT 'concurrent full join spill';
 SELECT count()
 FROM (SELECT number AS k FROM numbers(10000)) AS t1

@@ -18,6 +18,14 @@ concurrent inner join small
 100	49500
 concurrent left join small
 100	1225
+concurrent right join small
+100
+concurrent full join small
+150
+concurrent right join non-joined
+10000	5000	5000
+concurrent full join non-joined
+15000	5000	5000	5000
 concurrent inner join spill
 10000	49995000
 concurrent left join spill
