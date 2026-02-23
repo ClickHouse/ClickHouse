@@ -193,7 +193,7 @@ private:
     }
 #endif
 
-    const UInt64 max_block_size;
+    [[maybe_unused]] const UInt64 max_block_size;
 
 #if USE_PARQUET
     ContextMutablePtr context_copy;
