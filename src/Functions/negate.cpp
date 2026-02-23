@@ -46,6 +46,10 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
         if (const DataTypeNullable * t = typeid_cast<const DataTypeNullable *>(type))
             type = t->getNestedType().get();
 
+        /// For compound types (Tuple, Array, etc.) monotonicity analysis is not applicable.
+        if (!type->isValueRepresentedByNumber())
+            return {};
+
         if (!type->isValueRepresentedByUnsignedInteger())
         {
             /// For signed integers, `negate(TYPE_MIN)` overflows to TYPE_MIN, breaking monotonicity.
