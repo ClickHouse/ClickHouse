@@ -62,6 +62,7 @@
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/HostResolvePool.h>
 #include <Common/ShellCommand.h>
@@ -75,6 +76,8 @@
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <base/sleep.h>
 
+#include "config.h"
+
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
 #endif
@@ -84,10 +87,9 @@
 #endif
 
 #if USE_JEMALLOC
-#include <Common/Jemalloc.h>
+#    include <Processors/Sources/JemallocProfileSource.h>
+#    include <Common/Jemalloc.h>
 #endif
-
-#include "config.h"
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <delta_kernel_ffi.hpp>
@@ -112,6 +114,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 keeper_max_retries;
+#if USE_JEMALLOC
+    extern const SettingsJemallocProfileFormat jemalloc_profile_text_output_format;
+    extern const SettingsBool jemalloc_profile_text_symbolize_with_inline;
+#endif
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -1051,13 +1057,29 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            auto context = getContext();
+            context->checkAccess(AccessType::SYSTEM_JEMALLOC);
             auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
-            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
-            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
-            filename += ".symbolized";
+            auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
+            auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
+
+            std::string output_filename;
+            if (format == JemallocProfileFormat::Raw)
+            {
+                output_filename = filename;
+            }
+            else if (format == JemallocProfileFormat::Symbolized)
+            {
+                output_filename = filename + ".symbolized";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
+            else
+            {
+                output_filename = filename + ".collapsed";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
             auto col = ColumnString::create();
-            col->insertData(filename.data(), filename.size());
+            col->insertData(output_filename.data(), output_filename.size());
             Columns columns;
             columns.emplace_back(std::move(col));
             Chunk chunk(std::move(columns), 1);
@@ -1146,6 +1168,23 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
     const StorageID replica_table_id = table->getStorageID();
+
+    /// The `replica` StorageID may contain a UUID resolved before the DDL guard was acquired.
+    /// If a concurrent RENAME moved the table to a different name, UUID-based resolution in
+    /// `getTableImpl` finds the table at its new name, while the DDL guard only protects
+    /// `replica.table_name`. Verify that the resolved table is actually at the guarded name;
+    /// otherwise we would detach/attach the wrong table.
+    if (replica_table_id.table_name != replica.getTableName())
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table {} was concurrently renamed to {} during RESTART REPLICA",
+                replica.getNameForLogs(), replica_table_id.getNameForLogs());
+        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: table was concurrently renamed to {}",
+            replica.getNameForLogs(), replica_table_id.getNameForLogs());
+        return nullptr;
+    }
+
     if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
     {
         if (throw_on_error)
@@ -1171,9 +1210,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        create_ast = database->getCreateTableQuery(replica.table_name, getContext());
+        create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
 
-        database->detachTable(system_context, replica.table_name);
+        database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
     database->waitDetachedTableNotInUse(replica_table_id.uuid);
@@ -1219,7 +1258,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
-                fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+                fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
 
             /// Check if the query was cancelled (e.g. server is shutting down)
             if (auto process_list_element = getContext()->getProcessListElementSafe())
@@ -1235,7 +1274,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
                 fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
-                    replica.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+                    replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
 
             if (auto process_list_element = getContext()->getProcessListElementSafe())
                 process_list_element->checkTimeLimit();
@@ -1244,7 +1283,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         }
     }
 
-    database->attachTable(system_context, replica.table_name, new_table, data_path);
+    database->attachTable(system_context, replica_table_id.table_name, new_table, data_path);
     restart_guard.reset();
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
