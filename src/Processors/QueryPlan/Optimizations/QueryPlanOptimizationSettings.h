@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
+#include <chrono>
 #include <cstddef>
 
 namespace DB
@@ -166,6 +167,8 @@ struct QueryPlanOptimizationSettings
     size_t max_parallel_replicas;
     size_t automatic_parallel_replicas_mode;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
+
+    bool query_plan_optimize_primary_key = true;
 
     bool keep_logical_steps;
 

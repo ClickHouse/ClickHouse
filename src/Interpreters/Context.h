@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/IThrottler.h>
@@ -105,7 +106,6 @@ class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
-class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
 class TextIndexDictionaryBlockCache;
 class TextIndexHeaderCache;
@@ -290,6 +290,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+class SystemAllocatedMemoryHolder;
+using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
+
 /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
 /// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
 /// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
@@ -300,6 +303,9 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup();
 class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
+
+using DatabasePtr = std::shared_ptr<IDatabase>;
+using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -568,6 +574,29 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
+    struct StorageCache
+    {
+        static constexpr size_t NumShards = 6;
+
+        struct Shard
+        {
+            std::mutex mutex;
+            std::unordered_set<
+                StorageID,
+                StorageID::DatabaseAndTableNameHash,
+                StorageID::DatabaseAndTableNameEqual
+            > set;
+        };
+
+        std::array<Shard, NumShards> shards;
+
+        static size_t shardIndex(const StorageID & id)
+        {
+            return StorageID::DatabaseAndTableNameHash{}(id) & (NumShards - 1);
+        }
+    };
+
+    mutable StorageCache storage_cache;
     /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
     /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
@@ -672,6 +701,10 @@ private:
     Context();
     Context(const Context &);
 
+#if USE_NURAFT
+    void setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const;
+#endif
+
 public:
     /// Create initial Context with ContextShared and etc.
     static ContextMutablePtr createGlobal(ContextSharedPart * shared_part);
@@ -690,6 +723,8 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
+
+    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const;
 
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
@@ -987,8 +1022,15 @@ public:
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
-    /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
-    StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
+    /// Overload for the analyzer. Structure inference is performed in QueryAnalysisPass.
+    /// The execution_context is used for the actual table function execution
+    /// (to respect per-subquery SETTINGS), while `this` context is used for caching.
+    /// The cache key incorporates a hash of the settings changes so that identical table functions
+    /// with the same settings are still reused from cache.
+    StoragePtr executeTableFunction(
+        const ASTPtr & table_expression,
+        const TableFunctionPtr & table_function_ptr,
+        const ContextPtr & execution_context);
 
     StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
 
@@ -1270,7 +1312,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
-    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -1309,6 +1351,14 @@ public:
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
+
+    /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
+    SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;
+    void allowSystemAllocateMemory(bool allow);
+
+    /// See users_to_ignore_early_memory_limit_check in ServerSettings
+    std::shared_ptr<std::unordered_set<std::string>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
+    void setUsersToIgnoreEarlyMemoryLimitCheck(std::string users);
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1355,13 +1405,6 @@ public:
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
-#endif
-
-#if USE_PARQUET
-    void setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
-    void clearParquetMetadataCache() const;
 #endif
 
     void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }
@@ -1468,7 +1511,7 @@ public:
 
     using Dashboards = std::vector<std::map<String, String>>;
     std::optional<Dashboards> getDashboards() const;
-    void setDashboardsConfig(const ConfigurationPtr & config);
+    void setDashboardsConfig(const Poco::Util::AbstractConfiguration & config);
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

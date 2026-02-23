@@ -72,7 +72,7 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
         /// and assign an alias for 02367_optimize_trivial_count_with_array_join to pass. Otherwise it will fail in
         /// ArrayJoinedColumnsVisitor (`No alias for non-trivial value in ARRAY JOIN: _a`)
         /// This looks 100% as a incomplete code working on top of a bug, but this code has already been made obsolete
-        /// by the new analyzer, so it's an inconvenience we can live with until we deprecate it.
+        /// by the analyzer, so it's an inconvenience we can live with until we deprecate it.
         if (child == tables->array_join)
             return true;
         return false;
@@ -337,6 +337,23 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
             else
                 for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
                     if (i != 1 || !func.arguments->children[i]->as<ASTSubquery>())
+                        out.push_back(&func.arguments->children[i]);
+        }
+    }
+    else if (func.name == "exists")
+    {
+        /// Since exists does not use parameters, and the only
+        /// argument to exists function is a subquery, out
+        /// should not have arguments. Thus, the following lines could
+        /// probably be changed with just `return`. However, we follow
+        /// the style that is provided in the first if.
+        for (auto & child : ast->children)
+        {
+            if (child != func.arguments)
+                out.push_back(&child);
+            else
+                for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
+                    if (i != 0 || !func.arguments->children[i]->as<ASTSubquery>())
                         out.push_back(&func.arguments->children[i]);
         }
     }

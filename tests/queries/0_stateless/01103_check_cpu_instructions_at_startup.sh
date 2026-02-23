@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64, no-llvm-coverage
 # Tag no-fasttest: avoid dependency on qemu -- inconvenient when running locally
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -20,7 +20,8 @@ fi
 function run_with_cpu()
 {
     # Limit memory to 1 GB to fail fast if a sanitized binary is run under QEMU
-    prlimit -m1000000 qemu-x86_64-static -cpu "$@" "$command" --query "SELECT 1" 2>&1 | \
+    # Use --data instead of -m because RLIMIT_RSS does not work since Linux 2.6.x
+    prlimit --data=5000000000 qemu-x86_64-static -cpu "$@" "$command" --query "SELECT 1" 2>&1 | \
       grep -v -F "warning: TCG doesn't support requested feature" | \
       grep -v -F 'Unknown host IFA type' ||:
 }

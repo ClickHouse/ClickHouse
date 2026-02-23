@@ -25,6 +25,7 @@
 #include <Common/formatReadable.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -1218,7 +1219,8 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             if (query_with_output->isOutfileTruncate())
             {
                 out_file_if_truncated = out_file;
-                out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
+                fs::path out_file_path(out_file);
+                out_file = (out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file_path.filename().string())).string();
             }
 
             if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])

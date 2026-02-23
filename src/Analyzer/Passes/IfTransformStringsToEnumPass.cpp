@@ -9,6 +9,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 
@@ -93,7 +94,7 @@ void wrapIntoToString(FunctionNode & function_node, QueryTreeNodePtr arg, Contex
 
     function_node.resolveAsFunction(to_string_function->build(function_node.getArgumentColumns()));
 
-    assert(isString(function_node.getResultType()));
+    assert(isString(removeNullable(function_node.getResultType())));
 }
 
 class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>
@@ -154,7 +155,7 @@ public:
             auto * function_modified_transform_node = modified_transform_node->as<FunctionNode>();
             auto & argument_nodes = function_modified_transform_node->getArguments().getNodes();
 
-            if (!isString(function_node->getResultType()))
+            if (!isString(removeNullable(function_node->getResultType())))
                 return;
 
             const auto * literal_to = argument_nodes[2]->as<ConstantNode>();

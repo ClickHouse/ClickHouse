@@ -17,10 +17,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+class ISerialization;
+
+[[noreturn]] void throwEmptySerializationState(const ISerialization * serialization);
+[[noreturn]] void throwInvalidSerializationState(const ISerialization * serialization, const std::type_info & expected, const std::type_info & got);
 
 class IDataType;
 
@@ -688,18 +688,13 @@ template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state, const ISerialization * serialization)
 {
     if (!state)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(*serialization).name()));
+        throwEmptySerializationState(serialization);
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
     {
         auto & state_ref = *state;
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(*serialization).name()),
-                demangle(typeid(State).name()),
-                demangle(typeid(state_ref).name()));
+        throwInvalidSerializationState(serialization, typeid(State), typeid(state_ref));
     }
 
     return state_concrete;

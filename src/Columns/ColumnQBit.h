@@ -138,7 +138,7 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr compress(bool force_compression) const override;
 
-    void getExtremes(Field & min, Field & max) const override { tuple->getExtremes(min, max); }
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { tuple->getExtremes(min, max, start, end); }
     void getPermutation(
         PermutationSortDirection direction,
         PermutationSortStability stability,

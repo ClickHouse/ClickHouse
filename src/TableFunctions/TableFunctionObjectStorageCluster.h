@@ -106,7 +106,7 @@ using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLak
 using TableFunctionDeltaLakeS3Cluster = TableFunctionObjectStorageCluster<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
 #endif
 
-#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
 using TableFunctionDeltaLakeAzureCluster = TableFunctionObjectStorageCluster<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 

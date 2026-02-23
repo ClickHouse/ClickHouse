@@ -16,8 +16,6 @@
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 
-#include <Storages/MergeTree/MergeTreeIndexText.h>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -31,7 +29,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , name(other.name)
     , type(other.type)
-    , arguments(other.arguments)
+    , arguments(other.arguments ? other.arguments->clone() : nullptr)
     , column_names(other.column_names)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
@@ -67,7 +65,11 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     else
         expression.reset();
 
-    arguments = other.arguments;
+    if (other.arguments)
+        arguments = other.arguments->clone();
+    else
+        arguments.reset();
+
     column_names = other.column_names;
     data_types = other.data_types;
     sample_block = other.sample_block;
@@ -106,6 +108,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.is_implicitly_created = is_implicitly_created;
     result.escape_filenames = escape_filenames;
 
+    checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
     result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
@@ -121,11 +124,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
-    {
-        result.arguments = (index_type->name == TEXT_INDEX_NAME)
-            ? MergeTreeIndexText::parseArgumentsListFromAST(index_type->arguments)
-            : IndexDescription::parsePositionalArgumentsFromAST(index_type->arguments);
-    }
+        result.arguments = index_type->arguments->clone();
 
     return result;
 }
@@ -160,23 +159,26 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     sample_block = expression->getSampleBlock();
 }
 
-FieldVector IndexDescription::parsePositionalArgumentsFromAST(const ASTPtr & arguments)
+Field getFieldFromIndexArgumentAST(const ASTPtr & ast)
+{
+    /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
+    if (const auto * ast_literal = ast->as<ASTLiteral>())
+        return ast_literal->value;
+    /// E.g. INDEX index_name column_name TYPE vector_similarity(index_name, column_name)
+    if (const auto * ast_identifier = ast->as<ASTIdentifier>())
+        return Field(ast_identifier->name());
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals and identifiers can be skip index arguments");
+}
+
+FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
 {
     FieldVector result;
+    if (!arguments)
+        return result;
 
-    for (size_t i = 0; i < arguments->children.size(); ++i)
-    {
-        const auto & child = arguments->children[i];
-        if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
-            /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
-            result.emplace_back(ast_literal->value);
-        else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
-            /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
-            result.emplace_back(ast_identifier->name());
-        else
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
-    }
-
+    result.reserve(arguments->children.size());
+    for (const auto & child : arguments->children)
+        result.emplace_back(getFieldFromIndexArgumentAST(child));
     return result;
 }
 
