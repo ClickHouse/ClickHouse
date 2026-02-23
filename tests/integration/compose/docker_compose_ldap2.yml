@@ -12,8 +12,6 @@ services:
             LDAP_USERS: janedoe,johndoe
             LDAP_PASSWORDS: qwerty,qwertz
             LDAP_PORT_NUMBER: ${LDAP2_INTERNAL_PORT:-1389}
-        ports:
-            - ${LDAP2_EXTERNAL_PORT:-1390}:${LDAP2_INTERNAL_PORT:-1389}
         volumes:
             - /misc/openldap2/setup_referral.sh:/docker-entrypoint-initdb.d/setup_referral.sh
         healthcheck:

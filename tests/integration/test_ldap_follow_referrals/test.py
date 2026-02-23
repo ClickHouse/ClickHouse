@@ -38,9 +38,11 @@ instance_no_follow = cluster.add_instance(
 def wait_openldap2_ready(timeout=180):
     openldap2_docker_id = cluster.get_instance_docker_id("openldap2")
     start = time.time()
+    attempts = 0
+    logging.info("Waiting for openldap2 readiness")
     while time.time() - start < timeout:
+        attempts += 1
         try:
-            logging.info("Checking openldap2 readiness")
             cluster.exec_in_container(
                 openldap2_docker_id,
                 [
@@ -57,7 +59,10 @@ def wait_openldap2_ready(timeout=180):
             logging.info("openldap2 is ready")
             return
         except Exception as ex:
-            logging.warning("openldap2 not ready yet: %s", str(ex))
+            if attempts % 10 == 0:
+                logging.info("openldap2 not ready after %s attempts: %s", attempts, str(ex))
+            else:
+                logging.debug("openldap2 not ready yet: %s", str(ex))
             time.sleep(1)
     raise Exception("Timed out waiting for openldap2")
 
@@ -93,7 +98,7 @@ ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
     logging.debug(
         f"add_ldap_group code:{code} stdout:{stdout}, stderr:{stderr}"
     )
-    assert code == 0
+    assert code == 0, f"ldapadd failed: code={code}, stdout={stdout!r}, stderr={stderr!r}"
 
 
 def delete_ldap_group(group_cn):
@@ -116,7 +121,7 @@ def delete_ldap_group(group_cn):
     logging.debug(
         f"delete_ldap_group code:{code} stdout:{stdout}, stderr:{stderr}"
     )
-    assert code == 0
+    assert code == 0, f"ldapdelete failed: code={code}, stdout={stdout!r}, stderr={stderr!r}"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -196,18 +201,26 @@ def test_follow_referrals_false(ldap_cluster):
     """With follow_referrals=false, the role mapping search targets dc=example,dc=org
     on openldap2 which returns a referral. The LDAP library does not chase it,
     so the search fails and authentication is rejected."""
-    add_ldap_group(group_cn="clickhouse-role_noref", member_cn="johndoe")
+    instance_no_follow.query(
+        "DROP ROLE IF EXISTS role_noref", user="common_user", password="qwerty"
+    )
     try:
+        instance_no_follow.query(
+            "CREATE ROLE role_noref", user="common_user", password="qwerty"
+        )
+        add_ldap_group(group_cn="clickhouse-role_noref", member_cn="johndoe")
+
         error = instance_no_follow.query_and_get_error(
             "SELECT currentUser()", user="johndoe", password="qwertz"
         )
         err = error.lower()
-        assert "johndoe" in err and (
-            "referral" in err
-            or "authentication failed" in err
-            or "ldap" in err
-        ), f"Unexpected error message: {error}"
+        assert "johndoe" in err and "authentication failed" in err, (
+            f"Unexpected error message: {error}"
+        )
     finally:
+        instance_no_follow.query(
+            "DROP ROLE IF EXISTS role_noref", user="common_user", password="qwerty"
+        )
         try:
             delete_ldap_group(group_cn="clickhouse-role_noref")
         except AssertionError:
