@@ -89,6 +89,10 @@ struct ColumnsWithRowNumbers
     std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
 };
 
+/// Helper throw functions so Column headers don't need to include Exception.h.
+[[noreturn]] void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size);
+[[noreturn]] void throwColumnConvertNotSupported(std::string_view type_name, const char * as_type);
+
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {

@@ -62,6 +62,7 @@
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/HostResolvePool.h>
 #include <Common/ShellCommand.h>
@@ -75,6 +76,8 @@
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <base/sleep.h>
 
+#include "config.h"
+
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
 #endif
@@ -86,8 +89,6 @@
 #if USE_JEMALLOC
 #include <Common/Jemalloc.h>
 #endif
-
-#include "config.h"
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <delta_kernel_ffi.hpp>
