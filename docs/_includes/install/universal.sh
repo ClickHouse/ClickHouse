@@ -28,7 +28,9 @@ then
         # Dispatch between standard and compatibility builds, see cmake/cpu_features.cmake for details. Unfortunately, (1) the ARM ISA level
         # cannot be read directly, we need to guess from the "features" in /proc/cpuinfo, and (2) the flags in /proc/cpuinfo are named
         # differently than the flags passed to the compiler in cpu_features.cmake.
-        HAS_ARMV82=$(grep -m 1 'Features' /proc/cpuinfo | awk '/asimd/ && /sha1/ && /aes/ && /atomics/ && /lrcpc/')
+        # The modern profile targets ARMv8.4 with SVE. Check for "sve" which cleanly distinguishes Graviton 3+ / Azure Cobalt / GCP Axion
+        # from older cores like Graviton 2.
+        HAS_ARMV82=$(grep -m 1 'Features' /proc/cpuinfo | awk '/asimd/ && /sha1/ && /aes/ && /atomics/ && /sve/')
         if [ "${HAS_ARMV82}" ]
         then
             DIR="aarch64"

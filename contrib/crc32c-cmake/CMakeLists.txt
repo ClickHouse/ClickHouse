@@ -17,7 +17,7 @@ if(ARCH_AARCH64)
 
   # crc32c_arm64.cc uses the vmull_p64 instruction, which requires the AES extension.
   # The default ARM profile includes +crypto (which implies AES), the compat profile does not.
-  if (NOT NO_ARMV81_OR_HIGHER)
+  if (NOT NO_ARM_SVE)
     list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
   endif()
 elseif(ARCH_AMD64)

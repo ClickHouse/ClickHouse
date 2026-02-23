@@ -28,7 +28,7 @@
 /* #undef CROSS_COMPILE_AARCH64 */
 
 /* Define if building SVE for AARCH64. */
-/* #undef BUILD_SVE */
+#define BUILD_SVE
 
 /* Define if building SVE2 for AARCH64. */
 /* #undef BUILD_SVE2 */
@@ -76,7 +76,7 @@
 #define HAVE_C_ARM_NEON_H
 
 /* C compiler has arm_sve.h */
-/* #undef HAVE_C_ARM_SVE_H */
+#define HAVE_C_ARM_SVE_H
 
 /* C compiler has arm_neon.h */
 /* #undef HAVE_C_PPC64EL_ALTIVEC_H */

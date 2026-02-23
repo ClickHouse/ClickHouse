@@ -7,8 +7,8 @@ include(ExternalProject)
 set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
 # MSAN: Disabled because ring does not generate the appropriate symbols
-# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
-if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
+# NO_ARM_SVE: Disabled because ring assumes that Neon is available with ARM
+if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARM_SVE)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()

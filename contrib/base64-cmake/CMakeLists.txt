@@ -21,7 +21,7 @@ endif ()
 if (ARCH_AARCH64)
     # The choice of HAVE_NEON* depends on the target machine because base64 provides
     # no runtime dispatch on ARM. NEON is only mandatory with the normal build profile.
-    if(NOT NO_ARMV81_OR_HIGHER)
+    if(NOT NO_ARM_SVE)
         set(HAVE_NEON64 1)
         set(HAVE_NEON32 0)
     endif ()
