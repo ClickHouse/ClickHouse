@@ -43,11 +43,21 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
         const IDataType * type = &original_type;
         if (const DataTypeLowCardinality * t = typeid_cast<const DataTypeLowCardinality *>(type))
             type = t->getDictionaryType().get();
+        bool is_nullable = false;
         if (const DataTypeNullable * t = typeid_cast<const DataTypeNullable *>(type))
+        {
+            is_nullable = true;
             type = t->getNestedType().get();
+        }
 
         /// For compound types (Tuple, Array, etc.) monotonicity analysis is not applicable.
         if (!type->isValueRepresentedByNumber())
+            return {};
+
+        /// `negate(NULL) = NULL` stays at the bottom of the sort order instead of
+        /// flipping to the top, so negate is not monotonic on ranges that include NULL.
+        /// For Nullable types, a null left bound indicates the range starts from NULL.
+        if (is_nullable && left.isNull())
             return {};
 
         if (!type->isValueRepresentedByUnsignedInteger())
@@ -56,7 +66,8 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
             /// Only claim monotonic if the range provably excludes the type minimum.
             if (type->isValueRepresentedByInteger())
             {
-                if (left.isNull())
+                /// -Inf means the range starts from the very minimum, which is TYPE_MIN.
+                if (left.isNegativeInfinity())
                     return {};
 
                 /// Check if the left bound equals the type's minimum value.
@@ -83,26 +94,29 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
                     return {};
             }
 
-            /// For floating-point types, negate is monotonic (no overflow), but NaN or
-            /// NULL in the range breaks monotonicity because negate(NaN) = NaN and
-            /// negate(NULL) = NULL stay at the bottom of the sort order instead of
-            /// flipping to the top.
+            /// For floating-point types, `negate(NaN) = NaN` stays at the same sort
+            /// position instead of flipping to the top, breaking monotonicity.
             if (!type->isValueRepresentedByInteger())
             {
-                if (left.isNull() || right.isNull())
+                /// Infinity means the range could include NaN (which sorts at the
+                /// extremes depending on `nan_direction_hint`).
+                if (left.isNegativeInfinity() || right.isPositiveInfinity())
                     return {};
-                auto toFloat = [](const Field & f) -> Float64
+
+                /// Check actual bound values for NaN.
+                auto isNaNField = [](const Field & f) -> bool
                 {
-                    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), f);
+                    if (f.isNull())
+                        return false;
+                    return std::isnan(applyVisitor(FieldVisitorConvertToNumber<Float64>(), f));
                 };
-                if (std::isnan(toFloat(left)) || std::isnan(toFloat(right)))
+                if (isNaNField(left) || isNaNField(right))
                     return {};
             }
             return { .is_monotonic = true, .is_positive = false, .is_strict = true };
         }
 
-        /// negate is always decreasing, and negate(NULL) = NULL stays at the bottom
-        /// of the sort order instead of flipping to the top, breaking monotonicity.
+        /// For unsigned integers, negate overflows at the midpoint (e.g. 2^63 for UInt64).
         if (left.isNull())
             return {};
 
