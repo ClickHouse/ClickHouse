@@ -56,13 +56,9 @@ def build_package(token: str):
     run([str(venv_python()), "-m", "build", str(PRAKTIKA_DIR)])
     run([str(venv_python()), "-m", "twine", "check", str(PRAKTIKA_DIR / "dist/*")])
 
-    env = {"TWINE_USERNAME": "__token__"}
-    if token:
-        env["TWINE_PASSWORD"] = token
-
     run_env(
         [str(venv_python()), "-m", "twine", "upload", "ci/praktika/dist/*"],
-        env=env
+        env={"TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token if token else os.getenv("TWINE_PASSWORD")}
     )
 
 
