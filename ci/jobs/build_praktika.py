@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
+import argparse
 import subprocess
 import sys
 import os
 from pathlib import Path
+from ci.praktika.info import Info
 
 VENV_DIR = Path(".venv-pypy")
-PYPY_EXECUTABLE = "pypy3"   # change if needed
+PRAKTIKA_DIR = Path("ci/praktika")
 
 
 def run(cmd, check=True):
@@ -14,10 +16,19 @@ def run(cmd, check=True):
     subprocess.run(cmd, check=check)
 
 
+def run_env(cmd, check=True, env=None):
+    print(f"\n>>> Running: {' '.join(cmd)}")
+    env_copy = os.environ.copy()
+
+    for key, value in (env or {}).items():
+        env_copy[key] = value
+    subprocess.run(cmd, check=check, env=env_copy)
+
+
 def ensure_venv():
     if not VENV_DIR.exists():
         print("Creating PyPy virtual environment...")
-        run([PYPY_EXECUTABLE, "-m", "venv", str(VENV_DIR)])
+        run([sys.executable, "-m", "venv", str(VENV_DIR)])
     else:
         print("Virtual environment already exists.")
 
@@ -30,27 +41,46 @@ def venv_pip():
     return VENV_DIR / "bin" / "pip"
 
 
+def install_packages():
+    run(["sudo", "apt-get", "update"])
+    run(["sudo", "apt-get", "install", "-y", "python3-pip", "python3-venv"])
+
+
 def install_dependencies():
-    run([str(venv_pip()), "install", "--upgrade", "pip", "setuptools", "wheel"])
-    if Path("requirements.txt").exists():
-        run([str(venv_pip()), "install", "-r", "requirements.txt"])
+    run([str(venv_pip()), "install", "--upgrade", "pip", "build", "twine"])
+    if (PRAKTIKA_DIR / "requirements.txt").exists():
+        run([str(venv_pip()), "install", "-r", str(PRAKTIKA_DIR / "requirements.txt")])
 
 
-def run_tests():
-    run([str(venv_python()), "-m", "pytest"])
+def build_package(token: str):
+    run([str(venv_python()), "-m", "build", str(PRAKTIKA_DIR)])
+    run([str(venv_python()), "-m", "twine", "check", str(PRAKTIKA_DIR / "dist/*")])
 
-
-def build_package():
-    run([str(venv_pip()), "install", "build"])
-    run([str(venv_python()), "-m", "build"])
+    print(
+        {
+            "TWINE_USERNAME": "__token__",
+            "TWINE_PASSWORD": token if token else os.getenv("TWINE_PASSWORD"),
+        }
+    )
+    run_env(
+        [str(venv_python()), "-m", "twine", "upload", "ci/praktika/dist/*"],
+        env={
+            "TWINE_USERNAME": "__token__",
+            "TWINE_PASSWORD": token if token else os.getenv("TWINE_PASSWORD"),
+        },
+    )
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Upload package to PyPI using a token")
+    parser.add_argument("--token", help="PyPI API token")
+    args = parser.parse_args()
+
+    install_packages()
     ensure_venv()
     install_dependencies()
-    run_tests()
-    build_package()
-    print("\n✅ Build completed successfully.")
+    build_package(token=args.token)
+    print("\nBuild completed successfully.")
 
 
 if __name__ == "__main__":
