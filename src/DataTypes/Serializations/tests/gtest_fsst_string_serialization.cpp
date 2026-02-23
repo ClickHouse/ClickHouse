@@ -8,16 +8,16 @@
 #include "Common/assert_cast.h"
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
-#include "Columns/ColumnFSST.h"
+//#include "Columns/ColumnFSST.h"
 #include "Columns/IColumn_fwd.h"
 #include "Core/Field.h"
-#include "DataTypes/SerializationStringFSST.h"
+//#include "DataTypes/SerializationStringFSST.h"
 #include "DataTypes/Serializations/ISerialization.h"
 #include "DataTypes/Serializations/SerializationString.h"
 
 
 using namespace DB;
-
+/*
 bool Equals(const ColumnString & a, const ColumnFSST & b)
 {
     if (a.size() != b.size())
@@ -98,4 +98,4 @@ int main()
     {
         throw std::runtime_error("fuck");
     }
-}
+}*/

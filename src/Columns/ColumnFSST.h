@@ -13,7 +13,7 @@
 #include <Common/PODArray.h>
 #include <Common/WeakHash.h>
 
-#include "fsst.h"
+#include <fsst.h>
 
 namespace DB
 {
@@ -29,6 +29,14 @@ extern const int PARAMETER_OUT_OF_BOUND;
 
 class ColumnFSST final : public COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>
 {
+    struct ComparatorBase;
+
+    using ComparatorAscendingUnstable = ComparatorAscendingUnstableImpl<ComparatorBase>;
+    using ComparatorAscendingStable = ComparatorAscendingStableImpl<ComparatorBase>;
+    using ComparatorDescendingUnstable = ComparatorDescendingUnstableImpl<ComparatorBase>;
+    using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
+    using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
+
 private:
     friend class COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>;
     friend class COW<IColumn>;
@@ -55,6 +63,7 @@ private:
     void filterInnerData(const Filter & filt, std::vector<UInt64> & lengths, std::vector<BatchDsc> & decoders) const;
 
     void decompressRow(size_t row_num, String & out) const;
+
 public:
     using Base = COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>;
     static Ptr create(const ColumnPtr & nested) { return Base::create(nested->assumeMutable()); }
@@ -120,37 +129,34 @@ public:
     void filter(const Filter & filt) override;
 
     /* also need to implement compress logic in ColumnFSST */
-    void expand(const Filter & /*mask*/, bool /*inverted*/) override { throwNotImplemented(); }
+    void expand(const Filter & /*mask*/, bool /*inverted*/) override { throwNotSupported(); }
 
     /* batches have no sense after reordering */
     [[nodiscard]] ColumnPtr permute(const Permutation & /* perm */, size_t /* limit */) const override { throwNotSupported(); }
-    [[nodiscard]] ColumnPtr index(const IColumn & /* indexes */, size_t /* limit */) const override { throwNotImplemented(); }
+    /* 
+        Compression ratio can become extremely bad because the decoders were built
+        based on how often symbol sequences appear in the current column state.
+    */
+    [[nodiscard]] ColumnPtr index(const IColumn & /* indexes */, size_t /* limit */) const override { throwNotSupported(); }
 
     void getPermutation(
-        PermutationSortDirection /* direction */,
-        PermutationSortStability /* stability */,
-        size_t /* limit */,
-        int /* nan_direction_hint */,
-        Permutation & /* res */) const override
-    {
-        throwNotImplemented();
-    }
+        PermutationSortDirection direction,
+        PermutationSortStability stability,
+        size_t limit,
+        int nan_direction_hint,
+        Permutation & res) const override;
+
     void updatePermutation(
-        PermutationSortDirection /* direction */,
-        PermutationSortStability /* stability */,
-        size_t /* limit */,
-        int /* nan_direction_hint */,
-        Permutation & /* res */,
-        EqualRanges & /* equal_ranges */) const override
-    {
-        throwNotImplemented();
-    }
+        PermutationSortDirection direction,
+        PermutationSortStability stability,
+        size_t limit,
+        int nan_direction_hint,
+        Permutation & res,
+        EqualRanges & equal_ranges) const override;
 
-    [[nodiscard]] ColumnPtr replicate(const Offsets & /* offsets */) const override { throwNotImplemented(); }
+    [[nodiscard]] ColumnPtr replicate(const Offsets & offsets) const override;
 
-    void gather(ColumnGathererStream & /* gatherer_stream */) override { throwNotImplemented(); }
-
-    void getExtremes(Field & /* min */, Field & /* max */) const override { throwNotSupported(); }
+    void gather(ColumnGathererStream & /* gatherer_stream */) override { throwNotSupported(); }
 
     [[nodiscard]] size_t byteSize() const override;
     [[nodiscard]] size_t byteSizeAt(size_t) const override;
@@ -168,6 +174,8 @@ public:
     WrappedPtr getStringColumn() const { return string_column; }
     const std::vector<BatchDsc> & getDecoders() const { return decoders; }
     const std::vector<UInt64> & getLengths() const { return origin_lengths; }
+
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     void append(const CompressedField & x);
     void appendNewBatch(const CompressedField & x, std::shared_ptr<fsst_decoder_t> decoder);
