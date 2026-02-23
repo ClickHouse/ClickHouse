@@ -112,6 +112,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ErrorCodes
@@ -396,7 +397,14 @@ void StorageMergeTree::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
-    assertNotReadonly();
+    /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
+    /// so that the readonly state can be toggled back.
+    bool dominated_by_setting_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
+    {
+        return c.type == AlterCommand::MODIFY_SETTING || c.type == AlterCommand::RESET_SETTING;
+    });
+    if (!dominated_by_setting_changes)
+        assertNotReadonly();
 
     if (local_context->getCurrentTransaction() && local_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER METADATA is not supported inside transactions");
@@ -3107,6 +3115,8 @@ void StorageMergeTree::assertNotReadonly() const
 {
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode");
 }
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
