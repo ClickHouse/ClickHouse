@@ -66,6 +66,7 @@ function run_query_with_pure_parallel_replicas () {
         --max_parallel_replicas 3 \
         --parallel_replicas_prefer_local_join 0 \
         --cluster_for_parallel_replicas "parallel_replicas" \
+        --automatic_parallel_replicas_mode 0 \
         --enable_parallel_replicas 1 \
         --parallel_replicas_only_with_analyzer 0 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \

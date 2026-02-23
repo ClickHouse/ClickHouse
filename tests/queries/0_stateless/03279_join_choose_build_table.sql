@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 SET use_statistics = 0;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;

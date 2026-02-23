@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
