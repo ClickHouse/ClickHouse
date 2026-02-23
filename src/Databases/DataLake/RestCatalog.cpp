@@ -214,7 +214,7 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
         result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
-DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool /*update_token*/) const
+DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
     /// Option 1: user specified auth header manually.
     /// Header has format: 'Authorization: <scheme> <token>'.
@@ -223,8 +223,20 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool /*update_token*/) const
         return DB::HTTPHeaderEntries{auth_header.value()};
     }
 
-    /// For base RestCatalog, if catalog_credential is provided, token should be obtained
-    /// by derived classes (OneLakeCatalog, BigLakeCatalog) which override this method.
+    /// Option 2: user provided grant_type, client_id and client_secret.
+    /// We would make OAuthClientCredentialsRequest
+    /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
+    if (!client_id.empty())
+    {
+        if (!access_token.has_value() || update_token)
+        {
+            access_token = retrieveAccessToken();
+        }
+
+        DB::HTTPHeaderEntries headers;
+        headers.emplace_back("Authorization", "Bearer " + access_token.value().token);
+        return headers;
+    }
     return {};
 }
 
@@ -252,27 +264,7 @@ OneLakeCatalog::OneLakeCatalog(
     config = loadConfig();
 }
 
-DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(bool update_token) const
-{
-    /// User provided grant_type, client_id and client_secret.
-    /// We would make OAuthClientCredentialsRequest
-    /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
-    if (!client_id.empty())
-    {
-        if (!access_token.has_value() || update_token || access_token->isExpired())
-        {
-            access_token = retrieveAccessToken();
-        }
-
-        DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token->token);
-        return headers;
-    }
-
-    return RestCatalog::getAuthHeaders(update_token);
-}
-
-AccessToken OneLakeCatalog::retrieveAccessToken() const
+AccessToken RestCatalog::retrieveAccessToken() const
 {
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
 
