@@ -875,7 +875,7 @@ void DatabaseDataLake::checkDatabase() const
     auto catalog = getCatalog();
     /// This function checks if we can access catalog and get tables list.
     /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
-    catalog->empty();
+    std::ignore = catalog->empty();
 
     fiu_do_on(FailPoints::check_database_datalake_negative, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database '{}'", getDatabaseName());
