@@ -152,14 +152,7 @@ class BuzzHouseGenerator(Generator):
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
         # Set SMT disk only when property.py doesn't do it
         buzz_config["set_smt_disk"] = root.find("shared_merge_tree") is None
-        if (
-            args.with_spark
-            or args.with_glue
-            or args.with_hms
-            or args.with_rest
-            or args.with_unity
-            or args.with_kafka
-        ):
+        if args.with_spark or args.with_kafka:
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
                 "client_hostname": catalog_server.host,
