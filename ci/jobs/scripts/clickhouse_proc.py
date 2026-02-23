@@ -534,14 +534,45 @@ profiles:
             verbose=True,
             strict=True,
         )
-        status = (
-            "failed"
-            if not res
-            else Shell.get_output(
+        if not res:
+            return False
+
+        # Restart minio with a timeout to avoid hanging forever (see #97647).
+        # If the restart hangs, kill minio and start it again.
+        restart_timeout = 60
+        try:
+            print(f"Restarting clickminio (timeout {restart_timeout}s)")
+            result = subprocess.run(
                 "/mc admin service restart clickminio --wait --json 2>&1 | jq -r .status",
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=restart_timeout,
+                executable="/bin/bash",
+            )
+            status = result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            print(
+                f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
+            )
+            Shell.check("pkill -9 -f 'minio server'", verbose=True)
+            time.sleep(2)
+            Shell.check(
+                f"nohup minio server --address :11111 {temp_dir}/minio_data &",
                 verbose=True,
             )
-        )
+            # Wait for minio to be ready
+            for _ in range(30):
+                if Shell.check(
+                    "/mc ls clickminio/test", verbose=False
+                ):
+                    status = "success"
+                    break
+                time.sleep(1)
+            else:
+                status = "failed"
+
         res = "success" in status
         if not res:
             print(f"ERROR: Failed to restart clickminio, status: {status}")
