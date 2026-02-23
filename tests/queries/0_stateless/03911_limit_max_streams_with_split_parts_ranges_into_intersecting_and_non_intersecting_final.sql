@@ -1,6 +1,7 @@
--- Tags: long, no-sanitizers
+-- Tags: long, no-sanitizers, no-s3-storage, no-azure-blob-storage
 -- long: times out in private
 -- no-sanitizers: sometimes times out in private :(
+-- no-s3-storage, no-azure-blob-storage: writing 550 small parts to object storage is too slow
 
 DROP TABLE IF EXISTS t;
 
