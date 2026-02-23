@@ -69,6 +69,11 @@ if(NOT ENABLE_RUST)
 endif()
 
 set_rust_target()
+
+# Use a shared cargo target directory for all Rust crates to avoid recompiling common dependencies
+# This significantly speeds up builds when multiple crates share dependencies like regex, serde, etc.
+set(CORROSION_SHARED_CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo/build" CACHE INTERNAL "Shared cargo target directory")
+
 # Define function corrosion_import_crate()
 include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
 

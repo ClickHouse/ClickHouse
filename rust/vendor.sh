@@ -11,7 +11,11 @@ rustup component add --toolchain "$TOOLCHAIN" rust-src
 
 CH_TOP_DIR=$(git rev-parse --show-toplevel)
 
-cd "$CH_TOP_DIR/rust/workspace" || exit 1
+cd "$CH_TOP_DIR/contrib/prql" || exit 1
+# (Re)-generate the Cargo.lock file
+cargo generate-lockfile
+
+cd "$CH_TOP_DIR/contrib/skim" || exit 1
 # (Re)-generate the Cargo.lock file
 cargo generate-lockfile
 
@@ -25,7 +29,10 @@ rm -rf "${CH_TOP_DIR:?}"/contrib/rust_vendor/*
 cd "$CH_TOP_DIR"/rust/chcache || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
-cd "$CH_TOP_DIR"/rust/workspace || exit 1
+cd "$CH_TOP_DIR"/contrib/prql || exit 1
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
+
+cd "$CH_TOP_DIR"/contrib/skim || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 #
@@ -41,7 +48,7 @@ cd "$CH_TOP_DIR"/contrib/chdig || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Just in case
-cd "$CH_TOP_DIR"/rust/workspace
+cd "$CH_TOP_DIR"/contrib/skim
 
 # Standard library deps
 RUSTC_ROOT=$(rustc --print=sysroot)
