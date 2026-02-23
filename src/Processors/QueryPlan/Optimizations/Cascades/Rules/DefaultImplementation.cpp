@@ -3,12 +3,50 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
 namespace DB
 {
+
+/// Trace a column name back through the DAG to its original input name.
+/// For ALIAS chains (e.g., __table3.l_orderkey -> l_orderkey), returns the input name.
+/// For computed columns (FUNCTION nodes), returns empty - can't be translated.
+static String traceColumnToInput(const ActionsDAG & dag, const String & output_name)
+{
+    const ActionsDAG::Node * node = dag.tryFindInOutputs(output_name);
+    if (!node)
+        return {};
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        chassert(node->children.size() == 1);
+        node = node->children.front();
+    }
+    if (node->type == ActionsDAG::ActionType::INPUT)
+        return node->result_name;
+    return {};
+}
+
+/// Translate distribution column names through an ActionsDAG.
+static void translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> & columns)
+{
+    for (auto & column_set : columns)
+    {
+        NameSet translated;
+        for (const auto & name : column_set)
+        {
+            String input_name = traceColumnToInput(dag, name);
+            if (!input_name.empty())
+                translated.insert(input_name);
+            else
+                translated.insert(name);
+        }
+        column_set = std::move(translated);
+    }
+}
 
 /// Moves the QueryPlan node to implementation as is
 class DefaultImplementation : public IOptimizationRule
@@ -54,7 +92,22 @@ std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpression
         /// Both input and output stay at {1 node}; `DistributionEnforcer` adds
         /// an exchange on this step's output if the parent needs multi-node.
         if (!has_construction_time_sorting)
+        {
             input_props.distribution = required_properties.distribution;
+
+            /// Translate distribution column names through the Expression/Filter DAG.
+            if (!input_props.distribution.columns.empty())
+            {
+                const ActionsDAG * dag = nullptr;
+                if (auto * expression_step = typeid_cast<ExpressionStep *>(implementation_expression->plan_step.get()))
+                    dag = &expression_step->getExpression();
+                else if (auto * filter_step = typeid_cast<FilterStep *>(implementation_expression->plan_step.get()))
+                    dag = &filter_step->getExpression();
+
+                if (dag)
+                    translateDistributionColumns(*dag, input_props.distribution.columns);
+            }
+        }
         else
             propagate_distribution = false;
     }
