@@ -28,7 +28,10 @@ public:
         , plan_step(other_.getQueryPlanStep()->clone())
 //        , original_node(nullptr)
         , inputs(other_.inputs)
-    {}
+    {
+        /// clone() may not preserve the step description, so copy it from the original
+        plan_step->setStepDescription(*other_.plan_step);
+    }
 
     String getName() const;
     String getDescription() const;
