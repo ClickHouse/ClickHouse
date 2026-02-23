@@ -14,12 +14,14 @@ SpillingHashJoin::SpillingHashJoin(
     SharedHeader left_sample_block_,
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
+    size_t initial_num_buckets_,
     size_t max_num_buckets_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
     , right_sample_block(right_sample_block_->cloneEmpty())
     , tmp_data(std::move(tmp_data_))
+    , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
     , limits(table_join->sizeLimits())
 {
@@ -34,6 +36,7 @@ SpillingHashJoin::SpillingHashJoin(
     SharedHeader left_sample_block_,
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
+    size_t initial_num_buckets_,
     size_t max_num_buckets_,
     size_t concurrent_slots_,
     const StatsCollectingParams & stats_collecting_params_)
@@ -42,6 +45,7 @@ SpillingHashJoin::SpillingHashJoin(
     , left_sample_block(std::move(left_sample_block_))
     , right_sample_block(right_sample_block_->cloneEmpty())
     , tmp_data(std::move(tmp_data_))
+    , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
     , limits(table_join->sizeLimits())
 {
@@ -112,7 +116,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
 
         /// Create GraceHashJoin.
         grace_join = std::make_shared<GraceHashJoin>(
-            /*initial_num_buckets_=*/1,
+            initial_num_buckets,
             max_num_buckets,
             table_join,
             left_sample_block,
@@ -156,7 +160,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/ false);
 
     inner_join = std::make_shared<GraceHashJoin>(
-        /*initial_num_buckets_=*/ 1,
+        initial_num_buckets,
         max_num_buckets,
         table_join,
         left_sample_block,

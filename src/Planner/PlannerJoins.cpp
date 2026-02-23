@@ -1183,6 +1183,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         left_table_expression_header,
                         right_table_expression_header,
                         Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                        params.grace_hash_join_initial_buckets,
                         params.grace_hash_join_max_buckets,
                         params.max_threads,
                         stats_collecting_params);
@@ -1194,6 +1195,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 left_table_expression_header,
                 right_table_expression_header,
                 Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets);
         }
 
@@ -1254,6 +1256,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     left_table_expression_header,
                     right_table_expression_header,
                     Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                    params.grace_hash_join_initial_buckets,
                     params.grace_hash_join_max_buckets,
                     params.max_threads,
                     stats_collecting_params);
@@ -1264,6 +1267,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 left_table_expression_header,
                 right_table_expression_header,
                 Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets);
         }
 

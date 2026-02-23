@@ -49,6 +49,7 @@ public:
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
+        size_t initial_num_buckets_,
         size_t max_num_buckets_);
 
     /// Concurrent mode: wraps a ConcurrentHashJoin.
@@ -57,6 +58,7 @@ public:
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
+        size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t concurrent_slots_,
         const StatsCollectingParams & stats_collecting_params_);
@@ -106,6 +108,7 @@ private:
     SharedHeader left_sample_block;
     Block right_sample_block;
     TemporaryDataOnDiskScopePtr tmp_data;
+    size_t initial_num_buckets;
     size_t max_num_buckets;
     SizeLimits limits;
 

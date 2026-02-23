@@ -1048,6 +1048,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         std::make_shared<const Block>(std::move(left_sample_block)),
                         right_sample_block,
                         context->getTempDataOnDisk(),
+                        settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
                         StatsCollectingParams{});
@@ -1057,6 +1058,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         std::make_shared<const Block>(std::move(left_sample_block)),
                         right_sample_block,
                         context->getTempDataOnDisk(),
+                        settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets]);
             }
         }
@@ -1101,6 +1103,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         std::make_shared<const Block>(std::move(left_sample_block)),
                         right_sample_block,
                         context->getTempDataOnDisk(),
+                        settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
                         StatsCollectingParams{});
@@ -1110,6 +1113,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         std::make_shared<const Block>(std::move(left_sample_block)),
                         right_sample_block,
                         context->getTempDataOnDisk(),
+                        settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets]);
             }
         }
