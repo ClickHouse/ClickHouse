@@ -9,6 +9,7 @@
 #include <Common/AtomicLogger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ExceptionExt.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
