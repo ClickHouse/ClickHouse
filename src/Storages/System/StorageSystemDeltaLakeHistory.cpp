@@ -236,7 +236,7 @@ public:
     {
         auto source = std::make_shared<SystemDeltaLakeHistorySource>(getOutputHeader(), max_block_size, context);
         source->setStorageLimits(storage_limits);
-        processors.emplace_back(source);
+        processors.push_back(source);
         pipeline.init(Pipe(std::move(source)));
     }
 
