@@ -1,3 +1,5 @@
+SET optimize_multiif_to_if = 1;
+
 DROP TABLE IF EXISTS bugcheck1;
 
 CREATE TABLE bugcheck1
