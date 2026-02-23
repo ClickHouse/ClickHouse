@@ -4,7 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/assert_cast.h>
-#include "Core/ColumnsWithTypeAndName.h"
+#include <Core/ColumnsWithTypeAndName.h>
 
 
 namespace DB
