@@ -245,7 +245,6 @@ ThreadGroupPtr ThreadGroup::createForScope()
 
 ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group)
 {
-    chassert(CurrentThread::getGroup());
     auto res_group = std::make_shared<ThreadGroup>(query_context, flush_query_thread_group);
     res_group->memory_tracker.setDescription("FlushAsyncInsertQuery");
     return res_group;
