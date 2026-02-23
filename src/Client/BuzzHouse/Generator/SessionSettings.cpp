@@ -314,6 +314,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
     {"apply_deleted_mask", trueOrFalseSettingNoOracle},
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
+    {"apply_ttl_on_fly", trueOrFalseSettingNoOracle},
+
     {"apply_patch_parts", trueOrFalseSetting},
     {"apply_prewhere_after_final", trueOrFalseSettingNoOracle},
     {"apply_row_policy_after_final", trueOrFalseSettingNoOracle},
