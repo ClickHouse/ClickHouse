@@ -58,7 +58,7 @@ def build_package(token: str):
 
     print("REMOVEME token", Info.get_secret("PYPI_TOKEN"))
     if not token:
-        token = Info.get_secret("PYPI_TOKEN")
+        token = Info.get_secret(name="PYPI_TOKEN")
         print(token)
 
     if not token:
