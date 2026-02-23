@@ -122,11 +122,12 @@ public:
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void insertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #else
-    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
+        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
