@@ -48,12 +48,12 @@ def install_packages():
 
 def install_dependencies():
     run([str(venv_pip()), "install", "--upgrade", "pip", "build", "twine"])
-    if Path("requirements.txt").exists():
+    if Path("ci/praktika/requirements.txt").exists():
         run([str(venv_pip()), "install", "-r", "requirements.txt"])
 
 
 def build_package(token: str):
-    run([str(venv_python()), "-m", "build"])
+    run([str(venv_python()), "-m", "build", "ci/praktika"])
     run([str(venv_python()), "-m", "twine", "check", "ci/praktika/dist/*"])
 
     print("REMOVEME token", Info.get_secret("PYPI_TOKEN"))
