@@ -24,7 +24,6 @@ def run_env(cmd, check=True, env=None):
     subprocess.run(cmd, check=check, env=env_copy)
 
 
-
 def ensure_venv():
     if not VENV_DIR.exists():
         print("Creating PyPy virtual environment...")
@@ -56,16 +55,17 @@ def build_package(token: str):
     run([str(venv_python()), "-m", "build", "ci/praktika"])
     run([str(venv_python()), "-m", "twine", "check", "ci/praktika/dist/*"])
 
-    print("REMOVEME token", Info.get_secret(name="PYPI_TOKEN"))
+    print("REMOVEME token", Info().get_secret(name="PYPI_TOKEN"))
     if not token:
-        token = Info.get_secret(name="PYPI_TOKEN")
-        print(token)
+        token = Info().get_secret(name="PYPI_TOKEN")
+        print("got token")
 
     if not token:
         token = os.getenv("TWINE_PASSWORD")
-    run_env([str(venv_python()), "-m", "twine", "upload", "ci/praktika/dist/*"],
-            env={"TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token}
-            )
+    run_env(
+        [str(venv_python()), "-m", "twine", "upload", "ci/praktika/dist/*"],
+        env={"TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token},
+    )
 
 
 def main():
