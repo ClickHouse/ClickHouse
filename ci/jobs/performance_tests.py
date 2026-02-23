@@ -22,21 +22,19 @@ perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
-select test, query_index,
+SELECT test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
     quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    query_display_name
-from query_metrics_v2
+    any(query_display_name) AS query_display_name
+FROM query_metrics_v2
 -- We use results at least one week in the past, so that the current
 -- changes do not immediately influence the statistics, and we have
 -- some time to notice that something is wrong.
--- TODO: switch 3 month to 1 month once we have data in the table
-where event_date between now() - interval 3 month - interval 1 week
-    and now() - interval 1 week
-    and metric = 'client_time'
-    and pr_number = 0
-group by test, query_index, query_display_name
-having count(*) > 100"""
+WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
+    AND metric = 'client_time'
+    AND pr_number = 0
+GROUP BY test, query_index
+HAVING count() > 100"""
 
 INSERT_HISTORICAL_DATA = """\
 INSERT INTO query_metrics_v2

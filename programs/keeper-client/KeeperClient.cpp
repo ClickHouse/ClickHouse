@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ErrnoException.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/HelpFormatter.h>
 

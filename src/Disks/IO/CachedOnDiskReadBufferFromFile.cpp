@@ -15,6 +15,7 @@
 #include <Common/assert_cast.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/ErrnoException.h>
 
 
 namespace ProfileEvents

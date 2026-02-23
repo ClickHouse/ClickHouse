@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
@@ -20,6 +21,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+}
+
+void throwUnexpectedLowCardinalityIndexType(size_t size)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column: {}", size);
 }
 
 namespace

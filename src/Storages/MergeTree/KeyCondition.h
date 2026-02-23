@@ -41,6 +41,15 @@ struct ActionsDAGWithInversionPushDown
     explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
 };
 
+
+struct DeterministicKeyTransformDag
+{
+    ExpressionActionsPtr actions;
+    String output_name;
+    DataTypePtr input_type;
+    String input_name;
+};
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -415,6 +424,14 @@ private:
         MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
+
+    bool extractDeterministicFunctionsDagFromKey(
+        const String & expr_name,
+        const BuildInfo & info,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        DeterministicKeyTransformDag & out_functions_chain) const;
+
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
@@ -423,25 +440,27 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
-    bool canConstantBeWrappedByFunctions(
+    bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
+        DataTypePtr & out_type,
+        bool & out_is_injective);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
     /// specifies key column position / type. Besides that it produces the
-    /// chain of functions which should be executed on set, to transform it
-    /// into key column values.
-    bool canSetValuesBeWrappedByFunctions(
+    /// transformation DAG which should be executed on set elements, to
+    /// transform them into key column values.
+    bool canSetValuesBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
-        MonotonicFunctionsChain & out_functions_chain);
+        DeterministicKeyTransformDag & out_transform,
+        bool & out_is_injective) const;
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
@@ -449,21 +468,19 @@ private:
     bool tryPrepareSetIndexForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
-        bool allow_constant_transformation);
+        RPNElement & out);
     bool tryPrepareSetIndexForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
-        bool allow_constant_transformation);
+        RPNElement & out);
 
     void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
-        std::vector<MonotonicFunctionsChain> &set_transforming_chains,
+        std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
         DataTypes & data_types,
         size_t & args_count,
         const BuildInfo & info,
-        bool allow_constant_transformation);
+        bool & out_relaxed);
 
     /// Checks that the index can not be used.
     ///
