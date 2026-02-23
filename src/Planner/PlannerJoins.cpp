@@ -1163,6 +1163,40 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
+        if (params.enable_auto_spilling_hash_join
+            && GraceHashJoin::isSupported(table_join)
+            && Context::getGlobalContextInstance()->getTempDataOnDisk())
+        {
+            if (table_join->allowParallelHashJoin())
+            {
+                const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
+                    || (*params.rhs_size_estimation >= params.parallel_hash_join_threshold);
+                if (use_parallel_hash)
+                {
+                    StatsCollectingParams stats_collecting_params{
+                        params.hash_table_key_hash,
+                        params.collect_hash_table_stats_during_joins,
+                        params.max_entries_for_hash_table_stats,
+                        params.max_size_to_preallocate_for_joins};
+                    return std::make_shared<SpillingHashJoin>(
+                        table_join,
+                        left_table_expression_header,
+                        right_table_expression_header,
+                        Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                        params.grace_hash_join_max_buckets,
+                        params.max_threads,
+                        stats_collecting_params);
+                }
+            }
+
+            return std::make_shared<SpillingHashJoin>(
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                params.grace_hash_join_max_buckets);
+        }
+
         if (table_join->allowParallelHashJoin())
         {
             const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
@@ -1176,18 +1210,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.max_size_to_preallocate_for_joins};
                 return std::make_shared<ConcurrentHashJoin>(table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
             }
-        }
-
-        if (params.enable_auto_spilling_hash_join
-            && GraceHashJoin::isSupported(table_join)
-            && Context::getGlobalContextInstance()->getTempDataOnDisk())
-        {
-            return std::make_shared<SpillingHashJoin>(
-                table_join,
-                left_table_expression_header,
-                right_table_expression_header,
-                Context::getGlobalContextInstance()->getTempDataOnDisk(),
-                params.grace_hash_join_max_buckets);
         }
 
         return std::make_shared<HashJoin>(
@@ -1220,6 +1242,23 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             && GraceHashJoin::isSupported(table_join)
             && Context::getGlobalContextInstance()->getTempDataOnDisk())
         {
+            if (table_join->allowParallelHashJoin())
+            {
+                StatsCollectingParams stats_collecting_params{
+                    params.hash_table_key_hash,
+                    params.collect_hash_table_stats_during_joins,
+                    params.max_entries_for_hash_table_stats,
+                    params.max_size_to_preallocate_for_joins};
+                return std::make_shared<SpillingHashJoin>(
+                    table_join,
+                    left_table_expression_header,
+                    right_table_expression_header,
+                    Context::getGlobalContextInstance()->getTempDataOnDisk(),
+                    params.grace_hash_join_max_buckets,
+                    params.max_threads,
+                    stats_collecting_params);
+            }
+
             return std::make_shared<SpillingHashJoin>(
                 table_join,
                 left_table_expression_header,

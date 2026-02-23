@@ -14,3 +14,15 @@ right join spill
 10000
 full join spill
 15000
+concurrent inner join small
+100	49500
+concurrent left join small
+100	1225
+concurrent inner join spill
+10000	49995000
+concurrent left join spill
+10000
+concurrent right join spill
+10000
+concurrent full join spill
+15000
