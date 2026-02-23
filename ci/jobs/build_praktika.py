@@ -9,6 +9,8 @@ from ci.praktika.info import Info
 
 VENV_DIR = Path(".venv-pypy")
 
+PRAKTIKA_DIR = Path("ci/praktika")
+
 
 def run(cmd, check=True):
     print(f"\n>>> Running: {' '.join(cmd)}")
@@ -47,13 +49,13 @@ def install_packages():
 
 def install_dependencies():
     run([str(venv_pip()), "install", "--upgrade", "pip", "build", "twine"])
-    if Path("ci/praktika/requirements.txt").exists():
-        run([str(venv_pip()), "install", "-r", "requirements.txt"])
+    if (PRAKTIKA_DIR / "requirements.txt").exists():
+        run([str(venv_pip()), "install", "-r", str(PRAKTIKA_DIR / "requirements.txt")])
 
 
 def build_package(token: str):
-    run([str(venv_python()), "-m", "build", "ci/praktika"])
-    run([str(venv_python()), "-m", "twine", "check", "ci/praktika/dist/*"])
+    run([str(venv_python()), "-m", "build", str(PRAKTIKA_DIR)])
+    run([str(venv_python()), "-m", "twine", "check", str(PRAKTIKA_DIR / "dist/*")])
 
     print("REMOVEME token", Info().get_secret(name="PYPI_TOKEN"))
     if not token:
