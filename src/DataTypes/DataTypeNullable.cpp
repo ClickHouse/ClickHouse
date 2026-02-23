@@ -169,13 +169,6 @@ DataTypePtr removeNullable(const DataTypePtr & type)
     return type;
 }
 
-SerializationPtr removeNullable(const SerializationPtr & serialization)
-{
-    if (const auto * nullable_serialization = typeid_cast<const SerializationNullable *>(serialization.get()))
-        return nullable_serialization->getNested();
-    return serialization;
-}
-
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type)
 {
     if (isNullableOrLowCardinalityNullable(type))
