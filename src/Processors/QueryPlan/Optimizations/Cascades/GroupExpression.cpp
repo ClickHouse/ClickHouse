@@ -52,11 +52,7 @@ void GroupExpression::setApplied(const IOptimizationRule & rule, const Expressio
 void GroupExpression::dump(WriteBuffer & out) const
 {
     properties.dump(out);
-    out << " ";
-    for (const auto & enforcer_step : property_enforcer_steps)
-        out << enforcer_step->getName() << " ";
-
-    out << "'" << getDescription() << "' inputs:";
+    out << " '" << getDescription() << "' inputs:";
     for (const auto & input : inputs)
         out << " #" << input.group_id;
     if (cost.has_value())
@@ -75,8 +71,6 @@ String GroupExpression::fingerprint() const
     WriteBufferFromOwnString buf;
     buf << getDescription();
     properties.dump(buf);
-    for (const auto & enforcer_step : property_enforcer_steps)
-        buf << ' ' << enforcer_step->getName();
     for (const auto & input : inputs)
     {
         buf << " #" << input.group_id << ':';

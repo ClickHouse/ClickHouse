@@ -31,7 +31,17 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     }
     else if (!group->getBestImplementation(required_properties).expression)
     {
-        /// Copy the list of physical expression because we are going to add new ones while iterating
+        /// Stage 3: Apply enforcers to physical expressions that don't satisfy the
+        /// required properties.  Enforcers produce self-referential expressions whose
+        /// inputs point back to the same group with relaxed requirements.  After their
+        /// inputs are optimized (via OptimizeInputsTask), the re-pushed self-task
+        /// re-enters Stage 3 to try further enforcers on the newly created expressions,
+        /// enabling natural composition (e.g. Sort + Gather -> Strategy A).
+
+        /// Collect enforcer expressions first, then push tasks in the right order.
+        std::vector<GroupExpressionPtr> enforcer_expressions;
+
+        /// Copy the list because enforcers add new physical expressions to the group.
         auto existing_implementations = group->physical_expressions;
         for (auto & expression : existing_implementations)
         {
@@ -41,17 +51,28 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
                 continue;
             }
 
-            /// Try to add enforcer to satisfy the required properties
             for (const auto & enforcer : optimizer_context.getEnforcerRules())
             {
-                /// TODO: how to handle a combination of enforcers, e.g. modify both sorting and distribution?
                 if (enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
                 {
-                    /// TODO: apply in a separate task?
                     auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
-                    for (const auto & new_expression : new_expressions)
-                        optimizer_context.updateBestPlan(new_expression);
+                    enforcer_expressions.insert(enforcer_expressions.end(), new_expressions.begin(), new_expressions.end());
                 }
+            }
+        }
+
+        if (!enforcer_expressions.empty())
+        {
+            /// Push self-task FIRST so it sits at the bottom of the stack (LIFO) and
+            /// executes AFTER all OptimizeInputsTask complete.  This re-run checks
+            /// whether the newly created enforcer expressions need further composition.
+            optimizer_context.pushTask(
+                std::make_shared<OptimizeGroupTask>(group_id, required_properties, cost_limit));
+
+            for (const auto & new_expression : enforcer_expressions)
+            {
+                optimizer_context.pushTask(
+                    std::make_shared<OptimizeInputsTask>(new_expression, 0, cost_limit));
             }
         }
     }

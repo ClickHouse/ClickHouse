@@ -18,6 +18,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Produces self-referential enforcer expressions that bridge distribution gaps.
+/// Each enforcer expression lives in the same group as the source expression; its
+/// single input points back to the same group with the source expression's properties
+/// as the requirement.  The optimizer recursively satisfies this self-referential
+/// input through the normal task mechanism, enabling natural enforcer composition
+/// (e.g. Sort + Gather compose into Strategy A without bundling steps).
 class DistributionEnforcer : public IOptimizationRule
 {
 public:
@@ -37,7 +43,8 @@ bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const Exp
 
 std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    auto implementation_expression = std::make_shared<GroupExpression>(*expression);
+    const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
+    std::vector<GroupExpressionPtr> result;
 
     if (required_properties.distribution.columns.empty())
     {
@@ -45,21 +52,59 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
         {
             /// BroadcastExchangeStep only supports a single source shard (1->N).
             /// When the source is already on multiple nodes, skip the broadcast
-            /// enforcer entirely - the optimizer should use Shuffle join instead.
+            /// enforcer entirely — the optimizer should use Shuffle join instead.
             if (expression->properties.distribution.node_count > 1)
                 return {};
 
-            auto broadcast_exchange_step = std::make_unique<BroadcastExchangeStep>(
-                expression->getQueryPlanStep()->getOutputHeader(),
-                required_properties.distribution.node_count);
-            implementation_expression->property_enforcer_steps.push_back(std::move(broadcast_exchange_step));
+            auto enforcer_expr = std::make_shared<GroupExpression>(
+                std::make_unique<BroadcastExchangeStep>(
+                    input_header,
+                    required_properties.distribution.node_count));
+            enforcer_expr->group_id = expression->group_id;
+            enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = expression->properties});
+            enforcer_expr->properties.distribution = required_properties.distribution;
+
+            enforcer_expr->setApplied(*this, required_properties);
+            memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
+            result.push_back(enforcer_expr);
         }
         else if (required_properties.distribution.node_count == 1 && expression->properties.distribution.node_count > 1)
         {
-            auto gather_exchange_step = std::make_unique<GatherExchangeStep>(
-                expression->getQueryPlanStep()->getOutputHeader(),
-                expression->properties.distribution.node_count);
-            implementation_expression->property_enforcer_steps.push_back(std::move(gather_exchange_step));
+            /// Regular gather: N nodes -> 1 node, sorting NOT preserved.
+            {
+                auto enforcer_expr = std::make_shared<GroupExpression>(
+                    std::make_unique<GatherExchangeStep>(
+                        input_header,
+                        expression->properties.distribution.node_count));
+                enforcer_expr->group_id = expression->group_id;
+                enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = expression->properties});
+                enforcer_expr->properties.distribution = required_properties.distribution;
+                /// Sorting is destroyed by a regular gather.
+
+                enforcer_expr->setApplied(*this, required_properties);
+                memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
+                result.push_back(enforcer_expr);
+            }
+
+            /// Sorted-merge gather: N nodes -> 1 node, sorting PRESERVED.
+            /// Only produced when the source expression already has sorting, so that
+            /// the composition SortOnEachNode -> SortedGather yields Strategy B.
+            if (!expression->properties.sorting.empty())
+            {
+                auto enforcer_expr = std::make_shared<GroupExpression>(
+                    std::make_unique<GatherExchangeStep>(
+                        input_header,
+                        expression->properties.distribution.node_count,
+                        expression->properties.sorting));
+                enforcer_expr->group_id = expression->group_id;
+                enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = expression->properties});
+                enforcer_expr->properties.distribution = required_properties.distribution;
+                enforcer_expr->properties.sorting = expression->properties.sorting;
+
+                enforcer_expr->setApplied(*this, required_properties);
+                memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
+                result.push_back(enforcer_expr);
+            }
         }
     }
     else
@@ -74,25 +119,30 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             shuffle_columns.push_back(*distribution_column.begin());
         }
 
-        auto exchange_step =
-            (expression->properties.distribution.node_count == 1) ?
-            QueryPlanStepPtr(std::make_unique<ScatterExchangeStep>(
-                expression->getQueryPlanStep()->getOutputHeader(),
+        QueryPlanStepPtr exchange_step =
+            (expression->properties.distribution.node_count == 1)
+            ? QueryPlanStepPtr(std::make_unique<ScatterExchangeStep>(
+                input_header,
                 std::move(shuffle_columns),
-                required_properties.distribution.node_count)) :
-            QueryPlanStepPtr(std::make_unique<ShuffleExchangeStep>(
-                expression->getQueryPlanStep()->getOutputHeader(),
+                required_properties.distribution.node_count))
+            : QueryPlanStepPtr(std::make_unique<ShuffleExchangeStep>(
+                input_header,
                 std::move(shuffle_columns),
                 expression->properties.distribution.node_count,
                 required_properties.distribution.node_count));
 
-        implementation_expression->property_enforcer_steps.push_back(std::move(exchange_step));
+        auto enforcer_expr = std::make_shared<GroupExpression>(std::move(exchange_step));
+        enforcer_expr->group_id = expression->group_id;
+        enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = expression->properties});
+        enforcer_expr->properties.distribution = required_properties.distribution;
+        /// Shuffle/scatter destroys sorting.
+
+        enforcer_expr->setApplied(*this, required_properties);
+        memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr);
+        result.push_back(enforcer_expr);
     }
-    implementation_expression->properties.distribution = required_properties.distribution;
-    implementation_expression->inputs = expression->inputs;
-    implementation_expression->setApplied(*this, required_properties);
-    memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
-    return {implementation_expression};
+
+    return result;
 }
 
 OptimizationRulePtr createDistributionEnforcer() { return std::make_shared<DistributionEnforcer>(); }

@@ -516,12 +516,6 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         plan_for_group = std::move(united_plan);
     }
 
-    /// Put all property enforcer steps on top
-    for (auto & enforcer_step : group_best_expression->property_enforcer_steps)
-    {
-        plan_for_group->addStep(std::move(enforcer_step));
-    }
-
     plan_for_group->getRootNode()->cost_estimation = CostEstimationInfo
         {
             .cost = group_best_expression->cost->subtree_cost.total(),

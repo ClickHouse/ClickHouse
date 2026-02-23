@@ -56,7 +56,6 @@ public:
     std::vector<Input> inputs;
 
     ExpressionProperties properties;
-    std::vector<QueryPlanStepPtr> property_enforcer_steps;   /// Steps that enforce required properties but don't change the logical set of rows
 
     std::unordered_set<String> applied_rules;   /// TODO: implement more efficiently
 

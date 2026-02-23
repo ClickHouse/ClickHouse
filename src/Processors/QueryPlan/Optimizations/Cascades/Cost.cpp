@@ -10,9 +10,11 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <base/types.h>
 
 namespace DB
@@ -82,30 +84,27 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         /// Merging intermediate aggregate states: CPU proportional to input + output rows.
         total_cost.cost.cpu = group->statistics->estimated_row_count + input_group->statistics->estimated_row_count;
     }
+    else if (auto * broadcast = dynamic_cast<BroadcastExchangeStep *>(expression_plan_step))
+    {
+        /// Broadcast replicates all rows to every destination node.
+        total_cost.cost.network += group->statistics->estimated_row_count * static_cast<Float64>(broadcast->getResultBucketCount());
+    }
+    else if (dynamic_cast<LogicalExchangeStep *>(expression_plan_step))
+    {
+        /// Gather, Shuffle, Scatter: each row is sent exactly once.
+        total_cost.cost.network += group->statistics->estimated_row_count;
+    }
+    else if (typeid_cast<SortingStep *>(expression_plan_step))
+    {
+        /// Sorting: CPU proportional to rows.
+        total_cost.cost.cpu += group->statistics->estimated_row_count;
+    }
     else
     {
         if (expression->inputs.empty())
         {
             /// Some default non-zero cost
             total_cost.cost.cpu = 100500;
-        }
-    }
-
-    /// Add network cost for property enforcer steps (exchanges added by DistributionEnforcer).
-    /// The exchange moves `estimated_row_count` rows across the network.
-    /// Note: dynamic_cast is used because typeid_cast requires exact type match and
-    /// would fail for derived types like GatherExchangeStep when checking LogicalExchangeStep.
-    for (const auto & enforcer_step : expression->property_enforcer_steps)
-    {
-        if (auto * broadcast = dynamic_cast<BroadcastExchangeStep *>(enforcer_step.get()))
-        {
-            /// Broadcast replicates all rows to every destination node.
-            total_cost.cost.network += group->statistics->estimated_row_count * static_cast<Float64>(broadcast->getResultBucketCount());
-        }
-        else if (dynamic_cast<LogicalExchangeStep *>(enforcer_step.get()))
-        {
-            /// Gather, Shuffle, Scatter: each row is sent exactly once.
-            total_cost.cost.network += group->statistics->estimated_row_count;
         }
     }
 

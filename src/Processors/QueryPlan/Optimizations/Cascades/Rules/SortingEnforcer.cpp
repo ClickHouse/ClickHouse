@@ -5,13 +5,22 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Core/SortDescription.h>
 #include <memory>
 
 namespace DB
 {
 
+/// Produces a self-referential SortingStep enforcer expression.
+/// The expression lives in the same group as the source and its single input
+/// points back to the same group with relaxed properties (sorting removed).
+///
+/// Multi-node sorting strategies compose naturally with DistributionEnforcer:
+///   - Strategy A (Gather -> Sort):  DistributionEnforcer produces Gather,
+///     then SortingEnforcer adds Sort on top of the gathered (single-node) result.
+///   - Strategy B (Sort-per-node -> SortedGather):  SortingEnforcer adds Sort on
+///     each node, then DistributionEnforcer's sorted-merge gather variant
+///     gathers while preserving sort order.
 class SortingEnforcer : public IOptimizationRule
 {
 public:
@@ -35,66 +44,27 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     const UInt64 sort_limit = required_properties.sort_limit;
     SortingStep::Settings sort_settings(65000);
     sort_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;   /// TODO: construct from settings
-    const size_t max_block_size = 65000;                /// TODO: construct from settings
     const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
-    const size_t node_count = expression->properties.distribution.node_count;
 
-    std::vector<GroupExpressionPtr> result;
+    /// Create a SortingStep expression whose input requires the same distribution
+    /// as the source expression but with sorting relaxed to empty.
+    ExpressionProperties input_required = expression->properties;
+    input_required.sorting = {};
+    input_required.sort_limit = 0;
 
-    if (node_count <= 1)
-    {
-        /// Single node: sort locally.
-        auto local_expr = std::make_shared<GroupExpression>(*expression);
-        local_expr->property_enforcer_steps.push_back(
-            std::make_unique<SortingStep>(input_header, sort_desc, sort_limit, sort_settings));
-        local_expr->properties.sorting = sort_desc;
-        local_expr->inputs = expression->inputs;
-        local_expr->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(local_expr);
-        result.push_back(local_expr);
-        return result;
-    }
+    auto sort_expr = std::make_shared<GroupExpression>(
+        std::make_unique<SortingStep>(input_header, sort_desc, sort_limit, sort_settings));
+    sort_expr->group_id = expression->group_id;
+    sort_expr->inputs.push_back({
+        .group_id = expression->group_id,
+        .required_properties = input_required});
+    sort_expr->properties = expression->properties;
+    sort_expr->properties.sorting = sort_desc;
+    sort_expr->properties.sort_limit = sort_limit;
 
-    /// Multi-node: Strategy A — gather all data to one node, then sort locally.
-    /// Simple but moves all data before sorting.
-    {
-        auto strategy_a = std::make_shared<GroupExpression>(*expression);
-        strategy_a->property_enforcer_steps.push_back(
-            std::make_unique<GatherExchangeStep>(input_header, node_count));
-        strategy_a->property_enforcer_steps.push_back(
-            std::make_unique<SortingStep>(input_header, sort_desc, sort_limit, sort_settings));
-        strategy_a->properties.sorting = sort_desc;
-        strategy_a->properties.distribution.node_count = 1;
-        strategy_a->inputs = expression->inputs;
-        strategy_a->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(strategy_a);
-        result.push_back(strategy_a);
-    }
-
-    /// Multi-node: Strategy B — sort on each node, gather with sort order preserved, final merge.
-    /// Each node independently sorts its partition. A sorted-merge gather collects the streams.
-    /// A final MergingSorted step applies the limit and ensures a single fully-sorted output.
-    /// For sort_limit > 0, each node keeps only sort_limit rows, reducing network traffic.
-    {
-        auto strategy_b = std::make_shared<GroupExpression>(*expression);
-        /// Partial sort on each node.
-        strategy_b->property_enforcer_steps.push_back(
-            std::make_unique<SortingStep>(input_header, sort_desc, sort_limit, sort_settings));
-        /// Gather preserving sort order across nodes.
-        strategy_b->property_enforcer_steps.push_back(
-            std::make_unique<GatherExchangeStep>(input_header, node_count, sort_desc));
-        /// Final merge-sort to produce a single sorted stream and apply the limit.
-        strategy_b->property_enforcer_steps.push_back(
-            std::make_unique<SortingStep>(input_header, sort_desc, max_block_size, sort_limit));
-        strategy_b->properties.sorting = sort_desc;
-        strategy_b->properties.distribution.node_count = 1;
-        strategy_b->inputs = expression->inputs;
-        strategy_b->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(strategy_b);
-        result.push_back(strategy_b);
-    }
-
-    return result;
+    sort_expr->setApplied(*this, required_properties);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(sort_expr);
+    return {sort_expr};
 }
 
 OptimizationRulePtr createSortingEnforcer() { return std::make_shared<SortingEnforcer>(); }
