@@ -1396,8 +1396,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                         full_name,
                         scope.scope_node->formatASTForErrorMessage());
 
-                ///TODO: handle UNION node case
-                const auto & projection_columns = query_node ? query_node->getProjectionColumns() : NamesAndTypes{};
+                const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
 
                 NamesAndTypesList columns;
                 for (const auto & projection_column : projection_columns)

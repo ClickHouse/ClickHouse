@@ -40,3 +40,20 @@ SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid;
 WITH
 a AS MATERIALIZED (SELECT * FROM users)
 SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid;
+
+EXPLAIN
+WITH
+    cte AS MATERIALIZED (
+        SELECT 10 AS n
+        UNION ALL
+        SELECT number as n FROM numbers(5)
+    )
+SELECT count() FROM cte, cte;
+
+WITH
+    cte AS MATERIALIZED (
+        SELECT 10 AS n
+        UNION ALL
+        SELECT number as n FROM numbers(5)
+    )
+SELECT count() FROM cte, cte;

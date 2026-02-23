@@ -109,20 +109,20 @@ Header: count() UInt64
   Header: count() UInt64
     Aggregating
     Header: count() UInt64
-      Expression (Before GROUP BY)
+      Expression
       Header: 
-        Expression (Post Join Actions)
+        Join (JOIN FillRightFirst)
         Header: __join_result_dummy UInt8
-          Join (JOIN FillRightFirst)
-          Header: __join_result_dummy UInt8
-            Expression (Left Pre Join Actions)
+          Expression (Left Pre Join Actions)
+          Header: __table1.uid Int16
+                  __join_result_dummy UInt8
+            Filter
             Header: __table1.uid Int16
-                    __join_result_dummy UInt8
-              Expression (Change column names to column identifiers)
-              Header: __table1.uid Int16
-                ReadFromMemoryStorage
-                Header: uid Int16
-            Expression (Right Pre Join Actions)
+              ReadFromMemoryStorage
+              Header: uid Int16
+          Expression (Right Pre Join Actions)
+          Header: __table4.uid Int16
+            BuildRuntimeFilter (Build runtime join filter on __table4.uid)
             Header: __table4.uid Int16
               Expression (Change column names to column identifiers)
               Header: __table4.uid Int16
@@ -139,3 +139,22 @@ Header: count() UInt64
               name String
               age Int16
 3
+MaterializingCTEs
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMemoryStorage
+            Expression (Right Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMemoryStorage
+  MaterializingCTE (Materializing CTE: cte)
+    Union
+      Expression ((Conversion before UNION + (Project names + (Projection + Change column names to column identifiers))))
+        ReadFromSystemOne
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemNumbers
+36

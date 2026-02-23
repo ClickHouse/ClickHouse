@@ -38,6 +38,7 @@ public:
     /// Construct table node with storage, context
     explicit TableNode(StoragePtr storage_, const ContextPtr & context);
 
+    /// Construct table node for MATERIALIZED CTE
     explicit TableNode(
         TemporaryTableHolderPtr temporary_table_holder_,
         QueryTreeNodePtr materialized_cte_subquery_,
