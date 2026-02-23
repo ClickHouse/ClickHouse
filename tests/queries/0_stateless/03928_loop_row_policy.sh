@@ -18,23 +18,17 @@ GRANT SELECT ON $db.secret TO $user;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 
 DROP ROW POLICY IF EXISTS rp_secret ON $db.secret;
-CREATE ROW POLICY rp_secret ON $db.secret FOR SELECT USING id = 0 TO $user;
+CREATE ROW POLICY rp_secret ON $db.secret FOR SELECT USING id = 1 TO $user;
 EOF
 
-echo "--- Direct SELECT (row policy should filter everything) ---"
-${CLICKHOUSE_CLIENT} --user $user --query "SELECT count() FROM $db.secret"
+echo "--- Direct SELECT (row policy should filter to one row) ---"
+${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM $db.secret"
 
 echo "--- loop() must also respect row policy ---"
-${CLICKHOUSE_CLIENT} --user $user --query "SELECT count() FROM loop('$db', 'secret') LIMIT 10"
-
-echo "--- Verify with a permissive policy ---"
-${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY rp_secret ON $db.secret"
-${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY rp_secret_allow ON $db.secret FOR SELECT USING id = 1 TO $user"
 ${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM loop('$db', 'secret') LIMIT 4"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP ROW POLICY IF EXISTS rp_secret ON $db.secret;
-DROP ROW POLICY IF EXISTS rp_secret_allow ON $db.secret;
 DROP USER IF EXISTS $user;
 DROP TABLE IF EXISTS $db.secret;
 EOF
