@@ -41,6 +41,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -94,6 +95,12 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char check_database_datalake_negative[];
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -829,7 +836,12 @@ void DatabaseDataLake::checkDatabase() const
     auto catalog = getCatalog();
     /// This function checks if we can access catalog and get tables list.
     /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
-    catalog->isEmpty();
+    catalog->empty();
+
+    fiu_do_on(FailPoints::check_database_datalake_negative, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database '{}'", getDatabaseName());
+    });
+
     LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }
 

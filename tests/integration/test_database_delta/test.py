@@ -230,8 +230,7 @@ def test_check_database_unity(started_cluster):
     assert len(tables) == len(table_configs), f"Expected {len(table_configs)} tables, got {len(tables)}"
 
     # Run CHECK DATABASE - should succeed without errors
-    result = node1.query(f"CHECK DATABASE {db_name}")
-    print(f"CHECK DATABASE result: {result}")
+    node1.query(f"CHECK DATABASE {db_name}")
 
 
 def test_multiple_schemes_tables(started_cluster):
