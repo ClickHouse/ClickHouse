@@ -117,20 +117,11 @@ function configure_limits()
     total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
     total_mem=$(( total_mem*1024 )) # bytes
 
-    # Set maximum memory usage as half of total memory (less chance of OOM).
-    #
-    # But not via max_server_memory_usage but via max_memory_usage_for_user,
-    # so that we can override this setting and execute service queries, like:
-    # - hung check
-    # - show/drop database
-    # - ...
-    #
-    # So max_memory_usage_for_user will be a soft limit, and
-    # max_server_memory_usage will be hard limit, and queries that should be
-    # executed regardless memory limits will use max_memory_usage_for_user=0,
-    # instead of relying on max_untracked_memory
+    # NOTE: the total server memory usage is capped to the memory usage of the
+    # whole cgroup, so, there is no need to take into account that we run
+    # multiple servers, so static 80% will be just fine.
 
-    max_server_memory_usage_to_ram_ratio=0.5
+    max_server_memory_usage_to_ram_ratio=0.8
     echo "Setting max_server_memory_usage_to_ram_ratio to ${max_server_memory_usage_to_ram_ratio}"
     cat > /etc/clickhouse-server/config.d/max_server_memory_usage.xml <<EOL
 <clickhouse>

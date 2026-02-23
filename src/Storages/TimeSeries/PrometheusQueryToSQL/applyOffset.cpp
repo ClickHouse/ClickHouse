@@ -111,9 +111,9 @@ namespace
                             getPromQLQuery(expression, context));
         }
 
-        auto evaluation_range = context.node_evaluation_range_getter.get(offset_node);
+        auto node_range = context.node_range_getter.get(offset_node);
 
-        if (evaluation_range.start_time > evaluation_range.end_time)
+        if (node_range.start_time > node_range.end_time)
             return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
 
         expression.node = offset_node;
@@ -128,9 +128,9 @@ namespace
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::CONST_STRING:
             {
-                expression.start_time = evaluation_range.start_time;
-                expression.end_time = evaluation_range.end_time;
-                expression.step = evaluation_range.step;
+                expression.start_time = node_range.start_time;
+                expression.end_time = node_range.end_time;
+                expression.step = node_range.step;
                 return std::move(expression);
             }
 
@@ -154,7 +154,7 @@ namespace
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(
-                        stepsInTimeSeriesRange(evaluation_range.start_time, evaluation_range.end_time, evaluation_range.step)),
+                        stepsInTimeSeriesRange(node_range.start_time, node_range.end_time, node_range.step)),
                     makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
 
                 new_values->setAlias(ColumnNames::Values);
@@ -166,9 +166,9 @@ namespace
 
                 expression.select_query = builder.getSelectQuery();
 
-                expression.start_time = evaluation_range.start_time;
-                expression.end_time = evaluation_range.end_time;
-                expression.step = evaluation_range.step;
+                expression.start_time = node_range.start_time;
+                expression.end_time = node_range.end_time;
+                expression.step = node_range.step;
                 return std::move(expression);
             }
 
@@ -186,9 +186,9 @@ namespace
                     "arrayJoin",
                     makeASTFunction(
                         "timeSeriesRange",
-                        timeSeriesTimestampToAST(evaluation_range.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(evaluation_range.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(evaluation_range.step, context.timestamp_data_type)));
+                        timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
+                        timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
+                        timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)));
 
                 new_timestamp->setAlias(ColumnNames::Timestamp);
                 builder.select_list.push_back(std::move(new_timestamp));

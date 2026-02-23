@@ -356,7 +356,6 @@ public:
 
     using Validator = std::function<void(const IndexDescription & index, bool attach)>;
 
-    static void implicitValidation(const IndexDescription & index);
     void validate(const IndexDescription & index, bool attach) const;
 
     MergeTreeIndexPtr get(const IndexDescription & index) const;
