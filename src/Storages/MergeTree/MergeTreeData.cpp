@@ -9052,7 +9052,12 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
         return !query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
-    return !snapshot_data.mutations_snapshot->hasDataMutations();
+    const auto & mutations_snapshot = snapshot_data.mutations_snapshot;
+
+    if (!mutations_snapshot)
+        return !query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
+
+    return !mutations_snapshot->hasDataMutations();
 }
 
 Int64 MergeTreeData::getMinMetadataVersion(const DataPartsVector & parts)
