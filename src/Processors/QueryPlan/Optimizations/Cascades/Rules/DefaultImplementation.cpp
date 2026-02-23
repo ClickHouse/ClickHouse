@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
@@ -24,8 +25,11 @@ protected:
 
 bool DefaultImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
-    /// AggregatingStep is handled exclusively by AggregationImplementation.
-    return typeid_cast<AggregatingStep *>(expression->getQueryPlanStep()) == nullptr;
+    /// `AggregatingStep` is handled exclusively by `AggregationImplementation`.
+    /// `JoinStepLogical` is handled exclusively by `HashJoinImplementation`.
+    auto * step = expression->getQueryPlanStep();
+    return typeid_cast<AggregatingStep *>(step) == nullptr
+        && typeid_cast<JoinStepLogical *>(step) == nullptr;
 }
 
 std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
