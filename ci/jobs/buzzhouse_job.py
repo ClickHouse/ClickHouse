@@ -147,6 +147,8 @@ def generate_buzz_config(workspace_path: Path):
         "temporary_files_buffer_size",
         "trace_profile_events",
         "unknown_packet_in_send_data",
+        "use_query_cache",
+        "enable_writes_to_query_cache",
     ]
     if allow_transactions:
         # Doesn't work well with transactions
