@@ -43,6 +43,12 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
     {
         if (required_properties.distribution.is_replicated)
         {
+            /// BroadcastExchangeStep only supports a single source shard (1->N).
+            /// When the source is already on multiple nodes, skip the broadcast
+            /// enforcer entirely - the optimizer should use Shuffle join instead.
+            if (expression->properties.distribution.node_count > 1)
+                return {};
+
             auto broadcast_exchange_step = std::make_unique<BroadcastExchangeStep>(
                 expression->getQueryPlanStep()->getOutputHeader(),
                 required_properties.distribution.node_count);

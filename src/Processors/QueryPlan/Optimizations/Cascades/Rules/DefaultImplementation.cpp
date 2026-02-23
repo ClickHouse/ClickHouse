@@ -58,6 +58,12 @@ std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpression
         else
             propagate_distribution = false;
     }
+    else if (implementation_expression->inputs.empty())
+    {
+        /// Leaf steps (e.g., `ReadFromMergeTree`) produce what the storage provides,
+        /// not what the parent requires. `DistributionEnforcer` bridges any gap.
+        propagate_distribution = false;
+    }
 
     /// Output distribution matches what was propagated to the input.
     /// Without this, the output stays at the default {1 node}, which allows

@@ -27,6 +27,12 @@ bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionDescripti
     if (required.is_replicated != existing.is_replicated)
         return false;
 
+    /// Empty required columns means "any distribution is fine" - just match node_count
+    /// and replication. Data shuffled by specific columns still satisfies a requirement
+    /// that doesn't care about column distribution.
+    if (required.columns.empty())
+        return true;
+
     if (required.columns.size() != existing.columns.size())
         return false;
 
