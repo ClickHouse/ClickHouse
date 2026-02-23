@@ -82,7 +82,7 @@ gsutil URI such as `gs://clickhouse-docs-example-bucket` is not supported, pleas
 - `url` — GCS bucket URL to the Delta Lake table. Must use `https://storage.googleapis.com/<bucket>/<path>/`
    format (the GCS XML API endpoint), or `gs://<bucket>/<path>/` which is auto-converted.
 - `access_key_id` — GCS Access Key. Create via Google Cloud Console → Cloud Storage → Settings → Interoperability.
-- `secret_access_key` — GCS Secrety.
+- `secret_access_key` — GCS secret.
 
 **Named collections**
 
