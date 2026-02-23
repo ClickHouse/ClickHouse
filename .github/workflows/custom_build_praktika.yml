@@ -12,7 +12,7 @@ env:
   DISABLE_CI_MERGE_COMMIT: ${{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}
   DISABLE_CI_CACHE: ${{ vars.DISABLE_CI_CACHE || '0' }}
   CHECKOUT_REF: ${{ vars.DISABLE_CI_MERGE_COMMIT == '1' && github.event.pull_request.head.sha || '' }}
-  PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+  TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
 
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
 permissions: write-all
@@ -38,8 +38,8 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-          export PYPI_TOKEN=$(cat<<'EOF'
-          ${{ secrets.PYPI_TOKEN }}
+          export TWINE_PASSWORD=$(cat<<'EOF'
+          ${{ secrets.TWINE_PASSWORD }}
           EOF
           )
           cat > ./ci/tmp/workflow_job.json << 'EOF'
