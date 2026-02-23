@@ -130,7 +130,6 @@ def get_node_workspace_logs(workspace_path: Path, node_index: int):
 
 
 def main():
-    sw = Utils.Stopwatch()
     info = Info()
     args = parse_args()
     job_params = args.options.split(",") if args.options else []
@@ -266,6 +265,7 @@ def main():
         mysql_query_log,
         sqlite_query_log,
         mongodb_query_log,
+        Path("./ci/tmp/docker-in-docker.log"),
     ]
     # Copied server logs from container
     for i in range(number_of_nodes):
@@ -325,7 +325,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 --server-binaries={clickhouse_path}
 --client-config={buzzconfig}
 --log-path={dolor_log}
---timeout=30 --server-settings-prob=0
+--timeout=4 --server-settings-prob=0
 --kill-server-prob=50 --without-monitoring
 --replica-values={','.join(str(i) for i in range(number_of_nodes))}
 --shard-values={','.join(str(1) for _ in range(number_of_nodes))}
@@ -349,6 +349,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 2>&1 | tee {fuzzer_log}
 """
 
+    # Wrap with pipefail so the pipe returns dolor.py's exit code, not tee's
     base_command = base_command.replace("\n", " ").strip()
     base_command = f"bash -o pipefail -c {shlex.quote(base_command)}"
     print(f"Using server fuzzer command: {base_command}")
@@ -357,11 +358,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         outfile.write(base_command)
         outfile.write("\n")
 
-    # Wrap with pipefail so the pipe returns dolor.py's exit code, not tee's
-    run_result = Result.from_commands_run(
-        name="dolor",
-        command=base_command,
-    )
+    cmd_ok = Shell.check(command=base_command, verbose=True)
 
     # Copy generated configuration files from container to host for further analysis
     for pattern in [
@@ -379,111 +376,67 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             if cont_log.exists():
                 shutil.copy2(cont_log, host_log)
 
-    result_name = "dolor"
-    result_status = run_result.status
-    result_info = run_result.info or ""
-    attached_files = []
-
     # Safety net: detect Python-level crashes in the fuzzer log even if the
     # exit code was somehow swallowed (e.g. future command changes drop pipefail)
-    if run_result.is_ok() and fuzzer_log.exists():
-        try:
-            log_text = fuzzer_log.read_text(encoding="utf-8", errors="replace")
-            if "Traceback (most recent call last):" in log_text:
-                # Extract the last traceback for the error message
-                tb_start = log_text.rfind("Traceback (most recent call last):")
-                tb_snippet = log_text[tb_start : tb_start + 1000].strip()
-                result_status = Result.StatusExtended.FAIL
-                result_info = f"Python exception in dolor.py:\n{tb_snippet}"
-        except Exception:
-            pass  # Don't let the safety-net check itself break the job
-
-    if not run_result.is_ok():
-        server_died = False
-        fuzzer_exit_code = 0
-
-        # Gather OOM information
-        if not info.is_local_run:
-            if Path("./ci/tmp/docker-in-docker.log").exists():
-                attached_files.append("./ci/tmp/docker-in-docker.log")
-            print("Dumping dmesg")
-            Shell.check(f"dmesg -T > {dmesg_log}", verbose=True, strict=True)
-            with open(dmesg_log, "rb") as dmesg:
-                dmesg = dmesg.read()
-                if (
-                    b"Out of memory: Killed process" in dmesg
-                    or b"oom_reaper: reaped process" in dmesg
-                    or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
-                ):
-                    result_info += "\nOOM detected in dmesg"
-                    attached_files.append(dmesg_log)
-
-        try:
-            pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
-            pattern2 = re.compile(r"The server node\d+ is not running")
-
-            with open(dolor_log, "r", encoding="utf-8") as logf:
-                for line in logf:
-                    m = pattern1.search(line)
-                    if m:
-                        fuzzer_exit_code = int(m.group(1))
-                    n = pattern2.search(line)
-                    if n:
-                        server_died = True
-        except Exception:
-            error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
+    if cmd_ok and fuzzer_log.exists():
+        tail = fuzzer_log.read_text(encoding="utf-8", errors="replace")[-2000:]
+        if "Traceback (most recent call last):" in tail:
+            # Extract the last traceback for the error message
+            tb_start = tail.rfind("Traceback (most recent call last):")
+            tb_snippet = tail[tb_start : tb_start + 1000].strip()
             Result.create_from(
-                status=Result.Status.ERROR, info=error_info
+                status=Result.StatusExtended.FAIL,
+                info=f"Python exception in dolor.py:\n{tb_snippet}",
+                files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
             ).complete_job()
+            return
 
-        # Gather logs to analyze
-        server_logs = []
-        stderr_logs = []
-        fatal_logs = []
-        for i in range(number_of_nodes):
-            log_paths = get_node_workspace_logs(workspace_path, i)
-            server_logs.append(log_paths[0])
-            stderr_logs.append(log_paths[3])
-            fatal_logs.append(workspace_path / f"fatal{i}.log")
+    server_died = False
+    fuzzer_exit_code = 0
+    try:
+        pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
+        pattern2 = re.compile(r"The server node\d+ is not running")
 
-        analyzed_result, is_analyzed_failure = analyze_job_logs(
-            paths,
-            server_died,
-            fuzzer_exit_code,
-            is_sanitized,
-            buzz_out,
-            fuzzer_log,
-            dmesg_log,
-            server_logs,
-            stderr_logs,
-            fatal_logs,
-        )
-        if is_analyzed_failure:
-            result_status = analyzed_result.status
-            result_info = analyzed_result.info or ""
+        with open(dolor_log, "r", encoding="utf-8") as logf:
+            for line in logf:
+                m = pattern1.search(line)
+                if m:
+                    fuzzer_exit_code = int(m.group(1))
+                n = pattern2.search(line)
+                if n:
+                    server_died = True
+    except Exception:
+        Result.create_from(
+            status=Result.Status.ERROR,
+            info=f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}",
+            files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
+        ).complete_job()
+        return
 
-    is_failed = result_status != Result.Status.SUCCESS
+    # Gather logs to analyze
+    server_logs = []
+    stderr_logs = []
+    fatal_logs = []
+    for i in range(number_of_nodes):
+        log_paths = get_node_workspace_logs(workspace_path, i)
+        server_logs.append(log_paths[0])
+        stderr_logs.append(log_paths[3])
+        fatal_logs.append(workspace_path / f"fatal{i}.log")
 
-    # Collect all files in one place
-    if is_failed:
-        attached_files.extend(
-            [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
-        )
-
-    # Build a single Result with all files
-    R = Result.create_from(
-        results=[
-            Result(
-                name=result_name,
-                status=result_status,
-                info=result_info,
-                files=attached_files,
-            )
-        ],
-        stopwatch=sw,
+    result = analyze_job_logs(
+        paths,
+        server_died,
+        fuzzer_exit_code,
+        is_sanitized,
+        buzz_out,
+        fuzzer_log,
+        dmesg_log,
+        server_logs,
+        stderr_logs,
+        fatal_logs,
     )
 
-    R.complete_job()
+    result.complete_job()
 
 
 if __name__ == "__main__":

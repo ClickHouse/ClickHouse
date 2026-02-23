@@ -61,7 +61,7 @@ def analyze_job_logs(
     server_logs: list[Path],
     stderr_logs: list[Path],
     fatal_logs: list[Path],
-) -> tuple[Result, bool]:
+) -> Result:
     # parse runner script exit status
     status = Result.Status.FAILED
     info = []
@@ -163,7 +163,7 @@ def analyze_job_logs(
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
 
-    return result, is_failed
+    return result
 
 
 def run_fuzz_job(check_name: str):
@@ -238,7 +238,7 @@ def run_fuzz_job(check_name: str):
         error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
         Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
 
-    result, _ = analyze_job_logs(
+    result = analyze_job_logs(
         paths,
         server_died,
         fuzzer_exit_code,

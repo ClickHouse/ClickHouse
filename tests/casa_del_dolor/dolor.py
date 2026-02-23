@@ -801,23 +801,16 @@ if not all_running:
                     f"Could not inspect exec for {server.name} - already gone: {ex}"
                 )
                 good_exit = False
-        logical_error_log = server.grep_in_log("Logical error:", from_host=True)
-        if logical_error_log:
+        if server.grep_in_log("Logical error:", from_host=True):
             logging.error(
                 f"Logical error in instance '{server.name}':\n{logical_error_log}"
             )
             good_exit = False
-        fatal_log = server.grep_in_log("<Fatal>", from_host=True)
-        if fatal_log:
-            logging.error(f"Crash in instance '{server.name}':\n{fatal_log}")
+        if server.grep_in_log("<Fatal>", from_host=True):
+            logging.error(f"Crash in instance '{server.name}'")
             good_exit = False
-        sanitizer_log = server.grep_in_log(
-            "Sanitizer:", filename="stderr.log", from_host=True
-        )
-        if sanitizer_log:
-            logging.error(
-                f"Sanitizer error in instance '{server.name}':\n{sanitizer_log}"
-            )
+        if server.grep_in_log("Sanitizer:", filename="stderr.log", from_host=True):
+            logging.error(f"Sanitizer error in instance '{server.name}'")
             good_exit = False
 
 sys.exit(0 if good_exit else 1)
