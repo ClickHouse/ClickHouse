@@ -40,7 +40,6 @@ namespace Setting
     extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
     extern const SettingsFloat ignore_drop_queries_probability;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
 namespace ErrorCodes
@@ -94,16 +93,6 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
 
     if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
         drop.sync = true;
-
-    /// Synchronous wait for DROP/DETACH inside a transaction creates a deadlock:
-    /// the transaction holds StoragePtr references preventing the background cleanup
-    /// from finalizing the dropped tables, while the query waits for that cleanup.
-    if (drop.sync && getContext()->getCurrentTransaction())
-    {
-        if (getContext()->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Synchronous DROP or DETACH inside transactions is not supported");
-        drop.sync = false;
-    }
 
     if (drop.table)
         return executeToTable(drop);
