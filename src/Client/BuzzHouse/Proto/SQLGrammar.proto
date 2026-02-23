@@ -1668,10 +1668,11 @@ enum SQLFunc {
     FUNCxxHash32 = 1663;
     FUNCxxHash64 = 1664;
     FUNCxxh3 = 1665;
-    FUNCyandexConsistentHash = 1666;
-    FUNCyearweek = 1667;
-    FUNCyesterday = 1668;
-    FUNCzookeeperSessionUptime = 1669;
+    FUNCxxh3_128 = 1666;
+    FUNCyandexConsistentHash = 1667;
+    FUNCyearweek = 1668;
+    FUNCyesterday = 1669;
+    FUNCzookeeperSessionUptime = 1670;
 }
 
 enum SQLTableFunc {
@@ -3300,13 +3301,12 @@ message ColumnDef {
 enum IndexType {
     IDX_set = 1;
     IDX_minmax = 2;
-    IDX_hypothesis = 3;
-    IDX_bloom_filter = 4;
-    IDX_vector_similarity = 5;
-    IDX_ngrambf_v1 = 6;
-    IDX_tokenbf_v1 = 7;
-    IDX_text = 8;
-    IDX_basic = 9;
+    IDX_bloom_filter = 3;
+    IDX_vector_similarity = 4;
+    IDX_ngrambf_v1 = 5;
+    IDX_tokenbf_v1 = 6;
+    IDX_text = 7;
+    IDX_basic = 8;
 }
 
 message IndexDef {
@@ -4051,132 +4051,31 @@ message Detach {
     optional SettingValues setting_values = 6;
 }
 
-message SyncReplica {
-    enum SyncPolicy {
-        STRICT = 1;
-        LIGHTWEIGHT = 2;
-        PULL = 3;
-    }
-    required ExprSchemaTable est = 1;
-    required SyncPolicy policy = 2;
+message LightweightSyncReplica {
+    repeated string replicas = 1;
 }
 
-enum FailPoint {
-    after_snapshot_clean_pause = 1;
-    backup_add_empty_memory_table = 2;
-    cache_warmer_stall = 3;
-    check_table_query_delay_for_part = 4;
-    cluster_discovery_faults = 5;
-    column_aggregate_function_ensureOwnership_exception = 6;
-    database_iceberg_gcs = 7;
-    database_replicated_delay_entry_execution = 8;
-    database_replicated_delay_recovery = 9;
-    database_replicated_drop_after_removing_keeper_failed = 10;
-    database_replicated_drop_before_removing_keeper_failed = 11;
-    database_replicated_startup_pause = 12;
-    database_replicated_stop_entry_execution = 13;
-    delta_kernel_fail_literal_visitor = 14;
-    disk_object_storage_fail_commit_metadata_transaction = 15;
-    disk_object_storage_fail_precommit_metadata_transaction = 16;
-    distributed_cache_fail_choose_server = 17;
-    distributed_cache_fail_connect_non_retriable = 18;
-    distributed_cache_fail_connect_retriable = 19;
-    distributed_cache_fail_continue_request = 20;
-    distributed_cache_fail_request_in_the_middle_of_request = 21;
-    dummy_failpoint = 22;
-    dummy_pausable_failpoint = 23;
-    execute_query_calling_empty_set_result_func_on_exception = 24;
-    file_cache_dynamic_resize_fail_to_evict = 25;
-    file_cache_stall_free_space_ratio_keeping_thread = 26;
-    finish_clean_quorum_failed_parts = 27;
-    finish_set_quorum_failed_parts = 28;
-    iceberg_writes_cleanup = 29;
-    infinite_sleep = 30;
-    keepermap_fail_drop_data = 31;
-    lazy_pipe_fds_fail_close = 32;
-    local_object_storage_network_error_during_remove = 33;
-    meta_in_keeper_create_metadata_failure = 34;
-    mt_merge_selecting_task_pause_when_scheduled = 35;
-    mt_mutate_task_pause_in_prepare = 36;
-    mt_select_parts_to_mutate_max_part_size = 37;
-    mt_select_parts_to_mutate_no_free_threads = 38;
-    object_storage_queue_fail_commit = 39;
-    object_storage_queue_fail_commit_once = 40;
-    object_storage_queue_fail_in_the_middle_of_file = 41;
-    object_storage_queue_fail_startup = 42;
-    output_format_sleep_on_progress = 43;
-    parallel_replicas_check_read_mode_always = 44;
-    parallel_replicas_reading_response_timeout = 45;
-    parallel_replicas_wait_for_unused_replicas = 46;
-    plain_object_storage_copy_fail_on_file_move = 47;
-    plain_object_storage_copy_temp_source_file_fail_on_file_move = 48;
-    plain_object_storage_copy_temp_target_file_fail_on_file_move = 49;
-    plain_object_storage_write_fail_on_directory_create = 50;
-    plain_object_storage_write_fail_on_directory_move = 51;
-    plain_rewritable_object_storage_azure_not_found_on_init = 52;
-    prefetched_reader_pool_failpoint = 53;
-    receive_timeout_on_table_status_response = 54;
-    remove_merge_tree_part_delay = 55;
-    replicated_merge_tree_all_replicas_stale = 56;
-    replicated_merge_tree_commit_zk_fail_after_op = 57;
-    replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault = 58;
-    replicated_merge_tree_insert_quorum_fail_0 = 59;
-    replicated_merge_tree_insert_retry_pause = 60;
-    replicated_queue_fail_next_entry = 61;
-    replicated_queue_unfail_entries = 62;
-    rmt_delay_commit_part = 63;
-    rmt_delay_execute_drop_range = 64;
-    rmt_lightweight_update_sleep_after_block_allocation = 65;
-    rmt_merge_selecting_task_max_part_size = 66;
-    rmt_merge_selecting_task_no_free_threads = 67;
-    rmt_merge_selecting_task_pause_when_scheduled = 68;
-    rmt_merge_task_sleep_in_prepare = 69;
-    rmt_mutate_task_pause_in_prepare = 70;
-    s3_read_buffer_throw_expired_token = 71;
-    sc_intentions_commit_fail = 72;
-    sc_state_application_pause = 73;
-    sc_state_application_pause_after_fetch = 74;
-    shared_set_full_update_fails_when_initializing = 75;
-    shared_set_sleep_during_update = 76;
-    sleep_in_logs_flush = 77;
-    slowdown_parallel_replicas_local_plan_read = 78;
-    smt_add_part_sleep_after_add_before_commit = 79;
-    smt_commit_exception_before_op = 80;
-    smt_commit_merge_change_version_before_op = 81;
-    smt_commit_merge_mutate_zk_fail_after_op = 82;
-    smt_commit_merge_mutate_zk_fail_before_op = 83;
-    smt_commit_tweaks_gate_close = 84;
-    smt_commit_tweaks_gate_open = 85;
-    smt_commit_write_zk_fail_after_op = 86;
-    smt_commit_write_zk_fail_before_op = 87;
-    smt_dont_merge_first_part = 88;
-    smt_insert_fake_hardware_error = 89;
-    smt_insert_retry_timeout = 90;
-    smt_lightweight_snapshot_fail = 91;
-    smt_lightweight_update_sleep_after_block_allocation = 92;
-    smt_merge_mutate_intention_freeze_in_destructor = 93;
-    smt_merge_selecting_task_pause_when_scheduled = 94;
-    smt_merge_task_sleep_in_prepare = 95;
-    smt_mutate_only_second_part = 96;
-    smt_mutate_task_pause_in_prepare = 97;
-    smt_outdated_parts_exception_response = 98;
-    smt_sleep_after_hardware_in_insert = 99;
-    smt_sleep_in_constructor = 100;
-    smt_sleep_in_schedule_data_processing_job = 101;
-    smt_throw_keeper_exception_after_successful_insert = 102;
-    smt_wait_next_mutation = 103;
-    stop_moving_part_before_swap_with_active = 104;
-    storage_merge_tree_background_clear_old_parts_pause = 105;
-    storage_shared_merge_tree_mutate_pause_before_wait = 106;
-    stripe_log_sink_write_fallpoint = 107;
-    use_delayed_remote_source = 108;
-    zero_copy_lock_zk_fail_after_op = 109;
-    zero_copy_lock_zk_fail_before_op = 110;
-    zero_copy_unlock_zk_fail_after_op = 111;
-    zero_copy_unlock_zk_fail_before_op = 112;
-    //keeper_leader_sets_invalid_digest --The server aborts legitimately, can't be used
-    //terminate_with_exception --Don't terminate the server
-    //terminate_with_std_exception
+message SyncReplica {
+    required ExprSchemaTable est = 1;
+    oneof sync_oneof {
+        bool strict = 2;
+        LightweightSyncReplica lightweight = 3;
+        bool pull = 4;
+    }
+}
+
+message DropReplica {
+    required string replica = 1;
+    oneof drop_oneof {
+        ExprSchemaTable est = 2;
+        Database database = 3;
+    }
+}
+
+message DropDatabaseReplica {
+    required string replica = 1;
+    optional string shard = 2;
+    optional Database database = 3;
 }
 
 message SystemCommand {
@@ -4250,8 +4149,8 @@ message SystemCommand {
         ExprSchemaTable stop_distributed_sends = 66;
         ExprSchemaTable start_distributed_sends = 67;
         bool drop_query_condition_cache = 68;
-        FailPoint enable_failpoint = 69;
-        FailPoint disable_failpoint = 70;
+        string enable_failpoint = 69;
+        string disable_failpoint = 70;
         bool iceberg_metadata_cache = 71;
         bool reconnect_keeper = 72;
         bool drop_text_index_dictionary_cache = 73;
@@ -4260,6 +4159,14 @@ message SystemCommand {
         bool drop_text_index_caches = 76;
         bool reset_ddl_worker = 77;
         bool drop_parquet_metadata_cache = 78;
+        string wait_failpoint = 79;
+        string notify_failpoint = 80;
+        Database restore_database_replica = 81;
+        ExprSchemaTable stop_replicated_view = 82;
+        ExprSchemaTable start_replicated_view = 83;
+        uint32 unfreeze = 84;
+        DropReplica drop_replica = 85;
+        DropDatabaseReplica drop_database_replica = 86;
     }
 }
 

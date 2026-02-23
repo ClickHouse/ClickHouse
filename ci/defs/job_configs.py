@@ -708,6 +708,11 @@ class JobConfigs:
     )
     stress_test_jobs = common_stress_job_config.parametrize(
         Job.ParamSet(
+            parameter="amd_release",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_RELEASE],
+        ),
+        Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.DEB_AMD_DEBUG],

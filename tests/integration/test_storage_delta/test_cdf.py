@@ -47,6 +47,7 @@ from helpers.s3_tools import (
     upload_directory,
     LocalDownloader,
 )
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
@@ -59,7 +60,7 @@ S3_DATA = [
 ]
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -75,6 +76,13 @@ def get_spark():
         .config("spark.executor.memory", "8g")
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
 
     return builder.master("local").getOrCreate()
 
@@ -123,7 +131,9 @@ def started_cluster():
         # extend this if testing on other nodes becomes necessary
         cluster.local_uploader = LocalUploader(cluster.instances["instance1"])
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
 
         for file in S3_DATA:
             print(f"Copying object {file}")
