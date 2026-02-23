@@ -55,7 +55,7 @@ def build_package(token: str):
     run([str(venv_python()), "-m", "build", str(PRAKTIKA_DIR)])
 
     dist_files = [str(f) for f in (PRAKTIKA_DIR / "dist").glob("*")]
-    run([str(venv_python()), "-m", "twine", "check", *dist_files)])
+    run([str(venv_python()), "-m", "twine", "check", *dist_files])
 
     run_env(
         [str(venv_python()), "-m", "twine", "upload", *dist_files],
