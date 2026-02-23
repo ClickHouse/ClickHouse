@@ -4084,7 +4084,93 @@ def test_system_delta_lake_history(started_cluster, use_delta_kernel):
     assert version_0_line.endswith("\t0"), "Version 0 should have is_latest_version=0"
     assert version_1_line.endswith("\t1"), "Version 1 should have is_latest_version=1"
 
+    # Verify operation column is not empty for versions that have .json files
+    operations = node.query(
+        f"""
+        SELECT version, operation
+        FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}'
+        ORDER BY version
+        """
+    ).strip()
+    for op_line in operations.split("\n"):
+        parts = op_line.split("\t")
+        assert len(parts) == 2 and parts[1] != "", f"Operation should not be empty: {op_line}"
+
     # Clean up
+    node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_system_delta_lake_history_with_checkpoint(started_cluster, use_delta_kernel):
+    """Test that system.delta_lake_history works correctly when checkpoints exist.
+    When a checkpoint is created, older .json files may be removed.
+    History should still show all versions from 0 to the latest."""
+    node = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_history_checkpoint")
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+    )
+    # Write 24 more versions to trigger checkpoints (created every 10 commits)
+    for i in range(1, 25):
+        write_delta_from_df(
+            spark,
+            generate_data(spark, i, i + 1),
+            f"/{TABLE_NAME}",
+            mode="append",
+        )
+
+    files = default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
+
+    # Verify checkpoint file exists
+    has_checkpoint = any(f.endswith("last_checkpoint") for f in files)
+    assert has_checkpoint, "Expected _last_checkpoint file after 25 writes"
+
+    create_delta_table(node, "s3", TABLE_NAME, started_cluster)
+
+    # Query history - should have all 25 versions (0..24)
+    history_count = int(
+        node.query(
+            f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}'"
+        )
+    )
+    assert history_count == 25, f"Expected 25 history entries (versions 0-24), got {history_count}"
+
+    # Verify version range: min should be 0, max should be 24
+    version_range = node.query(
+        f"""
+        SELECT min(version), max(version)
+        FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}'
+        """
+    ).strip()
+    assert version_range == "0\t24", f"Expected versions 0..24, got: {version_range}"
+
+    # Verify is_latest_version: only version 24 should be latest
+    latest = node.query(
+        f"""
+        SELECT version FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}' AND is_latest_version = 1
+        """
+    ).strip()
+    assert latest == "24", f"Expected version 24 as latest, got: {latest}"
+
+    # Versions with .json files should have non-empty operation
+    ops_with_json = node.query(
+        f"""
+        SELECT count() FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}' AND operation != ''
+        """
+    ).strip()
+    assert int(ops_with_json) > 0, "Expected some versions with non-empty operation"
+
     node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
 

@@ -264,7 +264,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemWorkloads>(context, system_database, "workloads", "Contains a list of all currently existing workloads.");
     attach<StorageSystemResources>(context, system_database, "resources", "Contains a list of all currently existing resources.");
     attach<StorageSystemIcebergHistory>(context, system_database, "iceberg_history", "Displays the history of an iceberg table similar to the Spark history table");
-    attach<StorageSystemDeltaLakeHistory>(context, system_database, "delta_lake_history", "Displays the history of a Delta Lake table showing all versions and their commit information");
+    attachNoDescription<StorageSystemDeltaLakeHistory>(context, system_database, "delta_lake_history", "Displays the history of a Delta Lake table showing all versions and their commit information");
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", "Contains all unicode codepoints.");
 #endif
