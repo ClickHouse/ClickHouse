@@ -337,7 +337,13 @@ bool ActiveDataPartSet::hasPartitionId(const String & partition_id) const
 {
     MergeTreePartInfo info;
     info.setPartitionId(partition_id);
-    return part_info_to_name.lower_bound(info) != part_info_to_name.end();
+
+    if (auto it = part_info_to_name.lower_bound(info); it == part_info_to_name.end())
+        return false;
+    else if (it->first.getPartitionId() != partition_id)
+        return false;
+    else
+        return true;
 }
 
 }
