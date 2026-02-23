@@ -202,10 +202,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         params.search_limit = static_cast<UInt32>(config.getUInt64(ldap_server_config + ".search_limit"));
 
     if (has_follow_referrals)
-    {
         params.follow_referrals = config.getBool(ldap_server_config + ".follow_referrals");
-    }
-    else params.follow_referrals = false;
 }
 
 void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)
