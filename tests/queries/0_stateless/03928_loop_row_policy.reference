@@ -1,0 +1,9 @@
+--- Direct SELECT (row policy should filter everything) ---
+0
+--- loop() must also respect row policy ---
+0
+--- Verify with a permissive policy ---
+1	flag1
+1	flag1
+1	flag1
+1	flag1
