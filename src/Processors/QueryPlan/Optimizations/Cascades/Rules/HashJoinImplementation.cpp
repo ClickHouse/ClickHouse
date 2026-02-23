@@ -111,14 +111,22 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     /// Only applicable when the join has equi-join predicates.
     if (!join_step->getJoinOperator().expression.empty())
     {
-        /// Collect all equi-join key pairs.
+        /// Collect all equi-join key pairs, normalizing so that left_node
+        /// comes from the join's left input and right_node from the right input.
         struct JoinKeyPair { String left; String right; };
         std::vector<JoinKeyPair> equi_keys;
         for (const auto & predicate : join_step->getJoinOperator().expression)
         {
             auto [op, left_node, right_node] = predicate.asBinaryPredicate();
-            if (op == JoinConditionOperator::Equals)
-                equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName()});
+            if (op != JoinConditionOperator::Equals)
+                continue;
+
+            if (left_node.fromRight() && right_node.fromLeft())
+                std::swap(left_node, right_node);
+            else if (!left_node.fromLeft() || !right_node.fromRight())
+                continue;
+
+            equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName()});
         }
 
         if (!equi_keys.empty())
