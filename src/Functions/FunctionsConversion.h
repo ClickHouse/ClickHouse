@@ -629,13 +629,13 @@ struct ToTime64TransformUnsigned
         const auto converted = time_zone.toTime(from);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (converted > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (converted > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
             else
                 return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(converted, 0, scale_multiplier);
         }
         else
-            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(std::min<time_t>(converted, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(std::min<time_t>(converted, MAX_TIME_TIMESTAMP), 0, scale_multiplier);
     }
 };
 
@@ -677,12 +677,12 @@ struct ToTime64TransformFloat
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from < static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP) || from > static_cast<FromType>(MAX_TIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-        } // need to reconsider this
+        }
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        from = std::max(from, static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP));
+        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
@@ -1025,7 +1025,7 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
 }
 
 template <>
-[[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+[[maybe_unused]] inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
 {
     time_t time = 0;
     if (!tryReadTimeText(time, rb, *time_zone))
@@ -1757,10 +1757,8 @@ struct ConvertImpl
                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
                     ToFieldType result;
-                    bool convert_result = false;
 
-                    convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
-
+                    bool convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
                     if (convert_result)
                         vec_to[i] = result;
                     else
@@ -1840,9 +1838,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = vec_from.size();
 
-                if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
-                    data_to.resize(size * strlen("YYYY-MM-DD"));
-                else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
+                if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
                     data_to.resize(size * strlen("YYYY-MM-DD"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
                     data_to.resize(size * strlen("hhh:mm:ss"));
@@ -1950,7 +1946,7 @@ struct ConvertImpl
             && std::is_same_v<FromDataType, DataTypeFixedString>)
         {
             ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
-            const auto & nested =  columnGetNested(arguments[0]);
+            const auto & nested = columnGetNested(arguments[0]);
             if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(nested.column.get()))
             {
                 auto col_to = ColumnString::create();
@@ -2105,25 +2101,35 @@ struct ConvertImpl
                 return arguments[0].column;
 
             Int64 conversion_factor = 1;
-            Int64 result_value;
 
             int from_position = static_cast<int>(from.kind);
             int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
 
-            if (from_position < to_position)
+            bool divide = from_position < to_position;
+            if (divide)
             {
-                for (int i = from_position; i < to_position; ++i)
+                /// interval_conversions[i] is how many of interval (i-1) fit in interval i, so to go
+                /// `from` -> `to` we need the product of interval_conversions[from+1] * ... * interval_conversions[to]
+                for (int i = from_position + 1; i <= to_position; ++i)
                     conversion_factor *= interval_conversions[i];
-                result_value = arguments[0].column->getInt(0) / conversion_factor;
             }
             else
             {
                 for (int i = from_position; i > to_position; --i)
                     conversion_factor *= interval_conversions[i];
-                result_value = arguments[0].column->getInt(0) * conversion_factor;
             }
 
-            return ColumnConst::create(ColumnInt64::create(1, result_value), input_rows_count);
+            const auto & src_column = arguments[0].column;
+            auto result_col = ColumnInt64::create(input_rows_count);
+            auto & result_data = result_col->getData();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                Int64 value = src_column->getInt(i);
+                result_data[i] = divide ? (value / conversion_factor) : (value * conversion_factor);
+            }
+
+            return result_col;
         }
         else
         {
@@ -3171,7 +3177,7 @@ private:
             }
         }
 
-        if  constexpr (mightBeTime<Name, ToDataType>())
+        if constexpr (mightBeTime<Name, ToDataType>())
         {
             if (isTime64<Name, ToDataType>(arguments))
             {
@@ -3314,9 +3320,19 @@ public:
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             if (isTime64<Name, ToDataType>(arguments))
-                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
+            {
+                if (scale == 0)
+                    res = std::make_shared<DataTypeTime>();
+                else
+                    res = std::make_shared<DataTypeTime64>(scale);
+            }
             else
-                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
+            {
+                if (scale == 0)
+                    res = std::make_shared<DataTypeDateTime>(timezone);
+                else
+                    res = std::make_shared<DataTypeDateTime64>(scale, timezone);
+            }
         }
         else
         {
@@ -4802,7 +4818,7 @@ private:
 
         /// For named tuples allow conversions for tuples with
         /// different sets of elements. If element exists in @to_type
-        /// and doesn't exist in @to_type it will be filled by default values.
+        /// and doesn't exist in @from_type it will be filled by default values.
         if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
@@ -4813,7 +4829,7 @@ private:
 
             const auto & to_names = to_type->getElementNames();
             element_wrappers.reserve(to_names.size());
-            to_reverse_index.reserve(from_names.size());
+            to_reverse_index.reserve(to_names.size());
 
             for (size_t i = 0; i < to_names.size(); ++i)
             {
