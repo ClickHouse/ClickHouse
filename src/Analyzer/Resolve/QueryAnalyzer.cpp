@@ -1409,6 +1409,26 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             resolve_result.resolved_identifier = std::move(function_node);
             resolve_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
         }
+        else if (function_resolver)
+        {
+            throw Exception(
+                ErrorCodes::UNKNOWN_IDENTIFIER,
+                "Function '{}' exists but requires parentheses. Use '{}()' instead",
+                identifier_name,
+                identifier_name);
+        }
+        else if (!function_resolver)
+        {
+            const auto & aggregate_factory = AggregateFunctionFactory::instance();
+            if (aggregate_factory.isAggregateFunctionName(identifier_name))
+            {
+                throw Exception(
+                    ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "Aggregate function '{}' requires parentheses. Use '{}()' instead",
+                    identifier_name,
+                    identifier_name);
+            }
+        }
     }
 
     it->second.count--;

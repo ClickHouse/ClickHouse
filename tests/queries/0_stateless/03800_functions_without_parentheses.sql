@@ -54,3 +54,5 @@ DROP NAMED COLLECTION test_niladic_coll;
 -- Verify error for functions that don't allow omitting parentheses
 SELECT concat; -- { serverError UNKNOWN_IDENTIFIER }
 
+-- Aggregate functions require parentheses
+SELECT count; -- { serverError UNKNOWN_IDENTIFIER }
