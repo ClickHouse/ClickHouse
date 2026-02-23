@@ -803,7 +803,7 @@ if not all_running:
                 good_exit = False
         else:
             logging.warning(
-                f"Could not get exec ID for {server.name}, maybe it never started properly?"
+                f"Could not get exec ID for {server.name}, maybe it didn't start properly?"
             )
             good_exit = False
 

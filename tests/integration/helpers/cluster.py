@@ -4844,6 +4844,7 @@ class ClickHouseInstance:
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
+                    self.clickhouse_exec_id = ""  # old exec is no longer valid
                     return True
                 else:
                     time.sleep(1)
