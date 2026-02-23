@@ -4893,7 +4893,7 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
-                exec_id = self.exec_in_container(
+                self.clickhouse_exec_id = exec_id = self.exec_in_container(
                     ["bash", "-c", self.clickhouse_start_command],
                     user=str(os.getuid()),
                     detach=True,
@@ -5245,7 +5245,7 @@ class ClickHouseInstance:
             ],
             user="root",
         )
-        self.exec_in_container(
+        self.clickhouse_exec_id = self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
         )
@@ -5326,7 +5326,7 @@ class ClickHouseInstance:
                     "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
-        self.exec_in_container(
+        self.clickhouse_exec_id = self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
         )
