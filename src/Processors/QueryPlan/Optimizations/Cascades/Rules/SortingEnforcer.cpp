@@ -1,3 +1,4 @@
+#include <Core/Defines.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -32,7 +33,8 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
 {
     const SortDescription & sort_desc = required_properties.sorting;
     const UInt64 sort_limit = required_properties.sort_limit;
-    const SortingStep::Settings sort_settings(65000);   /// TODO: construct from settings
+    SortingStep::Settings sort_settings(65000);
+    sort_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;   /// TODO: construct from settings
     const size_t max_block_size = 65000;                /// TODO: construct from settings
     const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
     const size_t node_count = expression->properties.distribution.node_count;
