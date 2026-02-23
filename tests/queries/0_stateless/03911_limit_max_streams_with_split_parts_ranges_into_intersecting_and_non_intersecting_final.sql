@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS t;
 -- resulting number of `AggregatingTransform`-s should be 50 (one per partition) + 5 (for non-intersecting ranges; specific for the given dataset) = 55.
 SET split_parts_ranges_into_intersecting_and_non_intersecting_final = 1, split_intersecting_parts_ranges_into_layers_final = 1, do_not_merge_across_partitions_select_final = 1;
 SET optimize_move_to_prewhere_if_final = 0;
+SET optimize_aggregation_in_order = 0;
 
 CREATE TABLE t
 (

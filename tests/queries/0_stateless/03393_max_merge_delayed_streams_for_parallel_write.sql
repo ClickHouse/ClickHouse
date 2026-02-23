@@ -3,6 +3,8 @@
 -- - no-flaky-check -- not compatible with ThreadFuzzer
 
 -- The real example with metric_log with 1200+ columns!
+SET optimize_trivial_insert_select = 0;
+
 system flush logs system.metric_log;
 
 create table metric_log as system.metric_log

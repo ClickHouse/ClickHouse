@@ -1,4 +1,6 @@
 SET optimize_multiif_to_if = 1;
+SET optimize_functions_to_subcolumns = 1;
+SET optimize_and_compare_chain = 1;
 
 DROP TABLE IF EXISTS bugcheck1;
 
