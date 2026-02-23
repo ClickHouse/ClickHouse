@@ -86,8 +86,11 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     }
     else if (auto * broadcast = dynamic_cast<BroadcastExchangeStep *>(expression_plan_step))
     {
+        auto result_count = static_cast<Float64>(broadcast->getResultBucketCount());
         /// Broadcast replicates all rows to every destination node.
-        total_cost.cost.network += group->statistics->estimated_row_count * static_cast<Float64>(broadcast->getResultBucketCount());
+        total_cost.cost.network += group->statistics->estimated_row_count * result_count;
+        /// Each destination materializes the full dataset in memory.
+        total_cost.cost.memory += group->statistics->estimated_row_count * result_count;
     }
     else if (dynamic_cast<LogicalExchangeStep *>(expression_plan_step))
     {
@@ -138,17 +141,15 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
 
     if (is_broadcast)
     {
-        /// Add the cost of sending right table
-        join_cost.cost.network += right_statistics.estimated_row_count * node_count;
-        /// Add the cost of memory consumed by right table
+        /// Hash table is built from the full right table on every node.
+        /// Network cost is already modeled by the BroadcastExchange expression.
         join_cost.cost.memory += right_statistics.estimated_row_count * node_count;
     }
     else if (is_shuffle)
     {
-        /// Add the cost of sending right table
-        join_cost.cost.network += right_statistics.estimated_row_count;
-        /// Add the cost of sending left table
-        join_cost.cost.network += left_statistics.estimated_row_count;
+        /// Hash table is built from right_rows/N on each node, total = right_rows.
+        /// Network cost is already modeled by ShuffleExchange expressions.
+        join_cost.cost.memory += right_statistics.estimated_row_count;
     }
     else
     {
