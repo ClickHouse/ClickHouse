@@ -1,4 +1,4 @@
-from ci.defs.defs import RunnerLabels, BASE_BRANCH
+from ci.defs.defs import RunnerLabels
 from ci.praktika.secret import Secret
 from praktika import Job, Workflow
 

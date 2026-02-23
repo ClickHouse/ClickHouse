@@ -54,16 +54,12 @@ def install_dependencies():
 
 def build_package(token: str):
     run([str(venv_python()), "-m", "build", str(PRAKTIKA_DIR)])
-    run([str(venv_python()), "-m", "twine", "check", str(PRAKTIKA_DIR / "dist/*")])
 
-    print(
-        {
-            "TWINE_USERNAME": "__token__",
-            "TWINE_PASSWORD": token if token else os.getenv("TWINE_PASSWORD"),
-        }
-    )
+    dist_files = [str(f) for f in (PRAKTIKA_DIR / "dist").glob("*")]
+    run([str(venv_python()), "-m", "twine", "check", *dist_files)])
+
     run_env(
-        [str(venv_python()), "-m", "twine", "upload", "ci/praktika/dist/*"],
+        [str(venv_python()), "-m", "twine", "upload", *dist_files],
         env={
             "TWINE_USERNAME": "__token__",
             "TWINE_PASSWORD": token if token else os.getenv("TWINE_PASSWORD"),
