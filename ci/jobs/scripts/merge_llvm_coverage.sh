@@ -114,10 +114,10 @@ if [ -n "${PR_NUMBER}" ]; then
   HEADER_TITLE="<a href=\"${PR_URL}\">${PR_URL}</a>"
 fi
 
-    # --header-title "${HEADER_TITLE}" \
-    # --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
-    # --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
 genhtml "llvm_coverage.info" \
+    --header-title "${HEADER_TITLE}" \
+    --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
+    --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
     --output-directory "llvm_coverage_html_report" \
     --verbose \
     --legend \
@@ -136,6 +136,6 @@ genhtml "llvm_coverage.info" \
     --ignore-errors unsupported \
     --ignore-errors source \
     --ignore-errors branch \
-    --ignore-errors range
-    # 2>/dev/null
+    --ignore-errors range \
+    2>/dev/null
 

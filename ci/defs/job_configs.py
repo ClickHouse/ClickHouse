@@ -1242,6 +1242,7 @@ class JobConfigs:
             include_paths=["./ci/jobs/merge_llvm_coverage_job.py"],
         ),
         timeout=3600,
+        enable_gh_auth=True,
     )
     llvm_coverage_check_job = Job.Config(
         name=JobNames.LLVM_COVERAGE_CHECK,

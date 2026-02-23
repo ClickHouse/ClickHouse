@@ -948,6 +948,11 @@ class Utils:
         # Get git info from Info singleton, if not present, get it from shell commands
         # current_commit_sha, merge_base_commit_sha, branch, base_branch, repo_name, pr_number
         info = Info()
+        print("HERE")
+        Shell.get_output(
+                f"gh auth status",
+                verbose=True,
+            ).strip()
 
         current_commit_sha = info.get_kv_data("current_commit_sha")
         if current_commit_sha is None:
