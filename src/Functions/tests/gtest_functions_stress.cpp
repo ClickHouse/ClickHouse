@@ -2023,7 +2023,7 @@ void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,
 #pragma clang diagnostic pop
 }
 
-TEST(FunctionsStress, DISABLED_stress)
+TEST(FunctionsStress, stress)
 {
     chassert(!logger);
     logger = getLogger("stress");
@@ -2110,8 +2110,7 @@ TEST(FunctionsStress, DISABLED_stress)
         }
     }
 
-    if (!reportResults(total_stats, stuck_threads))
-        _Exit(1);
+    ASSERT_TRUE(reportResults(total_stats, stuck_threads)) << "Functions stress test found problems (see log above)";
 
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
