@@ -345,6 +345,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             for (auto & with_node : current_query_tree->getWith().getNodes())
             {
                 auto * with_union_node = with_node->as<UnionNode>();
+                auto * with_query_node = with_node->as<QueryNode>();
+
+                const bool materialized_cte = (with_query_node && with_query_node->isMaterialized()) || (with_union_node && with_union_node->isMaterialized());
+                if (materialized_cte)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MATERIALIZED CTE is not supported in recursive WITH");
+
                 if (!with_union_node)
                     continue;
 
