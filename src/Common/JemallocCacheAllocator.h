@@ -10,7 +10,7 @@
 ///
 /// Without arena isolation, jemalloc places cache allocations on the same pages as short-lived
 /// query temporaries. When cache entries are evicted, their pages can't be returned to the OS
-/// because other live objects pin them — causing unbounded RSS growth.
+/// because other live objects pin them — causing unbounded RSS growth due to fragmentation.
 ///
 /// This allocator directs all allocations to a dedicated jemalloc arena via mallocx/sdallocx
 /// with MALLOCX_ARENA(N) | MALLOCX_TCACHE_NONE flags. Cache pages never mix with query-processing
