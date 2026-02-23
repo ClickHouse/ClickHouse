@@ -8,7 +8,6 @@ from pathlib import Path
 from ci.praktika.info import Info
 
 VENV_DIR = Path(".venv-pypy")
-
 PRAKTIKA_DIR = Path("ci/praktika")
 
 
@@ -57,16 +56,13 @@ def build_package(token: str):
     run([str(venv_python()), "-m", "build", str(PRAKTIKA_DIR)])
     run([str(venv_python()), "-m", "twine", "check", str(PRAKTIKA_DIR / "dist/*")])
 
-    print("REMOVEME token", Info().get_secret(name="PYPI_TOKEN"))
-    if not token:
-        token = Info().get_secret(name="PYPI_TOKEN")
-        print("got token")
+    env = {"TWINE_USERNAME": "__token__"}
+    if token:
+        env["TWINE_PASSWORD"] = token
 
-    if not token:
-        token = os.getenv("TWINE_PASSWORD")
     run_env(
         [str(venv_python()), "-m", "twine", "upload", "ci/praktika/dist/*"],
-        env={"TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token},
+        env=env
     )
 
 
