@@ -53,10 +53,8 @@ public:
         context_copy = Context::createCopy(context_);
         access = context_copy->getAccess();
         if (access->isGranted(AccessType::SHOW_TABLES))
-        {
             databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
-            db_it = databases.begin();
-        }
+        db_it = databases.begin();
 #endif
     }
 
