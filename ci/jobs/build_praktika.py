@@ -56,7 +56,7 @@ def build_package(token: str):
     run([str(venv_python()), "-m", "build", "ci/praktika"])
     run([str(venv_python()), "-m", "twine", "check", "ci/praktika/dist/*"])
 
-    print("REMOVEME token", Info.get_secret("PYPI_TOKEN"))
+    print("REMOVEME token", Info.get_secret(name="PYPI_TOKEN"))
     if not token:
         token = Info.get_secret(name="PYPI_TOKEN")
         print(token)
