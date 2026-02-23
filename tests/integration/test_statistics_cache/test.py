@@ -67,7 +67,7 @@ def _create_tbl(node, name, interval):
         CREATE TABLE {name} (k UInt32, v Float64)
         ENGINE=MergeTree
         ORDER BY k
-        SETTINGS refresh_statistics_interval = {interval}
+        SETTINGS refresh_statistics_interval = {interval}, auto_statistics_types = ''
     """)
     _query(node, f"INSERT INTO {name} SELECT number, toFloat64(rand())/4294967296.0 FROM numbers({ROWS_SMALL})")
     _query_retry(node, f"ALTER TABLE {name} ADD STATISTICS v TYPE TDigest")
