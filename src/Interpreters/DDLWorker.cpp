@@ -1429,6 +1429,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
             zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
         }
         Coordination::Requests ops;
+        Coordination::Responses res;
         ops.emplace_back(zkutil::makeCreateRequest(active_path, active_id, zkutil::CreateMode::Ephemeral));
         /// To bump node mtime
         ops.emplace_back(zkutil::makeSetRequest(fs::path(replicas_dir) / host_id, "", -1));
