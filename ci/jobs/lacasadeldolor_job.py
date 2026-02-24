@@ -325,7 +325,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 --server-binaries={clickhouse_path}
 --client-config={buzzconfig}
 --log-path={dolor_log}
---timeout=30 --server-settings-prob=0
+--timeout=4 --server-settings-prob=0
 --kill-server-prob=50 --without-monitoring
 --replica-values={','.join(str(i) for i in range(number_of_nodes))}
 --shard-values={','.join(str(1) for _ in range(number_of_nodes))}
@@ -435,6 +435,13 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         stderr_logs,
         fatal_logs,
     )
+    if not cmd_ok and result.is_ok():
+        result = Result(
+            name="dolor",
+            status=Result.StatusExtended.FAIL,
+            info="dolor.py exited with non-zero code but no specific error was identified. Check fuzzer.log.",
+            files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
+        )
 
     result.complete_job()
 
