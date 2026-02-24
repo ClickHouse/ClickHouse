@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Owns a temporary Memory table used by a materialized CTE, and tracks whether
-/// the table has already been populated. The `is_materialized` flag is checked
+/// the table has already been populated. The `is_built` flag is checked
 /// atomically in `MaterializingCTETransform` so that when the same CTE is
 /// referenced from multiple places (e.g. two IN-subqueries or an IN-subquery
 /// and the main plan), the table is written exactly once.
@@ -20,8 +20,10 @@ struct MaterializedCTE
     MaterializedCTE(const MaterializedCTE &) = delete;
     MaterializedCTE & operator=(const MaterializedCTE &) = delete;
 
+    /// Owns the temporary table used for materialization.
     TemporaryTableHolder holder;
-    std::atomic_bool is_materialized{false};
+    /// If true, the CTE has been materialized (i.e. the table has been populated and is ready for reads).
+    std::atomic_bool is_built{false};
 };
 
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;

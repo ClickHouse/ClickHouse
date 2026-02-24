@@ -112,7 +112,7 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansF
     std::vector<std::unique_ptr<QueryPlan>> plans;
     for (auto & [materialized_cte, plan] : step.cte_plans)
     {
-        if (materialized_cte->is_materialized)
+        if (materialized_cte->is_built)
             continue;
 
         plans.emplace_back(std::move(plan));

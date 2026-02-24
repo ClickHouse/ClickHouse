@@ -30,7 +30,7 @@ Chunk MaterializingCTETransform::generate()
     executor.reset();
     table_out.reset();
 
-    materialized_cte->is_materialized = true;
+    materialized_cte->is_built = true;
 
     return {};
 }
