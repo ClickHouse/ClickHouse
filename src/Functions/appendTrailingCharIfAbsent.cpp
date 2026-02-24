@@ -45,8 +45,8 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"str", &isString, nullptr, "String"},
-            {"char", &isString, nullptr, "String"}
+            {"s", &isString, nullptr, "String"},
+            {"c", &isString, nullptr, "String"}
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args);

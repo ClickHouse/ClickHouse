@@ -29,7 +29,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptor variadic_args{"tuples", &isTuple, nullptr, "Tuple"};
+        FunctionArgumentDescriptor variadic_args{"tupleN", &isTuple, nullptr, "Tuple"};
         FunctionArgumentDescriptors mandatory_args{variadic_args};
 
         validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
