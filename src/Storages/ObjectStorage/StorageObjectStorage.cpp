@@ -151,10 +151,10 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (!do_lazy_init)
         {
-            configuration->update(
-                object_storage,
-                context,
-                /* if_not_updated_before */ is_table_function);
+            if (is_table_function)
+                configuration->lazyInitializeIfNeeded(object_storage, context);
+            else
+                configuration->update(object_storage, context);
             updated_configuration = true;
         }
     }
@@ -335,20 +335,14 @@ IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
+    configuration->update(object_storage, query_context);
 
     return configuration->getExternalMetadata();
 }
 
 void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ true);
+    configuration->lazyInitializeIfNeeded(object_storage, query_context);
     if (configuration->needsUpdateForSchemaConsistency())
     {
         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
@@ -368,10 +362,7 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
     if (distributed_processing)
         return std::nullopt;
 
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
+    configuration->update(object_storage, query_context);
     return configuration->totalRows(query_context);
 }
 
@@ -383,10 +374,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     if (distributed_processing)
         return std::nullopt;
 
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
+    configuration->update(object_storage, query_context);
     return configuration->totalBytes(query_context);
 }
 
@@ -407,10 +395,7 @@ void StorageObjectStorage::read(
     /// so in case of table function there is no need to do the same here again.
     if (update_configuration_on_read_write)
     {
-        configuration->update(
-            object_storage,
-            local_context,
-            /* if_not_updated_before */ false);
+        configuration->update(object_storage, local_context);
     }
 
     if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
@@ -512,10 +497,7 @@ SinkToStoragePtr StorageObjectStorage::write(
 {
     if (update_configuration_on_read_write)
     {
-        configuration->update(
-            object_storage,
-            local_context,
-            /* if_not_updated_before */ false);
+        configuration->update(object_storage, local_context);
     }
 
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());

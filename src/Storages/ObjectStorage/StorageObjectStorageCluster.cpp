@@ -77,10 +77,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
-    configuration->update(
-        object_storage,
-        context_,
-        /* if_not_updated_before */ false);
+    configuration->update(object_storage, context_);
 
     // For tables need to update configuration on each read
     // because data can be changed after previous update
@@ -135,19 +132,13 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
+    configuration->update(object_storage, query_context);
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
+    configuration->update(object_storage, query_context);
     return configuration->totalBytes(query_context);
 }
 
@@ -207,10 +198,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
 void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ true);
+    configuration->lazyInitializeIfNeeded(object_storage, query_context);
     if (configuration->needsUpdateForSchemaConsistency())
     {
         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
@@ -285,10 +273,7 @@ void StorageObjectStorageCluster::updateConfigurationIfNeeded(ContextPtr context
 {
     if (update_configuration_on_read_write)
     {
-        configuration->update(
-            object_storage,
-            context,
-            /* if_not_updated_before */false);
+        configuration->update(object_storage, context);
     }
 }
 

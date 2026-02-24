@@ -201,10 +201,7 @@ ColumnsDescription TableFunctionObjectStorage<
             context->checkAccess(AccessType::READ, toStringSource(*access_object));
 
         auto storage = getObjectStorage(context, !is_insert_query);
-        configuration->update(
-            object_storage,
-            context,
-            /* if_not_updated_before */ true);
+        configuration->lazyInitializeIfNeeded(object_storage, context);
 
         std::string sample_path;
         ColumnsDescription columns;
