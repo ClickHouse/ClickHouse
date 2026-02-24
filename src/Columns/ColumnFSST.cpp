@@ -10,14 +10,19 @@
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
 #include <base/types.h>
-#include "Common/Exception.h"
-#include "Common/assert_cast.h"
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
-#include "Columns/ColumnReplicated.h"
-#include "fsst.h"
+#include <fsst.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+extern const int PARAMETER_OUT_OF_BOUND;
+}
+
 std::optional<size_t> ColumnFSST::batchByRow(size_t row) const
 {
     if (decoders.empty() || decoders[0].batch_start_index > row)
@@ -119,8 +124,8 @@ void ColumnFSST::doInsertRangeFrom(const IColumn & src, size_t start, size_t len
     }
 }
 
-/* 
-    Just decompress for now 
+/*
+    Just decompress for now
     TODO: implement comparison on compressed data
 */
 int ColumnFSST::doCompareAt(size_t n, size_t m, const IColumn & rhs, int /* nan_direction_hint */) const

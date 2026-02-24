@@ -21,9 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
-extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
-extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 
@@ -133,7 +131,7 @@ public:
 
     /* batches have no sense after reordering */
     [[nodiscard]] ColumnPtr permute(const Permutation & /* perm */, size_t /* limit */) const override { throwNotSupported(); }
-    /* 
+    /*
         Compression ratio can become extremely bad because the decoders were built
         based on how often symbol sequences appear in the current column state.
     */

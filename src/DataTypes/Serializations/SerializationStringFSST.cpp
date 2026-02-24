@@ -7,20 +7,15 @@
 #include <string_view>
 
 #include <Columns/ColumnFSST.h>
-#include <Columns/ColumnString.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Field.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationStringFSST.h>
+#include <IO/WriteBuffer.h>
 #include <base/types.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
-#include "Common/typeid_cast.h"
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/assert_cast.h>
-#include "IO/WriteBuffer.h"
+#include <Common/typeid_cast.h>
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -28,6 +23,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int INCORRECT_DATA;
+}
+
 
 template <>
 struct SerializeFSSTState<false> : public ISerialization::SerializeBinaryBulkState

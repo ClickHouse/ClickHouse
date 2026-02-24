@@ -1,21 +1,13 @@
 #pragma once
 
 #include <memory>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 
-#include "Columns/ColumnString.h"
-#include "Core/Field.h"
-#include "DataTypes/Serializations/ISerialization.h"
+#include <Columns/ColumnString.h>
+#include <Core/Field.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-extern const int INCORRECT_DATA;
-}
 
 struct CompressedField
 {

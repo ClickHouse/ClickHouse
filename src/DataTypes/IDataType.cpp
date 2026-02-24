@@ -11,7 +11,6 @@
 #include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
-#include "DataTypes/Serializations/ISerialization.h"
 
 #include <IO/WriteHelpers.h>
 
