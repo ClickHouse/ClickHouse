@@ -1,4 +1,6 @@
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -8,6 +10,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -15,6 +18,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -357,13 +361,58 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single
     return nullptr;
 }
 
+/// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas
+static void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
+{
+    Stack stack;
+    std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
+
+    // Create a map: set_key -> set
+    stack.clear();
+    traverseQueryPlan(
+        stack,
+        *single_replica_plan.getRootNode(),
+        [&](auto & frame_node)
+        {
+            if (auto * creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(frame_node.step.get()))
+            {
+                const auto sets = creating_sets_step->detachSets();
+                for (const auto & future_set : sets)
+                {
+                    if (auto set = future_set->detachSetAndKey())
+                        sets_map[future_set->getHash()] = std::move(set);
+                }
+            }
+        });
+
+    // Now transplant the sets
+    stack.clear();
+    traverseQueryPlan(
+        stack,
+        *parallel_replicas_plan.getRootNode(),
+        [&](auto & frame_node)
+        {
+            if (const auto * creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(frame_node.step.get()))
+            {
+                for (const auto & future_set : creating_sets_step->getSets())
+                {
+                    if (auto it = sets_map.find(future_set->getHash()); it != sets_map.end())
+                    {
+                        future_set->replaceSetAndKey(it->second);
+                    }
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
+                    }
+                }
+            }
+        });
+}
 
 /// Heuristic-based algorithm to decide whether to enable parallel replicas for the given query
-void considerEnablingParallelReplicas(
-     const QueryPlanOptimizationSettings & optimization_settings,
-     QueryPlan::Node & root,
-     QueryPlan::Nodes &,
-     QueryPlan & query_plan)
+static void considerEnablingParallelReplicas(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan & query_plan)
 {
     if (!optimization_settings.automatic_parallel_replicas_mode
         || !optimization_settings.query_plan_with_parallel_replicas_builder
@@ -381,7 +430,14 @@ void considerEnablingParallelReplicas(
     // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
     bool plan_is_simple_enough = true;
     traverseQueryPlan(
-        stack, root, [&](auto & frame_node) { plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection(); });
+        stack,
+        root,
+        [&](auto & frame_node)
+        {
+            plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection()
+                || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
+                || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
+        });
     if (!plan_is_simple_enough)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Some steps in the plan don't support dataflow statistics collection. Skipping optimization");
@@ -407,7 +463,6 @@ void considerEnablingParallelReplicas(
     if (!source_reading_step)
         return;
 
-    /// TODO(nickitat): reuse index analysis result in the plan with PRs (if it will be chosen later by the heuristic)
     const auto analysis
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
@@ -474,6 +529,12 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
+                ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
+                if (!local_replica_plan_reading_step)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
+                chassert(local_replica_plan_reading_step->getAnalyzedResult() == nullptr);
+                local_replica_plan_reading_step->setAnalyzedResult(analysis);
+                moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
                 return;
             }
@@ -521,7 +582,8 @@ void optimizeTreeSecondPass(
 
     while (!stack.empty())
     {
-        optimizePrimaryKeyConditionAndLimit(stack);
+        if (optimization_settings.query_plan_optimize_primary_key)
+            optimizePrimaryKeyConditionAndLimit(stack);
 
         updateQueryConditionCache(stack, optimization_settings);
 
@@ -816,7 +878,7 @@ void optimizeTreeSecondPass(
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
 
-    considerEnablingParallelReplicas(optimization_settings, root, nodes, query_plan);
+    considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 }
 
 void addStepsToBuildSets(

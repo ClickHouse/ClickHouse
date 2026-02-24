@@ -68,6 +68,8 @@ public:
         virtual ~Node() = default;
         virtual Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const = 0;
         virtual String dumpNode(const PrometheusQueryTree & tree, size_t indent) const = 0;
+        virtual String toString(const PrometheusQueryTree & tree) const = 0;
+        virtual int getPrecedence() const { return 0; }
     };
 
     /// A scalar literal, i.e. a floating-point or an integer number.
@@ -79,6 +81,8 @@ public:
         Scalar() { node_type = NodeType::Scalar; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
+        int getPrecedence() const override;
     };
 
     /// A string literal.
@@ -90,6 +94,7 @@ public:
         StringLiteral() { node_type = NodeType::StringLiteral; result_type = ResultType::STRING; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// An instant selector.
@@ -101,6 +106,7 @@ public:
         InstantSelector() { node_type = NodeType::InstantSelector; result_type = ResultType::INSTANT_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// A range selector.
@@ -113,6 +119,7 @@ public:
         RangeSelector() { node_type = NodeType::RangeSelector; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// Represents a subquery, i.e. <expression>[<range>:<step>]. Here step can be omitted, but the colon always presents.
@@ -127,6 +134,8 @@ public:
         Subquery() { node_type = NodeType::Subquery; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
+        int getPrecedence() const override;
     };
 
     /// Represents a change of the evaluation time applied to an instant selector or a range selector or a subquery.
@@ -142,6 +151,7 @@ public:
         Offset() { node_type = NodeType::Offset; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// A function with parameters in parentheses.
@@ -156,6 +166,7 @@ public:
         Function() { node_type = NodeType::Function; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// An unary operator: either +<argument> or -<argument>.
@@ -167,6 +178,8 @@ public:
         UnaryOperator() { node_type = NodeType::UnaryOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
+        int getPrecedence() const override;
     };
 
     /// A binary operator: <left-argument> <operation-name> on(<on-labels>) group_left(<extra-labels>) <right-argument>
@@ -188,6 +201,9 @@ public:
         BinaryOperator() { node_type = NodeType::BinaryOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
+        int getPrecedence() const override;
+        bool isRightAssociative() const;
     };
 
     /// An aggregation operator: <operator-name> [by (<by-labels>) | without (<without-labels>)] (<arguments>)
@@ -205,6 +221,7 @@ public:
         AggregationOperator() { node_type = NodeType::AggregationOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
     };
 
     PrometheusQueryTree() = default;
@@ -214,7 +231,8 @@ public:
     PrometheusQueryTree & operator=(PrometheusQueryTree && src) noexcept;
 
     /// Constructs a PrometheusQueryTree from a prepared list of nodes.
-    PrometheusQueryTree(String promql_query_, UInt32 timestamp_scale_, const Node * root_, std::vector<std::unique_ptr<Node>> node_list_);
+    PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 timestamp_scale_ = 3);
+    explicit PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 timestamp_scale_ = 3);
 
     /// Parses a promql query.
     explicit PrometheusQueryTree(std::string_view promql_query_, UInt32 timestamp_scale_ = 3) { parse(promql_query_, timestamp_scale_); }
@@ -234,11 +252,7 @@ public:
     const Node * getRoot() const { return root; }
 
     /// Returns the promql query which was parsed to build this tree.
-    const String & getQuery() const { return promql_query; }
-    const String & toString() const { return getQuery(); }
-
-    /// Returns a part of the promql query corresponding to a specific node of this tree.
-    std::string_view getQuery(const Node * node) const { return std::string_view{getQuery()}.substr(node->start_pos, node->length); }
+    String toString() const;
 
     /// Returns the type of the query's returning value.
     ResultType getResultType() const;
@@ -250,10 +264,9 @@ public:
     String dumpTree() const;
 
 private:
-    String promql_query;
-    UInt32 timestamp_scale = 0;
-    const Node * root = nullptr;
     std::vector<std::unique_ptr<Node>> node_list;
+    const Node * root = nullptr;
+    UInt32 timestamp_scale = 0;
 };
 
 }

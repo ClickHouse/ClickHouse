@@ -11,6 +11,8 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
+const std::unordered_set<String> blockSizes = {"1", "2", "4", "8", "16", "32", "64", "1024", "2048", "4096", "16384", "1048576"}; /// 1MB
+
 static const auto nastyStrings = [](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(rg.nasty_strings) + "'"; };
 
 static const auto setSetting = CHSetting(
@@ -49,6 +51,72 @@ static String settingCombinations(RandomGenerator & rg, DB::Strings && choices)
         }
     }
     return "'" + res + "'";
+}
+
+String generateNextCodecString(RandomGenerator & rg)
+{
+    String res;
+    DB::Strings choices;
+
+    if (rg.nextBool())
+    {
+        /// Pick just one
+        choices.emplace_back(rg.pickRandomly(codecs));
+    }
+    else
+    {
+        /// Pick a combination of some or none
+        std::vector<uint32_t> ids;
+        const uint32_t ncodecs = rg.randomInt<uint32_t>(1, std::min(UINT32_C(4), static_cast<uint32_t>(codecs.size())));
+
+        for (size_t i = 0; i < ncodecs; i++)
+        {
+            ids.emplace_back(i);
+        }
+        std::shuffle(ids.begin(), ids.end(), rg.generator);
+        for (uint32_t i = 0; i < ncodecs; i++)
+        {
+            choices.emplace_back(codecs[ids[i]]);
+        }
+    }
+
+    res += "'";
+    for (size_t i = 0; i < choices.size(); i++)
+    {
+        if (i != 0)
+        {
+            res += ",";
+        }
+        res += choices[i];
+        if (choices[i] == "LZ4HC" && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(0, 12));
+            res += ")";
+        }
+        else if (choices[i] == "ZSTD" && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(1, 22));
+            res += ")";
+        }
+        else if ((choices[i] == "Delta" || choices[i] == "DoubleDelta" || choices[i] == "Gorilla") && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(0, 8));
+            res += ")";
+        }
+        else if (choices[i] == "FPC" && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(1, 28));
+            res += ",";
+            res += std::to_string(rg.nextBool() ? 4 : 8);
+            res += ")";
+        }
+    }
+    res += "'";
+    return res;
 }
 
 std::unordered_map<String, CHSetting> performanceSettings
@@ -255,7 +323,6 @@ std::unordered_map<String, CHSetting> performanceSettings
             },
             {},
             false)},
-       {"text_index_use_bloom_filter", trueOrFalseSetting},
        {"use_concurrency_control", trueOrFalseSetting},
        {"use_iceberg_partition_pruning", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
@@ -861,6 +928,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"optimize_const_name_size",
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(-100, 100)); }, {}, false)},
     {"optimize_count_from_files", trueOrFalseSetting},
+    {"optimize_dry_run_check_part", trueOrFalseSettingNoOracle},
     {"optimize_extract_common_expressions", trueOrFalseSetting},
     {"optimize_min_equality_disjunction_chain_length",
      CHSetting(
@@ -1405,7 +1473,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"external_table_strict_query", trueOrFalseSettingNoOracle},
              {"ignore_data_skipping_indices",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
-             {"memory_worker_purge_total_memory_threshold_ratio", CHSetting(probRange, {}, false)},
              {"optimize_using_constraints", trueOrFalseSettingNoOracle},
              {"parallel_replica_offset",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
@@ -1420,17 +1487,17 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_ast_depth",
              "max_ast_elements",*/
              "max_autoincrement_series",
-             "max_backup_bandwidth",
+             /// "max_backup_bandwidth",
              "max_distributed_connections",
              /// "max_distributed_depth",
              "max_download_threads",
              /// "max_expanded_ast_elements",
              "max_fetch_partition_retries_count",
              "max_http_get_redirects",
-             "max_network_bandwidth",
+             /*"max_network_bandwidth",
              "max_network_bandwidth_for_all_users",
              "max_network_bandwidth_for_user",
-             /*"max_parser_backtracks",
+             "max_parser_backtracks",
              "max_parser_depth",
              "max_partitions_to_read",*/
              "max_sessions_for_user",
@@ -1449,8 +1516,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_execution_speed_bytes",*/
              "max_hyperscan_regexp_length",
              "max_hyperscan_regexp_total_length",
-             "max_network_bytes",
-             /*"max_query_size",
+             /*"max_network_bytes",
+             "max_query_size",
              "max_result_bytes",*/
              "max_size_to_preallocate_for_aggregation",
              "max_size_to_preallocate_for_joins"/*,
@@ -1479,17 +1546,19 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (const auto & entry : max_bytes_values)
     {
         performanceSettings.insert({{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "16", "32", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert(
+            {{entry, CHSetting(bytesRange, {"0", "1", "2", "4", "8", "16", "32", "1024", "2048", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_rows_values)
     {
         performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "16", "32", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert(
+            {{entry, CHSetting(rowsRange, {"0", "1", "2", "4", "8", "16", "32", "1024", "2048", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_block_sizes)
     {
         performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "16", "32", "64", "1024", "4096", "16384"}, false)}});
+        serverSettings.insert({{entry, CHSetting(highRange, blockSizes, false)}});
     }
     for (const auto & entry : max_columns_values)
     {

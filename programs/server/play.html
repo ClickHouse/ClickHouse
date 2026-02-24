@@ -33,7 +33,6 @@
     - show/hide the editor
     - check for readonly
     - query caching
-    - downloads in any format
     - history navigation
     - short links by saving in a special table
     - sharing by creating a short-living user
@@ -67,7 +66,6 @@
             --menu-toggle-color: #000;
 
             --progress-color: #0C4;
-            --progress: 0%;
 
             --selection-color: #FFF;
             --selection-background-color: #456;
@@ -227,6 +225,16 @@
             background-color: var(--button-color);
         }
 
+        .loading-hourglass
+        {
+            display: inline-block;
+            margin-left: 0.5em;
+            color: var(--misc-text-color);
+            animation: hourglass-animation 2s linear infinite;
+            line-height: 0;
+            vertical-align: middle;
+        }
+
         .no-tables
         {
             color: var(--misc-text-color);
@@ -373,11 +381,14 @@
         #run_div
         {
             margin-top: 0.5rem;
-            display: grid;
-            place-items: center;
+            display: flex;
+            align-items: center;
             gap: 1rem;
-            grid-template-columns: auto auto auto 1fr auto auto auto;
-            grid-template-areas: "run hint hourglass progress-bar download progress-text theme";
+        }
+
+        query-progress
+        {
+            flex: 1;
         }
 
         #run
@@ -392,7 +403,7 @@
             font-size: 100%; /* Otherwise button element will have a lower font size. */
         }
 
-        #run:hover, #run:focus, #download-div:hover, #download-div:focus
+        #run:hover, #run:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
             background-color: var(--button-active-color);
@@ -404,32 +415,45 @@
             color: var(--misc-text-color);
         }
 
-        #hourglass
+        #copy-div
         {
-            grid-area: hourglass;
             display: none;
-            font-size: 110%;
-            color: #888;
-            animation: hourglass-animation 2s linear infinite;
+            user-select: none;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            padding: 0.25rem 0.65rem;
+            cursor: pointer;
+            position: relative;
         }
 
-        #check-mark
+        .copy-balloon
         {
-            grid-area: hourglass;
-            display: none;
-            font-size: 110%;
-            color: #080;
+            position: absolute;
+            bottom: calc(100% + 0.25rem);
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--button-color);
+            color: var(--button-text-color);
+            padding: 0.25rem 0.5rem;
+            white-space: nowrap;
+            font-size: 0.85em;
+            opacity: 0;
+            animation: balloon-fade 1s ease-out;
+            pointer-events: none;
         }
 
-        #stats
+        @keyframes balloon-fade
         {
-            grid-area: progress-text;
-            color: var(--misc-text-color);
+            0% { opacity: 1; }
+            70% { opacity: 1; }
+            100% { opacity: 0; }
         }
 
-        #stats b
+        #copy-icon
         {
-            color: var(--progress-color);
+            width: 1em;
+            height: 1em;
+            vertical-align: middle;
         }
 
         #download-div
@@ -448,6 +472,7 @@
         {
             width: 1em;
             height: 1em;
+            vertical-align: middle;
         }
 
         #download-dropdown
@@ -524,19 +549,6 @@
             }
         }
 
-        #progress
-        {
-            display: none;
-            width: 100%;
-            color: var(--misc-text-color);
-
-            grid-area: progress-bar;
-            background: linear-gradient(to right,
-                transparent 0%,
-                var(--progress-color) var(--progress),
-                transparent var(--progress));
-        }
-
         #theme
         {
             grid-area: theme;
@@ -551,118 +563,6 @@
         [data-theme="light"] #toggle-light, [data-theme="dark"] #toggle-dark
         {
             display: none;
-        }
-
-        #data_div
-        {
-            margin-top: 1rem;
-            background-color: var(--element-background-color);
-        }
-
-        #data_div.fixed
-        {
-            width: fit-content;
-        }
-
-        #data-table
-        {
-            width: 100%;
-            border-spacing: 0;
-            background-color: var(--element-background-color);
-            border-collapse: collapse;
-        }
-
-        #data-table.fixed
-        {
-            table-layout: fixed;
-            width: var(--table-width);
-         }
-
-        /* Will be displayed when user specified custom format. */
-        #data-unparsed
-        {
-            width: fit-content;
-            background-color: var(--element-background-color);
-            margin-top: 0rem;
-            padding: 0.25rem 0.5rem;
-            display: none;
-        }
-
-        td
-        {
-            background-color: var(--element-background-color);
-            /* For wide tables any individual column will be no more than 50% of page width. */
-            max-width: 50vw;
-            /* The content is cut unless you hover. */
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding: 0.25rem 0.5rem;
-            border: 1px solid var(--border-color);
-            white-space: pre;
-            vertical-align: top;
-        }
-
-        td u
-        {
-            text-decoration-color: var(--misc-text-color);
-        }
-
-        .right
-        {
-            text-align: right;
-        }
-
-        th
-        {
-            position: sticky;
-            top: -0.5rem;
-            padding: 0.25rem 0.5rem;
-            text-align: center;
-            background-color: var(--table-header-color);
-            border: 1px solid var(--border-color);
-        }
-
-        th .name {
-            display: block;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .type-hint
-        {
-            display: none;
-            position: absolute;
-            user-select: none;
-            left: 0;
-            top: -1px;
-            transform: translateY(-100%);
-            font-size: 75%;
-            font-weight: normal;
-            color: var(--misc-text-color);
-            background: var(--element-background-color);
-            max-height: 5em;
-            white-space: pre;
-        }
-
-        th:hover .type-hint
-        {
-            display: inline-block;
-        }
-
-        .resizer {
-            position: absolute;
-            top: 0;
-            right: -0.3rem;
-            width: 0.5rem;
-            cursor: col-resize;
-            user-select: none;
-            height: 100%;
-        }
-
-        .resizer:hover, .resizer-dragging
-        {
-            border-radius: 0.25rem;
-            background-color: var(--border-color-selected);
         }
 
         .textarea-resizer {
@@ -685,96 +585,10 @@
             position: relative;
         }
 
-        /* The row under mouse pointer is highlight for better legibility. */
-        tr:hover
-        {
-            filter: var(--table-hover-filter);
-        }
-
-        .tr-selected
-        {
-            filter: var(--table-hover-filter);
-        }
-
-        #error
-        {
-            background: var(--error-color);
-            white-space: pre-wrap;
-            padding: 0.5rem 1rem;
-            display: none;
-        }
-
-        .td-selected
-        {
-            white-space: pre-wrap;
-            max-width: none;
-            outline: 2px solid var(--border-color-selected);
-            outline-offset: -2px;
-        }
-
-        td.empty-result
-        {
-            text-align: center;
-            vertical-align: middle;
-        }
-
-        .row-number
-        {
-            width: 1%;
-            text-align: right;
-            background-color: var(--table-header-color);
-            color: var(--misc-text-color);
-        }
-
-        div.empty-result
-        {
-            opacity: 10%;
-            font-size: 7vw;
-            font-family: Liberation Sans, DejaVu Sans, sans-serif;
-        }
-
-        @keyframes hourglass-animation {
-            0% { transform: none; }
-            25% { transform: rotate(180deg); }
-            50% { transform: rotate(180deg); }
-            75% { transform: rotate(360deg); }
-            100% { transform: rotate(360deg); }
-        }
-
         a, a:visited
         {
             color: var(--link-color);
             text-decoration: none;
-        }
-
-        #graph
-        {
-            display: none;
-            margin: auto;
-        }
-
-        /* This is for graph in svg */
-        text
-        {
-            font-size: 14px;
-            fill: var(--text-color);
-        }
-
-        .node rect
-        {
-            fill: var(--element-background-color);
-            filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
-            stroke: var(--border-color);
-        }
-
-        .edgePath path
-        {
-            stroke: var(--text-color);
-        }
-
-        marker
-        {
-            fill: var(--text-color);
         }
 
         #logo
@@ -797,15 +611,6 @@
             line-height: 0.75;
             position: sticky;
             left: 0;
-        }
-
-        #chart
-        {
-            border: 1px solid var(--border-color);
-            background-color: var(--element-background-color);
-            filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
-            display: none;
-            height: 70vh;
         }
 
         #url_status
@@ -843,29 +648,6 @@
             transition: background-color 600000s 0s, color 600000s 0s;
         }
 
-        /* This is for charts (uPlot), Copyright (c) 2022 Leon Sorokin, MIT License, https://github.com/leeoniya/uPlot/ */
-        .u-wrap {position: relative;user-select: none;}
-        .u-over, .u-under, .u-axis {position: absolute;}
-        .u-under {overflow: hidden;}
-        .uplot canvas {display: block;position: relative;width: 100%;height: 100%;}
-        .u-legend {font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace; border-spacing: 0; border-collapse: collapse;}
-        .u-inline {display: block;}
-        .u-inline * {display: inline-block;}
-        .u-legend th {font-weight: 600;}
-        .u-legend th > * {vertical-align: middle;display: inline-block;}
-        .u-legend td { min-width: 13em; }
-        .u-legend .u-marker {width: 1em;height: 1em;margin-right: 4px;background-clip: padding-box !important;}
-        .u-inline.u-live th::after {content: ":";vertical-align: middle;}
-        .u-inline:not(.u-live) .u-value {display: none;}
-        .u-series > * {padding: 4px;}
-        .u-series th {cursor: pointer;}
-        .u-legend .u-off > * {opacity: 0.3;}
-        .u-select {background: rgba(0,0,0,0.07);position: absolute;pointer-events: none;}
-        .u-cursor-x, .u-cursor-y {position: absolute;left: 0;top: 0;pointer-events: none;will-change: transform;z-index: 100;}
-        .u-hz .u-cursor-x, .u-vt .u-cursor-y {height: 100%;border-right: 1px dashed #607D8B;}
-        .u-hz .u-cursor-y, .u-vt .u-cursor-x {width: 100%;border-bottom: 1px dashed #607D8B;}
-        .u-cursor-pt {position: absolute;top: 0;left: 0;border-radius: 50%;border: 0 solid;pointer-events: none;will-change: transform;z-index: 100;/*this has to be !important since we set inline "background" shorthand */background-clip: padding-box !important;}
-        .u-axis.u-off, .u-select.u-off, .u-cursor-x.u-off, .u-cursor-y.u-off, .u-cursor-pt.u-off {display: none;}
     </style>
 </head>
 
@@ -892,9 +674,13 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
-                <div id="hourglass">⧗</div>
-                <div id="check-mark">✔</div>
-                <div id="progress"></div>
+                <query-progress id="query-progress"></query-progress>
+                <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
+                    <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                </div>
                 <div id="download-div" class="shadow">
                     <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -902,23 +688,15 @@
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                 </div>
-                <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
         </form>
-        <div id="data_div">
-            <table class="monospace shadow" id="data-table"></table>
-            <pre class="monospace shadow" id="data-unparsed"></pre>
-        </div>
-        <div id="chart"></div>
-        <svg id="graph" fill="none"></svg>
-        <p id="error" class="monospace shadow">
-        </p>
+        <query-result id="query-result"></query-result>
         <p id="logo-container">
             <a href="https://clickhouse.com/">
             <svg id="logo" width="50%" viewBox="0 0 180 28" version="1.1" xmlns="http://www.w3.org/2000/svg"><title>Powered by ClickHouse</title><g transform="translate(21, 0)"><path d="M9.76,20.95 C8.43,20.97 7.11,20.73 5.87,20.26 C4.72,19.80 3.67,19.11 2.81,18.22 C1.90,17.32 1.20,16.25 0.74,15.07 C-0.24,12.29 -0.24,9.27 0.74,6.49 C1.67,4.07 3.61,2.16 6.08,1.26 C7.35,0.79 8.71,0.55 10.07,0.57 C11.16,0.54 12.24,0.67 13.30,0.93 C14.15,1.16 14.98,1.47 15.78,1.87 L15.03,4.17 C14.33,3.70 13.57,3.32 12.78,3.03 C11.83,2.71 10.83,2.56 9.82,2.58 C7.96,2.56 6.18,3.35 4.96,4.74 C4.30,5.50 3.79,6.38 3.47,7.33 C3.08,8.46 2.89,9.65 2.91,10.85 C2.90,12.02 3.07,13.18 3.43,14.29 C3.73,15.23 4.21,16.09 4.86,16.84 C5.46,17.52 6.21,18.06 7.05,18.41 C7.95,18.78 8.92,18.96 9.90,18.96 C10.80,18.96 11.68,18.82 12.53,18.55 C13.34,18.27 14.12,17.91 14.85,17.47 L15.57,19.20 C14.87,19.72 14.09,20.13 13.25,20.40 C12.13,20.78 10.95,20.97 9.76,20.95 L9.76,20.95 Z"></path><polygon points="21.20 0 21.20 20.67 18.73 20.67 18.73 0 21.20 0"></polygon><path d="M26.51,4.15 C26.09,4.18 25.68,4.03 25.38,3.74 C25.08,3.46 24.92,3.05 24.94,2.64 C24.92,2.23 25.07,1.83 25.35,1.52 C25.99,0.92 26.99,0.92 27.63,1.52 C27.92,1.82 28.07,2.23 28.06,2.64 C28.07,3.05 27.92,3.44 27.63,3.72 C27.33,4.01 26.93,4.16 26.51,4.15 L26.51,4.15 Z M27.75,6.31 L27.75,20.56 L25.31,20.56 L25.31,6.31 L27.77,6.31 L27.75,6.31 Z"></path><path d="M38.20,20.95 C37.23,20.96 36.27,20.78 35.36,20.44 C34.50,20.12 33.72,19.62 33.07,18.98 C32.40,18.30 31.88,17.51 31.54,16.63 C30.78,14.61 30.78,12.39 31.54,10.36 C31.89,9.48 32.43,8.68 33.11,8.02 C33.80,7.36 34.62,6.85 35.53,6.53 C36.46,6.19 37.45,6.02 38.44,6.02 C39.23,6.02 40.02,6.11 40.78,6.29 C41.40,6.43 41.99,6.67 42.52,7.00 L41.73,9.14 C41.23,8.76 40.68,8.44 40.10,8.18 C39.49,7.95 38.85,7.84 38.20,7.86 C37.57,7.85 36.95,7.97 36.38,8.20 C35.80,8.44 35.28,8.80 34.87,9.26 C34.42,9.77 34.07,10.36 33.85,10.99 C33.58,11.78 33.45,12.61 33.46,13.44 C33.36,14.92 33.85,16.38 34.83,17.51 C35.81,18.45 37.15,18.94 38.53,18.87 C39.72,18.85 40.89,18.48 41.88,17.81 L42.44,19.61 C41.88,20.02 41.26,20.33 40.60,20.52 C39.82,20.79 39.01,20.93 38.20,20.95 L38.20,20.95 Z"></path><path d="M47.94,0 L47.94,20.67 L45.44,20.67 L45.44,0 L47.94,0 Z M54.35,20.67 L48.27,13.01 L54.27,6.33 L56.83,6.33 L50.90,12.72 L57.24,20.67 L54.35,20.67 L54.35,20.67 Z"></path><polygon points="73.11 11.87 62.77 11.87 62.77 20.65 60.10 20.65 60.10 0.85 62.77 0.85 62.77 9.89 73.11 9.89 73.11 0.85 75.78 0.85 75.78 20.67 73.11 20.67"></polygon><path d="M86.30,20.95 C85.38,20.95 84.47,20.78 83.61,20.44 C82.78,20.12 82.01,19.63 81.38,19.00 C80.72,18.32 80.21,17.53 79.87,16.65 C79.12,14.60 79.12,12.35 79.87,10.30 C80.21,9.43 80.72,8.64 81.38,7.98 C82.02,7.35 82.78,6.86 83.61,6.53 C84.47,6.20 85.38,6.02 86.30,6.02 C87.23,6.02 88.15,6.20 89.01,6.53 C89.86,6.86 90.62,7.35 91.27,7.98 C91.94,8.64 92.47,9.43 92.82,10.30 C93.59,12.35 93.59,14.60 92.82,16.65 C92.50,17.52 92.00,18.32 91.37,19.00 C90.73,19.63 89.96,20.12 89.12,20.44 C88.22,20.79 87.27,20.96 86.30,20.95 Z M86.30,19.10 C86.88,19.10 87.46,18.99 88.00,18.79 C88.56,18.59 89.07,18.25 89.47,17.81 C89.93,17.31 90.28,16.71 90.50,16.06 C90.78,15.23 90.91,14.35 90.89,13.48 C90.92,12.60 90.78,11.72 90.50,10.89 C90.28,10.25 89.93,9.66 89.47,9.16 C89.07,8.72 88.56,8.39 88.00,8.18 C87.46,7.98 86.88,7.88 86.30,7.88 C85.74,7.88 85.18,7.98 84.65,8.18 C84.10,8.39 83.61,8.73 83.22,9.16 C82.77,9.66 82.42,10.25 82.21,10.89 C81.94,11.73 81.81,12.60 81.84,13.48 C81.81,14.35 81.94,15.23 82.21,16.06 C82.42,16.71 82.76,17.31 83.22,17.81 C83.61,18.25 84.10,18.58 84.65,18.79 C85.18,18.99 85.74,19.10 86.30,19.10 L86.30,19.10 Z"></path><path d="M104.21,20.12 C103.26,20.71 102.14,21.00 101.01,20.95 C99.79,21.00 98.61,20.56 97.74,19.73 C96.83,18.70 96.38,17.34 96.50,15.98 L96.50,6.31 L98.98,6.31 L98.98,15.98 C98.97,16.47 99.04,16.95 99.19,17.41 C99.30,17.76 99.50,18.07 99.77,18.32 C100.01,18.55 100.31,18.72 100.64,18.81 C100.99,18.91 101.35,18.96 101.71,18.96 C102.65,19.00 103.58,18.73 104.34,18.18 C105.05,17.63 105.63,16.94 106.03,16.14 L106.03,6.31 L108.49,6.31 L108.49,20.56 L106.32,20.56 L106.10,18.00 L106.10,18.00 C105.68,18.86 105.03,19.60 104.21,20.12 L104.21,20.12 Z"></path><path d="M116.42,20.95 C115.80,20.99 115.17,20.99 114.55,20.95 C114.09,20.89 113.62,20.80 113.17,20.69 C112.81,20.60 112.46,20.48 112.11,20.34 C111.83,20.22 111.55,20.07 111.29,19.91 L112.09,17.88 C112.27,18.02 112.47,18.15 112.67,18.26 C112.97,18.43 113.28,18.57 113.60,18.69 C114.01,18.85 114.43,18.97 114.86,19.06 C115.38,19.16 115.90,19.20 116.42,19.20 C117.26,19.26 118.09,19.04 118.79,18.59 C119.33,18.19 119.63,17.56 119.60,16.90 C119.62,16.34 119.38,15.80 118.94,15.45 C118.24,14.98 117.47,14.63 116.64,14.43 L114.86,13.84 C114.33,13.66 113.82,13.39 113.36,13.07 C112.91,12.76 112.55,12.35 112.28,11.89 C111.99,11.34 111.84,10.72 111.87,10.10 C111.79,8.92 112.33,7.79 113.29,7.10 C114.46,6.39 115.83,6.05 117.20,6.13 C118.07,6.11 118.94,6.19 119.79,6.37 C120.38,6.49 120.97,6.68 121.52,6.92 L120.95,8.96 C120.47,8.73 119.99,8.52 119.50,8.34 C118.79,8.11 118.05,8.00 117.31,8.02 C116.53,7.98 115.76,8.13 115.05,8.45 C114.47,8.75 114.14,9.37 114.20,10.01 C114.20,10.33 114.29,10.63 114.47,10.89 C114.66,11.15 114.90,11.36 115.18,11.52 C115.50,11.72 115.85,11.87 116.21,11.99 L117.45,12.36 L119.13,12.91 C119.66,13.10 120.16,13.36 120.61,13.70 C121.60,14.41 122.15,15.56 122.08,16.76 C122.12,17.46 121.95,18.17 121.61,18.79 C121.30,19.33 120.86,19.79 120.35,20.14 C119.80,20.50 119.19,20.76 118.55,20.91 C117.84,21.01 117.13,21.02 116.42,20.95 Z"></path><path d="M136.37,19.42 C135.76,19.91 135.06,20.28 134.31,20.50 C133.39,20.80 132.43,20.95 131.47,20.93 C129.48,21.04 127.53,20.30 126.14,18.89 C124.81,17.36 124.15,15.38 124.28,13.38 C124.26,12.31 124.43,11.26 124.79,10.26 C125.11,9.39 125.59,8.60 126.22,7.92 C126.79,7.29 127.50,6.79 128.29,6.45 C129.13,6.11 130.03,5.94 130.93,5.94 C131.84,5.93 132.74,6.10 133.58,6.45 C134.35,6.77 135.02,7.28 135.53,7.94 C136.06,8.66 136.42,9.50 136.56,10.38 C136.75,11.50 136.75,12.64 136.56,13.76 L126.72,13.76 C126.83,17.17 128.46,18.87 131.62,18.87 C132.38,18.89 133.13,18.77 133.85,18.53 C134.49,18.30 135.10,18.00 135.67,17.63 L136.37,19.42 Z M131.02,7.73 C130.01,7.72 129.05,8.12 128.35,8.83 C127.52,9.75 127.03,10.91 126.94,12.13 L134.33,12.13 C134.53,10.97 134.25,9.78 133.56,8.81 C132.93,8.09 131.99,7.69 131.02,7.73 Z"></path></g></svg>
             </a>
-            <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
+            <a id="cloud-logo" href="https://clickhouse.cloud/">&#9729;</a>
         </p>
         <div id="download-dropdown">
             <div>
@@ -943,6 +721,1148 @@
 
 <script type="text/javascript">
 
+class QueryProgressElement extends HTMLElement
+{
+    constructor()
+    {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this.shadowRoot.innerHTML = `
+            <style>
+                :host
+                {
+                    display: grid;
+                    grid-template-columns: auto 1fr auto;
+                    gap: 1rem;
+                    align-items: center;
+                }
+
+                #hourglass, #check-mark
+                {
+                    grid-column: 1;
+                    grid-row: 1;
+                }
+
+                #hourglass
+                {
+                    display: none;
+                    font-size: 110%;
+                    color: #888;
+                    animation: hourglass-animation 2s linear infinite;
+                }
+
+                #check-mark
+                {
+                    display: none;
+                    font-size: 110%;
+                    color: #080;
+                }
+
+                #progress
+                {
+                    display: none;
+                    width: 100%;
+                    color: var(--misc-text-color);
+                    background: linear-gradient(to right,
+                        transparent 0%,
+                        var(--progress-color) var(--progress, 0%),
+                        transparent var(--progress, 0%));
+                }
+
+                #stats
+                {
+                    color: var(--misc-text-color);
+                    white-space: nowrap;
+                }
+
+                #stats b
+                {
+                    color: var(--progress-color);
+                }
+
+                @keyframes hourglass-animation
+                {
+                    0% { transform: none; }
+                    25% { transform: rotate(180deg); }
+                    50% { transform: rotate(180deg); }
+                    75% { transform: rotate(360deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+            <span id="hourglass">&#10711;</span>
+            <span id="check-mark">&#10004;</span>
+            <span id="progress"></span>
+            <span id="stats"></span>
+        `;
+        this._hourglass = this.shadowRoot.getElementById('hourglass');
+        this._checkMark = this.shadowRoot.getElementById('check-mark');
+        this._progress = this.shadowRoot.getElementById('progress');
+        this._stats = this.shadowRoot.getElementById('stats');
+    }
+
+    clear()
+    {
+        this._hourglass.style.display = 'none';
+        this._checkMark.style.display = 'none';
+        this._stats.innerText = '';
+        this._progress.style.display = 'none';
+        this._progress.innerText = '';
+        this.style.setProperty('--progress', '0%');
+    }
+
+    start()
+    {
+        this._checkMark.style.display = 'none';
+        this._hourglass.style.display = 'inline-block';
+    }
+
+    finish()
+    {
+        this._hourglass.style.display = 'none';
+        this._checkMark.style.display = 'inline-block';
+    }
+
+    updateProgress(progress)
+    {
+        const rows = +progress.read_rows;
+        const bytes = +progress.read_bytes;
+        const total_rows = +progress.total_rows_to_read;
+        const elapsed_ns = +progress.elapsed_ns;
+
+        let formatted_rows = formatReadableRows(rows);
+        let formatted_bytes = formatReadableBytes(bytes);
+
+        const rps = rows * 1e9 / elapsed_ns;
+        const bps = bytes * 1e9 / elapsed_ns;
+
+        let formatted_rps = formatReadableRows(rps) + '/sec';
+        let formatted_bps = formatReadableBytes(bps) + '/sec';
+
+        if (rows >= 1e11) { formatted_rows = `<b>${formatted_rows}<\/b>`; }
+        if (bytes >= 1e12) { formatted_bytes = `<b>${formatted_bytes}<\/b>`; }
+        if (rps >= 1e10) { formatted_rps = `<b>${formatted_rps}<\/b>`; }
+        if (bps >= 1e10) { formatted_bps = `<b>${formatted_bps}<\/b>`; }
+
+        let text = '';
+
+        if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
+
+        text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
+
+        if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
+
+        this._stats.innerHTML = text;
+
+        this.style.setProperty('--progress',
+            rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
+    }
+
+    updateText(rowCount, elapsedNs, incomplete)
+    {
+        let progress_text = '';
+        if (rowCount)
+        {
+            progress_text += `${rowCount}${incomplete ? '+' : ''} rows in result`;
+            if (elapsedNs) progress_text += ', ';
+        }
+        if (elapsedNs) { progress_text += `${(elapsedNs / 1e9).toFixed(2)} sec.`; }
+        this._progress.innerText = progress_text;
+        this._progress.style.display = 'block';
+    }
+}
+customElements.define('query-progress', QueryProgressElement);
+
+
+class QueryResultElement extends HTMLElement
+{
+    static _loadDagrePromise = null;
+    static _loadUplotPromise = null;
+
+    constructor()
+    {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this.shadowRoot.innerHTML = `
+            <style>
+                :host
+                {
+                    display: block;
+                }
+
+                .monospace
+                {
+                    font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+                }
+
+                .shadow
+                {
+                    box-shadow: 0 0 1rem var(--shadow-color);
+                }
+
+                ::selection
+                {
+                    color: var(--selection-color);
+                    background-color: var(--selection-background-color);
+                }
+
+                a, a:visited
+                {
+                    color: var(--link-color);
+                    text-decoration: none;
+                }
+
+                #data_div
+                {
+                    margin-top: 1rem;
+                    background-color: var(--element-background-color);
+                }
+
+                #data_div.fixed
+                {
+                    width: fit-content;
+                }
+
+                #data-table
+                {
+                    width: 100%;
+                    border-spacing: 0;
+                    background-color: var(--element-background-color);
+                    border-collapse: collapse;
+                }
+
+                #data-table.fixed
+                {
+                    table-layout: fixed;
+                    width: var(--table-width);
+                }
+
+                #data-unparsed
+                {
+                    width: fit-content;
+                    background-color: var(--element-background-color);
+                    margin-top: 0rem;
+                    padding: 0.25rem 0.5rem;
+                    display: none;
+                }
+
+                td
+                {
+                    background-color: var(--element-background-color);
+                    max-width: 50vw;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    padding: 0.25rem 0.5rem;
+                    border: 1px solid var(--border-color);
+                    white-space: pre;
+                    vertical-align: top;
+                }
+
+                td u
+                {
+                    text-decoration-color: var(--misc-text-color);
+                }
+
+                .right
+                {
+                    text-align: right;
+                }
+
+                th
+                {
+                    position: sticky;
+                    top: -0.5rem;
+                    padding: 0.25rem 0.5rem;
+                    text-align: center;
+                    background-color: var(--table-header-color);
+                    border: 1px solid var(--border-color);
+                }
+
+                th .name
+                {
+                    display: block;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .type-hint
+                {
+                    display: none;
+                    position: absolute;
+                    user-select: none;
+                    left: 0;
+                    top: -1px;
+                    transform: translateY(-100%);
+                    font-size: 75%;
+                    font-weight: normal;
+                    color: var(--misc-text-color);
+                    background: var(--element-background-color);
+                    max-height: 5em;
+                    white-space: pre;
+                }
+
+                th:hover .type-hint
+                {
+                    display: inline-block;
+                }
+
+                .resizer
+                {
+                    position: absolute;
+                    top: 0;
+                    right: -0.3rem;
+                    width: 0.5rem;
+                    cursor: col-resize;
+                    user-select: none;
+                    height: 100%;
+                }
+
+                .resizer:hover, .resizer-dragging
+                {
+                    border-radius: 0.25rem;
+                    background-color: var(--border-color-selected);
+                }
+
+                tr:hover
+                {
+                    filter: var(--table-hover-filter);
+                }
+
+                .tr-selected
+                {
+                    filter: var(--table-hover-filter);
+                }
+
+                #error
+                {
+                    background: var(--error-color);
+                    white-space: pre-wrap;
+                    padding: 0.5rem 1rem;
+                    display: none;
+                }
+
+                .td-selected
+                {
+                    white-space: pre-wrap;
+                    max-width: none;
+                    outline: 2px solid var(--border-color-selected);
+                    outline-offset: -2px;
+                }
+
+                td.empty-result
+                {
+                    text-align: center;
+                    vertical-align: middle;
+                }
+
+                .row-number
+                {
+                    width: 1%;
+                    text-align: right;
+                    background-color: var(--table-header-color);
+                    color: var(--misc-text-color);
+                }
+
+                div.empty-result
+                {
+                    opacity: 10%;
+                    font-size: 7vw;
+                    font-family: Liberation Sans, DejaVu Sans, sans-serif;
+                }
+
+                #graph
+                {
+                    display: none;
+                    margin: auto;
+                }
+
+                text
+                {
+                    font-size: 14px;
+                    fill: var(--text-color);
+                }
+
+                .node rect
+                {
+                    fill: var(--element-background-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                    stroke: var(--border-color);
+                }
+
+                .edgePath path
+                {
+                    stroke: var(--text-color);
+                }
+
+                marker
+                {
+                    fill: var(--text-color);
+                }
+
+                #chart
+                {
+                    border: 1px solid var(--border-color);
+                    background-color: var(--element-background-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                    display: none;
+                    height: 70vh;
+                }
+
+                .u-wrap {position: relative;user-select: none;}
+                .u-over, .u-under, .u-axis {position: absolute;}
+                .u-under {overflow: hidden;}
+                .uplot canvas {display: block;position: relative;width: 100%;height: 100%;}
+                .u-legend {font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace; border-spacing: 0; border-collapse: collapse;}
+                .u-inline {display: block;}
+                .u-inline * {display: inline-block;}
+                .u-legend th {font-weight: 600;}
+                .u-legend th > * {vertical-align: middle;display: inline-block;}
+                .u-legend td { min-width: 13em; }
+                .u-legend .u-marker {width: 1em;height: 1em;margin-right: 4px;background-clip: padding-box !important;}
+                .u-inline.u-live th::after {content: ":";vertical-align: middle;}
+                .u-inline:not(.u-live) .u-value {display: none;}
+                .u-series > * {padding: 4px;}
+                .u-series th {cursor: pointer;}
+                .u-legend .u-off > * {opacity: 0.3;}
+                .u-select {background: rgba(0,0,0,0.07);position: absolute;pointer-events: none;}
+                .u-cursor-x, .u-cursor-y {position: absolute;left: 0;top: 0;pointer-events: none;will-change: transform;z-index: 100;}
+                .u-hz .u-cursor-x, .u-vt .u-cursor-y {height: 100%;border-right: 1px dashed #607D8B;}
+                .u-hz .u-cursor-y, .u-vt .u-cursor-x {width: 100%;border-bottom: 1px dashed #607D8B;}
+                .u-cursor-pt {position: absolute;top: 0;left: 0;border-radius: 50%;border: 0 solid;pointer-events: none;will-change: transform;z-index: 100;background-clip: padding-box !important;}
+                .u-axis.u-off, .u-select.u-off, .u-cursor-x.u-off, .u-cursor-y.u-off, .u-cursor-pt.u-off {display: none;}
+            </style>
+            <div id="data_div">
+                <table class="monospace shadow" id="data-table"></table>
+                <pre class="monospace shadow" id="data-unparsed"></pre>
+            </div>
+            <div id="chart"></div>
+            <svg id="graph" fill="none"></svg>
+            <p id="error" class="monospace shadow"></p>
+        `;
+
+        this._dataDiv = this.shadowRoot.getElementById('data_div');
+        this._dataTable = this.shadowRoot.getElementById('data-table');
+        this._dataUnparsed = this.shadowRoot.getElementById('data-unparsed');
+        this._chart = this.shadowRoot.getElementById('chart');
+        this._graph = this.shadowRoot.getElementById('graph');
+        this._error = this.shadowRoot.getElementById('error');
+
+        this._row_idx = 0;
+        this._elapsed_ns = 0;
+        this._incomplete_result = false;
+        this._is_explain_graph = false;
+        this._explain_graph = '';
+        this._column_is_number = {};
+        this._extremes = {};
+        this._header = {};
+        this._current_selected_cell = null;
+        this._uplot = null;
+        this._queryText = '';
+
+        this._max_rows = 1_000;
+        this._max_cells = 100_000;
+
+        this.setAttribute('tabindex', '0');
+        this.style.outline = 'none';
+        this.addEventListener('keydown', (e) => this._handleKeyDown(e));
+
+        new ResizeObserver(() => this._resizeChart()).observe(this._chart);
+    }
+
+    get rowCount() { return this._row_idx; }
+    get elapsedNs() { return this._elapsed_ns; }
+    set elapsedNs(v) { this._elapsed_ns = v; }
+    get incompleteResult() { return this._incomplete_result; }
+    get isExplainGraph() { return this._is_explain_graph; }
+    get explainGraph() { return this._explain_graph; }
+    set queryText(v) { this._queryText = v; }
+    get rawText() { return this._dataUnparsed.textContent; }
+
+    _clearElement(elem)
+    {
+        while (elem.firstChild)
+        {
+            elem.removeChild(elem.lastChild);
+        }
+        elem.style.display = 'none';
+    }
+
+    clear()
+    {
+        this._clearElement(this._dataTable);
+        this._clearElement(this._graph);
+        this._clearElement(this._chart);
+        this._clearElement(this._dataUnparsed);
+        this._clearElement(this._error);
+
+        this._dataTable.classList.remove('fixed');
+        this._dataDiv.classList.remove('fixed');
+
+        this._extremes = {};
+        this._header = {};
+        this._row_idx = 0;
+        this._elapsed_ns = 0;
+        this._incomplete_result = false;
+        this._is_explain_graph = false;
+        this._explain_graph = '';
+        this._current_selected_cell = null;
+    }
+
+    clearSelection()
+    {
+        this._current_selected_cell?.classList.remove('td-selected');
+        this._current_selected_cell?.parentElement.classList.remove('tr-selected');
+        this._current_selected_cell = null;
+    }
+
+    clearError()
+    {
+        this._clearElement(this._error);
+    }
+
+    _renderCell(name, value)
+    {
+        let td = document.createElement('td');
+        let is_null = (value === null);
+        let is_link = false;
+
+        let text;
+        if (is_null)
+        {
+            text = '\u1D3A\u1D41\u1D38\u1D38';
+        }
+        else if (typeof(value) === 'object')
+        {
+            text = JSON.stringify(value);
+        }
+        else
+        {
+            text = value;
+            if (typeof(value) == 'string' && value.match(/^https?:\/\/\S+$/))
+            {
+                is_link = true;
+            }
+        }
+
+        let node = document.createTextNode(text);
+        if (is_link)
+        {
+            let link = document.createElement('a');
+            link.appendChild(node);
+            link.href = text;
+            link.setAttribute('target', '_blank');
+            node = link;
+        }
+
+        td.className = this._column_is_number[name] ? 'right' : 'left';
+
+        if (this._column_is_number[name])
+        {
+            if (text.length >= 5 && text.match(/^[\d]{5,}$/))
+            {
+                let i = 0;
+                td.innerHTML = text.split('').reverse().map(c => {
+                    if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
+                }).reverse().join('');
+                return td;
+            }
+        }
+
+        td.appendChild(node);
+        return td;
+    }
+
+    appendHeader(meta)
+    {
+        if (meta.length == 0) { return; }
+        this._header = meta;
+
+        let thead = document.createElement('thead');
+
+        let th = document.createElement('th');
+        th.className = 'row-number';
+        th.appendChild(document.createTextNode('\u2116'));
+        thead.appendChild(th);
+
+        let zIndex = meta.length;
+
+        meta.forEach(elem => {
+            let th = document.createElement('th');
+            const name = document.createTextNode(elem.name);
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'name';
+            nameSpan.appendChild(name);
+            th.appendChild(nameSpan);
+            let type_hint = document.createElement('span');
+            type_hint.className = 'type-hint';
+            type_hint.appendChild(document.createTextNode(elem.type));
+            th.appendChild(type_hint);
+            this._appendHeaderResizer(th);
+            th.style.zIndex = zIndex;
+            --zIndex;
+            thead.appendChild(th);
+
+            this._column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
+        });
+
+        let table = this._dataTable;
+        while (table.firstChild)
+        {
+            table.removeChild(table.lastChild);
+        }
+        let tbody = document.createElement('tbody');
+        tbody.id = 'tbody';
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        table.style.display = 'table';
+
+        this._row_idx = 0;
+    }
+
+    appendRow(row, fragment)
+    {
+        if (this._row_idx >= this._max_rows || (1 + this._row_idx) * Object.keys(this._header).length > this._max_cells)
+        {
+            this._incomplete_result = true;
+            return false;
+        }
+
+        ++this._row_idx;
+        let tr = document.createElement('tr');
+
+        let td = document.createElement('td');
+        td.className = 'row-number';
+        td.appendChild(document.createTextNode(this._row_idx));
+        tr.appendChild(td);
+
+        for (const column of this._header)
+        {
+            const td = this._renderCell(column.name, row[column.name]);
+
+            td.onclick = () => {
+                this._current_selected_cell?.classList.remove('td-selected');
+                this._current_selected_cell?.parentElement.classList.remove('tr-selected');
+                this._current_selected_cell = td;
+                this._current_selected_cell.classList.add('td-selected');
+                this._current_selected_cell.parentElement.classList.add('tr-selected');
+                this._current_selected_cell.scrollIntoView({ block: 'nearest' });
+                this.focus();
+            };
+
+            tr.appendChild(td);
+        }
+
+        fragment.appendChild(tr);
+        this._incomplete_result = false;
+        return true;
+    }
+
+    flushFragment(fragment)
+    {
+        let tbody = this.shadowRoot.getElementById('tbody');
+        if (tbody && fragment.hasChildNodes())
+        {
+            tbody.appendChild(fragment);
+        }
+    }
+
+    renderExtremes()
+    {
+        let col_idx = 0;
+        for (const column of this._header)
+        {
+            const name = column.name;
+            ++col_idx;
+            if (this._column_is_number[name]
+                && this._extremes.min[name] !== undefined && this._extremes.max[name] !== undefined
+                && Number(this._extremes.max[name]) > Number(this._extremes.min[name]))
+            {
+                let table = this._dataTable;
+
+                const double_sided = this._extremes.min[name] < 0;
+                const ratio_positive = this._extremes.max[name] / (this._extremes.max[name] - this._extremes.min[name]);
+                const ratio_negative = 1 - ratio_positive;
+
+                for (let row of table.rows)
+                {
+                    let cell = row.cells[col_idx];
+                    let value = +cell.innerText;
+
+                    if (!double_sided)
+                    {
+                        if (value > 0)
+                        {
+                            const ratio = value / this._extremes.max[name];
+
+                            cell.style.cssText = `
+                                background-size: 100% 50%;
+                                background-position: center;
+                                background-repeat: no-repeat;
+                                background: linear-gradient(to right,
+                                    var(--bar-color) 0%, var(--bar-color) ${100 * ratio}%,
+                                    var(--element-background-color) ${100 * ratio}%, var(--element-background-color) 100%)`;
+                        }
+                    }
+                    else
+                    {
+                        if (value > 0)
+                        {
+                            const ratio = value / this._extremes.max[name];
+
+                            cell.style.cssText = `
+                                background-size: 100% 50%;
+                                background-position: center;
+                                background-repeat: no-repeat;
+                                background: linear-gradient(to right,
+                                    var(--element-background-color) 0%, var(--element-background-color) ${100 * ratio_negative}%,
+                                    var(--bar-color) ${100 * ratio_negative}%, var(--bar-color) ${100 * (ratio_negative + ratio * ratio_positive)}%,
+                                    var(--element-background-color) ${100 * (ratio_negative + ratio * ratio_positive)}%, var(--element-background-color) 100%)`;
+                        }
+                        else if (value < 0)
+                        {
+                            const ratio = value / this._extremes.min[name];
+
+                            cell.style.cssText = `
+                                background-size: 100% 50%;
+                                background-position: center;
+                                background-repeat: no-repeat;
+                                background: linear-gradient(to right,
+                                    var(--element-background-color) 0%, var(--element-background-color) ${100 * (1 - ratio) * ratio_negative}%,
+                                    var(--bar-color-negative) ${100 * (1 - ratio) * ratio_negative}%, var(--bar-color-negative) ${100 * ratio_negative}%,
+                                    var(--element-background-color) ${100 * ratio_negative}%, var(--element-background-color) 100%)`;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    transposeIfNeeded()
+    {
+        let table = this._dataTable;
+        if (Object.keys(this._header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
+
+        let heads = table.tHead.childNodes;
+        let values = table.rows[0]?.cells;
+        let num_cols = heads.length - 1;
+
+        let new_tbody = document.createElement('tbody');
+        for (let i = 0; i < num_cols; ++i)
+        {
+            let tr = document.createElement('tr');
+            let th = heads[1];
+            th.className = 'right';
+            th.style.width = '0';
+            th.removeChild(th.querySelector('.resizer'));
+            tr.appendChild(th);
+            if (values)
+            {
+                let td = values[1];
+                td.classList.remove('right');
+                tr.appendChild(td);
+            }
+            else if (i == 0)
+            {
+                let td = document.createElement('td');
+                td.rowSpan = num_cols;
+                td.className = 'empty-result';
+                let div = document.createElement('div');
+                div.appendChild(document.createTextNode("empty result"));
+                div.className = 'empty-result';
+                td.appendChild(div);
+                tr.appendChild(td);
+            }
+            new_tbody.appendChild(tr);
+        }
+
+        table.removeChild(table.tHead);
+        table.removeChild(table.tBodies[0]);
+        table.appendChild(new_tbody);
+    }
+
+    _changeTableLayout()
+    {
+        const table = this._dataTable;
+        const headers = table.querySelectorAll('th');
+
+        table.style.setProperty('--table-width', `${table.offsetWidth}px`);
+
+        let columnWidths = [];
+        headers.forEach(header => {
+            columnWidths.push(header.offsetWidth);
+        });
+
+        table.classList.add('fixed');
+        this._dataDiv.classList.add('fixed');
+
+        headers.forEach((header, index) => {
+            header.style.width = `${columnWidths[index]}px`;
+        });
+    }
+
+    _appendHeaderResizer(header)
+    {
+        let drag_state = {
+            elem: null,
+            is_dragging: true,
+            offset_x: null,
+            offset_width: null
+        };
+
+        const start = (e) => {
+            if (e.button !== 0) { return; }
+
+            this._changeTableLayout();
+            drag_state.offset_x = e.clientX;
+            drag_state.offset_width = header.offsetWidth;
+            drag_state.is_dragging = true;
+            drag_state.elem = e.target;
+            drag_state.elem.classList.add('resizer-dragging');
+
+            document.addEventListener('pointermove', move);
+            document.addEventListener('pointerup', stop);
+            document.addEventListener('pointercancel', stop);
+        };
+
+        const move = (e) => {
+            if (!drag_state.is_dragging) { return; }
+
+            const dx = e.clientX - drag_state.offset_x;
+            header.style.width = `${drag_state.offset_width + dx}px`;
+            if (dx < 0)
+            {
+                const table = this._dataTable;
+                table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`);
+            }
+        };
+
+        const stop = (e) => {
+            drag_state.is_dragging = false;
+            drag_state.elem.classList.remove('resizer-dragging');
+
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', stop);
+            document.removeEventListener('pointercancel', stop);
+        };
+
+        const resizer = document.createElement('div');
+        resizer.className = 'resizer';
+        resizer.addEventListener('pointerdown', start);
+        resizer.addEventListener('touchstart', (e) => e.preventDefault());
+
+        header.appendChild(resizer);
+    }
+
+    renderError(message)
+    {
+        this._error.innerText = message ? message : "No response.";
+        this._error.style.display = 'block';
+    }
+
+    updateRaw(data)
+    {
+        const fragment = document.createTextNode(data);
+        this._dataUnparsed.appendChild(fragment);
+        this._dataUnparsed.style.display = 'block';
+    }
+
+    update(json, fragment)
+    {
+        if (json.progress)
+        {
+            this._elapsed_ns = +json.progress.elapsed_ns;
+            this.dispatchEvent(new CustomEvent('query-progress', { detail: json.progress }));
+            return true;
+        }
+        else if (json.meta)
+        {
+            this.appendHeader(json.meta);
+            return true;
+        }
+        else if (json.row)
+        {
+            if (this._is_explain_graph
+                || (this._row_idx == 0 && Object.keys(json.row).length == 1 && json.row.explain == 'digraph'
+                    && this._queryText.match(/^\s*EXPLAIN/i)))
+            {
+                this._is_explain_graph = true;
+                this._explain_graph += json.row.explain + '\n';
+                return true;
+            }
+            else
+            {
+                return this.appendRow(json.row, fragment);
+            }
+        }
+        else if (json.min)
+        {
+            this._extremes['min'] = json.min;
+            return true;
+        }
+        else if (json.max)
+        {
+            this._extremes['max'] = json.max;
+            return true;
+        }
+        else if (json.exception)
+        {
+            this.renderError(json.exception);
+            return true;
+        }
+    }
+
+    _handleKeyDown(e)
+    {
+        let cell = this._current_selected_cell;
+        if (!cell) { return; }
+
+        const row = cell.parentElement;
+        const table = row.parentElement;
+        let cell_index = cell.cellIndex;
+        let row_index = row.rowIndex;
+
+        switch(e.key)
+        {
+            case 'ArrowUp': --row_index; break;
+            case 'ArrowDown': ++row_index; break;
+            case 'ArrowLeft': --cell_index; break;
+            case 'ArrowRight': ++cell_index; break;
+            default:
+                return;
+        }
+
+        if (row_index < 0 || cell_index <= 0) { return; }
+
+        let new_cell = table.rows[row_index]?.cells[cell_index];
+        if (!new_cell) { return; }
+
+        e.preventDefault();
+
+        cell.classList.remove('td-selected');
+        cell.parentElement.classList.remove('tr-selected');
+        new_cell.classList.add('td-selected');
+        new_cell.parentElement.classList.add('tr-selected');
+        new_cell.scrollIntoView({ block: 'nearest' });
+        this._current_selected_cell = new_cell;
+    }
+
+    _loadJS(src, integrity)
+    {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            if (integrity)
+            {
+                script.crossOrigin = 'anonymous';
+                script.integrity = integrity;
+            }
+            else
+            {
+                console.warn('no integrity for', src);
+            }
+            script.addEventListener('load', function() { resolve(true); });
+            document.head.appendChild(script);
+        });
+    }
+
+    _loadDagre()
+    {
+        if (QueryResultElement._loadDagrePromise) { return QueryResultElement._loadDagrePromise; }
+
+        QueryResultElement._loadDagrePromise = Promise.all([
+            this._loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
+                    'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
+            this._loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
+                    'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
+            this._loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
+                    'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
+            this._loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
+                    'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
+        ]);
+
+        return QueryResultElement._loadDagrePromise;
+    }
+
+    _loadUplot()
+    {
+        if (QueryResultElement._loadUplotPromise) { return QueryResultElement._loadUplotPromise; }
+        QueryResultElement._loadUplotPromise = this._loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
+            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
+        return QueryResultElement._loadUplotPromise;
+    }
+
+    async renderGraph()
+    {
+        this._clearElement(this._dataTable);
+        await this._loadDagre();
+
+        const dot = this._explain_graph.replace(/shape\s*=\s*box/g, 'shape=rect');
+
+        let graph = graphlibDot.read(dot);
+        let render = new dagreD3.render();
+
+        graph.setGraph({
+            nodesep: 20,
+            rankdir: 'LR',
+        });
+
+        let svg = this._graph;
+        svg.style.display = 'block';
+
+        render(d3.select(svg), graph);
+
+        svg.style.width = graph.graph().width;
+        svg.style.height = graph.graph().height;
+    }
+
+    _legendAsTooltipPlugin({ className, style = {} } = {})
+    {
+        let legendEl;
+        let multiline;
+
+        function init(u, opts)
+        {
+            legendEl = u.root.querySelector(".u-legend");
+            legendEl.classList.remove("u-inline");
+            className && legendEl.classList.add(className);
+
+            uPlot.assign(legendEl.style, {
+                textAlign: "right",
+                pointerEvents: "none",
+                display: "none",
+                position: "absolute",
+                left: 0,
+                top: 0,
+                zIndex: 100,
+                boxShadow: "2px 2px 10px rgba(0, 0, 0, 0.1)",
+                ...style
+            });
+
+            const nodes = legendEl.querySelectorAll("th");
+            for (let i = 0; i < nodes.length; i++)
+                nodes[i]._order = i;
+
+            if (opts.series.length == 2)
+            {
+                multiline = false;
+                for (let i = 0; i < nodes.length; i++)
+                    nodes[i].style.display = "none";
+            }
+            else
+            {
+                multiline = true;
+                legendEl.querySelector("th").remove();
+                legendEl.querySelector("td").setAttribute('colspan', '2');
+                legendEl.querySelector("td").style.textAlign = 'center';
+                let footer = legendEl.insertRow().insertCell();
+                footer.setAttribute('colspan', '2');
+                footer.style.textAlign = 'center';
+                footer.classList.add('u-value');
+                footer.parentNode.classList.add('u-series','footer');
+                footer.textContent = ". . .";
+            }
+
+            const overEl = u.over;
+            overEl.style.overflow = "visible";
+
+            overEl.appendChild(legendEl);
+
+            overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
+            overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
+        }
+
+        function nodeListToArray(nodeList)
+        {
+            return Array.prototype.slice.call(nodeList);
+        }
+
+        function update(u)
+        {
+            let { left, top } = u.cursor;
+            left -= legendEl.clientWidth * (left / u.width);
+            if (top >= legendEl.clientHeight)
+            {
+                top -= legendEl.clientHeight;
+            }
+            legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
+
+            if (multiline)
+            {
+                let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
+                let header = nodes.shift();
+                let footer = nodes.pop();
+                let showLimit = Math.floor(u.height / 30);
+                nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
+                nodes.sort((a, b) => b._sort_key - a._sort_key);
+                nodes.forEach(function (node) { node.parentNode.appendChild(node); });
+                for (let i = 0; i < nodes.length; i++)
+                {
+                    nodes[i].style.display = i < showLimit ? null : "none";
+                }
+                footer.parentNode.appendChild(footer);
+                footer.style.display = nodes.length > showLimit ? null : "none";
+            }
+        }
+
+        return {
+            hooks: {
+                init: init,
+                setCursor: update,
+            }
+        };
+    }
+
+    async renderChart(json)
+    {
+        await this._loadUplot();
+
+        let chart = this._chart;
+        chart.style.display = 'block';
+
+        let paths = json[0].length < chart.clientWidth / 5 ? uPlot.paths.bars() : uPlot.paths.linear();
+
+        const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
+            ? ["rgba(255, 0, 200, 100%)", "rgba(255, 128, 200, 50%)", "#CCC", "#444"]
+            : ["rgba(255, 255, 0, 100%)", "rgba(255, 255, 100, 50%)", "#444", "#CCC"];
+
+        const opts = {
+            width: chart.clientWidth,
+            height: chart.clientHeight,
+            scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
+            axes: [ { stroke: axes_color,
+                        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                        ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+                    { stroke: axes_color,
+                        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                        ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+            series: [ { label: "x" },
+                        { label: "y", stroke: line_color, fill: fill_color, paths, points: { show: false } } ],
+            padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
+            plugins: [ this._legendAsTooltipPlugin() ],
+        };
+
+        this._uplot = new uPlot(opts, json, chart);
+    }
+
+    _resizeChart()
+    {
+        if (this._uplot)
+        {
+            let chart = this._chart;
+            this._uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
+        }
+    }
+
+    redrawChart()
+    {
+        if (this._uplot && this._chart.style.display == 'block')
+        {
+            this.renderChart(this._uplot.data);
+        }
+    }
+}
+customElements.define('query-result', QueryResultElement);
+
+
 /// Incremental request number. When response is received,
 /// if its request number does not equal to the current request number, response will be ignored.
 /// This is to avoid race conditions.
@@ -963,6 +1883,15 @@ const run_immediately = current_url.searchParams.has("run");
 let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
 let password_elem = document.getElementById('password');
+let progressEl = document.getElementById('query-progress');
+let resultEl = document.getElementById('query-result');
+let logoEl = document.getElementById('logo-container');
+
+resultEl.addEventListener('query-progress', (e) => {
+    elapsed_ns = +e.detail.elapsed_ns;
+    progressEl.updateProgress(e.detail);
+    progressEl.updateText(resultEl.rowCount, elapsed_ns, resultEl.incompleteResult);
+});
 
 if (url_elem.value == '') {
     const server_address = current_url.searchParams.get('url');
@@ -1036,16 +1965,18 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
     } catch (e) {
         clear();
-        renderError("Network error");
+        resultEl.renderError("Network error");
+        logoEl.style.display = 'none';
         return false;
     }
     if (!response.ok) {
         clear();
-        renderError(await response.text());
+        resultEl.renderError(await response.text());
+        logoEl.style.display = 'none';
         return false;
     }
-    clearElement('error');
-    document.getElementById('logo-container').style.display = 'block';
+    resultEl.clearError();
+    logoEl.style.display = 'block';
     return await response.json();
 }
 
@@ -1115,7 +2046,14 @@ async function loadDatabases(server_address, user, password) {
 
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
-                loadTables(server_address, user, password, elem.database, database).then(ok => { if (ok !== false) database.dataset['opened'] = 1; });
+                let hourglass = document.createElement('span');
+                hourglass.className = 'loading-hourglass';
+                hourglass.textContent = '\u29D7';
+                database_link.after(hourglass);
+                loadTables(server_address, user, password, elem.database, database).then(ok => {
+                    hourglass.remove();
+                    if (ok !== false) database.dataset['opened'] = 1;
+                });
             } else {
                 delete database.dataset['opened'];
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
@@ -1236,7 +2174,7 @@ databases_toggle.addEventListener('click', e => {
 });
 
 document.getElementById('menu').addEventListener('click', e => {
-    if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle')) {
+    if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('button')) {
         toggleDatabases();
     }
 });
@@ -1305,14 +2243,7 @@ function fromBase64(base64) {
     return decoder.decode(bytes);
 }
 
-let row_idx = 0;
 let elapsed_ns = 0;
-let incomplete_result = false;
-let is_explain_graph = false;
-let explain_graph = '';
-let column_is_number = {};
-let extremes = {};
-let header = {};
 
 const default_format = 'JSONStringsEachRowWithProgress';
 
@@ -1338,11 +2269,12 @@ async function postImpl(posted_request_num, query)
 
     last_query_start = performance.now();
 
-    document.getElementById('check-mark').style.display = 'none';
     document.getElementById('download-div').style.display = 'none';
-    document.getElementById('hourglass').style.display = 'inline-block';
+    document.getElementById('copy-div').style.display = 'none';
 
     clear();
+    progressEl.start();
+    resultEl.queryText = query;
 
     let is_table = false;
     let is_raw = false;
@@ -1366,18 +2298,19 @@ async function postImpl(posted_request_num, query)
             let has_exception = false;
             for (line of reply.split('\n')) {
                 if (line.startsWith(`{"exception":`)) {
-                    update(JSON.parse(line));
+                    resultEl.update(JSON.parse(line));
                     has_exception = true;
                     break;
                 }
             }
             if (!has_exception) {
-                renderError(reply);
+                resultEl.renderError(reply);
+                logoEl.style.display = 'none';
             }
 
-            document.getElementById('hourglass').style.display = 'none';
+            progressEl.clear();
             document.getElementById('download-div').style.display = 'none';
-            document.documentElement.style.setProperty('--progress', '0');
+            document.getElementById('copy-div').style.display = 'none';
             return;
         } else if (format == default_format) {
             is_table = true;
@@ -1400,13 +2333,11 @@ async function postImpl(posted_request_num, query)
                 let cont = true;
                 for (line of lines.slice(0, -1)) {
                     const data = JSON.parse(line);
-                    cont = update(data, fragment);
+                    cont = resultEl.update(data, fragment);
                     if (!cont) { break; }
                 }
 
-                if (fragment.hasChildNodes()) {
-                    document.getElementById('tbody').appendChild(fragment);
-                }
+                resultEl.flushFragment(fragment);
 
                 if (!cont)
                 {
@@ -1419,7 +2350,7 @@ async function postImpl(posted_request_num, query)
             is_chart = true;
             reply = await response.text();
             if (posted_request_num != request_num) { return; }
-            renderChart(JSON.parse(reply));
+            resultEl.renderChart(JSON.parse(reply));
         } else {
             is_raw = true;
             const reader = response.body.getReader();
@@ -1434,7 +2365,7 @@ async function postImpl(posted_request_num, query)
                 reply += new_content;
 
                 if (posted_request_num != request_num) { return; }
-                updateRaw(new_content);
+                resultEl.updateRaw(new_content);
             }
         }
     } catch (e) {
@@ -1448,31 +2379,35 @@ async function postImpl(posted_request_num, query)
         } else {
             reply = e.toString();
         }
-        renderError(reply);
-        document.getElementById('hourglass').style.display = 'none';
+        resultEl.renderError(reply);
+        logoEl.style.display = 'none';
+        progressEl.clear();
         document.getElementById('download-div').style.display = 'none';
-        document.documentElement.style.setProperty('--progress', '0');
+        document.getElementById('copy-div').style.display = 'none';
         return;
     }
 
-    if (is_explain_graph) {
-        await renderGraph();
+    if (resultEl.isExplainGraph) {
+        await resultEl.renderGraph();
     } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
+        if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
+        if (is_table) resultEl.transposeIfNeeded();
     }
 
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
+    progressEl.finish();
     document.getElementById('download-div').style.display = 'block';
+    document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
     last_query_for_download = query;
 
     if (is_raw) {
-        elapsed_ns = 1e6 * (performance.now() - last_query_start);
+        resultEl.elapsedNs = 1e6 * (performance.now() - last_query_start);
+        elapsed_ns = resultEl.elapsedNs;
+    } else {
+        elapsed_ns = resultEl.elapsedNs;
     }
 
-    updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
+    progressEl.updateText(resultEl.rowCount, resultEl.elapsedNs, resultEl.incompleteResult);
+    progressEl.style.setProperty('--progress', '0');
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
     if (posted_request_num != request_num) { return; }
@@ -1512,6 +2447,7 @@ async function postImpl(posted_request_num, query)
 async function restoreFromHistory(state) {
     clear();
     query_area.value = state.query;
+    resultEl.queryText = state.query;
 
     if (!state.data) return;
 
@@ -1528,17 +2464,17 @@ async function restoreFromHistory(state) {
         let has_exception = false;
         for (line of state.data.split('\n')) {
             if (line.startsWith(`{"exception":`)) {
-                update(JSON.parse(line));
+                resultEl.update(JSON.parse(line));
                 has_exception = true;
                 break;
             }
         }
         if (!has_exception) {
-            renderError(state.data);
+            resultEl.renderError(state.data);
+            logoEl.style.display = 'none';
         }
 
-        document.getElementById('hourglass').style.display = 'none';
-        document.documentElement.style.setProperty('--progress', '0');
+        progressEl.clear();
         return;
     } else if (format == default_format) {
         is_table = true;
@@ -1547,35 +2483,36 @@ async function restoreFromHistory(state) {
 
         for (line of lines) {
             if (line.length == 0) continue;
-            if (!update(JSON.parse(line), fragment)) { break; }
+            if (!resultEl.update(JSON.parse(line), fragment)) { break; }
         }
 
-        if (fragment.hasChildNodes()) {
-            document.getElementById('tbody').appendChild(fragment);
-        }
+        resultEl.flushFragment(fragment);
     } else if (format == 'JSONCompactColumns') {
         is_chart = true;
         if (posted_request_num != request_num) { return; }
-        renderChart(JSON.parse(state.data));
+        resultEl.renderChart(JSON.parse(state.data));
     } else {
         is_raw = true;
-        updateRaw(state.data);
+        resultEl.updateRaw(state.data);
     }
 
-    if (is_explain_graph) {
-        await renderGraph();
+    if (resultEl.isExplainGraph) {
+        await resultEl.renderGraph();
     } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
+        if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
+        if (is_table) resultEl.transposeIfNeeded();
     }
 
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
+    progressEl.finish();
+    document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
 
-    if (is_raw) elapsed_ns = state.elapsed_ns;
+    if (is_raw) {
+        resultEl.elapsedNs = state.elapsed_ns;
+    }
+    elapsed_ns = resultEl.elapsedNs;
 
-    updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
+    progressEl.updateText(resultEl.rowCount, resultEl.elapsedNs, resultEl.incompleteResult);
+    progressEl.style.setProperty('--progress', '0');
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 }
 
@@ -1723,7 +2660,7 @@ query_area.onkeydown = (e) => {
         const replacedText = lines.join('\n');
         elem.value = value.slice(0, lineStart) + replacedText + value.slice(lineEnd);
 
-        // Adjust selection to keep the user in flow and enable quick reversal 
+        // Adjust selection to keep the user in flow and enable quick reversal
         elem.selectionStart = lineStart;
         elem.selectionEnd = lineStart + replacedText.length;
 
@@ -1732,38 +2669,12 @@ query_area.onkeydown = (e) => {
     }
 };
 
-function clearElement(id)
-{
-    let elem = document.getElementById(id);
-    while (elem.firstChild) {
-        elem.removeChild(elem.lastChild);
-    }
-    elem.style.display = 'none';
-}
-
 function clear()
 {
-    clearElement('data-table');
-    clearElement('graph');
-    clearElement('chart');
-    clearElement('data-unparsed');
-    clearElement('error');
-    clearElement('progress');
-
-    document.getElementById('data-table').classList.remove('fixed');
-    document.getElementById('data_div').classList.remove('fixed');
-    document.getElementById('check-mark').display = 'none';
-    document.getElementById('hourglass').display = 'none';
-    document.getElementById('stats').innerText = '';
-    document.getElementById('logo-container').style.display = 'block';
-
-    extremes = {};
-    header = {};
-    row_idx = 0;
+    resultEl.clear();
+    progressEl.clear();
+    logoEl.style.display = 'block';
     elapsed_ns = 0;
-    incomplete_result = false;
-    is_explain_graph = false;
-    explain_graph = '';
 }
 
 function formatReadable(number = 0, decimals = 2, units = []) {
@@ -1786,291 +2697,9 @@ function formatReadableRows(rows) {
     return formatReadable(rows, 2, units);
 }
 
-function renderCell(name, value)
-{
-    let td = document.createElement('td');
-
-    let is_null = (value === null);
-    let is_link = false;
-
-    /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
-    let text;
-    if (is_null) {
-        text = 'ᴺᵁᴸᴸ';
-    } else if (typeof(value) === 'object') {
-        text = JSON.stringify(value);
-    } else {
-        text = value;
-
-        /// If it looks like URL, create a link. This is for convenience.
-        if (typeof(value) == 'string' && value.match(/^https?:\/\/\S+$/)) {
-            is_link = true;
-        }
-    }
-
-    let node = document.createTextNode(text);
-    if (is_link) {
-        let link = document.createElement('a');
-        link.appendChild(node);
-        link.href = text;
-        link.setAttribute('target', '_blank');
-        node = link;
-    }
-
-    td.className = column_is_number[name] ? 'right' : 'left';
-
-    if (column_is_number[name]) {
-        if (text.length >= 5 && text.match(/^[\d]{5,}$/)) {
-            let i = 0;
-            td.innerHTML = text.split('').reverse().map(c => {
-                if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
-            }).reverse().join('');
-            return td;
-        }
-    }
-
-    td.appendChild(node);
-    return td;
-}
-
 document.getElementById('query').addEventListener('focus', e => {
-    current_selected_cell?.classList.remove('td-selected');
-    current_selected_cell?.parentElement.classList.remove('tr-selected');
-    current_selected_cell = null;
+    resultEl.clearSelection();
 });
-
-document.addEventListener('keydown', e => {
-    let cell = current_selected_cell;
-    if (!cell) { return; }
-
-    const row = cell.parentElement;
-    const table = row.parentElement;
-    let cell_index = cell.cellIndex;
-    let row_index = row.rowIndex;
-
-    switch(e.key) {
-        case 'ArrowUp': --row_index; break;
-        case 'ArrowDown': ++row_index; break;
-        case 'ArrowLeft': --cell_index; break;
-        case 'ArrowRight': ++cell_index; break;
-        default:
-            return;
-    }
-
-    /// The first cell in each row is the row number.
-    if (row_index < 0 || cell_index <= 0) { return; }
-
-    let new_cell = table.rows[row_index]?.cells[cell_index];
-    if (!new_cell) { return; }
-
-    e.preventDefault();
-
-    cell.classList.remove('td-selected');
-    cell.parentElement.classList.remove('tr-selected');
-    new_cell.classList.add('td-selected');
-    new_cell.parentElement.classList.add('tr-selected');
-    new_cell.scrollIntoView({ block: 'nearest' });
-    current_selected_cell = new_cell;
-});
-
-function transposeTableIfNeeded()
-{
-    let table = document.getElementById('data-table');
-    if (Object.keys(header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
-
-    let heads = table.tHead.childNodes;
-    let values = table.rows[0]?.cells;
-    let num_cols = heads.length - 1;
-
-    let new_tbody = document.createElement('tbody');
-    for (let i = 0; i < num_cols; ++i) {
-        let tr = document.createElement('tr');
-        let th = heads[1];
-        th.className = 'right';
-        th.style.width = '0';
-        th.removeChild(th.querySelector('.resizer'))
-        tr.appendChild(th);
-        if (values) {
-            let td = values[1];
-            td.classList.remove('right');
-            tr.appendChild(td);
-        } else if (i == 0) {
-            /// If the result is empty, show this fact with a style.
-            let td = document.createElement('td');
-            td.rowSpan = num_cols;
-            td.className = 'empty-result';
-            let div = document.createElement('div');
-            div.appendChild(document.createTextNode("empty result"));
-            div.className = 'empty-result';
-            td.appendChild(div);
-            tr.appendChild(td);
-        }
-        new_tbody.appendChild(tr);
-    }
-
-    table.removeChild(table.tHead);
-    table.removeChild(table.tBodies[0]);
-    table.appendChild(new_tbody);
-}
-
-function update(json, fragment) {
-    if (json.progress) {
-        updateProgress(json.progress);
-        return true;
-    } else if (json.meta) {
-        appendHeader(json.meta);
-        return true;
-    } else if (json.row) {
-        if (is_explain_graph
-            || (row_idx == 0 && Object.keys(json.row).length == 1 && json.row.explain == 'digraph'
-                && query_area.value.match(/^\s*EXPLAIN/i))) {
-            is_explain_graph = true;
-            explain_graph += json.row.explain + '\n';
-            return true;
-        } else {
-            return appendRow(json.row, fragment);
-        }
-    } else if (json.min) {
-        extremes['min'] = json.min;
-        return true;
-    } else if (json.max) {
-        extremes['max'] = json.max;
-        return true;
-    } else if (json.exception) {
-        renderError(json.exception);
-        return true;
-    }
-}
-
-function updateRaw(data) {
-    const fragment = document.createTextNode(data);
-    let container = document.getElementById('data-unparsed');
-    container.appendChild(fragment);
-    container.style.display = 'block';
-}
-
-function updateProgressText() {
-    let progress_elem = document.getElementById('progress');
-    let progress_text = '';
-    if (row_idx) {
-        progress_text += `${row_idx}${incomplete_result ? '+' : ''} rows in result`;
-        if (elapsed_ns) progress_text += ', ';
-    }
-    if (elapsed_ns) { progress_text += `${(elapsed_ns / 1e9).toFixed(2)} sec.`; }
-    progress_elem.innerText = progress_text;
-    progress_elem.style.display = 'block';
-}
-
-function updateProgress(progress) {
-    let stats = document.getElementById('stats');
-    let progress_elem = document.getElementById('progress');
-
-    const rows = +progress.read_rows;
-    const bytes = +progress.read_bytes;
-    const total_rows = +progress.total_rows_to_read;
-    elapsed_ns = +progress.elapsed_ns;
-
-    let formatted_rows = formatReadableRows(rows);
-    let formatted_bytes = formatReadableBytes(bytes);
-
-    const rps = rows * 1e9 / elapsed_ns;
-    const bps = bytes * 1e9 / elapsed_ns;
-
-    let formatted_rps = formatReadableRows(rps) + '/sec';
-    let formatted_bps = formatReadableBytes(bps) + '/sec';
-
-    if (rows >= 1e11) { formatted_rows = `<b>${formatted_rows}<\/b>`; }
-    if (bytes >= 1e12) { formatted_bytes = `<b>${formatted_bytes}<\/b>`; }
-    if (rps >= 1e10) { formatted_rps = `<b>${formatted_rps}<\/b>`; }
-    if (bps >= 1e10) { formatted_bps = `<b>${formatted_bps}<\/b>`; }
-
-    let text = '';
-
-    if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
-
-    text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
-
-    if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
-
-    stats.innerHTML = text;
-
-    updateProgressText();
-
-    document.documentElement.style.setProperty('--progress',
-        rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
-}
-
-function changeTableLayout() {
-    const table = document.getElementById('data-table');
-    const headers = table.querySelectorAll('th');
-
-    document.getElementById('data-table').style.setProperty('--table-width', `${table.offsetWidth}px`);
-
-    columnWidths = [];
-    headers.forEach(header => {
-        columnWidths.push(header.offsetWidth);
-    });
-
-    table.classList.add('fixed');
-    document.getElementById('data_div').classList.add('fixed');
-
-    headers.forEach((header, index) => {
-        header.style.width = `${columnWidths[index]}px`;
-    });
-}
-
-
-function appendHeaderResizer(header) {
-    let drag_state = {
-        elem: null,
-        is_dragging: true,
-        offset_x: null,
-        offset_width: null
-    };
-
-    const start = (e) => {
-        if (e.button !== 0) { return; }
-
-        changeTableLayout();
-        drag_state.offset_x = e.clientX;
-        drag_state.offset_width = header.offsetWidth;
-        drag_state.is_dragging = true;
-        drag_state.elem = e.target;
-        drag_state.elem.classList.add('resizer-dragging');
-
-        document.addEventListener('pointermove', move);
-        document.addEventListener('pointerup', stop);
-        document.addEventListener('pointercancel', stop);
-    }
-
-    const move = (e) => {
-        if (!drag_state.is_dragging) { return; }
-
-        const dx = e.clientX - drag_state.offset_x;
-        header.style.width = `${drag_state.offset_width + dx}px`;
-        if(dx < 0) {
-            const table = document.getElementById('data-table');
-            table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`)
-        };
-    }
-
-    const stop = (e) => {
-        drag_state.is_dragging = false;
-        drag_state.elem.classList.remove('resizer-dragging');
-
-        document.removeEventListener('pointermove', move);
-        document.removeEventListener('pointerup', stop);
-        document.removeEventListener('pointercancel', stop);
-    }
-
-    const resizer = document.createElement('div');
-    resizer.className = 'resizer';
-    resizer.addEventListener('pointerdown', start);
-    resizer.addEventListener('touchstart', (e) => e.preventDefault());
-
-    header.appendChild(resizer);
-}
-
 
 function appendTextareaResizer() {
     const queryDiv = document.getElementById('query_div');
@@ -2122,365 +2751,6 @@ function appendTextareaResizer() {
 
     queryDiv.appendChild(resizer);
 }
-
-function appendHeader(meta) {
-    if (meta.length == 0) { return; }
-    header = meta;
-
-    let thead = document.createElement('thead');
-
-    let th = document.createElement('th');
-    th.className = 'row-number';
-    th.appendChild(document.createTextNode('№'));
-    thead.appendChild(th);
-
-    /// Assign z-index in the reverse order.
-    /// This is needed to make sure the contents that overflow to the right (column resizer) is visible.
-    let zIndex = meta.length;
-
-    meta.forEach(elem => {
-        let th = document.createElement('th');
-        const name = document.createTextNode(elem.name);
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'name';
-        nameSpan.appendChild(name);
-        th.appendChild(nameSpan);
-        let type_hint = document.createElement('span');
-        type_hint.className = 'type-hint';
-        type_hint.appendChild(document.createTextNode(elem.type));
-        th.appendChild(type_hint);
-        appendHeaderResizer(th);
-        th.style.zIndex = zIndex;
-        --zIndex;
-        thead.appendChild(th);
-
-        column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
-    });
-
-    let table = document.getElementById('data-table');
-    while (table.firstChild) {
-        table.removeChild(table.lastChild);
-    }
-    let tbody = document.createElement('tbody');
-    tbody.id = 'tbody';
-    table.appendChild(thead);
-    table.appendChild(tbody);
-    table.style.display = 'table';
-
-    row_idx = 0;
-}
-
-const max_rows = 1_000;
-const max_cells = 100_000;
-
-let current_selected_cell = null;
-function appendRow(row, fragment) {
-    if (row_idx >= max_rows || (1 + row_idx) * Object.keys(header).length > max_cells) {
-        incomplete_result = true;
-        return false;
-    }
-
-    ++row_idx;
-    let tr = document.createElement('tr');
-
-    let td = document.createElement('td');
-    td.className = 'row-number';
-    td.appendChild(document.createTextNode(row_idx));
-    tr.appendChild(td);
-
-    let col_idx = 0;
-    for (const column of header) {
-        const td = renderCell(column.name, row[column.name]);
-        ++col_idx;
-
-        td.onclick = () => {
-            current_selected_cell?.classList.remove('td-selected');
-            current_selected_cell?.parentElement.classList.remove('tr-selected');
-            current_selected_cell = td;
-            current_selected_cell.classList.add('td-selected')
-            current_selected_cell.parentElement.classList.add('tr-selected')
-            current_selected_cell.scrollIntoView({ block: 'nearest' });
-        };
-
-        tr.appendChild(td);
-    }
-
-    fragment.appendChild(tr);
-    incomplete_result = false;
-    return true;
-}
-
-function renderExtremes() {
-    let col_idx = 0;
-    for (const column of header) {
-        const name = column.name;
-        ++col_idx;
-        if (column_is_number[name]
-            && extremes.min[name] !== undefined && extremes.max[name] !== undefined
-            && Number(extremes.max[name]) > Number(extremes.min[name])) {
-            let table = document.getElementById('data-table');
-
-            const double_sided = extremes.min[name] < 0;
-            const ratio_positive = extremes.max[name] / (extremes.max[name] - extremes.min[name]);
-            const ratio_negative = 1 - ratio_positive;
-
-            for (let row of table.rows) {
-                let cell = row.cells[col_idx];
-                let value = +cell.innerText;
-
-                if (!double_sided) {
-                    if (value > 0) {
-                        const ratio = value / extremes.max[name];
-
-                        cell.style.cssText = `
-                            background-size: 100% 50%;
-                            background-position: center;
-                            background-repeat: no-repeat;
-                            background: linear-gradient(to right,
-                                var(--bar-color) 0%, var(--bar-color) ${100 * ratio}%,
-                                var(--element-background-color) ${100 * ratio}%, var(--element-background-color) 100%)`;
-                    }
-                } else {
-                    if (value > 0) {
-                        const ratio = value / extremes.max[name];
-
-                        cell.style.cssText = `
-                            background-size: 100% 50%;
-                            background-position: center;
-                            background-repeat: no-repeat;
-                            background: linear-gradient(to right,
-                                var(--element-background-color) 0%, var(--element-background-color) ${100 * ratio_negative}%,
-                                var(--bar-color) ${100 * ratio_negative}%, var(--bar-color) ${100 * (ratio_negative + ratio * ratio_positive)}%,
-                                var(--element-background-color) ${100 * (ratio_negative + ratio * ratio_positive)}%, var(--element-background-color) 100%)`;
-                    } else if (value < 0) {
-                        const ratio = value / extremes.min[name];
-
-                        cell.style.cssText = `
-                            background-size: 100% 50%;
-                            background-position: center;
-                            background-repeat: no-repeat;
-                            background: linear-gradient(to right,
-                                var(--element-background-color) 0%, var(--element-background-color) ${100 * (1 - ratio) * ratio_negative}%,
-                                var(--bar-color-negative) ${100 * (1 - ratio) * ratio_negative}%, var(--bar-color-negative) ${100 * ratio_negative}%,
-                                var(--element-background-color) ${100 * ratio_negative}%, var(--element-background-color) 100%)`;
-                    }
-                }
-            }
-        }
-    }
-}
-
-function renderError(message)
-{
-    document.getElementById('error').innerText = message ? message : "No response.";
-    document.getElementById('error').style.display = 'block';
-    document.getElementById('logo-container').style.display = 'none';
-}
-
-/// Huge JS libraries should be loaded only if needed.
-function loadJS(src, integrity) {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        if (integrity) {
-            script.crossOrigin = 'anonymous';
-            script.integrity = integrity;
-        } else {
-            console.warn('no integrity for', src)
-        }
-        script.addEventListener('load', function() { resolve(true); });
-        document.head.appendChild(script);
-    });
-}
-
-let load_dagre_promise;
-function loadDagre() {
-    if (load_dagre_promise) { return load_dagre_promise; }
-
-    load_dagre_promise = Promise.all([
-        loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
-                'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
-        loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
-                'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
-        loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
-                'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
-        loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
-                'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
-    ]);
-
-    return load_dagre_promise;
-}
-
-async function renderGraph()
-{
-    clearElement('data-table');
-    await loadDagre();
-
-    /// https://github.com/dagrejs/dagre-d3/issues/131
-    const dot = explain_graph.replace(/shape\s*=\s*box/g, 'shape=rect');
-
-    let graph = graphlibDot.read(dot);
-    let render = new dagreD3.render();
-
-    graph.setGraph({
-        nodesep: 20,
-        rankdir: 'LR',
-    });
-
-    let svg = document.getElementById('graph');
-    svg.style.display = 'block';
-
-    render(d3.select("#graph"), graph);
-
-    svg.style.width = graph.graph().width;
-    svg.style.height = graph.graph().height;
-}
-
-let load_uplot_promise;
-function loadUplot() {
-    if (load_uplot_promise) { return load_uplot_promise; }
-    load_uplot_promise = loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
-        'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
-    return load_uplot_promise;
-}
-
-function legendAsTooltipPlugin({ className, style = {} } = {}) {
-    let legendEl;
-    let multiline;
-
-    function init(u, opts) {
-        legendEl = u.root.querySelector(".u-legend");
-        legendEl.classList.remove("u-inline");
-        className && legendEl.classList.add(className);
-
-        uPlot.assign(legendEl.style, {
-            textAlign: "right",
-            pointerEvents: "none",
-            display: "none",
-            position: "absolute",
-            left: 0,
-            top: 0,
-            zIndex: 100,
-            boxShadow: "2px 2px 10px rgba(0, 0, 0, 0.1)",
-            ...style
-        });
-
-        const nodes = legendEl.querySelectorAll("th");
-        for (let i = 0; i < nodes.length; i++)
-            nodes[i]._order = i;
-
-        if (opts.series.length == 2) {
-            multiline = false;
-            for (let i = 0; i < nodes.length; i++)
-                nodes[i].style.display = "none";
-        } else {
-            multiline = true;
-            legendEl.querySelector("th").remove();
-            legendEl.querySelector("td").setAttribute('colspan', '2');
-            legendEl.querySelector("td").style.textAlign = 'center';
-            let footer = legendEl.insertRow().insertCell();
-            footer.setAttribute('colspan', '2');
-            footer.style.textAlign = 'center';
-            footer.classList.add('u-value');
-            footer.parentNode.classList.add('u-series','footer');
-            footer.textContent = ". . .";
-        }
-
-        const overEl = u.over;
-        overEl.style.overflow = "visible";
-
-        overEl.appendChild(legendEl);
-
-        overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
-        overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
-    }
-
-    function nodeListToArray(nodeList) {
-        return Array.prototype.slice.call(nodeList);
-    }
-
-    function update(u) {
-        let { left, top } = u.cursor;
-        /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
-        /// avoiding the borders of the chart.
-        left -= legendEl.clientWidth * (left / u.width);
-        if (top >= legendEl.clientHeight) {
-            top -= legendEl.clientHeight;
-        }
-        legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
-
-        if (multiline) {
-            let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
-            let header = nodes.shift();
-            let footer = nodes.pop();
-            let showLimit = Math.floor(u.height / 30);
-            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
-            nodes.sort((a, b) => b._sort_key - a._sort_key);
-            nodes.forEach(function (node) { node.parentNode.appendChild(node); });
-            for (let i = 0; i < nodes.length; i++) {
-                nodes[i].style.display = i < showLimit ? null : "none";
-            }
-            footer.parentNode.appendChild(footer);
-            footer.style.display = nodes.length > showLimit ? null : "none";
-        }
-    }
-
-    return {
-        hooks: {
-            init: init,
-            setCursor: update,
-        }
-    };
-}
-
-let uplot;
-async function renderChart(json)
-{
-    await loadUplot();
-    clear();
-
-    let chart = document.getElementById('chart');
-    chart.style.display = 'block';
-
-    let paths = json[0].length < chart.clientWidth / 5 ? uPlot.paths.bars() : uPlot.paths.linear();
-
-    const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-        ? ["rgba(255, 0, 200, 100%)", "rgba(255, 128, 200, 50%)", "#CCC", "#444"]
-        : ["rgba(255, 255, 0, 100%)", "rgba(255, 255, 100, 50%)", "#444", "#CCC"];
-
-    const opts = {
-        width: chart.clientWidth,
-        height: chart.clientHeight,
-        scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
-        axes: [ { stroke: axes_color,
-                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-                { stroke: axes_color,
-                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-        series: [ { label: "x" },
-                    { label: "y", stroke: line_color, fill: fill_color, paths, points: { show: false } } ],
-        padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
-        plugins: [ legendAsTooltipPlugin() ],
-    };
-
-    uplot = new uPlot(opts, json, chart);
-}
-
-function resizeChart() {
-    if (uplot) {
-        let chart = document.getElementById('chart');
-        uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
-    }
-}
-
-function redrawChart() {
-    if (uplot && document.getElementById('chart').style.display == 'block') {
-        renderChart(uplot.data);
-    }
-}
-
-new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
 
 let lexer_module;
 async function loadLexer() {
@@ -2587,7 +2857,7 @@ function setColorTheme(new_theme, update_preference) {
         window.localStorage.setItem('theme', theme);
     }
     document.documentElement.setAttribute('data-theme', theme);
-    redrawChart();
+    resultEl.redrawChart();
 }
 /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
 let theme = current_url.searchParams.get('theme');
@@ -2623,6 +2893,29 @@ document.getElementById('toggle-light').onclick = function() {
 document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
+
+// Copy raw result to clipboard
+document.getElementById('copy-div').addEventListener('click', function() {
+    let text = resultEl.rawText;
+    if (!text) return;
+
+    let button = this;
+    let showBalloon = function(message) {
+        let balloon = document.createElement('span');
+        balloon.className = 'copy-balloon';
+        balloon.textContent = message;
+        button.appendChild(balloon);
+        balloon.addEventListener('animationend', () => balloon.remove());
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+            () => showBalloon('Result copied'),
+            () => showBalloon('Copy failed'));
+    } else {
+        showBalloon('Copy not supported');
+    }
+});
 
 // Download functionality
 let last_query_for_download = '';

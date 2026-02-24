@@ -207,7 +207,10 @@ def test_stuck_replica(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    update_configs()
+    # Add a small delay to node_3 to ensure node_2 always wins the race
+    # when node_1 is paused. Without this, under heavy load (e.g., MSan builds),
+    # node_3 can occasionally respond before node_2.
+    update_configs(node_3_sleep_in_send_tables_status=1000)
 
     with cluster.pause_container("node_1"):
         check_query(expected_replica="node_2")

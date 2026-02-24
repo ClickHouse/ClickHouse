@@ -1,5 +1,6 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -19,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
 }
 
@@ -78,11 +80,36 @@ BlockIO InterpreterOptimizeQuery::execute()
         }
     }
 
+    if (ast.dry_run)
+    {
+        auto * merge_tree_data = dynamic_cast<MergeTreeData *>(table.get());
+        if (!merge_tree_data)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN is only supported for MergeTree family tables");
+
+        if (ast.final)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN is incompatible with FINAL");
+
+        if (ast.partition)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN is incompatible with PARTITION");
+
+        if (!ast.parts_list)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN requires at least one part name");
+
+        Names part_names;
+        for (const auto & child : ast.parts_list->children)
+        {
+            const auto & literal = child->as<ASTLiteral &>();
+            part_names.emplace_back(literal.value.safeGet<String>());
+        }
+
+        merge_tree_data->optimizeDryRun(part_names, metadata_snapshot, ast.deduplicate, column_names, ast.cleanup, getContext());
+        return {};
+    }
+
     if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
         snapshot_data->parts = {};
 
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
-
     return {};
 }
 
