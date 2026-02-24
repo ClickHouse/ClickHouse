@@ -213,10 +213,10 @@ struct DictionaryBlockBase
 struct DictionaryBlock : public DictionaryBlockBase
 {
     DictionaryBlock() = default;
-    DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_);
+    DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_);
 
     std::vector<TokenPostingsInfo> token_infos;
-    const TokenPostingsInfo & getTokenInfo(size_t idx) const { return token_infos.at(idx); }
+    UInt64 tokens_format = 0;
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase
