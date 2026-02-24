@@ -603,7 +603,6 @@ if args.with_kafka:
 
 # This is the main loop, run while client and server are running
 all_running = True
-good_exit = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 # Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -621,24 +620,6 @@ test_limit = None if args.timeout is UNSET else time.time() + args.timeout * 60
 reached_limit = False
 
 
-def explain_returncode(rc: int) -> str:
-    if rc == 0:
-        return "successfully (0)."
-    if rc < 0:
-        sig = -rc
-        try:
-            name = signal.Signals(sig).name
-        except ValueError:
-            name = f"SIG{sig}"
-        try:
-            reason = signal.strsignal(sig)  # Py3.8+ (wording varies by platform)
-        except Exception:
-            reason = ""
-        extra = f" - {reason}" if reason else ""
-        return f"terminated by signal {sig} ({name}){extra}."
-    return f"with status {rc}."
-
-
 while all_running and (not reached_limit):
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
@@ -649,13 +630,7 @@ while all_running and (not reached_limit):
 
     while all_running and (not reached_limit) and start < finish:
         if client.process.poll() is not None:
-            logger.info(
-                f"Load generator finished {explain_returncode(client.process.returncode)}"
-            )
             all_running = False
-            good_exit = good_exit and generator.validate_exit_code(
-                client.process.returncode
-            )
         for server in servers:
             pid = server.get_process_pid("clickhouse")
             if pid is None:
@@ -771,7 +746,14 @@ while all_running and (not reached_limit):
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
+good_exit = True
 if not all_running:
+    # Check load generator first
+    if client.process.poll() is None:
+        client.process.kill()
+        client.process.wait()
+    logger.info(f"Load generator exited with code: {client.process.returncode}")
+    good_exit = good_exit and generator.validate_exit_code(client.process.returncode)
     for server in servers:
         # First try to stop gracefully
         pid = server.get_process_pid("clickhouse")
