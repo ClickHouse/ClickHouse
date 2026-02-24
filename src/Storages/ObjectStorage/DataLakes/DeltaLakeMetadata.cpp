@@ -117,7 +117,7 @@ DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
 struct DeltaLakeMetadataImpl
 {
     ObjectStoragePtr object_storage;
-    StorageObjectStorageConfigurationWeakPtr configuration;
+    String table_path;
     ContextPtr context;
 
     /**
@@ -125,7 +125,9 @@ struct DeltaLakeMetadataImpl
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
     DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
-        : object_storage(object_storage_), configuration(configuration_), context(context_)
+        : object_storage(object_storage_)
+        , table_path(configuration_.lock()->getPathForRead().path)
+        , context(context_)
     {
     }
 
@@ -166,7 +168,6 @@ struct DeltaLakeMetadataImpl
 
     DeltaLakeMetadata processMetadataFiles() const
     {
-        auto configuration_ptr = configuration.lock();
         std::set<String> result_files;
         NamesAndTypesList current_schema;
         DeltaLakePartitionColumns current_partition_columns;
@@ -178,7 +179,7 @@ struct DeltaLakeMetadataImpl
             while (true)
             {
                 const auto filename = withPadding(++current_version) + metadata_file_suffix;
-                const auto file_path = std::filesystem::path(configuration_ptr->getPathForRead().path) / deltalake_metadata_directory / filename;
+                const auto file_path = std::filesystem::path(table_path) / deltalake_metadata_directory / filename;
 
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
@@ -192,7 +193,7 @@ struct DeltaLakeMetadataImpl
         }
         else
         {
-            const auto keys = listFiles(*object_storage, *configuration_ptr, deltalake_metadata_directory, metadata_file_suffix);
+            const auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
             for (const String & key : keys)
                 processMetadataFile(key, current_schema, current_partition_columns, result_files);
         }
@@ -303,8 +304,6 @@ struct DeltaLakeMetadataImpl
                                     file_schema.toString(), current_schema.toString());
                 }
             }
-            auto configuration_ptr = configuration.lock();
-            const auto read_path_string = configuration_ptr->getPathForRead().path;
 
             if (object->has("add"))
             {
@@ -313,7 +312,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
                 auto path = add_object->getValue<String>("path");
-                auto full_path = fs::path(read_path_string) / path;
+                auto full_path = fs::path(table_path) / path;
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -358,11 +357,10 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
                 auto path = remove_object->getValue<String>("path");
-                result.erase(fs::path(read_path_string) / path);
+                result.erase(fs::path(table_path) / path);
             }
         }
-        auto configuration_ptr = configuration.lock();
-        insertDeltaRowToLogTable(context, sum_json, configuration_ptr->getRawPath().path, metadata_file_path);
+        insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
     }
 
     NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const
@@ -407,9 +405,7 @@ struct DeltaLakeMetadataImpl
      */
     size_t readLastCheckpointIfExists() const
     {
-        auto configuration_ptr = configuration.lock();
-        const auto last_checkpoint_file
-            = std::filesystem::path(configuration_ptr->getPathForRead().path) / deltalake_metadata_directory / "_last_checkpoint";
+        const auto last_checkpoint_file = std::filesystem::path(table_path) / deltalake_metadata_directory / "_last_checkpoint";
         if (!object_storage->exists(StoredObject(last_checkpoint_file)))
             return 0;
 
@@ -477,10 +473,7 @@ struct DeltaLakeMetadataImpl
 
         const auto checkpoint_filename = withPadding(version) + ".checkpoint.parquet";
 
-        auto configuration_ptr = configuration.lock();
-
-        const auto checkpoint_path
-            = std::filesystem::path(configuration_ptr->getPathForRead().path) / deltalake_metadata_directory / checkpoint_filename;
+        const auto checkpoint_path = std::filesystem::path(table_path) / deltalake_metadata_directory / checkpoint_filename;
 
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
@@ -505,12 +498,10 @@ struct DeltaLakeMetadataImpl
 
         std::atomic<int> is_stopped{0};
 
-        std::unique_ptr<parquet::arrow::FileReader> reader;
-        THROW_ARROW_NOT_OK(
-            parquet::arrow::OpenFile(
-                asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES),
-                arrow::default_memory_pool(),
-                &reader));
+        auto open_file_res = parquet::arrow::OpenFile(
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool());
+        THROW_ARROW_NOT_OK(open_file_res.status());
+        auto reader = *std::move(open_file_res);
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
@@ -571,7 +562,7 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(configuration_ptr->getPathForRead().path) / path;
+            auto full_path = fs::path(table_path) / path;
             auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
@@ -603,7 +594,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(configuration_ptr->getPathForRead().path) / path);
+            const auto [_, inserted] = result.insert(std::filesystem::path(table_path) / path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
@@ -627,29 +618,34 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
              data_files.size(), partition_columns.size(), schema.toString());
 }
 
+static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
+{
+    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
+    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
+}
+
+bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
+{
+    return isDeltaKernelEnabled(context, storage_type);
+}
+
+bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type)
+{
+    return isDeltaKernelEnabled(context, storage_type);
+}
+
 DataLakeMetadataPtr DeltaLakeMetadata::create(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration,
     ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
-    auto configuration_ptr = configuration.lock();
-
-    const auto & query_settings_ref = local_context->getSettingsRef();
-
-    const auto storage_type = configuration_ptr->getType();
-    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
-
-    bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
-    if (supports_delta_kernel && enable_delta_kernel)
+    if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))
     {
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
+        return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
-    else
-        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#else
-    return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #endif
+    return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 }
 
 DataTypePtr DeltaLakeMetadata::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)
@@ -752,7 +748,7 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
     {
         ReadBufferFromString in(value);
         DateTime64 time = 0;
-        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(check_type.get())->getTimeZone());
         return time;
     }
 

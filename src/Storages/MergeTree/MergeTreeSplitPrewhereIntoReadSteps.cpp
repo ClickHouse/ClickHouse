@@ -1,12 +1,4 @@
-#include <Functions/CastOverloadResolver.h>
-#include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 
 namespace DB
@@ -160,7 +152,7 @@ const ActionsDAG::Node & addCast(
     if (node_to_cast.result_type->equals(*to_type))
         return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
-    const auto & new_node = dag->addCast(node_to_cast, to_type, {});
+    const auto & new_node = dag->addCast(node_to_cast, to_type, {}, nullptr);
     return new_node;
 }
 

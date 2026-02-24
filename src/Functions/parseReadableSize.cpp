@@ -38,26 +38,18 @@ enum class ErrorHandling : uint8_t
 
 using ScaleFactors = std::unordered_map<std::string_view, size_t>;
 
-/** parseReadableSize* - Returns the number of bytes corresponding to a given readable binary or decimal size.
-  * Examples:
-  *  - `parseReadableSize('123 MiB')`
-  *  - `parseReadableSize('123 MB')`
-  * Meant to be the inverse of `formatReadable*Size` with the following exceptions:
-  *  - Number of bytes is returned as an unsigned integer amount instead of a float. Decimal points are rounded up to the nearest integer.
-  *  - Negative numbers are not allowed as negative sizes don't make sense.
-  * Flavours:
-  *  - parseReadableSize
-  *  - parseReadableSizeOrNull
-  *  - parseReadableSizeOrZero
-  */
-template <typename Name, ErrorHandling error_handling>
 class FunctionParseReadable : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseReadable<Name, error_handling>>(); }
+    FunctionParseReadable(const char * name_, ErrorHandling error_handling_)
+        : function_name(name_), error_handling(error_handling_) {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr, const char * name, ErrorHandling error_handling)
+    {
+        return std::make_shared<FunctionParseReadable>(name, error_handling);
+    }
+
+    String getName() const override { return function_name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -70,7 +62,7 @@ public:
         };
         validateFunctionArguments(*this, arguments, args);
         DataTypePtr return_type = std::make_shared<DataTypeUInt64>();
-        if constexpr (error_handling == ErrorHandling::Null)
+        if (error_handling == ErrorHandling::Null)
             return std::make_shared<DataTypeNullable>(return_type);
         else
             return return_type;
@@ -93,14 +85,14 @@ public:
         auto col_res = ColumnUInt64::create(input_rows_count);
 
         ColumnUInt8::MutablePtr col_null_map;
-        if constexpr (error_handling == ErrorHandling::Null)
-            col_null_map = ColumnUInt8::create(input_rows_count, 0);
+        if (error_handling == ErrorHandling::Null)
+            col_null_map = ColumnUInt8::create(input_rows_count, false);
 
         auto & res_data = col_res->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view value = col_str->getDataAt(i).toView();
+            std::string_view value = col_str->getDataAt(i);
             try
             {
                 UInt64 num_bytes = parseReadableFormat(value);
@@ -108,25 +100,27 @@ public:
             }
             catch (const Exception &)
             {
-                if constexpr (error_handling == ErrorHandling::Exception)
+                if (error_handling == ErrorHandling::Exception)
                 {
                     throw;
                 }
                 else
                 {
                     res_data[i] = 0;
-                    if constexpr (error_handling == ErrorHandling::Null)
+                    if (error_handling == ErrorHandling::Null)
                         col_null_map->getData()[i] = 1;
                 }
             }
         }
-        if constexpr (error_handling == ErrorHandling::Null)
+        if (error_handling == ErrorHandling::Null)
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
         else
             return col_res;
     }
 
 private:
+    const char * function_name;
+    ErrorHandling error_handling;
 
     UInt64 parseReadableFormat(const std::string_view & value) const
     {
@@ -207,7 +201,7 @@ private:
                 value);
         }
 
-        Float64 num_bytes_with_decimals = base * iter->second;
+        Float64 num_bytes_with_decimals = base * static_cast<Float64>(iter->second);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
         if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
@@ -225,25 +219,6 @@ private:
         return static_cast<UInt64>(std::ceil(num_bytes_with_decimals));
     }
 };
-
-struct NameParseReadableSize
-{
-    static constexpr auto name = "parseReadableSize";
-};
-
-struct NameParseReadableSizeOrNull
-{
-    static constexpr auto name = "parseReadableSizeOrNull";
-};
-
-struct NameParseReadableSizeOrZero
-{
-    static constexpr auto name = "parseReadableSizeOrZero";
-};
-
-using FunctionParseReadableSize = FunctionParseReadable<NameParseReadableSize, ErrorHandling::Exception>;
-using FunctionParseReadableSizeOrNull = FunctionParseReadable<NameParseReadableSizeOrNull, ErrorHandling::Null>;
-using FunctionParseReadableSizeOrZero = FunctionParseReadable<NameParseReadableSizeOrZero, ErrorHandling::Zero>;
 
 FunctionDocumentation::Description description_parseReadableSize = R"(
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
@@ -274,7 +249,7 @@ SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB']) AS readable_sizes, parse
 };
 FunctionDocumentation::IntroducedIn introduced_in_parseReadableSize = {24, 6};
 FunctionDocumentation::Category category_parseReadableSize = FunctionDocumentation::Category::Other;
-FunctionDocumentation parseReadableSize_documentation = {description_parseReadableSize, syntax_parseReadableSize, arguments_parseReadableSize, returned_value_parseReadableSize, examples_parseReadableSize, introduced_in_parseReadableSize, category_parseReadableSize};
+FunctionDocumentation parseReadableSize_documentation = {description_parseReadableSize, syntax_parseReadableSize, arguments_parseReadableSize, {}, returned_value_parseReadableSize, examples_parseReadableSize, introduced_in_parseReadableSize, category_parseReadableSize};
 
 FunctionDocumentation::Description description_parseReadableSizeOrNull = R"(
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
@@ -306,7 +281,7 @@ SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_s
 };
 FunctionDocumentation::IntroducedIn introduced_in_parseReadableSizeOrNull = {24, 6};
 FunctionDocumentation::Category category_parseReadableSizeOrNull = FunctionDocumentation::Category::Other;
-FunctionDocumentation parseReadableSizeOrNull_documentation = {description_parseReadableSizeOrNull, syntax_parseReadableSizeOrNull, arguments_parseReadableSizeOrNull, returned_value_parseReadableSizeOrNull, examples_parseReadableSizeOrNull, introduced_in_parseReadableSizeOrNull, category_parseReadableSizeOrNull};
+FunctionDocumentation parseReadableSizeOrNull_documentation = {description_parseReadableSizeOrNull, syntax_parseReadableSizeOrNull, arguments_parseReadableSizeOrNull, {}, returned_value_parseReadableSizeOrNull, examples_parseReadableSizeOrNull, introduced_in_parseReadableSizeOrNull, category_parseReadableSizeOrNull};
 
 FunctionDocumentation::Description description_parseReadableSizeOrZero = R"(
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
@@ -338,12 +313,12 @@ SELECT arrayJoin(['1 B', '1 KiB', '3 MB', '5.314 KiB', 'invalid']) AS readable_s
 };
 FunctionDocumentation::IntroducedIn introduced_in_parseReadableSizeOrZero = {24, 6};
 FunctionDocumentation::Category category_parseReadableSizeOrZero = FunctionDocumentation::Category::Other;
-FunctionDocumentation parseReadableSizeOrZero_documentation = {description_parseReadableSizeOrZero, syntax_parseReadableSizeOrZero, arguments_parseReadableSizeOrZero, returned_value_parseReadableSizeOrZero, examples_parseReadableSizeOrZero, introduced_in_parseReadableSizeOrZero, category_parseReadableSizeOrZero};
+FunctionDocumentation parseReadableSizeOrZero_documentation = {description_parseReadableSizeOrZero, syntax_parseReadableSizeOrZero, arguments_parseReadableSizeOrZero, {}, returned_value_parseReadableSizeOrZero, examples_parseReadableSizeOrZero, introduced_in_parseReadableSizeOrZero, category_parseReadableSizeOrZero};
 
 REGISTER_FUNCTION(ParseReadableSize)
 {
-    factory.registerFunction<FunctionParseReadableSize>(parseReadableSize_documentation);
-    factory.registerFunction<FunctionParseReadableSizeOrNull>(parseReadableSizeOrNull_documentation);
-    factory.registerFunction<FunctionParseReadableSizeOrZero>(parseReadableSizeOrZero_documentation);
+    factory.registerFunction("parseReadableSize", [](ContextPtr){ return FunctionParseReadable::create({}, "parseReadableSize", ErrorHandling::Exception); }, parseReadableSize_documentation);
+    factory.registerFunction("parseReadableSizeOrNull", [](ContextPtr){ return FunctionParseReadable::create({}, "parseReadableSizeOrNull", ErrorHandling::Null); }, parseReadableSizeOrNull_documentation);
+    factory.registerFunction("parseReadableSizeOrZero", [](ContextPtr){ return FunctionParseReadable::create({}, "parseReadableSizeOrZero", ErrorHandling::Zero); }, parseReadableSizeOrZero_documentation);
 }
 }

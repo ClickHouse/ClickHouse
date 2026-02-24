@@ -204,7 +204,7 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimestamp>(documentation, FunctionFactory::Case::Insensitive);
 }

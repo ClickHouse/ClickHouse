@@ -93,29 +93,34 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 }
 
 StoragePtr TableFunctionURL::getStorage(
-    const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
+    const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
-    const auto & settings = global_context->getSettingsRef();
-    const auto is_secondary_query = global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto & settings = context->getSettingsRef();
+    const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+    const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
-        && global_context->canUseTaskBasedParallelReplicas()
-        && !global_context->isDistributed()
+        && context->canUseTaskBasedParallelReplicas()
+        && !context->isDistributed()
         && !is_secondary_query
         && !is_insert_query;
+
+    const auto & client_info = context->getClientInfo();
+    bool can_use_distributed_iterator =
+        client_info.collaborate_with_initiator &&
+        context->hasClusterFunctionReadTaskCallback();
 
     if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
-            global_context,
+            context,
             parallel_replicas_cluster_name,
             source,
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(global_context, true),
+            getActualTableStructure(context, true),
             ConstraintsDescription{},
             configuration);
     }
@@ -128,12 +133,12 @@ StoragePtr TableFunctionURL::getStorage(
         columns,
         ConstraintsDescription{},
         String{},
-        global_context,
+        context,
         compression_method_,
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/ is_secondary_query);
+        /*distributed_processing=*/can_use_distributed_iterator);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const

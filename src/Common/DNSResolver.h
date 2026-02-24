@@ -13,6 +13,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
+
 /// A singleton implementing DNS names resolving with optional DNS cache
 /// The cache is being updated asynchronous in separate thread (see DNSCacheUpdater)
 /// or it could be updated manually via drop() method.
@@ -70,6 +72,9 @@ public:
 
     void setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6);
 
+    bool getFilterIPv4() const;
+    bool getFilterIPv6() const;
+
     /// Returns a copy of cache entries
     std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
 
@@ -102,7 +107,7 @@ private:
     void addToNewAddresses(const Poco::Net::IPAddress & address);
 
     IPAddresses resolveIPAddressWithCache(const std::string & host);
-    IPAddresses getResolvedIPAdressessWithFiltering(const std::string & host);
+    IPAddresses getResolvedIPAddressesWithFiltering(const std::string & host);
 };
 
 }

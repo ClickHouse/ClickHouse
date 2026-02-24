@@ -20,6 +20,7 @@ namespace DB
 class StorageJoin;
 class IKeyValueEntity;
 struct JoinAlgorithmParams;
+struct StorageID;
 
 struct PreparedJoinStorage
 {
@@ -90,6 +91,9 @@ public:
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
 
+    std::vector<JoinActionRef> getInputActions() const;
+    std::vector<JoinActionRef> getOutputActions() const;
+
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
     {
         return {std::move(expression_actions), std::move(join_operator)};
@@ -100,7 +104,7 @@ public:
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
 
@@ -156,6 +160,10 @@ public:
     std::string_view getDummyStats() const { return dummy_stats; }
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
+    bool canRemoveUnusedColumns() const override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
@@ -163,17 +171,20 @@ public:
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
 protected:
+    SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
+
+    bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
 
-    /// This is the nodes which used to split expressions calculated before and after join
+    /// These are the nodes which are used to split expressions calculated before and after join
     /// Nodes from this list are used as inputs for ActionsDAG executed after join operation
     /// It can be input or node with toNullable function applied to input
-    std::vector<const ActionsDAG::Node *> actions_after_join = {};
+    ActionsDAG::NodeRawConstPtrs actions_after_join = {};
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;

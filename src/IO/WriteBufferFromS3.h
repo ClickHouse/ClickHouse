@@ -12,7 +12,7 @@
 #include <IO/StdIStreamFromMemory.h>
 #include <IO/S3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/BufferAllocationPolicy.h>
 
 #include <memory>

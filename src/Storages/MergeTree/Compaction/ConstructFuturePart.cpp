@@ -32,7 +32,7 @@ FutureMergedMutatedPartPtr constructFuturePart(
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
     future_part->merge_type = choice.merge_type;
-    future_part->assign(std::move(*parts), std::move(*patch_parts));
+    future_part->assign(std::move(*parts), std::move(*patch_parts), /*projection =*/nullptr);
     future_part->final = choice.final;
 
     return future_part;

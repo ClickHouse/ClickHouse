@@ -15,6 +15,9 @@ class IVolume;
 class IDisk;
 class MergeTreeData;
 
+struct ProjectionDescription;
+using ProjectionDescriptionRawPtr = const ProjectionDescription *;
+
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
 using VolumePtr = std::shared_ptr<IVolume>;
 
@@ -31,6 +34,7 @@ public:
 
     Self & withPartInfo(MergeTreePartInfo part_info_);
     Self & withParentPart(const IMergeTreeDataPart * parent_part_);
+    Self & withProjection(ProjectionDescriptionRawPtr projection_);
     Self & withPartType(MergeTreeDataPartType part_type_);
     Self & withPartStorageType(MergeTreeDataPartStorageType storage_type_);
     Self & withPartFormat(MergeTreeDataPartFormat format_);
@@ -66,6 +70,7 @@ private:
     std::optional<MergeTreeDataPartType> part_type;
     MutableDataPartStoragePtr part_storage;
     const IMergeTreeDataPart * parent_part = nullptr;
+    ProjectionDescriptionRawPtr projection = nullptr;
 
     const ReadSettings read_settings;
 };

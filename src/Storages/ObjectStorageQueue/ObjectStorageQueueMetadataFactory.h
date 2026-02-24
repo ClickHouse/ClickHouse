@@ -51,6 +51,7 @@ public:
     /// Get a metadata instance if exists, otherwise create a new one.
     /// Registers table in keeper in persistent node.
     FilesMetadataPtr getOrCreate(
+        const std::string & zookeeper_name,
         const std::string & zookeeper_path,
         ObjectStorageQueueMetadataPtr metadata,
         const StorageID & storage_id,
@@ -60,6 +61,7 @@ public:
     /// Metadata will be removed when ref count becomes zero.
     /// Unregisters table in keeper from persistent node.
     void remove(
+        const std::string & zookeeper_name,
         const std::string & zookeeper_path,
         const StorageID & storage_id,
         bool is_drop,

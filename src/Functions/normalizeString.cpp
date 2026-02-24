@@ -112,10 +112,10 @@ struct NormalizeUTF8Impl
                 int32_t from_code_points = 0;
                 u_strFromUTF8(
                     from_uchars.data(),
-                    from_uchars.size(),
+                    static_cast<int32_t>(from_uchars.size()),
                     &from_code_points,
                     reinterpret_cast<const char*>(&data[current_from_offset]),
-                    from_size,
+                    static_cast<int32_t>(from_size),
                     &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strFromUTF8): {}", u_errorName(err));
@@ -127,7 +127,7 @@ struct NormalizeUTF8Impl
                     from_uchars.data(),
                     from_code_points,
                     to_uchars.data(),
-                    to_uchars.size(),
+                    static_cast<int32_t>(to_uchars.size()),
                     &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (normalize): {}", u_errorName(err));
@@ -139,7 +139,7 @@ struct NormalizeUTF8Impl
                 int32_t to_size = 0;
                 u_strToUTF8(
                     reinterpret_cast<char*>(&res_data[current_to_offset]),
-                    res_data.size() - current_to_offset,
+                    static_cast<int32_t>(res_data.size() - current_to_offset),
                     &to_size,
                     to_uchars.data(),
                     to_code_points,
@@ -198,7 +198,7 @@ length(nfc_normalized);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, returned_value_nfc, examples_nfc, introduced_in, category};
+    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, {}, returned_value_nfc, examples_nfc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfd = R"(
 Normalizes a UTF-8 string according to the [NFD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -225,7 +225,7 @@ SELECT
         )"
     }
     };
-    FunctionDocumentation documentation_nfd = {description_nfd, syntax_nfd, arguments_nfd, returned_value_nfd, examples_nfd, introduced_in, category};
+    FunctionDocumentation documentation_nfd = {description_nfd, syntax_nfd, arguments_nfd, {}, returned_value_nfd, examples_nfd, introduced_in, category};
 
     FunctionDocumentation::Description description_nfkc = R"(
 Normalizes a UTF-8 string according to the [NFKC normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -250,7 +250,7 @@ SELECT
     )"
     }
     };
-    FunctionDocumentation documentation_nfkc = {description_nfkc, syntax_nfkc, arguments_nfkc, returned_value_nfkc, examples_nfkc, introduced_in, category};
+    FunctionDocumentation documentation_nfkc = {description_nfkc, syntax_nfkc, arguments_nfkc, {}, returned_value_nfkc, examples_nfkc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfkd = R"(
 Normalizes a UTF-8 string according to the [NFKD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -275,7 +275,7 @@ SELECT
         )"
     }
     };
-    FunctionDocumentation documentation_nfkd = {description_nfkd, syntax_nfkd, arguments_nfkd, returned_value_nfkd, examples_nfkd, introduced_in, category};
+    FunctionDocumentation documentation_nfkd = {description_nfkd, syntax_nfkd, arguments_nfkd, {}, returned_value_nfkd, examples_nfkd, introduced_in, category};
 
     factory.registerFunction<FunctionNormalizeUTF8NFC>(documentation_nfc);
     factory.registerFunction<FunctionNormalizeUTF8NFD>(documentation_nfd);

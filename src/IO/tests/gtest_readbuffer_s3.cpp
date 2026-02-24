@@ -10,7 +10,7 @@
 #include <Poco/Net/HTTPBasicStreamBuf.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -259,7 +259,7 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     uri.bucket = "test_bucket";
     DB::S3Capabilities cap;
     String disk_name = "s3";
-    DB::ObjectStorageKeysGeneratorPtr gen;
+    DB::ObjectStorageKeyGeneratorPtr gen;
     auto object_storage = std::make_shared<DB::S3ObjectStorage>(
         std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), cap, gen, disk_name);
 

@@ -74,7 +74,7 @@ namespace ErrorCodes
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const std::chrono::seconds lock_acquire_timeout{10};
+static const Poco::Timespan lock_acquire_timeout{10ull, 0ull};
 
 DatabaseMySQL::DatabaseMySQL(
     ContextPtr context_,
@@ -86,7 +86,7 @@ DatabaseMySQL::DatabaseMySQL(
     mysqlxx::PoolWithFailover && pool,
     bool attach,
     UUID uuid)
-    : IDatabase(database_name_)
+    : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -206,7 +206,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-        ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+        ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
         ASTs storage_children = ast_storage->children;
         auto storage_engine_arguments = ast_storage->engine->arguments;
 
@@ -214,11 +214,11 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
         {
             storage_engine_arguments->children.push_back(
-                makeASTOperator("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
+                makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_name)));
         }
         else
         {
-            auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
+            auto mysql_table_name = make_intrusive<ASTLiteral>(table_name);
             storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
         }
 
@@ -250,15 +250,15 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
+ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
 {
-    const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    const auto & create_query = make_intrusive<ASTCreateQuery>();
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
     create_query->uuid = db_uuid;
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -404,7 +404,7 @@ void DatabaseMySQL::drop(ContextPtr)
 
 void DatabaseMySQL::cleanOutdatedTables()
 {
-    setThreadName("MySQLDBCleaner");
+    DB::setThreadName(ThreadName::MYSQL_DATABASE_CLEANUP);
 
     std::unique_lock lock{mutex};
 
@@ -468,11 +468,6 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
 
     remove_or_detach_tables.emplace(table_name);
     return local_tables_cache[table_name].second;
-}
-
-void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 String DatabaseMySQL::getMetadataPath() const

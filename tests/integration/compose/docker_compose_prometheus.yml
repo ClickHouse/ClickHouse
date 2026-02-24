@@ -22,7 +22,7 @@ services:
           tsdb:
             out_of_order_time_window: 100y
       EOF
-      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_WRITER_PORT}" &> /var/log/prometheus/prometheus.log
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_WRITER_PORT}" --enable-feature=promql-experimental-functions &> /var/log/prometheus/prometheus.log
       '
     expose:
       - ${PROMETHEUS_WRITER_PORT}
@@ -42,6 +42,7 @@ services:
         source: ${PROMETHEUS_WRITER_LOGS:-}
         target: /var/log/prometheus
     stop_grace_period: 5s
+    cpus: 3
   # Service "prometheus_reader" runs a prometheus server which scrapes nothing and can request data via the RemoteRead protocol
   # from ClickHouse by url ${PROMETHEUS_REMOTE_READ_HANDLER}.
   prometheus_reader:
@@ -59,7 +60,7 @@ services:
           tsdb:
             out_of_order_time_window: 100y
       EOF
-      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_READER_PORT}" &> /var/log/prometheus/prometheus.log
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_READER_PORT}" --enable-feature=promql-experimental-functions &> /var/log/prometheus/prometheus.log
       '
     expose:
       - ${PROMETHEUS_READER_PORT}
@@ -79,6 +80,7 @@ services:
         source: ${PROMETHEUS_READER_LOGS:-}
         target: /var/log/prometheus
     stop_grace_period: 5s
+    cpus: 3
   # Service "prometheus_receiver" runs a prometheus server which accepts data sent by the RemoteWrite protocol to Prometheus to api/v1/write.
   prometheus_receiver:
     image: prom/prometheus:v3.5.0
@@ -94,7 +96,7 @@ services:
         tsdb:
           out_of_order_time_window: 100y
       EOF
-      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_RECEIVER_PORT}" --storage.tsdb.retention.time=100y --enable-feature=remote-write-receiver --web.enable-remote-write-receiver &> /var/log/prometheus/prometheus.log
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_RECEIVER_PORT}" --storage.tsdb.retention.time=100y --enable-feature=remote-write-receiver --web.enable-remote-write-receiver --enable-feature=promql-experimental-functions &> /var/log/prometheus/prometheus.log
       '
     expose:
       - ${PROMETHEUS_RECEIVER_PORT}
@@ -114,3 +116,4 @@ services:
         source: ${PROMETHEUS_RECEIVER_LOGS:-}
         target: /var/log/prometheus
     stop_grace_period: 5s
+    cpus: 3

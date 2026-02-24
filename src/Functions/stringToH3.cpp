@@ -130,7 +130,7 @@ Converts the string representation of an H3 index to the `H3Index` ([UInt64](/sq
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionStringToH3>(documentation);
 }
 
