@@ -95,8 +95,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
 }
 
 // c-tor for method createForMaterializedView
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
-    : master_thread_id(parent->master_thread_id)
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
+    : master_thread_id(CurrentThread::get().thread_id)
+    , parent(parent_)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
@@ -109,8 +110,9 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
 }
 
 // c-tor for method createForFlushAsyncInsertQueue
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
     : master_thread_id(CurrentThread::get().thread_id)
+    , parent(parent_)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
@@ -159,6 +161,9 @@ UInt64 ThreadGroup::getGroupElapsedMs() const
 
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
+    if (parent)
+        parent->linkThread(thread_id);
+
     std::lock_guard lock(mutex);
     thread_ids.insert(thread_id);
 
@@ -171,6 +176,9 @@ void ThreadGroup::linkThread(UInt64 thread_id)
 
 void ThreadGroup::unlinkThread()
 {
+    if (parent)
+        parent->unlinkThread();
+
     std::lock_guard lock(mutex);
     chassert(active_thread_count > 0);
     --active_thread_count;

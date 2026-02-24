@@ -68,6 +68,7 @@ public:
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
+    ThreadGroupPtr parent;
 
     /// Set up at creation, no race when reading
     const ContextWeakPtr query_context;
