@@ -106,7 +106,6 @@ void saveSerializeState(
         }
 
         fsst_stream->write(reinterpret_cast<const char *>(&state.decoder), sizeof(state.decoder));
-        LOG_DEBUG(getLogger("fsst logger"), "first byte of fsst tabel send is {}", state.decoder.symbol[0]);
 
         offsets_stream->write(reinterpret_cast<const char *>(&strings), sizeof(strings));
         offsets_stream->write(reinterpret_cast<const char *>(offsets_after_compression.data()), strings * sizeof(size_t));
@@ -121,7 +120,6 @@ void saveSerializeState(
     }
     else
     {
-        LOG_DEBUG(getLogger("fsst logger"), "strange stuff");
         size_t strings = state.offsets.size();
         PODArray<UInt64> origin_lengths;
         std::unique_ptr<const unsigned char *[]> string_pointers(new const unsigned char *[strings]);
@@ -177,7 +175,6 @@ void saveSerializeState(
 template <bool compressed>
 void SerializationStringFSST::serializeState(SerializeBinaryBulkSettings & settings, SerializeFSSTState<compressed> & state) const
 {
-    LOG_DEBUG(getLogger("fsst logger"), "request for streams");
     settings.path.push_back(Substream::Fsst);
     auto * fsst_stream = settings.getter(settings.path);
     if (!fsst_stream)
@@ -222,11 +219,9 @@ size_t SerializationStringFSST::deserializeState(DeserializeBinaryBulkSettings &
     fsst_decoder_t decoder;
     size_t decoder_read_bytes = fsst_stream->readBig(reinterpret_cast<char *>(&decoder), sizeof(decoder));
 
-    LOG_DEBUG(getLogger("fsst logger"), "first symbold of dispatched decoder {}", decoder.symbol[0]);
     /* read offsets and lengths */
     size_t strings;
     size_t metadata_bytes_read = offsets_stream->readBig(reinterpret_cast<char *>(&strings), sizeof(strings));
-    LOG_DEBUG(getLogger("fsst logger"), "strings = {}", strings);
     PODArray<UInt64> offsets(strings);
     PODArray<UInt64> origin_lengths(strings);
 
@@ -237,7 +232,6 @@ size_t SerializationStringFSST::deserializeState(DeserializeBinaryBulkSettings &
     size_t total_compressed_bytes;
     size_t compressed_bytes_read
         = compressed_data_stream->readBig(reinterpret_cast<char *>(&total_compressed_bytes), sizeof(total_compressed_bytes));
-    LOG_DEBUG(getLogger("fsst logger"), "compressed bytes = {}", total_compressed_bytes);
     PODArray<char8_t> compressed_bytes(total_compressed_bytes);
     compressed_bytes_read += compressed_data_stream->readBig(reinterpret_cast<char *>(compressed_bytes.data()), total_compressed_bytes);
 
@@ -362,7 +356,6 @@ void SerializationStringFSST::serializeBinaryBulkWithMultipleStreams(
     }
     else if (const auto * column_fsst = typeid_cast<const ColumnFSST *>(&column))
     {
-        LOG_DEBUG(getLogger("fsst logger"), "request to serialize fsst column");
         serializeBinaryBulkWithMultipleStreams(column_fsst, offset, limit, settings, state);
     }
 }
@@ -375,7 +368,6 @@ void SerializationStringFSST::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * /* cache */) const
 {
-    LOG_DEBUG(getLogger("fsst logger"), "deserialize binary bulk with fsst");
     auto & column_fsst = assert_cast<ColumnFSST &>(*column->assumeMutable());
 
     state = state ? state : std::make_shared<DeserializeFSSTState>();
@@ -393,7 +385,6 @@ void SerializationStringFSST::deserializeBinaryBulkWithMultipleStreams(
             if (!decoder_ptr)
             {
                 fsst_decoder_t current_decoder = deserialize_state->getDecoder();
-                LOG_DEBUG(getLogger("fsst logger"), "first symbol of received decoder is {}", current_decoder.symbol[0]);
                 decoder_ptr = std::make_shared<fsst_decoder_t>();
                 std::memcpy(decoder_ptr.get(), &current_decoder, sizeof(current_decoder));
                 column_fsst.appendNewBatch(current_field.value(), decoder_ptr);
