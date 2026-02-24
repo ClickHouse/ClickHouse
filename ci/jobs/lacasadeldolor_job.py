@@ -326,7 +326,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 --server-binaries={clickhouse_path}
 --client-config={buzzconfig}
 --log-path={dolor_log}
---timeout=4 --server-settings-prob=0
+--timeout=30 --server-settings-prob=0
 --kill-server-prob=50 --without-monitoring
 --replica-values={','.join(str(i) for i in range(number_of_nodes))}
 --shard-values={','.join(str(1) for _ in range(number_of_nodes))}
