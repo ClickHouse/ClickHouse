@@ -296,7 +296,10 @@ public:
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
+    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
+
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
+    const TokenToPostingsInfosMap & getPatternTokens() const { return pattern_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
 
@@ -309,7 +312,9 @@ public:
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
+    void analyzeDictionaryForTokens(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
+    /// Reads dictionary blocks and analyzes them for patterns.
+    void analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
     DictionarySparseIndexPtr loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
@@ -317,8 +322,10 @@ private:
     bool is_empty = true;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
-    /// Tokens that are in the index granule after analysis.
+    /// Tokens that are in the index granule after analysis of tokens.
     TokenToPostingsInfosMap remaining_tokens;
+    /// Tokens that are in the index granule after analysis of patterns.
+    TokenToPostingsInfosMap pattern_tokens;
     /// Tokens with postings lists that have only one block.
     TokenToPostingsMap rare_tokens_postings;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.

@@ -332,11 +332,12 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     PostingsSerialization postings_serialization(posting_list_codec);
 
-    analyzeDictionary(*index_stream, *dictionary_stream, state, postings_serialization);
+    analyzeDictionaryForTokens(*index_stream, *dictionary_stream, state, postings_serialization);
+    analyzeDictionaryForPatterns(*index_stream, *dictionary_stream, state, postings_serialization);
     readPostingsForRareTokens(*postings_stream, state, postings_serialization);
 }
 
-void MergeTreeIndexGranuleText::analyzeDictionary(
+void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     MergeTreeIndexReaderStream & header_stream,
     MergeTreeIndexReaderStream & dictionary_stream,
     MergeTreeIndexDeserializationState & state,
@@ -435,6 +436,68 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     }
 }
 
+void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
+    MergeTreeIndexReaderStream & header_stream,
+    MergeTreeIndexReaderStream & dictionary_stream,
+    MergeTreeIndexDeserializationState & state,
+    PostingsSerialization & postings_serialization)
+{
+    pattern_tokens.clear();
+
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    const auto & all_search_patterns = condition_text.getAllSearchPatterns();
+
+    if (all_search_patterns.empty())
+        return;
+
+    auto sparse_index = loadSparseIndex(header_stream, state);
+    if (sparse_index->empty())
+        return;
+
+    for (size_t block_idx = 0; block_idx < sparse_index->size(); ++block_idx)
+    {
+        UInt64 offset_in_file = sparse_index->getOffsetInFile(block_idx);
+        dictionary_stream.seekToMark({offset_in_file, 0});
+        auto * data_buffer = dictionary_stream.getDataBuffer();
+
+        auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer);
+        const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
+        size_t num_tokens = block_tokens.size();
+
+        std::vector<size_t> matched_indices;
+        matched_indices.reserve(num_tokens);
+
+        for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
+        {
+            const auto & token = block_tokens.getDataAt(token_idx);
+            if (std::ranges::any_of(all_search_patterns, [&](const auto * pattern) { return pattern->match(token.data(), token.size()); }))
+            {
+                matched_indices.emplace_back(token_idx);
+            }
+        }
+
+        matched_indices.shrink_to_fit();
+
+        if (matched_indices.empty())
+            continue;
+
+        /// Deserialize only the token infos for matched tokens.
+        auto infos = TextIndexSerialization::deserializeTokenInfos(
+            *data_buffer,
+            num_tokens,
+            matched_indices,
+            postings_serialization);
+
+        for (size_t i = 0; i < matched_indices.size(); ++i)
+        {
+            String token(block_tokens.getDataAt(matched_indices[i]));
+            auto token_info = std::make_shared<TokenPostingsInfo>(std::move(infos[i]));
+            /// TODO(ahmadov): Do not cache tokens for now. Check if caching tokens makes sense for patterns.
+            pattern_tokens.emplace(std::move(token), std::move(token_info));
+        }
+    }
+}
+
 std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeIndexDeserializationState & state)
 {
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
@@ -473,6 +536,7 @@ DictionarySparseIndexPtr MergeTreeIndexGranuleText::loadSparseIndex(MergeTreeInd
 
     const auto load_sparse_index = [&]
     {
+        header_stream.seekToStart();
         auto index = TextIndexSerialization::deserializeSparseIndex(*header_stream.getDataBuffer());
         return std::make_shared<DictionarySparseIndex>(std::move(index));
     };
@@ -509,7 +573,7 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 {
     using enum PostingsSerialization::Flags;
 
-    for (const auto & [token, token_info] : remaining_tokens)
+    const auto register_rare_token = [&](const std::string & token, const TokenPostingsInfoPtr & token_info)
     {
         if (token_info->header & EmbeddedPostings)
         {
@@ -522,6 +586,16 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
             chassert(token_info->offsets.size() == 1);
             rare_tokens_postings.emplace(token, readPostingsBlock(stream, state, *token_info, 0, postings_serialization));
         }
+    };
+
+    for (const auto & [token, token_info] : remaining_tokens)
+    {
+        register_rare_token(token, token_info);
+    }
+
+    for (const auto & [token, token_info] : pattern_tokens)
+    {
+        register_rare_token(token, token_info);
     }
 }
 
@@ -621,6 +695,50 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     }
 
     return true;
+}
+
+bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
+{
+    if (query.patterns.empty())
+        return false;
+
+    /// For pattern matching, we check if any pattern-matched tokens exist
+    if (!current_range.has_value())
+    {
+        /// Without range, just check if we have any matched tokens
+        return !pattern_tokens.empty();
+    }
+
+    PostingList range_posting;
+    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
+
+    /// Union all postings from pattern-matched tokens (ANY mode)
+    PostingList union_posting;
+
+    for (const auto & [token, token_info] : pattern_tokens)
+    {
+        bool has_any_range = std::ranges::any_of(token_info->ranges, [this](const auto & range)
+        {
+            return current_range->intersects(range);
+        });
+
+        if (!has_any_range)
+            continue;
+
+        /// We read postings only for tokens that have one block.
+        /// Otherwise, assume that the token is useful for filtering.
+        if (auto postings = getPostingsForRareToken(token))
+        {
+            union_posting |= (*postings & range_posting);
+        }
+        else
+        {
+            /// Token has multiple blocks, conservatively assume it's present
+            return true;
+        }
+    }
+
+    return union_posting.cardinality() > 0;
 }
 
 PostingListPtr MergeTreeIndexGranuleText::getPostingsForRareToken(std::string_view token) const
