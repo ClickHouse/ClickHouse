@@ -2,7 +2,6 @@
 
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/Epoll.h>
 #include <Common/logger_useful.h>
 

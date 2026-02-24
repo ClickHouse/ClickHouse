@@ -6,6 +6,19 @@
 namespace DB
 {
 
+namespace
+{
+    struct Impl
+    {
+        static constexpr auto name = "formatReadableDecimalSize";
+
+        static void format(double value, DB::WriteBuffer & out)
+        {
+            formatReadableSizeWithDecimalSuffix(value, out);
+        }
+    };
+}
+
 REGISTER_FUNCTION(FormatReadableDecimalSize)
 {
     FunctionDocumentation::Description description = R"(
@@ -37,9 +50,9 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("formatReadableDecimalSize", [](ContextPtr){ return FunctionFormatReadable::create("formatReadableDecimalSize", formatReadableSizeWithDecimalSuffix); }, documentation);
+    factory.registerFunction<FunctionFormatReadable<Impl>>(documentation);
 }
 
 }

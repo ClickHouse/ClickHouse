@@ -72,7 +72,7 @@ public:
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
-    std::string_view getDataAt(size_t n) const override;
+    StringRef getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
@@ -104,7 +104,6 @@ public:
 #endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -123,7 +122,7 @@ public:
                        int direction, int nan_direction_hint) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
     bool hasEqualValues() const override;
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,

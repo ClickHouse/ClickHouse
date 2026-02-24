@@ -185,32 +185,11 @@ std::optional<String> optimizeUseNormalProjections(
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();
+    MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
+
     auto parent_reading_select_result = reading->getAnalyzedResult();
     if (!parent_reading_select_result)
         parent_reading_select_result = reading->selectRangesToRead();
-
-    /// parent parts (non-projection result) exceeded limits
-    /// construct a base AnalysisResult with all parts to analyze projection candidates
-    if (!parent_reading_select_result->isUsable())
-    {
-        const auto & parts = reading->getParts();
-
-        parent_reading_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>();
-        parent_reading_select_result->parts_with_ranges = parts;
-        parent_reading_select_result->selected_parts = parts.size();
-        parent_reading_select_result->exceeded_row_limits = true;
-
-        size_t total_marks = 0;
-        size_t total_rows = 0;
-        for (const auto & part : parts)
-        {
-            total_marks += part.data_part->getMarksCount();
-            total_rows += part.data_part->rows_count;
-        }
-        parent_reading_select_result->selected_marks = total_marks;
-        parent_reading_select_result->selected_rows = total_rows;
-        parent_reading_select_result->selected_ranges = parts.size();
-    }
 
     if (!force_optimize_projection)
     {
@@ -228,7 +207,7 @@ std::optional<String> optimizeUseNormalProjections(
     {
         for (const auto & col : required_columns)
         {
-            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection_virtuals->has(col))
+            if (!projection->sample_block.has(col) && !projection_virtuals->has(col))
                 return false;
         }
 
@@ -248,7 +227,6 @@ std::optional<String> optimizeUseNormalProjections(
             /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
             {
-                MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
                 filterPartsAndCollectProjectionCandidates(
                     *reading,
                     *projection,
@@ -266,7 +244,6 @@ std::optional<String> optimizeUseNormalProjections(
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
-        MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             reader,
@@ -367,7 +344,6 @@ std::optional<String> optimizeUseNormalProjections(
             {query.filter_node});
     }
 
-    MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);
     auto projection_reading = reader.readFromParts(
         /*parts=*/{},
         reading->getMutationsSnapshot()->cloneEmpty(),
@@ -452,12 +428,6 @@ std::optional<String> optimizeUseNormalProjections(
             expr_node.children.push_back(next_node);
             next_node = &expr_node;
         }
-
-        /// Verify headers are compatible before creating the Union.
-        /// If they differ (e.g., different columns due to different query DAGs being applied),
-        /// skip this optimization to avoid "Block structure mismatch" errors.
-        if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
-            return {};
 
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};

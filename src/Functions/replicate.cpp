@@ -1,28 +1,36 @@
 #include <Functions/replicate.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-DataTypePtr FunctionReplicate::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    FunctionArgumentDescriptors mandatory_args{
-        {"value", nullptr, nullptr, "Any"},
-        {"array", &isArray, nullptr, "Array"}
-    };
-    FunctionArgumentDescriptor variadic_args{"arrays", &isArray, nullptr, "Array"};
+    if (arguments.size() < 2)
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                        "Function {} expect at least two arguments, got {}", getName(), arguments.size());
 
-    validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
-
-    return std::make_shared<DataTypeArray>(arguments[0].type);
+    for (size_t i = 1; i < arguments.size(); ++i)
+    {
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+        if (!array_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument {} for function {} must be array.",
+                            i + 1, getName());
+    }
+    return std::make_shared<DataTypeArray>(arguments[0]);
 }
 
 ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
@@ -77,7 +85,7 @@ SELECT replicate(1, ['a', 'b', 'c']);
     };
     FunctionDocumentation::IntroducedIn introduced_in_replicate = {1, 1};
     FunctionDocumentation::Category category_replicate = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_replicate = {description_replicate, syntax_replicate, arguments_replicate, {}, returned_value_replicate, examples_replicate, introduced_in_replicate, category_replicate};
+    FunctionDocumentation documentation_replicate = {description_replicate, syntax_replicate, arguments_replicate, returned_value_replicate, examples_replicate, introduced_in_replicate, category_replicate};
 
     factory.registerFunction<FunctionReplicate>(documentation_replicate);
 }

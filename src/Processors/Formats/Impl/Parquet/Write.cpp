@@ -3,7 +3,7 @@
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
-#include <arrow/util/rle_encoding_internal.h>
+#include <arrow/util/rle_encoding.h>
 #include <arrow/util/crc32.h>
 #include <lz4.h>
 #include <Poco/JSON/JSON.h>
@@ -21,7 +21,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
-#include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -37,7 +36,6 @@ namespace DB::ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace DB::Parquet
@@ -253,76 +251,7 @@ struct StatisticsStringRef
         int t = memcmp(a.ptr, b.ptr, std::min(a.len, b.len));
         if (t != 0)
             return t;
-        return int(a.len) - int(b.len);
-    }
-};
-
-struct StatisticsStringCopy
-{
-    bool empty = true;
-    String min;
-    String max;
-
-    void add(parquet::ByteArray x)
-    {
-        addMin(x);
-        addMax(x);
-        empty = false;
-    }
-
-    void merge(const StatisticsStringCopy & s)
-    {
-        if (s.empty)
-            return;
-        addMin(parquet::ByteArray(static_cast<UInt32>(s.min.size()), reinterpret_cast<const uint8_t *>(s.min.data())));
-        addMax(parquet::ByteArray(static_cast<UInt32>(s.max.size()), reinterpret_cast<const uint8_t *>(s.max.data())));
-        empty = false;
-    }
-
-    void clear() { *this = {}; }
-
-    parq::Statistics get(const WriteOptions & options) const
-    {
-        parq::Statistics s;
-        if (empty)
-            return s;
-        if (min.size() <= options.max_statistics_size)
-        {
-            s.__set_min_value(std::string(min.data(), min.size()));
-            s.__set_is_min_value_exact(true);
-        }
-        if (max.size() <= options.max_statistics_size)
-        {
-            s.__set_max_value(std::string(max.data(), max.size()));
-            s.__set_is_max_value_exact(true);
-        }
-        return s;
-    }
-
-    void addMin(parquet::ByteArray x)
-    {
-        if (empty || compare(x, min) < 0)
-        {
-            // assign to String to make a copy only when we update min
-            min.assign(reinterpret_cast<const char *>(x.ptr), x.len);
-        }
-    }
-
-    void addMax(parquet::ByteArray x)
-    {
-        if (empty || compare(x, max) > 0)
-        {
-            // assign to String to make a copy only when we update max
-            max.assign(reinterpret_cast<const char *>(x.ptr), x.len);
-        }
-    }
-
-    static int compare(parquet::ByteArray a, const String & b)
-    {
-        int t = memcmp(a.ptr, b.data(), std::min(a.len, static_cast<UInt32>(b.size())));
-        if (t != 0)
-            return t;
-        return int(a.len) - int(b.size());
+        return a.len - b.len;
     }
 };
 
@@ -348,7 +277,7 @@ struct ConverterNumeric
 
     const To * getBatch(size_t offset, size_t count)
     {
-        if constexpr (sizeof(*column.getData().data()) == sizeof(To) && !std::is_same_v<To, bool>)
+        if constexpr (sizeof(*column.getData().data()) == sizeof(To))
             return reinterpret_cast<const To *>(column.getData().data() + offset);
         else
         {
@@ -375,14 +304,9 @@ struct ConverterDateTime64WithMultiplier
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
-        {
-            Int64 value = column.getData()[offset + i].value;
-            if (common::mulOverflow(value, multiplier, buf[i]))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "DateTime64 value {} is out of range for Parquet timestamp (multiplier {})",
-                    value, multiplier);
-        }
+            /// Not checking overflow because DateTime64 values should already be in the range where
+            /// they fit in Int64 at any allowed scale (i.e. up to nanoseconds).
+            buf[i] = column.getData()[offset + i].value * multiplier;
         return buf.data();
     }
 };
@@ -421,8 +345,8 @@ struct ConverterString
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
-            std::string_view s = column.getDataAt(offset + i);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            StringRef s = column.getDataAt(offset + i);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
         }
         return buf.data();
     }
@@ -449,8 +373,8 @@ struct ConverterEnumAsString
         for (size_t i = 0; i < count; ++i)
         {
             const T value = data[offset + i];
-            const std::string_view s = enum_type->getNameForValue(value);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            const StringRef s = enum_type->getNameForValue(value);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
         }
         return buf.data();
     }
@@ -519,7 +443,7 @@ struct ConverterNumberAsFixedString
 
 struct ConverterJSON
 {
-    using Statistics = StatisticsStringCopy;
+    using Statistics = StatisticsStringRef;
 
     const ColumnObject & column;
     DataTypePtr data_type;
@@ -658,19 +582,19 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
 void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, PODArray<char> & out)
 {
-    using arrow::util::RleBitPackedEncoder;
+    using arrow::util::RleEncoder;
 
     chassert(max_level > 0);
     size_t offset = out.size();
     size_t prefix_size = sizeof(Int32);
 
     int bit_width = bitScanReverse(max_level) + 1;
-    auto max_rle_size = RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
-                        RleBitPackedEncoder::MinBufferSize(bit_width);
+    int max_rle_size = RleEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
+                       RleEncoder::MinBufferSize(bit_width);
 
     out.resize(offset + prefix_size + max_rle_size);
 
-    RleBitPackedEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), static_cast<int>(max_rle_size), bit_width);
+    RleEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), max_rle_size, bit_width);
     for (size_t i = 0; i < size; ++i)
         encoder.Put(data[i]);
     encoder.Flush();
@@ -727,9 +651,9 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
     ///  * bloom filter size must be at most 128 MiB.
     /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
     /// requires this.
-    double requested_num_blocks = static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256;
+    double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
     size_t num_blocks = 1;
-    while (static_cast<double>(num_blocks) < requested_num_blocks)
+    while (num_blocks < requested_num_blocks)
     {
         if (num_blocks >= 4 * 1024 * 1024)
             return;
@@ -1332,13 +1256,7 @@ void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions
         r.total_byte_size += c.meta_data.total_uncompressed_size;
         r.total_compressed_size += c.meta_data.total_compressed_size;
     }
-
-    if (r.columns.empty())
-    {
-        /// All columns are empty tuples, there are no pages.
-        r.__set_file_offset(file.offset);
-    }
-    else
+    chassert(!r.columns.empty());
     {
         auto & m = r.columns[0].meta_data;
         r.__set_file_offset(m.__isset.dictionary_page_offset ? m.dictionary_page_offset : m.data_page_offset);

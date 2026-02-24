@@ -38,15 +38,15 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
     /// For example: if data_type is Int32:
     ///     1. For 1.0, 1, '1', return Field(1)
     ///     2. For 1.1, max_value_int64, return null
-    Field val_converted = convertFieldToType(val, *data_type, data_type.get());
+    Field val_converted = convertFieldToType(val, *data_type);
     if (val_converted.isNull())
         return 0;
 
     if (data_type->isValueRepresentedByNumber())
-        return static_cast<Float64>(sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory()));
+        return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
 
     if (isStringOrFixedString(data_type))
-        return static_cast<Float64>(sketch.get_estimate(val.safeGet<String>()));
+        return sketch.get_estimate(val.safeGet<String>());
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'countmin' does not support estimate data type of {}", data_type->getName());
 }
@@ -58,7 +58,7 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
         if (column->isNullAt(row))
             continue;
         auto data = column->getDataAt(row);
-        sketch.update(data.data(), data.size(), 1);
+        sketch.update(data.data, data.size, 1);
     }
 }
 

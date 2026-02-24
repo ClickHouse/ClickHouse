@@ -4,7 +4,9 @@
 
 #include <fmt/format.h>
 #include <Common/Base64.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Common/Crypto/KeyPair.h>
 
 #include <string>

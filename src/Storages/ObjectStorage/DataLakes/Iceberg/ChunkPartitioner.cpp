@@ -8,17 +8,11 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
 
 #if USE_AVRO
-
-namespace Setting
-{
-    extern const SettingsUInt64 iceberg_insert_max_partitions;
-}
 
 namespace ErrorCodes
 {
@@ -28,7 +22,6 @@ namespace ErrorCodes
 ChunkPartitioner::ChunkPartitioner(
     Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, SharedHeader sample_block_)
     : sample_block(sample_block_)
-    , max_partitions_count(context->getSettingsRef()[Setting::iceberg_insert_max_partitions])
 {
     std::unordered_map<Int32, String> id_to_column;
     {
@@ -91,8 +84,6 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     }
 
     std::vector<ChunkPartitioner::PartitionKey> transform_results(chunk.getNumRows());
-    ColumnRawPtrs raw_columns;
-    Columns functions_columns;
     for (size_t transform_ind = 0; transform_ind < functions.size(); ++transform_ind)
     {
         ColumnsWithTypeAndName arguments;
@@ -107,8 +98,6 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
         auto result
             = functions[transform_ind]->build(arguments)->execute(arguments, std::make_shared<DataTypeString>(), chunk.getNumRows(), false);
-        functions_columns.push_back(result);
-        raw_columns.push_back(result.get());
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
         {
             Field field;
@@ -121,20 +110,17 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     {
         return transform_results[row_num];
     };
-    std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
+
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
+    ColumnRawPtrs raw_columns;
+    for (const auto & column : chunk.getColumns())
+        raw_columns.push_back(column.get());
 
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
 
 
     size_t partitions_count = partition_num_to_first_row.size();
-    if (partitions_count > max_partitions_count)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Too many partitions per insert operation: {}. The maximum allowed number of partitions is {}. To change this, use the `iceberg_insert_max_partitions` setting",
-            partitions_count,
-            max_partitions_count);
     chassert(partitions_count > 0);
     std::vector<std::pair<ChunkPartitioner::PartitionKey, MutableColumns>> result_columns;
     result_columns.reserve(partitions_count);
@@ -155,6 +141,9 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
         }
     }
+
+    std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
+    result.reserve(result_columns.size());
     for (auto && [key, partition_columns] : result_columns)
     {
         size_t column_size = partition_columns[0]->size();

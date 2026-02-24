@@ -16,7 +16,6 @@ node = cluster.add_instance(
     with_zookeeper=True,
     with_remote_database_disk=False,  # Disable `with_remote_database_disk` as the test does not use the default Keeper.
     main_configs=["configs/setting.xml"],
-    mem_limit='14g'
 )
 
 

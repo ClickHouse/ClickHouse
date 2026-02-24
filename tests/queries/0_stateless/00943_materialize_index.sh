@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +16,7 @@ CREATE TABLE minmax_idx
 ) ENGINE = MergeTree()
 PARTITION BY i32
 ORDER BY u64
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns=0;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO minmax_idx VALUES

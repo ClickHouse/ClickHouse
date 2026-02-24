@@ -1,6 +1,5 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/IAST.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>

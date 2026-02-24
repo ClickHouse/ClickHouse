@@ -32,8 +32,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
-
     bool existsFile(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);

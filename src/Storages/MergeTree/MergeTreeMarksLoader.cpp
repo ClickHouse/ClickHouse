@@ -231,7 +231,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+        auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
 
         if (save_marks_in_cache)
         {
@@ -240,7 +240,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
         }
         else
         {
-            loaded_marks = mark_cache->getWithoutMetrics(key);
+            loaded_marks = mark_cache->get(key);
             if (!loaded_marks)
                 loaded_marks = loadMarksImpl();
         }
@@ -263,8 +263,8 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
     /// Avoid queueing jobs into thread pool if marks are in cache
     auto data_part_storage = data_part_reader->getDataPartStorage();
-    auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
-    if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
+    auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
+    if (MarkCache::MappedPtr loaded_marks = mark_cache->get(key))
     {
         ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
         auto promise = std::promise<MarkCache::MappedPtr>();
@@ -295,7 +295,7 @@ void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & c
     for (const auto & [stream_name, marks] : cached_marks)
     {
         auto mark_path = part.index_granularity_info.getMarksFilePath(stream_name);
-        auto key = MarkCache::hash(part.getDataPartStorage().getDiskName() + ":" + (fs::path(part.getRelativePathOfActivePart()) / mark_path).string());
+        auto key = MarkCache::hash(fs::path(part.getRelativePathOfActivePart()) / mark_path);
         mark_cache->set(key, std::make_shared<MarksInCompressedFile>(*marks));
     }
 }

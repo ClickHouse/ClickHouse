@@ -1,4 +1,5 @@
-SET use_statistics = 0;
+
+SET use_skip_indexes_on_data_read = 0; -- for correct row count estimation in join order planning
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
@@ -19,7 +20,6 @@ INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(
 
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 2;
-SET enable_join_runtime_filters = 0;
 
 SELECT * FROM products, sales
 WHERE sales.product_id = products.id AND date = '2024-05-07'
