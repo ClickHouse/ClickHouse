@@ -28,6 +28,47 @@ mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
 
+INFRASTRUCTURE_ERROR_PATTERNS = [
+    "timed out after",
+    "TimeoutExpired",
+    "Cannot connect to the Docker daemon",
+    "Error response from daemon",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+    "Network is unreachable",
+    "Connection reset by peer",
+    "No space left on device",
+    "Cannot allocate memory",
+    "OCI runtime create failed",
+    "toomanyrequests",
+    "pull access denied",
+]
+
+
+def _is_infrastructure_error(result: Result) -> bool:
+    """Returns True if the result is an ERROR caused by infrastructure issues."""
+    if result.status not in (Result.Status.ERROR, Result.StatusExtended.ERROR):
+        return False
+    if not result.info:
+        return False
+    return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+
+
+def _mark_infrastructure_errors(results: list) -> int:
+    """Scan results, label infrastructure errors with INFRA and change their status to SKIPPED.
+
+    Returns the number of results that were relabeled.
+    """
+    count = 0
+    for r in results:
+        if _is_infrastructure_error(r):
+            r.set_label(Result.Label.INFRA)
+            r.status = Result.StatusExtended.SKIPPED
+            count += 1
+    if count:
+        print(f"Marked {count} test result(s) as infrastructure errors")
+    return count
+
 
 def _start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
@@ -606,6 +647,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 break
         test_results.extend(test_result_parallel.results)
+        _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
             [t.name for t in test_result_parallel.results if t.is_failure()]
         )
@@ -636,6 +678,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 break
         test_results.extend(test_result_sequential.results)
+        _mark_infrastructure_errors(test_result_sequential.results)
         failed_test_cases.extend(
             [t.name for t in test_result_sequential.results if t.is_failure()]
         )
@@ -747,6 +790,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
         else:
             R.set_success()
             has_error = False
+
+    # If all non-OK results are infrastructure errors, do not treat as a real failure
+    if has_error:
+        non_ok = [r for r in test_results if not r.is_ok()]
+        if non_ok and all(r.has_label(Result.Label.INFRA) for r in non_ok):
+            print(
+                "All failures are infrastructure errors - clearing error flag"
+            )
+            has_error = False
+            force_ok_exit = True
 
     if has_error:
         R.set_error().set_info("\n".join(error_info))

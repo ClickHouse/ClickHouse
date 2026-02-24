@@ -46,6 +46,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -107,6 +108,11 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char lightweight_show_tables[];
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -530,6 +536,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
 
+    /// This is added to test that lightweight queries like 'SHOW TABLES' dont end up fetching the table
+    fiu_do_on(FailPoints::lightweight_show_tables,
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+    });
+
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
@@ -730,14 +742,13 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     bool skip_not_loaded) const
 {
     Tables tables;
-    auto catalog = getCatalog();
     DB::Names iceberg_tables;
 
     /// Do not throw here, because this might be, for example, a query to system.tables.
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = catalog->getTables();
+        iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
@@ -761,15 +772,33 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
             pool.scheduleOrThrow(
                 [this, table_name, skip_not_loaded, context_, promise=promises.back()]() mutable
                 {
+                    StoragePtr storage = nullptr;
                     try
                     {
-                        auto storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
-                        promise->set_value(storage);
+                        LOG_INFO(log, "Get table information for table {}", table_name);
+                        storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
                     }
                     catch (...)
                     {
-                        promise->set_exception(std::current_exception());
+                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access])
+                        {
+                            auto error_code = getCurrentExceptionCode();
+                            auto error_message = getCurrentExceptionMessage(true, false, true, true);
+                            auto enhanced_message = fmt::format(
+                                "Received error {} while fetching table metadata for existing table '{}'. "
+                                "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
+                                error_code,
+                                table_name,
+                                error_message);
+                            promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
+                                error_code,
+                                enhanced_message)));
+                            return;
+                        }
+                        else
+                            tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                     }
+                    promise->set_value(storage);
                 });
         }
         catch (...)
@@ -797,105 +826,33 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
-DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
-    ContextPtr context_,
+std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIterator(
+    ContextPtr /*context_*/,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded) const
+    bool /*skip_not_loaded*/) const
 {
-    Tables tables;
-
-    auto catalog = getCatalog();
     DB::Names iceberg_tables;
+    std::vector<LightWeightTableDetails> result;
 
     /// Do not throw here, because this might be, for example, a query to system.tables.
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = catalog->getTables();
+        iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
-
-    std::vector<std::shared_ptr<std::promise<StoragePtr>>> promises;
-    std::vector<std::future<StoragePtr>> futures;
-
     for (const auto & table_name : iceberg_tables)
     {
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
-
-        /// NOTE: There are one million of different ways how we can receive
-        /// weird response from different catalogs. tryGetTableImpl will not
-        /// throw only in case of expected errors, but sometimes we can receive
-        /// completely unexpected results for some objects which can be stored
-        /// in catalogs. But this function is used in SHOW TABLES query which
-        /// should return at least properly described tables. That is why we
-        /// have this try/catch here.
-        try
-        {
-            promises.emplace_back(std::make_shared<std::promise<StoragePtr>>());
-            futures.emplace_back(promises.back()->get_future());
-
-            pool.scheduleOrThrow(
-                [this, table_name, skip_not_loaded, context_, promise = promises.back()] mutable
-                {
-                    StoragePtr storage = nullptr;
-                    try
-                    {
-                        storage = tryGetTableImpl(table_name, context_, true, skip_not_loaded);
-                    }
-                    catch (...)
-                    {
-                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access])
-                        {
-                            auto error_code = getCurrentExceptionCode();
-                            auto error_message = getCurrentExceptionMessage(true, false, true, true);
-                            auto enhanced_message = fmt::format(
-                                "Received error {} while fetching table metadata for existing table '{}'. "
-                                "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
-                                error_code,
-                                table_name,
-                                error_message);
-                            promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
-                                error_code,
-                                enhanced_message)));
-                            return;
-                        }
-                        else
-                            tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
-                    }
-                    promise->set_value(storage);
-                });
-        }
-        catch (...)
-        {
-            promises.back()->set_value(nullptr);
-            tryLogCurrentException(log, "Failed to schedule task into pool");
-        }
+        result.emplace_back(table_name);
     }
 
-    for (const auto & future : futures)
-        future.wait();
-
-    size_t future_index = 0;
-    for (const auto & table_name : iceberg_tables)
-    {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-
-        if (auto storage_ptr = futures[future_index].get(); storage_ptr != nullptr)
-        {
-            [[maybe_unused]] bool inserted = tables.emplace(table_name, storage_ptr).second;
-            chassert(inserted);
-        }
-        future_index++;
-    }
-
-    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
+    return result;
 }
 
 ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const

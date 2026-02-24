@@ -52,7 +52,9 @@ jobs:
             # Collect per-job verdicts across all pages (runs can have >100 jobs).
             # Each failed job emits "true" (infrastructure) or "false" (real failure).
             # A job is considered an infrastructure failure if:
-            # - it is the "Config Workflow" job (pipeline configuration, not actual tests), or
+            # - it is the "Config Workflow" or "Finish Workflow" job (pipeline plumbing,
+            #   not actual tests; "Finish Workflow" runs in ~15s so the <120s heuristic
+            #   would always misclassify it as infra), or
             # - it never reached its main "Run" step (failed during checkout/setup), or
             # - the "Run" step was skipped, or
             # - the "Run" step failed almost immediately (under 2 minutes), indicating
@@ -61,7 +63,7 @@ jobs:
             verdicts=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
               --paginate --jq '
                 .jobs[] | select(.conclusion == "failure") |
-                if .name == "Config Workflow" then true
+                if .name == "Config Workflow" or .name == "Finish Workflow" then empty
                 else
                   [.steps[] | select(.name == "Run")] |
                   if length == 0 then true

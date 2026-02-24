@@ -1,4 +1,4 @@
---- This test verifies that preprocessor is properly applied to supported functions when a text index is partially materialized.
+--- Verifies that text index preprocessor is properly applied to supported functions when the index is partially materialized.
 
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
