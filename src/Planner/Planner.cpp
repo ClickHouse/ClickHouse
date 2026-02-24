@@ -1833,7 +1833,7 @@ void Planner::buildPlanForQueryNode()
 
     if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && settings[Setting::automatic_parallel_replicas_mode] != 0)
+        && settings[Setting::automatic_parallel_replicas_mode] != 0 && !select_query_options.is_part_of_insert_select)
     {
         LOG_DEBUG(
             log,

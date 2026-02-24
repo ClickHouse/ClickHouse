@@ -140,6 +140,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         {
             SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+            select_query_options.is_part_of_insert_select = true;
 
             if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -345,6 +346,7 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
 static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
+    select_query_options.is_part_of_insert_select = true;
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
@@ -571,6 +573,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+        select_query_options.is_part_of_insert_select = true;
 
         const Settings & settings = select_context->getSettingsRef();
         if (settings[Setting::allow_experimental_analyzer])

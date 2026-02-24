@@ -14,7 +14,6 @@ AS SELECT n1.key as k, n1.value as v1, n2.value as v2 from n1 JOIN n2 ON n1.key 
 
 INSERT INTO n2 SELECT number, -number FROM numbers(10);
 
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1;
 
 -- inserting into n1 (left table) triggers JOIN in the materialized view

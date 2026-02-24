@@ -955,6 +955,7 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
 bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+    select_query_options.is_part_of_insert_select = true;
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
