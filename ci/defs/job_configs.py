@@ -1226,7 +1226,7 @@ class JobConfigs:
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
     )
-    llvm_coverage_merge_job = Job.Config(
+    llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE_MERGE,
         runs_on=RunnerLabels.AMD_SMALL,
         run_in_docker="clickhouse/test-base",
@@ -1234,28 +1234,14 @@ class JobConfigs:
             ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
             *LLVM_ARTIFACTS_LIST,
+            ArtifactNames.LLVM_COVERAGE_INFO_FILE
         ],
         provides=[
-            ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
             ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         ],
-        command="python3 ./ci/jobs/merge_llvm_coverage_job.py",
+        command="python3 ./ci/jobs/llvm_coverage_job.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/merge_llvm_coverage_job.py"],
-        ),
-        timeout=3600,
-        enable_gh_auth=True,
-    )
-    llvm_coverage_check_job = Job.Config(
-        name=JobNames.LLVM_COVERAGE_CHECK,
-        runs_on=RunnerLabels.AMD_SMALL,
-        run_in_docker="clickhouse/test-base",
-        requires=[
-            ArtifactNames.LLVM_COVERAGE_INFO_FILE,
-        ],
-        command="python3 ./ci/jobs/check_llvm_coverage.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/check_llvm_coverage.py"],
+            include_paths=["./ci/jobs/llvm_coverage_job.py"],
         ),
         timeout=3600,
         enable_gh_auth=True,

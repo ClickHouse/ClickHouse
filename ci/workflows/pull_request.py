@@ -130,8 +130,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
-        JobConfigs.llvm_coverage_merge_job,
-        JobConfigs.llvm_coverage_check_job,
+        JobConfigs.llvm_coverage_job,
         *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
@@ -144,9 +143,7 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.parser_memory_profiler,
         *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_html_report,
         ArtifactConfigs.llvm_coverage_info_file,
-        ArtifactConfigs.llvm_coverage_diff_html_report,
         ArtifactConfigs.toolchain_pgo_bolt_amd,
         ArtifactConfigs.toolchain_pgo_bolt_arm,
     ],

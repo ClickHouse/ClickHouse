@@ -129,6 +129,7 @@ genhtml \
   --diff-file changes.diff \
   --output-directory llvm_coverage_diff_html_report \
   --no-function-coverage \
+  --css-file $WORKSPACE_PATH/ci/jobs/scripts/css.css \
   --prefix $WORKSPACE_PATH \
   --substitute "s|/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse|$WORKSPACE_PATH|g" \
   --ignore-errors inconsistent \
