@@ -24,11 +24,6 @@ namespace ErrorCodes
 
 namespace
 {
-    const ColumnLowCardinality & getColumnLowCardinality(const IColumn & column)
-    {
-        return typeid_cast<const ColumnLowCardinality &>(column);
-    }
-
     ColumnLowCardinality & getColumnLowCardinality(IColumn & column)
     {
         return typeid_cast<ColumnLowCardinality &>(column);
@@ -46,7 +41,7 @@ void SerializationLowCardinality::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
+    const auto * column_lc = data.column ? typeid_cast<const ColumnLowCardinality *>(data.column.get()) : nullptr;
 
     if (settings.use_specialized_prefixes_and_suffixes_substreams)
     {
@@ -456,7 +451,19 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality indexes.");
 
-    const ColumnLowCardinality & low_cardinality_column = typeid_cast<const ColumnLowCardinality &>(column);
+    const ColumnLowCardinality * low_cardinality_column_ptr = typeid_cast<const ColumnLowCardinality *>(&column);
+    ColumnPtr tmp_lc_column;
+    if (!low_cardinality_column_ptr)
+    {
+        /// Column may already be unwrapped (e.g. inside a Variant where the LowCardinality
+        /// wrapper was stripped during function execution). Wrap it temporarily for binary
+        /// serialization which requires the dictionary/indexes encoding.
+        auto col_unique = DataTypeLowCardinality::createColumnUnique(*dictionary_type);
+        auto indexes = col_unique->uniqueInsertRangeFrom(column, 0, column.size());
+        tmp_lc_column = ColumnLowCardinality::create(std::move(col_unique), std::move(indexes), /*is_shared=*/false);
+        low_cardinality_column_ptr = assert_cast<const ColumnLowCardinality *>(tmp_lc_column.get());
+    }
+    const ColumnLowCardinality & low_cardinality_column = *low_cardinality_column_ptr;
 
     auto * low_cardinality_state = checkAndGetState<SerializeStateLowCardinality>(state);
     auto & global_dictionary = low_cardinality_state->shared_dictionary;
