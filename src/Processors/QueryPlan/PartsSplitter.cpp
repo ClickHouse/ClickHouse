@@ -51,6 +51,7 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float64:
         case TypeIndex::BFloat16:
         case TypeIndex::Nullable:
+        case TypeIndex::ObjectDeprecated:
         case TypeIndex::Object:
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
@@ -846,7 +847,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
     }
 
-    return {std::move(result_layers), std::move(borders), in_reverse_order};
+    return {std::move(result_layers), std::move(borders)};
 }
 
 
@@ -1175,9 +1176,8 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto split_ranges = splitIntersectingPartsRangesIntoLayers(
-        intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
-    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, in_reverse_order, context);
     return result;
 }
 
@@ -1185,9 +1185,10 @@ Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
+    bool in_reverse_order,
     ContextPtr context)
 {
-    auto && [layers, borders, in_reverse_order] = std::move(split_ranges);
+    auto && [layers, borders] = std::move(split_ranges);
     auto filters = buildFilters(primary_key, borders, in_reverse_order);
     Pipes merging_pipes(layers.size());
 

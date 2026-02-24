@@ -1,42 +1,22 @@
 Must not have no arguments.
 Test single tokenizer argument.
--- tokenizer must be splitByNonAlpha, ngrams, sparseGrams, splitByString or array.
--- tokenizer can be identifier or function.
-Test ngrams tokenizer.
--- ngram size must be larger than 0.
--- ngram size must be an unsigned int.
--- ngram size cannot be larger than max UInt64.
-Test sparseGrams tokenizer.
--- min_length must be between 3 and 100.
--- max_length must be bigger than min_length.
--- min_cutoff_length must be smaller/bigger than max/min_length.
-Test splitByString tokenizer.
+-- tokenizer must be default, ngram, split or no_op.
+Test ngram_size argument.
+-- ngram size must be between 2 and 8.
+Test separators argument.
 -- separators must be array.
 -- separators must be an array of strings.
-Test posting_list_block_size argument.
--- posting_list_block_size must be a positive integer.
-Test dictionary_block_size argument.
--- dictionary_block_size must be a positive integer.
-Test dictionary_block_frontcoding_compression argument.
--- dictionary_block_frontcoding_compression must be an integer.
--- dictionary_block_frontcoding_compression must be 0 or 1.
+Test segment_digestion_threshold_bytes argument.
+-- segment_digestion_threshold_bytes must be an integer.
+-- segment_digestion_threshold_bytes can be 0 (zero).
+Test bloom_filter_false_positive_rate argument.
+-- bloom_filter_false_positive_rate must be a double.
+-- bloom_filter_false_positive_rate must be between 0.0 and 1.0.
+Parameters are shuffled.
 Types are incorrect.
 Same argument appears >1 times.
-Non-existing argument.
 Must be created on single column.
 A column must not have >1 text index
 -- CREATE TABLE
 -- ALTER TABLE
-Must be created on String, FixedString, LowCardinality(String), LowCardinality(FixedString), Array(String) or Array(FixedString) columns.
--- Negative tests
--- Positive tests
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
+Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.

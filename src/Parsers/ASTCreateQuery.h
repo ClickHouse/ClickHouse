@@ -97,6 +97,7 @@ public:
     bool if_not_exists{false};
     bool is_ordinary_view{false};
     bool is_materialized_view{false};
+    bool is_live_view{false};
     bool is_window_view{false};
     bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate{false};
@@ -109,15 +110,15 @@ public:
     ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
 
-    IAST * watermark_function;
-    IAST * lateness_function;
+    ASTPtr watermark_function;
+    ASTPtr lateness_function;
     String as_database;
     String as_table;
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     ASTViewTargets * targets = nullptr;
     IAST * comment = nullptr;
-    IAST * sql_security = nullptr;
+    ASTPtr sql_security = nullptr;
 
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
 
@@ -151,7 +152,7 @@ public:
         return removeOnCluster<ASTCreateQuery>(clone(), params.default_database);
     }
 
-    bool isView() const { return is_ordinary_view || is_materialized_view || is_window_view; }
+    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
     bool isParameterizedView() const;
 
@@ -181,8 +182,6 @@ public:
 
     bool is_materialized_view_with_external_target() const { return is_materialized_view && hasTargetTableID(ViewTarget::To); }
     bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ViewTarget::To); }
-
-    bool isCreateQueryWithImmediateInsertSelect() const;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

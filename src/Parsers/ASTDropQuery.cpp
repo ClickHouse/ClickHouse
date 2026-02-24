@@ -74,7 +74,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     else if (database_and_tables)
     {
         auto & list = database_and_tables->as<ASTExpressionList &>();
-        for (auto it = list.children.begin(); it != list.children.end(); ++it)
+        for (auto * it = list.children.begin(); it != list.children.end(); ++it)
         {
             if (it != list.children.begin())
                 ostr << ", ";
@@ -123,12 +123,12 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         ostr << " SYNC";
 }
 
-ASTs ASTDropQuery::getRewrittenASTsOfSingleTable(ASTPtr self) const
+ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()
 {
     ASTs res;
     if (database_and_tables == nullptr)
     {
-        res.push_back(self);
+        res.push_back(shared_from_this());
         return res;
     }
 

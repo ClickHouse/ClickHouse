@@ -37,24 +37,10 @@ struct NameCanonicalRand
     static constexpr auto name = "randCanonical";
 };
 
-class FunctionCanonicalRand : public FunctionRandom<Float64, NameCanonicalRand>
+class FunctionCanonicalRand : public FunctionRandomImpl<CanonicalRandImpl, Float64, NameCanonicalRand>
 {
-    using ToType = Float64;
-
 public:
     static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionCanonicalRand>(); }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        auto col_to = ColumnVector<ToType>::create();
-        typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
-
-        size_t size = input_rows_count;
-        vec_to.resize(size);
-        CanonicalRandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
-
-        return col_to;
-    }
 };
 
 }
@@ -66,7 +52,7 @@ Returns a random distributed `Float64` number with uniform distribution between 
     )";
     FunctionDocumentation::Syntax syntax = "randCanonical([x])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a random Float64 number.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -74,7 +60,7 @@ Returns a random distributed `Float64` number with uniform distribution between 
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCanonicalRand>(documentation);
 }

@@ -1,4 +1,3 @@
-#include <vector>
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -37,8 +36,6 @@ PartLogElement::MergeReasonType PartLogElement::getMergeReasonType(MergeType mer
             return TTL_DELETE_MERGE;
         case MergeType::TTLRecompress:
             return TTL_RECOMPRESS_MERGE;
-        case MergeType::TTLDrop:
-            return TTL_DROP_MERGE;
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeType {}", static_cast<UInt64>(merge_type));
@@ -82,7 +79,6 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             {"RegularMerge",        static_cast<Int8>(REGULAR_MERGE)},
             {"TTLDeleteMerge",      static_cast<Int8>(TTL_DELETE_MERGE)},
             {"TTLRecompressMerge",  static_cast<Int8>(TTL_RECOMPRESS_MERGE)},
-            {"TTLDropMerge",        static_cast<Int8>(TTL_DROP_MERGE)},
         }
     );
 
@@ -146,7 +142,6 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"read_rows", std::make_shared<DataTypeUInt64>(), "The number of rows was read during the merge."},
         {"read_bytes", std::make_shared<DataTypeUInt64>(), "The number of bytes was read during the merge."},
         {"peak_memory_usage", std::make_shared<DataTypeUInt64>(), "The maximum amount of used during merge RAM"},
-        {"deduplication_block_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of block IDs used for deduplication when inserting this part."},
 
         /// Is there an error during the execution or commit
         {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
@@ -205,12 +200,6 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(bytes_read_uncompressed);
     columns[i++]->insert(peak_memory_usage);
 
-    Array deduplication_block_ids_array;
-    deduplication_block_ids_array.reserve(deduplication_block_ids.size());
-    for (const auto & id : deduplication_block_ids)
-        deduplication_block_ids_array.push_back(id);
-    columns[i++]->insert(deduplication_block_ids_array);
-
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
 
@@ -225,8 +214,8 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     }
 }
 
-bool PartLog::addNewPartsImpl(
-    ContextPtr current_context, const PartLog::PartLogEntries & parts, std::vector<Strings> deduplication_block_ids, const ExecutionStatus & execution_status)
+bool PartLog::addNewParts(
+    ContextPtr current_context, const PartLog::PartLogEntries & parts, const ExecutionStatus & execution_status)
 {
     if (parts.empty())
         return true;
@@ -236,15 +225,14 @@ bool PartLog::addNewPartsImpl(
     try
     {
         auto table_id = parts.front().part->storage.getStorageID();
-        part_log = current_context->getPartLog(); // assume parts belong to the same table
+        part_log = current_context->getPartLog(table_id.database_name); // assume parts belong to the same table
         if (!part_log)
             return false;
 
         auto query_id = CurrentThread::getQueryId();
 
-        for (size_t i = 0; i < parts.size(); ++i)
+        for (const auto & part_log_entry : parts)
         {
-            const auto & part_log_entry = parts[i];
             const auto & part = part_log_entry.part;
 
             PartLogElement elem;
@@ -270,7 +258,6 @@ bool PartLog::addNewPartsImpl(
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();
             elem.part_type = part->getType();
-            elem.deduplication_block_ids = deduplication_block_ids.empty() ? Strings() : std::move(deduplication_block_ids[i]);
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
@@ -293,16 +280,11 @@ bool PartLog::addNewPartsImpl(
     return true;
 }
 
-bool PartLog::addNewParts(
-    ContextPtr current_context, const PartLog::PartLogEntries & parts, const ExecutionStatus & execution_status)
+bool PartLog::addNewPart(ContextPtr context_, const PartLog::PartLogEntry & part, const ExecutionStatus & execution_status)
 {
-    return addNewPartsImpl(current_context, parts, {}, execution_status);
+    return addNewParts(context_, {part}, execution_status);
 }
 
-bool PartLog::addNewPart(ContextPtr context_, const PartLog::PartLogEntry & part, Strings block_ids, const ExecutionStatus & execution_status)
-{
-    return addNewPartsImpl(context_, {part}, {std::move(block_ids)}, execution_status);
-}
 
 PartLog::PartLogEntries PartLog::createPartLogEntries(const MutableDataPartsVector & parts, UInt64 elapsed_ns, ProfileCountersSnapshotPtr profile_counters)
 {

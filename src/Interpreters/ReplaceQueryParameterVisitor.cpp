@@ -7,11 +7,9 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTViewTargets.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -52,18 +50,6 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         {
             ASTPtr names = create_user_query->names;
             visitChildren(names);
-        }
-        else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
-                 create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
-        {
-            auto to_table_ast = create_query->targets->getTableASTWithQueryParams(ViewTarget::To);
-
-            visit(to_table_ast);
-
-            create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
-            create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
-
-            visitChildren(ast);
         }
         else
             visitChildren(ast);
@@ -215,6 +201,6 @@ void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
         return;
 
     if (ast_with_alias->parametrised_alias)
-        setAlias(ast, getParamValue(ast_with_alias->parametrised_alias->name));
+        setAlias(ast, getParamValue((*ast_with_alias->parametrised_alias)->name));
 }
 }

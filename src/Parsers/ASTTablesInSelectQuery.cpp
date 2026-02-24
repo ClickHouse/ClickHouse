@@ -67,7 +67,7 @@ void ASTTableJoin::forEachPointerToChild(std::function<void(void **)> f)
     if (new_using_expression_list != using_expression_list.get())
     {
         if (new_using_expression_list)
-            using_expression_list = getChild(*new_using_expression_list);
+            using_expression_list = new_using_expression_list->ptr();
         else
             using_expression_list.reset();
     }
@@ -77,7 +77,7 @@ void ASTTableJoin::forEachPointerToChild(std::function<void(void **)> f)
     if (new_on_expression != on_expression.get())
     {
         if (new_on_expression)
-            on_expression = getChild(*new_on_expression);
+            on_expression = new_on_expression->ptr();
         else
             on_expression.reset();
     }
@@ -257,15 +257,11 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
     {
         ostr << " ON ";
         /// If there is an alias for the whole expression parens should be added, otherwise it will be invalid syntax
-        auto on_alias = on_expression->tryGetAlias();
-        /// If this alias was alerady defined before, parens should be omitted, because only alias will be printed
-        auto on_need_parens = !on_alias.empty() && !frame.ignore_printed_asts_with_alias &&
-            !state.printed_asts_with_alias.contains({frame.current_select, on_alias, on_expression->getTreeHash(/*ignore_aliases=*/ true)});
-
-        if (on_need_parens)
+        bool on_has_alias = !on_expression->tryGetAlias().empty();
+        if (on_has_alias)
             ostr << "(";
         on_expression->format(ostr, settings, state, frame);
-        if (on_need_parens)
+        if (on_has_alias)
             ostr << ")";
     }
 }

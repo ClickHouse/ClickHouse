@@ -74,27 +74,13 @@ namespace PODArrayDetails
 
 void protectMemoryRegion(void * addr, size_t len, int prot);
 
-[[noreturn]] void throw_alloc_error(); /// NOLINT
-
 /// The amount of memory occupied by the num_elements of the elements.
-inline size_t byte_size(size_t num_elements, size_t element_size)
-{
-    size_t amount;
-    if (__builtin_mul_overflow(num_elements, element_size, &amount))
-        throw_alloc_error();
-    return amount;
-}
+size_t byte_size(size_t num_elements, size_t element_size); /// NOLINT
 
 /// Minimum amount of memory to allocate for num_elements, including padding.
-inline size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right)
-{
-    size_t amount;
-    if (__builtin_add_overflow(byte_size(num_elements, element_size), pad_left + pad_right, &amount))
-        throw_alloc_error();
-    return amount;
-}
+size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right); /// NOLINT
 
-}
+};
 
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
@@ -182,10 +168,8 @@ protected:
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
     }
 
-    /// NO_INLINE functions for slow paths of otherwise fast small inlinable functions.
-
     template <typename ... TAllocatorParams>
-    NO_INLINE void reserveForNextSize(TAllocatorParams &&... allocator_params)
+    void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
         if (empty())
         {
@@ -197,12 +181,6 @@ protected:
         }
         else
             realloc(allocated_bytes() * 2, std::forward<TAllocatorParams>(allocator_params)...);
-    }
-
-    template <typename ... TAllocatorParams>
-    NO_INLINE void reallocPowerOfTwoElements(size_t n, TAllocatorParams &&... allocator_params)
-    {
-        realloc(roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(n, ELEMENT_SIZE, pad_left, pad_right)), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
 #ifndef NDEBUG
@@ -237,10 +215,11 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
-    ALWAYS_INLINE void reserve(size_t n, TAllocatorParams &&... allocator_params)
+    ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
+    void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
-            reallocPowerOfTwoElements(n, std::forward<TAllocatorParams>(allocator_params)...);
+            realloc(roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(n, ELEMENT_SIZE, pad_left, pad_right)), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename ... TAllocatorParams>
@@ -325,6 +304,8 @@ public:
         dealloc();
     }
 };
+
+/// NOLINTBEGIN(bugprone-sizeof-expression)
 
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
@@ -446,6 +427,7 @@ public:
     {
         if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
+
         new (reinterpret_cast<void*>(t_end())) T(std::forward<U>(x));
         this->c_end += sizeof(T);
     }
@@ -475,7 +457,7 @@ public:
         this->assertNotIntersects(from_begin, from_end);
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
-            this->reallocPowerOfTwoElements(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
@@ -498,7 +480,7 @@ public:
 
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
-            this->reallocPowerOfTwoElements(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = PODArrayDetails::byte_size(from_end - from_begin, sizeof(T));
         if (bytes_to_copy)
@@ -556,7 +538,7 @@ public:
 
         size_t required_capacity = this->size() + copy_size;
         if (required_capacity > this->capacity())
-            this->reallocPowerOfTwoElements(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = PODArrayDetails::byte_size(copy_size, sizeof(T));
         if (bytes_to_copy)
@@ -778,6 +760,8 @@ public:
         return !operator==(rhs);
     }
 };
+
+/// NOLINTEND(bugprone-sizeof-expression)
 
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & rhs) /// NOLINT

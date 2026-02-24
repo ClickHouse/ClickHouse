@@ -111,7 +111,7 @@ static MutableColumnPtr createIndexColumn(size_t limit, size_t rows)
 
     for (size_t i = 0; i < rows; ++i)
     {
-        T val = static_cast<T>(rng() % limit);
+        T val = rng() % limit;
         values.push_back(val);
     }
 

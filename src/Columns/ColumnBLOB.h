@@ -6,6 +6,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
+#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -80,10 +81,10 @@ public:
     BLOB & getBLOB() { return blob; }
     const BLOB & getBLOB() const { return blob; }
 
-    const ColumnPtr & getWrappedColumn() const
+    bool wrappedColumnIsSparse() const
     {
         chassert(wrapped_column);
-        return wrapped_column;
+        return wrapped_column->isSparse();
     }
 
     MutableColumnPtr cloneEmpty() const override
@@ -108,9 +109,9 @@ public:
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
-        auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
+        auto serialization = NativeWriter::getSerialization(client_revision, wrapped_column);
         NativeWriter::writeData(
-            *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
+            *serialization, wrapped_column.column, compressed_buffer, format_settings, 0, wrapped_column.column->size(), client_revision);
         compressed_buffer.finalize();
     }
 
@@ -120,12 +121,13 @@ public:
         ColumnPtr nested,
         SerializationPtr nested_serialization,
         size_t rows,
-        const FormatSettings * format_settings)
+        const FormatSettings * format_settings,
+        double avg_value_size_hint)
     {
         ReadBufferFromMemory rbuf(blob.data(), blob.size());
         CompressedReadBuffer decompressed_buffer(rbuf);
         chassert(nested->empty());
-        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
+        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, avg_value_size_hint);
         return nested;
     }
 
@@ -146,8 +148,8 @@ public:
     TypeIndex getDataType() const override { throwInapplicable(); }
     Field operator[](size_t) const override { throwInapplicable(); }
     void get(size_t, Field &) const override { throwInapplicable(); }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
-    std::string_view getDataAt(size_t) const override { throwInapplicable(); }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override { throwInapplicable(); }
+    StringRef getDataAt(size_t) const override { throwInapplicable(); }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
     bool tryInsert(const Field &) override { throwInapplicable(); }
@@ -159,7 +161,7 @@ public:
     void insertData(const char *, size_t) override { throwInapplicable(); }
     void insertDefault() override { throwInapplicable(); }
     void popBack(size_t) override { throwInapplicable(); }
-    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
     char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwInapplicable(); }
     void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
@@ -167,7 +169,6 @@ public:
     WeakHash32 getWeakHash32() const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwInapplicable(); }
-    void filter(const Filter &) override { throwInapplicable(); }
     void expand(const Filter &, bool) override { throwInapplicable(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwInapplicable(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwInapplicable(); }
@@ -191,7 +192,7 @@ public:
         throwInapplicable();
     }
     ColumnPtr replicate(const Offsets &) const override { throwInapplicable(); }
-    MutableColumns scatter(size_t, const Selector &) const override { throwInapplicable(); }
+    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwInapplicable(); }
     void gather(ColumnGathererStream &) override { throwInapplicable(); }
     void getExtremes(Field &, Field &) const override { throwInapplicable(); }
     size_t byteSizeAt(size_t) const override { throwInapplicable(); }

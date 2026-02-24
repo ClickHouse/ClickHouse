@@ -5,7 +5,6 @@ sidebar_label: 'values'
 sidebar_position: 210
 slug: /sql-reference/table-functions/values
 title: 'values'
-doc_type: 'reference'
 ---
 
 # Values Table Function {#values-table-function}

@@ -83,7 +83,7 @@ namespace
     {
         ReadBufferFromString buffer(raw);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getDefaultSerialization();
+        auto serialization = data_type->getSerialization(ISerialization::Kind::DEFAULT);
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -316,20 +316,15 @@ void RegExpTreeDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        BlockIO io = source_ptr->loadAll();
+        QueryPipeline pipeline(source_ptr->loadAll());
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
 
-        io.executeWithCallbacks([&]()
+        Block block;
+        while (executor.pull(block))
         {
-            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-            io.pipeline.setConcurrencyControl(false);
-
-            Block block;
-            while (executor.pull(block))
-            {
-                initRegexNodes(block);
-            }
-        });
-
+            initRegexNodes(block);
+        }
         initGraph();
         if (simple_regexps.empty() && complex_regexp_nodes.empty())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");

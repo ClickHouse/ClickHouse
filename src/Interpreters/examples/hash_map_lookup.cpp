@@ -75,7 +75,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 }
 
 template <typename Map>
-void insert(Map & map, std::string_view & k)
+void insert(Map & map, StringRef & k)
 {
     bool inserted;
     typename Map::LookupResult it;

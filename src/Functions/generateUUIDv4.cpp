@@ -2,49 +2,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsRandom.h>
-#include <Common/TargetSpecific.h>
 
 namespace DB
 {
 
-namespace
-{
+#define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
+DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
+DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
 
-void generateUUID4Generic(ColumnVector<UUID>::Container & vec_to)
-{
-    RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
-    for (UUID & uuid : vec_to)
-    {
-        /// https://tools.ietf.org/html/rfc4122#section-4.4
-        UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & 0xffffffffffff0fffull) | 0x0000000000004000ull;
-        UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & 0x3fffffffffffffffull) | 0x8000000000000000ull;
-    }
-}
-
-#if USE_MULTITARGET_CODE
-
-AVX2_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE generateUUID4AVX2(ColumnVector<UUID>::Container & vec_to)
-{
-    RandImpl::executeAVX2(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
-    for (UUID & uuid : vec_to)
-    {
-        UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & 0xffffffffffff0fffull) | 0x0000000000004000ull;
-        UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & 0x3fffffffffffffffull) | 0x8000000000000000ull;
-    }
-}
-
-AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE generateUUID4AVX512BW(ColumnVector<UUID>::Container & vec_to)
-{
-    RandImpl::executeAVX512BW(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
-    for (UUID & uuid : vec_to)
-    {
-        UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & 0xffffffffffff0fffull) | 0x0000000000004000ull;
-        UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & 0x3fffffffffffffffull) | 0x8000000000000000ull;
-    }
-}
-
-#endif
-}
+DECLARE_SEVERAL_IMPLEMENTATIONS(
 
 class FunctionGenerateUUIDv4 : public IFunction
 {
@@ -78,69 +44,56 @@ public:
 
         size_t size = input_rows_count;
         vec_to.resize(size);
-        if (!size)
-            return col_res;
 
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        /// RandImpl is target-dependent and is not the same in different TargetSpecific namespaces.
+        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
+
+        for (UUID & uuid : vec_to)
         {
-            generateUUID4AVX512BW(vec_to);
-            return col_res;
+            /// https://tools.ietf.org/html/rfc4122#section-4.4
+
+            UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & 0xffffffffffff0fffull) | 0x0000000000004000ull;
+            UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
 
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            generateUUID4AVX2(vec_to);
-            return col_res;
-        }
-#endif
-        generateUUID4Generic(vec_to);
         return col_res;
     }
+};
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGenerateUUIDv4>(); }
+) // DECLARE_SEVERAL_IMPLEMENTATIONS
+#undef DECLARE_SEVERAL_IMPLEMENTATIONS
+
+class FunctionGenerateUUIDv4 : public TargetSpecific::Default::FunctionGenerateUUIDv4
+{
+public:
+    explicit FunctionGenerateUUIDv4(ContextPtr context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            TargetSpecific::Default::FunctionGenerateUUIDv4>();
+
+#if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            TargetSpecific::AVX2::FunctionGenerateUUIDv4>();
+#endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionGenerateUUIDv4>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 REGISTER_FUNCTION(GenerateUUIDv4)
 {
-    /// generateUUIDv4 documentation
-    FunctionDocumentation::Description description_generateUUIDv4 = R"(Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](../data-types/uuid.md).)";
-    FunctionDocumentation::Syntax syntax_generateUUIDv4 = "generateUUIDv4([expr])";
-    FunctionDocumentation::Arguments arguments_generateUUIDv4 = {
-        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID."}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv4 = {"Returns a UUIDv4.", {"UUID"}};
-    FunctionDocumentation::Examples examples_generateUUIDv4 = {
-    {
-        "Usage example",
-        R"(
-SELECT generateUUIDv4(number) FROM numbers(3);
-        )",
-        R"(
-┌─generateUUIDv4(number)───────────────┐
-│ fcf19b77-a610-42c5-b3f5-a13c122f65b6 │
-│ 07700d36-cb6b-4189-af1d-0972f23dc3bc │
-│ 68838947-1583-48b0-b9b7-cf8268dd343d │
-└──────────────────────────────────────┘
-        )"
-    },
-    {
-        "Common subexpression elimination",
-        R"(
-SELECT generateUUIDv4(1), generateUUIDv4(1);
-        )",
-        R"(
-┌─generateUUIDv4(1)────────────────────┬─generateUUIDv4(2)────────────────────┐
-│ 2d49dc6e-ddce-4cd0-afb8-790956df54c1 │ 2d49dc6e-ddce-4cd0-afb8-790956df54c1 │
-└──────────────────────────────────────┴──────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv4 = {1, 1};
-    FunctionDocumentation::Category category_generateUUIDv4 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_generateUUIDv4 = {description_generateUUIDv4, syntax_generateUUIDv4, arguments_generateUUIDv4, {}, returned_value_generateUUIDv4, examples_generateUUIDv4, introduced_in_generateUUIDv4, category_generateUUIDv4};
-
-    factory.registerFunction<FunctionGenerateUUIDv4>(documentation_generateUUIDv4);
+    factory.registerFunction<FunctionGenerateUUIDv4>();
 }
 
 }

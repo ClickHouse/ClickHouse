@@ -61,11 +61,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=[
-                "configs/users.xml",
-                "configs/enable_keeper_fault_injection.xml",
-                "configs/keeper_retries.xml",
-            ],
+            user_configs=["configs/users.xml"],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -78,27 +74,8 @@ def started_cluster():
         )
         cluster.add_instance(
             "instance2",
-            user_configs=[
-                "configs/users.xml",
-                "configs/enable_keeper_fault_injection.xml",
-                "configs/keeper_retries.xml",
-            ],
+            user_configs=["configs/users.xml"],
             with_minio=True,
-            with_zookeeper=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-                "configs/remote_servers.xml",
-            ],
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "instance_without_keeper_fault_injection",
-            user_configs=[
-                "configs/users.xml",
-            ],
-            with_minio=True,
-            with_azurite=True,
             with_zookeeper=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -296,27 +273,14 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             break
         time.sleep(1)
 
-    count1 = get_count(node, dst_table_name)
-    count2 = get_count(node_2, dst_table_name)
-    if (count1 + count2) != total_rows:
-        expected_files = [f"{files_path}/test_{x}.csv" for x in range(1000)]
-        node.query("SYSTEM FLUSH LOGS")
-        node_2.query("SYSTEM FLUSH LOGS")
-        processed_files = (
-            node.query(
-                f"SELECT distinct(_path) FROM clusterAllReplicas(cluster, default.{dst_table_name})"
-            )
-            .strip()
-            .split("\n")
+    if (
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+    ) != total_rows:
+        info = node.query(
+            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
         )
-        processed_files.sort()
-        logging.debug(f"Processed files: {processed_files}")
-        missing_files = [file for file in expected_files if file not in processed_files]
-        missing_files.sort()
-
-        assert (
-            False
-        ), f"Expected {total_rows} in total, got {count1} and {count2} ({count1 + count2}, having {len(missing_files)} missing files: ({missing_files})"
+        logging.debug(info)
+        assert False
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
@@ -343,16 +307,12 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     ) == total_rows
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
-def test_max_set_age(started_cluster, mode):
-    # We use an instance without keeper fault injection,
-    # because otherwise we fail to update keeper state in 1.5 * max_age,
-    # so we cannot check max_set_age correctness properly.
-    node = started_cluster.instances["instance_without_keeper_fault_injection"]
-    table_name = f"max_set_age_{mode}_{generate_random_string()}"
+def test_max_set_age(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = "max_set_age"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     max_age = 20
     files_to_generate = 10
@@ -361,17 +321,16 @@ def test_max_set_age(started_cluster, mode):
         started_cluster,
         node,
         table_name,
-        mode,
+        "unordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
             "tracked_file_ttl_sec": max_age,
-            "cleanup_interval_min_ms": 100,
-            "cleanup_interval_max_ms": 200,
-            "polling_max_timeout_ms": 1000,
+            "cleanup_interval_min_ms": max_age / 3,
+            "cleanup_interval_max_ms": max_age / 3,
+            "polling_max_timeout_ms": 5000,
             "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
-            "s3queue_loading_retries": 0,
         },
     )
     create_mv(node, table_name, dst_table_name)
@@ -380,7 +339,7 @@ def test_max_set_age(started_cluster, mode):
 
     expected_rows = files_to_generate
 
-    node.wait_for_log_line("Checking failed nodes for tracking limits")
+    node.wait_for_log_line("Checking node limits")
     node.wait_for_log_line("Node limits check finished")
 
     def get_count():
@@ -399,23 +358,21 @@ def test_max_set_age(started_cluster, mode):
         node.query(f"SELECT uniq(_path) from {dst_table_name}")
     )
 
-    # We do not removed processed nodes in ordered mode
-    if mode != "ordered":
-        expected_rows *= 2
-        wait_for_condition(lambda: get_count() == expected_rows)
-        assert files_to_generate == int(
-            node.query(f"SELECT uniq(_path) from {dst_table_name}")
-        )
+    expected_rows *= 2
+    wait_for_condition(lambda: get_count() == expected_rows)
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
+    )
 
-        paths_count = [
-            int(x)
-            for x in node.query(
-                f"SELECT count() from {dst_table_name} GROUP BY _path"
-            ).splitlines()
-        ]
-        assert files_to_generate == len(paths_count)
-        for path_count in paths_count:
-            assert 2 == path_count
+    paths_count = [
+        int(x)
+        for x in node.query(
+            f"SELECT count() from {dst_table_name} GROUP BY _path"
+        ).splitlines()
+    ]
+    assert files_to_generate == len(paths_count)
+    for path_count in paths_count:
+        assert 2 == path_count
 
     def get_object_storage_failures():
         return int(
@@ -434,18 +391,10 @@ def test_max_set_age(started_cluster, mode):
     ).encode()
 
     # use a different filename for each test to allow running a bunch of them sequentially with --count
-    file_with_error = f"z_max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
+    file_with_error = f"max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
     wait_for_condition(lambda: failed_count + 1 == get_object_storage_failures())
-
-    for _ in range(10):
-        node.query("SYSTEM FLUSH LOGS")
-        if "Cannot parse input" in node.query(
-            f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
-        ):
-            break
-        time.sleep(1)
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
@@ -475,23 +424,18 @@ def test_max_set_age(started_cluster, mode):
 
     node.restart_clickhouse()
 
-    # We do not removed processed nodes in ordered mode
-    if mode != "ordered":
-        expected_rows *= 2
-        wait_for_condition(lambda: get_count() == expected_rows)
-        assert files_to_generate == int(
-            node.query(f"SELECT uniq(_path) from {dst_table_name}")
-        )
+    expected_rows *= 2
+    wait_for_condition(lambda: get_count() == expected_rows)
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
+    )
 
 
 def test_max_set_size(started_cluster):
-    # Disabled keeper fault injection because this test uses direct select
-    # from s3queue (not via MV), so it is difficult to retry "fault injected after operation" for commit(),
-    # which we in fact do not want to retry, but in case of direct select this causes query failure.
-    node = started_cluster.instances["instance_without_keeper_fault_injection"]
-    table_name = f"max_set_size_{generate_random_string()}"
+    node = started_cluster.instances["instance"]
+    table_name = f"max_set_size"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
@@ -504,10 +448,9 @@ def test_max_set_size(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_tracked_files_limit": 9,
-            "s3queue_cleanup_interval_min_ms": 50,
-            "s3queue_cleanup_interval_max_ms": 50,
+            "s3queue_cleanup_interval_min_ms": 0,
+            "s3queue_cleanup_interval_max_ms": 0,
             "s3queue_processing_threads_num": 1,
-            "commit_on_select": 1,
         },
     )
     total_values = generate_random_files(

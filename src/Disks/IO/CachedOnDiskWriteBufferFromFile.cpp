@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS;
 }
 
@@ -60,42 +61,13 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
 
     FileSegment * file_segment;
 
-    if (!ignore_bytes
-        && (!file_segments || file_segments->empty() || file_segments->front().isDownloaded()))
+    if (!file_segments || file_segments->empty() || file_segments->front().isDownloaded())
     {
         file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
-
-        if (is_distributed_cache && file_segment->getCurrentWriteOffset() > offset)
-        {
-            /// We could have allowed this only in case jumpToPosition was called to non-zero value,
-            /// and this would be correct for MergeTree*, but, there are cases, like disk->checkAccess methods,
-            /// where this method can be called twice for the same server,
-            /// while path contains server uuid, e.g. the cache key will be the same,
-            /// so file segment here can have downloaded_size > 0.
-            ignore_bytes = file_segment->range().right - offset + 1;
-            LOG_TEST(log, "Will ignore {} bytes from file segment {}", ignore_bytes, file_segment->getInfoForLog());
-        }
     }
     else
     {
         file_segment = &file_segments->front();
-    }
-
-    if (ignore_bytes)
-    {
-        LOG_TEST(log, "Ignore bytes: {}, current size: {}", ignore_bytes, size);
-        if (ignore_bytes >= size)
-        {
-            expected_write_offset += size;
-            ignore_bytes -= size;
-            return true;
-        }
-        size -= ignore_bytes;
-        data += ignore_bytes;
-        offset += ignore_bytes;
-        expected_write_offset += ignore_bytes;
-
-        file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
     }
 
     SCOPE_EXIT({
@@ -139,6 +111,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
                     "Offset {} is outdated. ({})", offset, file_segment->getInfoForLog());
             }
         }
+
         size_t size_to_write = std::min(available_size, size);
 
         std::string failure_reason;
@@ -205,36 +178,12 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     /// if we have less size to write, file segment will be resized in complete() method.
     if (is_distributed_cache)
     {
-        file_segments = cache->getOrSet(
-            key, offset, /* size */cache->getMaxFileSegmentSize(),
-            /* file_size */0, create_settings, /* file_segments_limit */1, user);
-
-        const auto & file_segment = file_segments->front();
-        if (file_segment.getDownloadedSize() != 0)
-        {
-            LOG_TRACE(
-                log, "File segment already exists and has downloaded size ({}) "
-                "(write offset: {}, file segment range: {}), "
-                "current write offset is {}. Will continue download offset",
-                file_segment.getDownloadedSize(),
-                file_segment.getCurrentWriteOffset(),
-                file_segment.range().toString(), offset);
-        }
-
-        if (file_segment.getCurrentWriteOffset() > offset
-            && file_segment.isBackgroundDownloadEnabled())
-        {
-            LOG_TRACE(log, "Writing at offset {}, but covering file segment has write offset {}. "
-                      "This could be because background download is turned on",
-                      offset, file_segment.getCurrentWriteOffset());
-        }
-        else if (file_segment.getCurrentWriteOffset() != offset)
+        file_segments = cache->trySet(key, offset, cache->getMaxFileSegmentSize(), create_settings, user);
+        if (!file_segments)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Writing at offset {}, but covering file segment has write offset {} ({})",
-                offset, file_segment.getCurrentWriteOffset(),
-                file_segment.getInfoForLog());
+                ErrorCodes::FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS,
+                "Cache already exists, read-through cache must have started");
         }
     }
     else
@@ -282,26 +231,13 @@ void FileSegmentRangeWriter::completeFileSegment()
     if (file_segment.isDetached() || file_segment.isCompleted())
         return;
 
-    LOG_TEST(log, "Completing file segment {}:{}", file_segment.key(), file_segment.offset());
-
-    /// We do not force shrink file segment in case of distributed cache,
-    /// because it is possible that we reconnected and
-    /// used a different connection to continue writing to cache,
-    /// so we want to continue writing to existing file segment.
-    /// The drawback - we do not know when to actually shrink it,
-    /// but in fact it does not affect anything,
-    /// file segment size != reserved size.
-    /// TODO: we could send a packet from client indicating end of file.
-    file_segments->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/!is_distributed_cache);
+    file_segment.complete(false);
     appendFilesystemCacheLog(file_segment);
 }
 
 void FileSegmentRangeWriter::jumpToPosition(size_t position)
 {
-    if (!position)
-        return;
-
-    if (file_segments && !file_segments->empty())
+    if (!file_segments->empty())
     {
         auto & file_segment = file_segments->front();
 
@@ -309,10 +245,9 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
         if (position < current_write_offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot jump backwards: {} < {}", position, current_write_offset);
 
-        file_segments->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/!is_distributed_cache);
-        file_segments = nullptr;
+        file_segment.complete(false);
+        file_segments.reset();
     }
-
     expected_write_offset = position;
 }
 
@@ -325,7 +260,6 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     const WriteSettings & settings_,
     const FileCacheUserInfo & user_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
-    bool is_distributed_cache_,
     FileSegmentKind file_segment_kind_)
     : WriteBufferFromFileDecorator(std::move(impl_))
     , log(getLogger("CachedOnDiskWriteBufferFromFile"))
@@ -336,12 +270,10 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     , user(user_)
     , reserve_space_lock_wait_timeout_milliseconds(settings_.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds)
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
-    , is_distributed_cache(is_distributed_cache_)
+    , is_distributed_cache(false)
     , file_segment_kind(file_segment_kind_)
     , cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
-    LOG_TEST(log, "Cache key: {}, source path: {}, is distributed cache: {}",
-             key.toString(), source_path, is_distributed_cache);
 }
 
 void CachedOnDiskWriteBufferFromFile::nextImpl()
@@ -382,9 +314,6 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
         cache_writer = std::make_unique<FileSegmentRangeWriter>(
             cache.get(), key, user, reserve_space_lock_wait_timeout_milliseconds,
             cache_log, query_id, source_path, is_distributed_cache);
-
-        if (cache_writer_start_position)
-            cache_writer->jumpToPosition(cache_writer_start_position);
     }
 
     Stopwatch watch(CLOCK_MONOTONIC);
@@ -462,25 +391,14 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
 
 void CachedOnDiskWriteBufferFromFile::jumpToPosition(size_t position)
 {
-    chassert(is_distributed_cache);
-    if (!dynamic_cast<const NullWriteBufferWithMemory *>(impl.get()))
+    if (!dynamic_cast<const NullWriteBuffer *>(impl.get()))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Jumping to position in CachedOnDiskWriteBufferFromFile "
-                        "is allowed only for NullWriteBufferWithMemory");
+                        "is allowed only for NullWriteBuffer");
     }
 
-    if (!position)
-        return;
-
-    if (cache_writer)
-        cache_writer->jumpToPosition(position);
-    else
-        cache_writer_start_position = position;
-
-    current_download_offset = position;
-
-    LOG_TEST(log, "Jumped to position: {}", position);
+    cache_writer->jumpToPosition(position);
 }
 
 }

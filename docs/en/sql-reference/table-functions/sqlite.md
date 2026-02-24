@@ -4,7 +4,6 @@ sidebar_label: 'sqlite'
 sidebar_position: 185
 slug: /sql-reference/table-functions/sqlite
 title: 'sqlite'
-doc_type: 'reference'
 ---
 
 # sqlite Table Function

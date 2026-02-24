@@ -13,7 +13,6 @@
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
-#include <Common/PageCache.h>
 #include <Common/quoteString.h>
 
 #include "config.h"
@@ -91,12 +90,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
-    }
-
-    if (auto page_cache = getContext()->getPageCache())
-    {
-        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
-            "Current limit on the size of userspace page cache, in bytes." };
     }
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
@@ -203,7 +196,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -243,7 +236,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
-            if (db.second->isExternal())
+            if (!db.second->canContainMergeTreeTables())
                 continue;
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
@@ -292,7 +285,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
-                    StorageReplicatedMergeTree::ReplicatedStatus status;
+                    ReplicatedTableStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
 
                     calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);
@@ -354,21 +347,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
     }
 
-    {
-        const auto user_info = getContext()->getProcessList().getUserInfo(true);
-        size_t queries_memory_usage = 0;
-        size_t queries_peak_memory_usage = 0;
-        for (const auto & [user, info] : user_info)
-        {
-            queries_memory_usage += info.memory_usage;
-            queries_peak_memory_usage += info.peak_memory_usage;
-        }
-        new_values["QueriesMemoryUsage"] = { queries_memory_usage, "Memory used by queries, in bytes." };
-        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
-    }
-
-    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
-
 #if USE_NURAFT
     {
         auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
@@ -393,9 +371,9 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
-        if (db.second->isExternal())
+        if (!db.second->canContainMergeTreeTables())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())

@@ -178,9 +178,7 @@ std::optional<std::string> getCgroupsV1Path()
     return {default_cgroups_mount / "memory"};
 }
 
-}
-
-std::pair<std::string, ICgroupsReader::CgroupsVersion> ICgroupsReader::getCgroupsPath()
+std::pair<std::string, ICgroupsReader::CgroupsVersion> getCgroupsPath()
 {
     auto v2_path = getCgroupsV2PathContainingFile("memory.current");
     if (v2_path.has_value())
@@ -191,6 +189,8 @@ std::pair<std::string, ICgroupsReader::CgroupsVersion> ICgroupsReader::getCgroup
         return {*v1_path, ICgroupsReader::CgroupsVersion::V1};
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
+}
+
 }
 
 std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion version, const std::filesystem::path & cgroup_path)
@@ -223,24 +223,12 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// - reading from cgroups' pseudo-files (fastest and most accurate)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
 /// Also, different tick rates are used because not all options are equally fast
-MemoryWorker::MemoryWorker(
-    uint64_t period_ms_,
-    [[maybe_unused]] double purge_dirty_pages_threshold_ratio_,
-    bool correct_tracker_,
-    bool use_cgroup,
-    std::shared_ptr<PageCache> page_cache_)
+MemoryWorker::MemoryWorker(uint64_t period_ms_, bool correct_tracker_, bool use_cgroup, std::shared_ptr<PageCache> page_cache_)
     : log(getLogger("MemoryWorker"))
     , period_ms(period_ms_)
     , correct_tracker(correct_tracker_)
     , page_cache(page_cache_)
 {
-#if USE_JEMALLOC
-    purge_dirty_pages_threshold_ratio = purge_dirty_pages_threshold_ratio_;
-    page_size = pagesize_mib.getValue();
-#else
-    purge_dirty_pages_threshold_ratio = 0;
-#endif
-
     if (use_cgroup)
     {
 #if defined(OS_LINUX)
@@ -248,7 +236,7 @@ MemoryWorker::MemoryWorker(
         {
             static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
-            const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
+            const auto [cgroup_path, version] = getCgroupsPath();
             LOG_INFO(
                 getLogger("CgroupsReader"),
                 "Will create cgroup reader from '{}' (cgroups version: {})",
@@ -288,17 +276,11 @@ void MemoryWorker::start()
     if (source == MemoryUsageSource::None)
         return;
 
-    const std::string purge_dirty_pages_info = purge_dirty_pages_threshold_ratio > 0
-        ? fmt::format("enabled (threshold ratio: {}, page size: {})", purge_dirty_pages_threshold_ratio, page_size)
-        : "disabled";
-
     LOG_INFO(
-        log,
-        "Starting background memory thread with period of {}ms, using {} as source, purging dirty pages {}",
+        getLogger("MemoryWorker"),
+        "Starting background memory thread with period of {}ms, using {} as source",
         period_ms,
-        sourceToString(source),
-        purge_dirty_pages_info);
-
+        sourceToString(source));
     background_thread = ThreadFromGlobalPool([this] { backgroundThread(); });
 }
 
@@ -334,12 +316,11 @@ uint64_t MemoryWorker::getMemoryUsage()
 
 void MemoryWorker::backgroundThread()
 {
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
+    setThreadName("MemoryWorker");
 
     std::chrono::milliseconds chrono_period_ms{period_ms};
     [[maybe_unused]] bool first_run = true;
     std::unique_lock lock(mutex);
-
     while (true)
     {
         cv.wait_for(lock, chrono_period_ms, [this] { return shutdown; });
@@ -355,14 +336,7 @@ void MemoryWorker::backgroundThread()
             page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
-
-        const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
-
-        const bool needs_purge = resident > memory_tracker_limit
-            || (purge_dirty_pages_threshold_ratio > 0
-                && pdirty_mib.getValue() * page_size > memory_tracker_limit * purge_dirty_pages_threshold_ratio);
-
-        if (needs_purge)
+        if (resident > total_memory_tracker.getHardLimit())
         {
             Stopwatch purge_watch;
             purge_mib.run();

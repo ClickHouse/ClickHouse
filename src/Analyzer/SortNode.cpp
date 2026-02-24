@@ -1,5 +1,3 @@
-#include <Analyzer/IdentifierNode.h>
-#include <iostream>
 #include <Analyzer/SortNode.h>
 
 #include <Common/assert_cast.h>
@@ -35,10 +33,6 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     , collator(std::move(collator_))
     , with_fill(with_fill_)
 {
-    if (expression_)
-        if (auto * identifier = expression_->as<IdentifierNode>())
-            column_name = identifier->getIdentifier().getFullName();
-
     children[sort_expression_child_index] = std::move(expression_);
 }
 
@@ -55,10 +49,7 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", with_fill: " << with_fill;
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION";
-    if (!column_name.empty())
-        buffer << " " << column_name;
-    buffer << "\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (hasFillFrom())

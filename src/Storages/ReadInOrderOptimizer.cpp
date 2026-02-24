@@ -72,7 +72,7 @@ NameSet getFixedSortingColumns(
 {
     ASTPtr condition;
     if (query.where() && query.prewhere())
-        condition = makeASTOperator("and", query.where(), query.prewhere());
+        condition = makeASTFunction("and", query.where(), query.prewhere());
     else if (query.where())
         condition = query.where();
     else if (query.prewhere())
@@ -82,7 +82,7 @@ NameSet getFixedSortingColumns(
         return {};
 
     /// Convert condition to CNF for more convenient analysis.
-    auto cnf = TreeCNFConverter::tryConvertToCNF(condition.get());
+    auto cnf = TreeCNFConverter::tryConvertToCNF(condition);
     if (!cnf)
         return {};
 

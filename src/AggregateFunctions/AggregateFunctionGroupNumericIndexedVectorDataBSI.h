@@ -633,7 +633,7 @@ public:
         const UInt32 total_bit_num = vector.getTotalBitNum();
         for (size_t i = 0; i < total_bit_num; ++i)
         {
-            vector.getDataArrayAt(i)->ra_set_container(ctns[i], static_cast<UInt16>(container_id), types[i]);
+            vector.getDataArrayAt(i)->ra_set_container(ctns[i], container_id, types[i]);
         }
     }
 
@@ -711,7 +711,7 @@ public:
                     UInt64 t = w & (~w + 1);
                     /// on x64, should compile to TZCNT
                     int i = __builtin_ctzll(w);
-                    bit_buffer[i][cnt[i]++] = static_cast<UInt16>(indexes[offset + j]);
+                    bit_buffer[i][cnt[i]++] = indexes[offset + j];
                     w ^= t;
                 }
             }
@@ -800,7 +800,7 @@ public:
 
 #if defined(__AVX512__)
             cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
-#elif defined(__AVX2__) && !defined(__e2k__)
+#elif defined(__AVX2__)
             cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
 #else
             cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
@@ -810,7 +810,7 @@ public:
                 UInt64 val = bit_buffer[i];
                 UInt64 row;
                 UInt64 col = val & 0x3f;
-#if defined(__BMI2__) && !defined(__e2k__)
+#if defined(__BMI2__)
                 ASM_SHIFT_RIGHT(val, shift, row);
 #else
                 row = val >> shift;
@@ -836,7 +836,7 @@ public:
                     continue;
                 }
                 auto * ctn = reinterpret_cast<roaring::internal::bitset_container_t *>(ctns[col]);
-                roaring::internal::bitset_container_set(ctn, static_cast<UInt16>(index));
+                roaring::internal::bitset_container_set(ctn, index);
             }
         }
 
@@ -883,7 +883,7 @@ public:
             for (UInt32 j = 0; j < len; ++j)
             {
                 UInt64 w = buffer[offset + j];
-                UInt16 key = static_cast<UInt16>(indexes[offset + j]);
+                UInt16 key = indexes[offset + j];
                 while (w)
                 {
                     /// on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
@@ -925,7 +925,7 @@ public:
                 {
                     UInt64 tmp_offset;
                     UInt64 p = bit_buffer[i][j];
-#if defined(__BMI2__) && !defined(__e2k__)
+#if defined(__BMI2__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
 #else
                     tmp_offset = p >> shift;
@@ -991,7 +991,7 @@ public:
     {
         PaddedPODArray<UInt64> buffer(65536);
         PaddedPODArray<UInt32> bit_buffer(65536);
-        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(static_cast<UInt16>(container_id));
+        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(container_id);
         if (mask_container_cardinality == 0)
             return 0;
         memset(buffer.data(), 0, buffer.size() * sizeof(UInt64));
@@ -1000,7 +1000,7 @@ public:
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             auto & lhs_bm = vector.getDataArrayAt(i);
-            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), static_cast<UInt16>(container_id), 0, &bit_buffer);
+            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), container_id, 0, &bit_buffer);
             for (size_t j = 0; j < bit_cnt; ++j)
             {
                 if (bit_buffer[j] >= 65536)
@@ -1008,7 +1008,7 @@ public:
                 buffer[bit_buffer[j]] |= (1ULL << i);
             }
         }
-        auto result_cnt = mask->container_to_uint32_array(static_cast<UInt16>(container_id), 0, bit_buffer);
+        auto result_cnt = mask->container_to_uint32_array(container_id, 0, bit_buffer);
         if (vector.isValueTypeSigned() && total_bit_num < 64)
         {
             UInt64 bit_mask = ~((1ULL << total_bit_num) - 1);
@@ -1671,7 +1671,7 @@ public:
 
             if ((sum & 1) == 1)
             {
-                getDataArrayAt(j)->add(static_cast<IndexType>(ele));
+                getDataArrayAt(j)->add(ele);
             }
 
             cin = cin & x_xor_y;

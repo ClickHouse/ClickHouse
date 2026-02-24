@@ -136,17 +136,7 @@ def test_create_workload():
     do_checks()
 
 
-@pytest.mark.parametrize(
-    "with_custom_config",
-    [
-        pytest.param(
-            {'node': {"cpu_slot_preemption_timeout_ms": "60000"}},
-            id="cpu-slot-preemption-timeout-60s",
-        )
-    ],
-    indirect=True,
-)
-def test_independent_pools(with_custom_config):
+def test_independent_pools():
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
@@ -185,7 +175,7 @@ def test_independent_pools(with_custom_config):
             "ConcurrencyControlSlotsAcquired",
             lambda x: x <= slots,
         )
-        # Short preemptions may happen due to lags in the scheduler thread, but dowscales should not. To enforce that we set high preemption timeout.
+        # Short preemptions may happen due to lags in the scheduler thread, but dowscales should not
         assert_profile_event(
             node,
             query_id,
@@ -400,13 +390,10 @@ class DynamicQueryPool:
     indirect=True,
 )
 def test_downscaling(with_custom_config):
-    if node.is_built_with_address_sanitizer() or node.is_built_with_thread_sanitizer():
-        pytest.skip("doesn't fit in timeouts due to heavy workload")
-
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
-        create workload all settings max_concurrent_threads=2;
+        create workload all settings max_concurrent_threads=8;
         create workload development in all;
     """
     )
@@ -416,9 +403,9 @@ def test_downscaling(with_custom_config):
     active_ids: list[int] = []
     try:
         for _ in range(2):
-            # Gradually increase concurrency to 4
-            for _ in range(4):
-                tid = development.start(billions=1, max_threads=2)
+            # Gradually increase concurrency to 16
+            for _ in range(16):
+                tid = development.start(billions=1, max_threads=8)
                 active_ids.append(tid)
                 time.sleep(0.05)
             # Gradually decrease back to 0

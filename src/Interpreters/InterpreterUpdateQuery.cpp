@@ -2,12 +2,15 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
@@ -57,7 +60,7 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
     if (update_query.partition)
         alter_query->set(alter_query->partition, update_query.partition);
 
-    auto mutation_command = MutationCommand::parse(*alter_query);
+    auto mutation_command = MutationCommand::parse(alter_query.get());
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Failed to convert query '{}' to mutation command. It's a bug", update_query.formatForErrorMessage());

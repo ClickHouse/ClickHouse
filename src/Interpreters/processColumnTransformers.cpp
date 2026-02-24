@@ -5,6 +5,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 

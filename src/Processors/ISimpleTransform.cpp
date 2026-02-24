@@ -27,7 +27,6 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     if (output.isFinished())
     {
         input.close();
-        onFinish();
         return Status::Finished;
     }
 
@@ -62,7 +61,6 @@ ISimpleTransform::Status ISimpleTransform::prepare()
         if (input.isFinished())
         {
             output.finish();
-            onFinish();
             return Status::Finished;
         }
 

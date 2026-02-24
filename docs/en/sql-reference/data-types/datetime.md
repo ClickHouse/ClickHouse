@@ -5,7 +5,6 @@ sidebar_label: 'DateTime'
 sidebar_position: 16
 slug: /sql-reference/data-types/datetime
 title: 'DateTime'
-doc_type: 'reference'
 ---
 
 # DateTime

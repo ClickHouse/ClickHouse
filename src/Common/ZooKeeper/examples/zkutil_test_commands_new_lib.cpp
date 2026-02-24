@@ -39,12 +39,12 @@ try
             host_string.erase(0, strlen("secure://"));
 
         node.host = host_string;
-        node.original_index = static_cast<UInt8>(i);
+        node.original_index = i;
 
         nodes.emplace_back(node);
     }
 
-    ZooKeeper zk(nodes, args, nullptr, nullptr);
+    ZooKeeper zk(nodes, args, nullptr);
 
     Poco::Event event(true);
 

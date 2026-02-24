@@ -118,9 +118,6 @@ public:
         return refresher.ptr->getCoordinationPath();
     }
 
-    bool isRefreshable() const { return refresher.ptr != nullptr; }
-    bool isAppendRefreshStrategy() const { return isRefreshable() && fixed_uuid; }
-
 private:
     mutable std::mutex target_table_id_mutex;
     /// Will be initialized in constructor
