@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -63,7 +64,7 @@ bool AggregationImplementation::checkPattern(GroupExpressionPtr expression, cons
 {
     const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
     return agg_step != nullptr &&
-        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:");
+        expression->strategy == nullptr;
 }
 
 std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
@@ -93,10 +94,11 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
         const size_t node_count = std::max(required_properties.distribution.node_count, cluster_node_count);
 
         auto new_step = agg_step->clone();
-        new_step->setStepDescription(fmt::format("IMPL: {}", agg_step->getStepDescription()), 200);
+        new_step->setStepDescription(*agg_step);
 
         GroupExpressionPtr partial_impl = std::make_shared<GroupExpression>(*expression);
         partial_impl->plan_step = std::move(new_step);
+        partial_impl->strategy = std::make_shared<PartialAggregationStrategy>();
 
         DistributionDescription dist;
         dist.node_count = node_count;
@@ -122,10 +124,11 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// Always applicable; when distributed_node_count == 1 it is also the only meaningful strategy.
     {
         auto new_step = agg_step->clone();
-        new_step->setStepDescription(fmt::format("Local IMPL: {}", agg_step->getStepDescription()), 200);
+        new_step->setStepDescription(fmt::format("Local {}", agg_step->getStepDescription()), 200);
 
         GroupExpressionPtr local_agg = std::make_shared<GroupExpression>(*expression);
         local_agg->plan_step = std::move(new_step);
+        local_agg->strategy = std::make_shared<LocalAggregationStrategy>();
 
         DistributionDescription single_node;    /// node_count=1 (default)
         local_agg->inputs[0].required_properties.distribution = single_node;
@@ -146,7 +149,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     if (!agg_step->getParams().keys.empty())
     {
         auto new_step = agg_step->clone();
-        new_step->setStepDescription(fmt::format("Shuffle IMPL: {}", agg_step->getStepDescription()), 200);
+        new_step->setStepDescription(fmt::format("Shuffle {}", agg_step->getStepDescription()), 200);
 
         DistributionDescription by_keys;
         by_keys.node_count = distributed_node_count;
@@ -155,6 +158,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
 
         GroupExpressionPtr shuffle_agg = std::make_shared<GroupExpression>(*expression);
         shuffle_agg->plan_step = std::move(new_step);
+        shuffle_agg->strategy = std::make_shared<ShuffleAggregationStrategy>();
         shuffle_agg->inputs[0].required_properties.distribution = by_keys;
         shuffle_agg->properties.distribution = by_keys;
 
@@ -173,8 +177,7 @@ bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expressi
 {
     const auto * agg_step = typeid_cast<AggregatingStep *>(expression->getQueryPlanStep());
     return agg_step != nullptr &&
-        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:") &&
-        !expression->getQueryPlanStep()->getStepDescription().contains("Partial:") &&
+        expression->strategy == nullptr &&
         agg_step->getFinal() &&
         !agg_step->getParams().only_merge;       /// don't split a merge step that's already from a prior split
 }

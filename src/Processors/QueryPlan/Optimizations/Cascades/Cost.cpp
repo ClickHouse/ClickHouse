@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -55,13 +56,13 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         const auto & right_input = expression->inputs[1];
         auto left_input_group = memo.getGroup(left_input.group_id);
         auto right_input_group = memo.getGroup(right_input.group_id);
-        auto left_best_implementation = left_input_group->getBestImplementation(left_input.required_properties).expression;
-        auto right_best_implementation = right_input_group->getBestImplementation(right_input.required_properties).expression;
-        total_cost = estimateHashJoinCost(*join_step, *group->statistics, *left_input_group->statistics, *right_input_group->statistics);
+        const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(expression->strategy.get());
+        total_cost = estimateHashJoinCost(*join_step, join_strategy, *group->statistics, *left_input_group->statistics, *right_input_group->statistics);
     }
     else if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(expression_plan_step))
     {
-        total_cost = estimateReadCost(*read_step, *group->statistics);
+        const auto * read_strategy = dynamic_cast<const IReadStrategy *>(expression->strategy.get());
+        total_cost = estimateReadCost(*read_step, read_strategy, *group->statistics);
     }
     else if (typeid_cast<FilterStep *>(expression_plan_step))
     {
@@ -76,7 +77,8 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost = estimateAggregationCost(*aggregating_step, *group->statistics, *input_group->statistics);
+        const auto * aggregation_strategy = dynamic_cast<const IAggregationStrategy *>(expression->strategy.get());
+        total_cost = estimateAggregationCost(*aggregating_step, aggregation_strategy, *group->statistics, *input_group->statistics);
     }
     else if (typeid_cast<MergingAggregatedStep *>(expression_plan_step))
     {
@@ -125,14 +127,14 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 }
 
 ExpressionCost CostEstimator::estimateHashJoinCost(
-    const JoinStepLogical & join_step,
+    const JoinStepLogical & /*join_step*/,
+        const IJoinStrategy * strategy,
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & left_statistics,
         const ExpressionStatistics & right_statistics)
 {
-    /// TODO: better way to distinguish between implementations: maybe different step types?
-    const bool is_broadcast = join_step.getStepDescription().contains("Broadcast");
-    const bool is_shuffle = join_step.getStepDescription().contains("Shuffle");
+    const bool is_broadcast = dynamic_cast<const BroadcastJoinStrategy *>(strategy) != nullptr;
+    const bool is_shuffle = dynamic_cast<const ShuffleJoinStrategy *>(strategy) != nullptr;
 
     ExpressionCost join_cost;
     join_cost.cost.cpu = this_step_statistics.estimated_row_count;       /// Number of output rows
@@ -165,10 +167,13 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
     return join_cost;
 }
 
-ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & read_step, const ExpressionStatistics & this_step_statistics)
+ExpressionCost CostEstimator::estimateReadCost(
+    const ReadFromMergeTree & /*read_step*/,
+    const IReadStrategy * strategy,
+    const ExpressionStatistics & this_step_statistics)
 {
     /// FIXME: hack to simulate that parallel read is faster
-    if (read_step.getStepDescription().contains("Parallel"))
+    if (dynamic_cast<const ParallelReadStrategy *>(strategy) != nullptr)
     {
         const size_t node_count = 4;
         return ExpressionCost{
@@ -184,13 +189,14 @@ ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & read_st
 }
 
 ExpressionCost CostEstimator::estimateAggregationCost(
-    const AggregatingStep & aggregating_step,
+    const AggregatingStep & /*aggregating_step*/,
+    const IAggregationStrategy * strategy,
     const ExpressionStatistics & this_step_statistics,
     const ExpressionStatistics & input_statistics)
 {
-    const bool is_local = aggregating_step.getStepDescription().contains("Local");
-    const bool is_shuffle = aggregating_step.getStepDescription().contains("Shuffle");
-    const bool is_partial = aggregating_step.getStepDescription().contains("Partial");
+    const bool is_local = dynamic_cast<const LocalAggregationStrategy *>(strategy) != nullptr;
+    const bool is_shuffle = dynamic_cast<const ShuffleAggregationStrategy *>(strategy) != nullptr;
+    const bool is_partial = dynamic_cast<const PartialAggregationStrategy *>(strategy) != nullptr;
 
     ExpressionCost aggregation_cost;
 
@@ -217,8 +223,7 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     }
     else
     {
-        /// Default single-phase aggregation (e.g. when description has "IMPL:" prefix
-        /// that causes the Local/Shuffle/Partial checks above to miss).
+        /// Fallback: no recognized strategy (e.g. DefaultImplementation passthrough).
         /// Same cost model as Local.
         aggregation_cost.cost.cpu +=
             this_step_statistics.estimated_row_count +

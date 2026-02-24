@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Common/Exception.h>
@@ -49,10 +50,11 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
             expression->getDescription());
 
     parallel_read_step->setDistributedRead(node_count);
-    parallel_read_step->setStepDescription(fmt::format("ParallelRead IMPL: {}", read_step->getStepDescription()), 200);
+    parallel_read_step->setStepDescription(fmt::format("ParallelRead {}", read_step->getStepDescription()), 200);
 
     GroupExpressionPtr parallel_read_expression = std::make_shared<GroupExpression>(*expression);
     parallel_read_expression->plan_step = std::move(parallel_read_step_ptr);
+    parallel_read_expression->strategy = std::make_shared<ParallelReadStrategy>();
 
     ExpressionProperties parallel_properties;
     parallel_properties.distribution.node_count = node_count;

@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <base/types.h>
@@ -26,6 +27,7 @@ public:
     GroupExpression(const GroupExpression & other_)
         : group_id(other_.group_id)
         , plan_step(other_.getQueryPlanStep()->clone())
+        , strategy(other_.strategy)
 //        , original_node(nullptr)
         , inputs(other_.inputs)
     {
@@ -45,6 +47,7 @@ public:
 
     GroupId group_id = INVALID_GROUP_ID;
     QueryPlanStepPtr plan_step;             /// Main implementation step
+    ImplementationStrategyPtr strategy;     /// Implementation strategy (nullptr = logical / default)
 //    QueryPlan::Node * original_node;    /// Node form the original query plan if the expression was directly created from it
 
     struct Input

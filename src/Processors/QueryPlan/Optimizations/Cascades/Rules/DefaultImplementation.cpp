@@ -73,7 +73,7 @@ bool DefaultImplementation::checkPattern(GroupExpressionPtr expression, const Ex
 std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     auto implementation_expression = std::make_shared<GroupExpression>(*expression);
-    implementation_expression->plan_step->setStepDescription(fmt::format("IMPL: {}", expression->plan_step->getStepDescription()), 200);
+    implementation_expression->plan_step->setStepDescription(*expression->plan_step);
     implementation_expression->setApplied(*this, required_properties);
 
     bool propagate_distribution = true;

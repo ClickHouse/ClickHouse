@@ -60,6 +60,10 @@ class FilterStep;
 class ExpressionStep;
 class AggregatingStep;
 
+struct IJoinStrategy;
+struct IAggregationStrategy;
+struct IReadStrategy;
+
 class CostEstimator
 {
 public:
@@ -72,14 +76,19 @@ public:
 private:
     ExpressionCost estimateHashJoinCost(
         const JoinStepLogical & join_step,
+        const IJoinStrategy * strategy,
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & left_statistics,
         const ExpressionStatistics & right_statistics);
 
-    ExpressionCost estimateReadCost(const ReadFromMergeTree & read_step, const ExpressionStatistics & this_step_statistics);
+    ExpressionCost estimateReadCost(
+        const ReadFromMergeTree & read_step,
+        const IReadStrategy * strategy,
+        const ExpressionStatistics & this_step_statistics);
 
     ExpressionCost estimateAggregationCost(
         const AggregatingStep & aggregating_step,
+        const IAggregationStrategy * strategy,
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & input_statistics);
 

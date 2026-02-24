@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -35,7 +36,7 @@ protected:
 bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
 {
     return typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep()) != nullptr &&
-        !expression->getQueryPlanStep()->getStepDescription().contains("IMPL:");
+        expression->strategy == nullptr;
 }
 
 std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
@@ -61,10 +62,11 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     /// because all three strategies produce the same plan on a single-node cluster.
     {
         auto new_join_step = join_step->clone();
-        new_join_step->setStepDescription(fmt::format("Local HashJoin IMPL: {}", join_step->getStepDescription()), 200);
+        new_join_step->setStepDescription(fmt::format("Local HashJoin {}", join_step->getStepDescription()), 200);
 
         GroupExpressionPtr local_join = std::make_shared<GroupExpression>(*expression);
         local_join->plan_step = std::move(new_join_step);
+        local_join->strategy = std::make_shared<LocalJoinStrategy>();
 
         DistributionDescription single_node;     /// node_count=1, not replicated (default)
         local_join->inputs[0].required_properties.distribution = single_node;
@@ -84,7 +86,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     /// right input replicated to all N nodes.
     {
         auto new_join_step = join_step->clone();
-        new_join_step->setStepDescription(fmt::format("Broadcast HashJoin IMPL: {}", join_step->getStepDescription()), 200);
+        new_join_step->setStepDescription(fmt::format("Broadcast HashJoin {}", join_step->getStepDescription()), 200);
 
         /// Left input: partitioned across N nodes (any column set is acceptable)
         DistributionDescription left_dist;
@@ -97,6 +99,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
 
         GroupExpressionPtr broadcast_join = std::make_shared<GroupExpression>(*expression);
         broadcast_join->plan_step = std::move(new_join_step);
+        broadcast_join->strategy = std::make_shared<BroadcastJoinStrategy>();
         broadcast_join->inputs[0].required_properties.distribution = left_dist;
         broadcast_join->inputs[1].required_properties.distribution = right_dist;
         /// Output inherits the left input's partitioning (any N-node partitioned distribution)
@@ -192,10 +195,11 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             }
 
             auto new_join_step = join_step->clone();
-            new_join_step->setStepDescription(fmt::format("Shuffle HashJoin IMPL: {}", join_step->getStepDescription()), 200);
+            new_join_step->setStepDescription(fmt::format("Shuffle HashJoin {}", join_step->getStepDescription()), 200);
 
             GroupExpressionPtr partitioned_join = std::make_shared<GroupExpression>(*expression);
             partitioned_join->plan_step = std::move(new_join_step);
+            partitioned_join->strategy = std::make_shared<ShuffleJoinStrategy>();
             partitioned_join->inputs[0].required_properties.distribution = left_dist;
             partitioned_join->inputs[1].required_properties.distribution = right_dist;
             partitioned_join->properties.distribution = output_dist;
