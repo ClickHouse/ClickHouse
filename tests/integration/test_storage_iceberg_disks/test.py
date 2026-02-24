@@ -13,7 +13,7 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
-from helpers.spark_tools import ResilientSparkSession
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
@@ -25,7 +25,7 @@ from helpers.iceberg_utils import (
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_disks")
         .config(
@@ -44,6 +44,14 @@ def get_spark():
         )
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
+
     return builder.getOrCreate()
 
 
@@ -125,7 +133,9 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = ResilientSparkSession(get_spark)
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )

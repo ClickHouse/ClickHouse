@@ -609,7 +609,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already contains data parts - probably it was unclean DROP table "
                         "or manual intervention. You must either clear directory by hand "
-                        "or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.");
+                        "or use ATTACH TABLE instead of CREATE TABLE if you need to use those parts");
 
     try
     {
@@ -4641,6 +4641,12 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 {
     auto zookeeper = getZooKeeper();
 
+    if (!storage_init && is_readonly)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Table is in readonly mode (replica path: {}), cannot remove part and enqueue fetch."
+            " This can happen when CHECK TABLE is run before the replica is fully initialized",
+            replica_path);
+
     DataPartPtr broken_part;
     auto outdate_broken_part = [this, &broken_part]()
     {
@@ -6993,9 +6999,17 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     for (const auto & part : all_parts)
     {
         if (part->getState() == DataPartState::Active)
+        {
             active_parts_names.push_back(part->name);
-
-        forcefullyMovePartToDetachedAndRemoveFromMemory(part);
+            forcefullyMovePartToDetachedAndRemoveFromMemory(part);
+        }
+        else
+        {
+            /// Non-active (outdated) parts are renamed with the "ignored_" prefix so they
+            /// won't be picked up by a subsequent ATTACH PARTITION ALL. These parts are
+            /// intermediate merge results that can intersect with each other and with active parts.
+            forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored");
+        }
     }
 
     LOG_INFO(log, "Moved all parts to detached/");

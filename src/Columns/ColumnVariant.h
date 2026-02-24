@@ -237,7 +237,7 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
     bool hasEqualValues() const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -347,6 +347,8 @@ public:
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
     void fixDynamicStructure() override;
+
+    void validateState() const;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);

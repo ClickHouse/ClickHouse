@@ -1,5 +1,6 @@
 #include <Common/QueryFuzzer.h>
 
+#include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -50,6 +51,11 @@ namespace BuzzHouse
 extern std::unordered_map<String, CHSetting> performanceSettings;
 }
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric ASTFuzzerAccumulatedFragments;
+}
 
 namespace DB
 {
@@ -2193,6 +2199,8 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
 
     collectFuzzInfoMain(ast);
     fuzz(ast);
+
+    CurrentMetrics::set(CurrentMetrics::ASTFuzzerAccumulatedFragments, getAccumulatedStateSize());
 
     if (out_stream)
     {

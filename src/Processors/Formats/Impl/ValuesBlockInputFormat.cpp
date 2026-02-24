@@ -700,6 +700,13 @@ void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters
     auto context_copy = Context::createCopy(context);
     context_copy->setQueryParameters(parameters);
     context = std::move(context_copy);
+
+    // Reset templates when parameters change
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        templates[i].reset();
+        parser_type_for_column[i] = ParserType::Streaming;
+    }
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

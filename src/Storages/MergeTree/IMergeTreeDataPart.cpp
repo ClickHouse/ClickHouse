@@ -31,12 +31,14 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <base/JSON.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -226,9 +228,9 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
         FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_names[i]);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-            column_nullable->getExtremesNullLast(min_value, max_value);
+            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
         else
-            column.column->getExtremes(min_value, max_value);
+            column.column->getExtremes(min_value, max_value, 0, column.column->size());
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
@@ -447,7 +449,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     auto callback = [this] { return loadIndex(); };
     return index_cache.getOrSet(key, callback);
 }
@@ -458,7 +460,7 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     index_cache.set(key, std::const_pointer_cast<Index>(index));
     index.reset();
 
@@ -471,7 +473,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     index_cache->remove(key);
 }
 
@@ -480,7 +482,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -935,7 +937,7 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     chassert(filename.ends_with(STATS_FILE_SUFFIX));
 
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
-    String column_name = filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate);
+    String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
     if (!required_columns.empty() && !required_columns.contains(column_name))
         return nullptr;
@@ -1059,16 +1061,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
         /// For constant granularity parts (non-adaptive marks), the last mark granularity
         /// is assumed to be a full granule because the mark file does not store per-granule
-        /// row counts. Now that we know the actual rows_count, fix the last mark.
-        if (rows_count > 0 && index_granularity->getConstantGranularity())
-        {
-            size_t total_from_granularity = index_granularity->getTotalRows();
-            if (total_from_granularity > rows_count)
-            {
-                size_t overestimate = total_from_granularity - rows_count;
-                index_granularity->adjustLastMark(index_granularity->getLastNonFinalMarkRows() - overestimate);
-            }
-        }
+        /// row counts, and the final mark is not distinguished from data marks.
+        /// Now that we know the actual rows_count, fix the last mark and detect the final mark.
+        if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(index_granularity.get()))
+            constant_granularity->fixFromRowsCount(rows_count);
 
         loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
         loadPartitionAndMinMaxIndex();
