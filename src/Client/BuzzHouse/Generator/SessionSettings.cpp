@@ -80,7 +80,6 @@ String generateNextCodecString(RandomGenerator & rg)
         }
     }
 
-    res += "'";
     for (size_t i = 0; i < choices.size(); i++)
     {
         if (i != 0)
@@ -115,7 +114,6 @@ String generateNextCodecString(RandomGenerator & rg)
             res += ")";
         }
     }
-    res += "'";
     return res;
 }
 

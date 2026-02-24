@@ -691,7 +691,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     {
         codecsEscpated.insert("'" + codec + "'");
     }
-    const auto & compressSetting = CHSetting([](RandomGenerator & rg, FuzzConfig &) { return generateNextCodecString(rg); }, codecsEscpated, false);
+    const auto & compressSetting
+        = CHSetting([](RandomGenerator & rg, FuzzConfig &) { return "'" + generateNextCodecString(rg) + "'"; }, codecsEscpated, false);
 
     mergeTreeTableSettings.insert({{"default_compression_codec", compressSetting}});
     mergeTreeTableSettings.insert({{"marks_compression_codec", compressSetting}});
