@@ -26,6 +26,7 @@ Tuples are normally used as intermediate values for an argument of IN operators,
 The function implements the operator `(x, y, ...)`.
 )",
         .examples{{"typical", "SELECT tuple(1, 2)", "(1,2)"}},
+        .introduced_in = {1, 1},
         .category = FunctionDocumentation::Category::Tuple});
 }
 

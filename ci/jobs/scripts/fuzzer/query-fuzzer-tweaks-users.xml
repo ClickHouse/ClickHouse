@@ -53,7 +53,6 @@
             <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
             <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
             <allow_experimental_dynamic_type>1</allow_experimental_dynamic_type>
-            <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
             <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
             <allow_experimental_hash_functions>1</allow_experimental_hash_functions>
             <allow_experimental_inverted_index>1</allow_experimental_inverted_index>

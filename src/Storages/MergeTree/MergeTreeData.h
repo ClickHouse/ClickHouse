@@ -365,8 +365,7 @@ public:
 
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
-        void rollback();
-        void rollback(DataPartsLock & lock);
+        void rollback(DataPartsLock * acquired_lock = nullptr);
 
         /// Immediately remove parts from table's data_parts set and change part
         /// state to temporary. Useful for new parts which not present in table.
@@ -767,6 +766,16 @@ public:
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
+    /// Execute a merge of the specified parts to a temporary directory without committing.
+    /// Used by OPTIMIZE ... DRY RUN PARTS.
+    void optimizeDryRun(
+        const Names & part_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        bool cleanup,
+        ContextPtr context);
+
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
@@ -1072,8 +1081,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
@@ -1415,7 +1423,7 @@ private:
         std::shared_ptr<const ColumnsDescription> original;
         std::shared_ptr<const ColumnsDescription> with_collected_nested;
     };
-    mutable AggregatedMetrics::MetricHandle columns_descriptions_metric_handle;
+    mutable AggregatedMetrics::GlobalSum columns_descriptions_metric_handle;
     mutable std::mutex columns_descriptions_cache_mutex;
     mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
 

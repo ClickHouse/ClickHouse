@@ -71,7 +71,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     }
     if (combination != 0)
     {
-        gen.generateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
+        gen.generateGroupBy(rg, 1, true, true, ssc);
     }
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
     gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
@@ -318,8 +318,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_outformat(
-        rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : StatementGenerator::outFormats)));
+    ff->set_outformat(rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : outFormats)));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -560,8 +559,8 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf = (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(StatementGenerator::outIn)
-                                                                                 : StatementGenerator::outIn.at(ff.outformat());
+    const InFormat & inf
+        = (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });

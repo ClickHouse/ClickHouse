@@ -637,7 +637,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
         {
             bool is_const = arg.column && isColumnConst(*arg.column);
             if (is_const)
-                arg.column = assert_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
+                arg.column = arg.column->convertToFullColumnIfLowCardinality();
 
             if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
             {
@@ -691,10 +691,8 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
         {
             if (isVariant(arg.type))
             {
-                DataTypes data_types(arguments.size());
-                for (size_t i = 0; i < arguments.size(); ++i)
-                    data_types[i] = arguments[i].type;
-                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
+                ColumnsWithTypeAndName args_copy = arguments;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
             }
         }
     }

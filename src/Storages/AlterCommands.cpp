@@ -41,6 +41,9 @@
 
 #include <ranges>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -867,6 +870,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
+
+#if CLICKHOUSE_CLOUD
+        /// For Shared Catalog on secondary replicas very likely we don't have the settings used to run the SELECT on the initiator.
+        /// Because of that we can fail, or the resulting columns can be different from the original ones.
+        /// So we return early and set the columns ourselves, if they differ.
+        if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+            return;
+#endif
+
         SharedHeader as_select_sample;
 
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -971,7 +983,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         for (auto & index : metadata.secondary_indices)
         {
-            if (index.isImplicitlyCreated() && index.column_names.front() == column_name)
+            /// For implicit indices, check the index name rather than column_names because
+            /// for ALIAS columns, column_names contains the underlying expression columns.
+            if (index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
                 index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
             else
                 rename_visitor.visit(index.definition_ast);

@@ -305,6 +305,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
     }
 
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        return RelationStats{
+            .estimated_rows = join_step->getResultRowsEstimation(),
+            .column_stats = {},
+            .table_name = join_step->getReadableRelationName()};
+    }
+
     if (node.children.size() != 1)
         return {};
 
@@ -340,12 +348,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return aggregation_stats;
     }
 
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = {},
-            .table_name = join_step->getReadableRelationName()};
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        if (sorting_step->getLimit())
+        {
+            if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
+                stats.estimated_rows = sorting_step->getLimit();
+        }
+        return stats;
     }
 
     return {};
