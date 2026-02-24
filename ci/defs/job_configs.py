@@ -971,6 +971,29 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
     )
+    ast_fuzzer_targeted_pr_jobs = Job.Config(
+        name=JobNames.ASTFUZZER,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/docker/fuzzer",
+                "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/find_symbols.py",
+                "./ci/jobs/scripts/find_tests.py",
+                "./ci/jobs/scripts/log_parser.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/jobs/scripts/fuzzer/",
+                "./ci/docker/fuzzer",
+            ],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter="arm_asan, targeted",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
+    )
     buzz_fuzzer_jobs = Job.Config(
         name=JobNames.BUZZHOUSE,
         runs_on=[],  # from parametrize()

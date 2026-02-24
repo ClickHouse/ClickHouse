@@ -6,6 +6,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
@@ -24,6 +25,7 @@ def get_run_command(
     workspace_path: Path,
     image: DockerImage,
     buzzhouse: bool,
+    targeted_queries_file: Path | None = None,
 ) -> str:
     from ci.jobs.ci_utils import is_extended_run
 
@@ -32,6 +34,8 @@ def get_run_command(
         f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
         f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
+    if targeted_queries_file:
+        envs.append(f"-e TARGETED_QUERIES_FILE='{targeted_queries_file}'")
 
     env_str = " ".join(envs)
 
@@ -50,8 +54,48 @@ def get_run_command(
     )
 
 
+def _test_name_to_basename(test_name: str) -> str:
+    return test_name[:-1] if test_name.endswith(".") else test_name
+
+
+def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
+    targeter = Targeting(info=info)
+    # AST fuzzer targets stateless tests only.
+    targeter.job_type = Targeting.STATELESS_JOB_TYPE
+    tests, relevant_tests_result = targeter.get_all_relevant_tests_with_info(f"{cwd}/ci/tmp")
+
+    stateless_tests_dir = Path(cwd) / "tests/queries/0_stateless"
+    available_queries: dict[str, list[str]] = {}
+
+    for query_file in stateless_tests_dir.rglob("*.sql"):
+        base_name = query_file.name.removesuffix(".sql")
+        available_queries.setdefault(base_name, []).append(
+            f"/repo/{query_file.relative_to(cwd)}"
+        )
+
+    targeted_queries: list[str] = []
+    seen_queries = set()
+    for test in tests:
+        base_name = _test_name_to_basename(test)
+        for query_path in available_queries.get(base_name, []):
+            if query_path not in seen_queries:
+                seen_queries.add(query_path)
+                targeted_queries.append(query_path)
+
+    if targeted_queries:
+        targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
+        with open(targeted_queries_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(targeted_queries))
+        logging.info("Prepared %d targeted queries for AST fuzzer", len(targeted_queries))
+    else:
+        logging.info("No targeted queries resolved for AST fuzzer")
+
+    return targeted_queries, relevant_tests_result
+
+
 def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
+    is_targeted = "targeted" in check_name.lower()
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
     temp_dir = Path(f"{cwd}/ci/tmp/")
@@ -62,10 +106,31 @@ def run_fuzz_job(check_name: str):
     workspace_path = temp_dir / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    run_command = get_run_command(workspace_path, docker_image, buzzhouse)
+    info = Info()
+    extra_results = []
+    targeted_queries_file: Path | None = None
+
+    if is_targeted and not buzzhouse:
+        targeted_queries, relevant_tests_result = _collect_targeted_queries(
+            workspace_path=workspace_path, info=info
+        )
+        extra_results.append(relevant_tests_result)
+        if not targeted_queries:
+            Result.create_from(
+                status=Result.Status.SKIPPED,
+                info="No relevant tests found for targeted AST fuzzer",
+                results=extra_results,
+            ).complete_job()
+        targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
+
+    run_command = get_run_command(
+        workspace_path,
+        docker_image,
+        buzzhouse,
+        targeted_queries_file=targeted_queries_file,
+    )
     logging.info("Going to run %s", run_command)
 
-    info = Info()
     is_sanitized = "san" in info.job_name
 
     changed_files_path = workspace_path / "ci-changed-files.txt"
@@ -209,7 +274,9 @@ def run_fuzz_job(check_name: str):
             )
 
     result = Result.create_from(
-        results=results, status=status if not results else None, info=info
+        results=extra_results + results,
+        status=status if not results else None,
+        info=info,
     )
 
     if is_failed:
