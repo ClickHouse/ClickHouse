@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <variant>
 
@@ -9,6 +10,7 @@
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaUtils.h>
+#include <Common/HashTable/HashMap.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 
@@ -31,15 +33,12 @@ struct CacheDictionaryStorageConfiguration
     const DictionaryLifetime lifetime;
 };
 
-/** ICacheDictionaryStorage implementation that keeps key in hash table with fixed collision length.
-  * Value in hash table point to index in attributes arrays.
+/** ICacheDictionaryStorage implementation that keeps keys in a HashMap
+  * with global LRU eviction. Value in hash table points to index in attributes arrays.
   */
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryStorage final : public ICacheDictionaryStorage
 {
-
-    static constexpr size_t max_collision_length = 10;
-
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
@@ -49,11 +48,7 @@ public:
         : configuration(configuration_)
         , rnd_engine(randomSeed())
     {
-        size_t cells_size = roundUpToPowerOfTwoOrZero(std::max(configuration.max_size_in_cells, max_collision_length));
-
-        cells.resize_fill(cells_size);
-        size_overlap_mask = cells_size - 1;
-
+        storage.resize_fill(configuration.max_size_in_cells);
         createAttributes(dictionary_structure);
     }
 
@@ -157,7 +152,7 @@ public:
             });
         }
 
-        return arena.allocatedBytes() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
+        return arena.allocatedBytes() + storage.allocated_bytes() + key_to_storage.getBufferSizeInBytes() + attributes_size_in_bytes;
     }
 
 private:
@@ -195,7 +190,7 @@ private:
         for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
             auto key = keys[key_index];
-            auto [key_state, cell_index] = getKeyStateAndCellIndex(key, now);
+            auto [key_state, storage_index] = findKey(key, now);
 
             if (unlikely(key_state == KeyState::not_found))
             {
@@ -204,7 +199,8 @@ private:
                 continue;
             }
 
-            auto & cell = cells[cell_index];
+            auto & cell = storage[storage_index];
+            std::atomic_ref<uint8_t>(cell.clock_count).store(max_clock_count, std::memory_order_relaxed);
 
             result.expired_keys_size += static_cast<size_t>(key_state == KeyState::expired);
 
@@ -359,8 +355,8 @@ private:
         {
             auto key = keys[key_index];
 
-            size_t cell_index = getCellIndexForInsert(key);
-            auto & cell = cells[cell_index];
+            size_t slot = findStorageSlotForInsert(key);
+            auto & cell = storage[slot];
 
             bool cell_was_default = cell.is_default;
             cell.is_default = false;
@@ -458,7 +454,11 @@ private:
                 }
             }
 
+            /// Update HashMap after cell.key is set (points to stable arena memory for string_view keys)
+            key_to_storage[cell.key] = slot;
+
             setCellDeadline(cell, now);
+            cell.clock_count = initial_clock_count;
         }
     }
 
@@ -472,8 +472,8 @@ private:
         {
             auto key = keys[key_index];
 
-            size_t cell_index = getCellIndexForInsert(key);
-            auto & cell = cells[cell_index];
+            size_t slot = findStorageSlotForInsert(key);
+            auto & cell = storage[slot];
 
             bool was_inserted = cell.deadline == 0;
             bool cell_was_default = cell.is_default;
@@ -530,7 +530,11 @@ private:
                 }
             }
 
+            /// Update HashMap after cell.key is set (points to stable arena memory for string_view keys)
+            key_to_storage[cell.key] = slot;
+
             setCellDeadline(cell, now);
+            cell.clock_count = initial_clock_count;
         }
     }
 
@@ -539,7 +543,7 @@ private:
         PaddedPODArray<KeyType> result;
         result.reserve(size);
 
-        for (auto & cell : cells)
+        for (auto & cell : storage)
         {
             if (cell.deadline == 0)
                 continue;
@@ -733,17 +737,24 @@ private:
         size_t element_index;
         bool is_default;
         time_t deadline;
+        /// Clock algorithm counter for approximate LRU eviction.
+        /// 0 — cell is evictable, >0 — decremented each time the clock hand passes.
+        /// Set to max_clock_count on cache hit, initial_clock_count on insert.
+        uint8_t clock_count = 0;
     };
+
+    static constexpr uint8_t initial_clock_count = 1;
+    static constexpr uint8_t max_clock_count = 3;
 
     CacheDictionaryStorageConfiguration configuration;
 
     pcg64 rnd_engine;
 
-    size_t size_overlap_mask = 0;
-
     size_t size = 0;
 
-    PaddedPODArray<Cell> cells;
+    HashMap<KeyType, size_t> key_to_storage;
+    PaddedPODArray<Cell> storage;
+    size_t clock_hand = 0;
 
     ArenaWithFreeLists arena;
 
@@ -769,69 +780,58 @@ private:
         cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    size_t getCellIndex(const KeyType key) const
-    {
-        const size_t hash = DefaultHash<KeyType>()(key);
-        const size_t index = hash & size_overlap_mask;
-        return index;
-    }
-
     using KeyStateAndCellIndex = std::pair<KeyState::State, size_t>;
 
-    KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
+    /// Look up a key in the cache. Returns the state and the index in storage.
+    /// If the key is not found, the returned storage index is undefined.
+    KeyStateAndCellIndex findKey(const KeyType key, const time_t now)
     {
-        size_t place_value = getCellIndex(key);
-        const size_t place_value_end = place_value + max_collision_length;
+        auto it = key_to_storage.find(key);
+        if (it == key_to_storage.end())
+            return {KeyState::not_found, 0};
+
+        size_t storage_index = it->getMapped();
+        const auto & cell = storage[storage_index];
 
         time_t max_lifetime_seconds = static_cast<time_t>(configuration.strict_max_lifetime_seconds);
 
-        for (; place_value < place_value_end; ++place_value)
-        {
-            const auto cell_place_value = place_value & size_overlap_mask;
-            const auto & cell = cells[cell_place_value];
+        if (unlikely(now > cell.deadline + max_lifetime_seconds))
+            return {KeyState::not_found, storage_index};
 
-            if (cell.key != key)
-                continue;
+        if (unlikely(now > cell.deadline))
+            return {KeyState::expired, storage_index};
 
-            if (unlikely(now > cell.deadline + max_lifetime_seconds))
-                return std::make_pair(KeyState::not_found, cell_place_value);
-
-            if (unlikely(now > cell.deadline))
-                return std::make_pair(KeyState::expired, cell_place_value);
-
-            return std::make_pair(KeyState::found, cell_place_value);
-        }
-
-        return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
+        return {KeyState::found, storage_index};
     }
 
-    size_t getCellIndexForInsert(const KeyType & key) const
+    /// Find a storage slot for inserting a key.
+    /// If the key already exists, returns its current slot.
+    /// Otherwise, allocates a new slot or evicts using the clock algorithm (approximate LRU, O(1) amortized).
+    /// For new/evicted slots, the caller must update `key_to_storage` after setting `cell.key`.
+    size_t findStorageSlotForInsert(const KeyType & key)
     {
-        size_t place_value = getCellIndex(key);
-        const size_t place_value_end = place_value + max_collision_length;
-        size_t oldest_place_value = place_value;
+        auto it = key_to_storage.find(key);
+        if (it != key_to_storage.end())
+            return it->getMapped();
 
-        time_t oldest_time = std::numeric_limits<time_t>::max();
+        if (size < configuration.max_size_in_cells)
+            return size;
 
-        for (; place_value < place_value_end; ++place_value)
+        /// Clock algorithm: sweep the circular buffer, decrementing non-zero counts,
+        /// until we find a cell with clock_count == 0 to evict.
+        while (true)
         {
-            const size_t cell_place_value = place_value & size_overlap_mask;
-            const Cell cell = cells[cell_place_value];
-
-            if (cell.deadline == 0)
-                return cell_place_value;
-
-            if (cell.key == key)
-                return cell_place_value;
-
-            if (cell.deadline < oldest_time)
+            auto & cell = storage[clock_hand];
+            if (cell.clock_count == 0)
             {
-                oldest_time = cell.deadline;
-                oldest_place_value = cell_place_value;
+                size_t victim = clock_hand;
+                clock_hand = (clock_hand + 1) % configuration.max_size_in_cells;
+                key_to_storage.erase(cell.key);
+                return victim;
             }
+            --cell.clock_count;
+            clock_hand = (clock_hand + 1) % configuration.max_size_in_cells;
         }
-
-        return oldest_place_value;
     }
 };
 
