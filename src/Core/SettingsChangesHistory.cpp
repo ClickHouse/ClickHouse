@@ -42,7 +42,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
-            {"add_minmax_index_for_numeric_columns", false, true, "Should give benefits."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -1069,7 +1068,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
-
+            {"add_minmax_index_for_numeric_columns", false, true, "Should give benefits."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
