@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 
@@ -46,7 +47,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"address_of_binary_instruction", nullptr, checkAndGetColumnConstStringOrFixedString, "UInt64"}
+            {"address_of_binary_instruction", &isUInt64, nullptr, "UInt64"}
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args);
