@@ -1,3 +1,5 @@
+#include <Interpreters/ITokenizer.h>
+#include <Common/StringUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -5,6 +7,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/misc.h>
+#include <Functions/Regexps.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Interpreters/ExpressionActions.h>
@@ -31,11 +34,12 @@ namespace Setting
     extern const SettingsUInt64 max_memory_usage;
 }
 
-TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_)
+TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
+    , patterns(std::move(patterns_))
 {
     std::sort(tokens.begin(), tokens.end());
 }
@@ -46,10 +50,29 @@ SipHash TextSearchQuery::getHash() const
     hash.update(function_name);
     hash.update(search_mode);
     hash.update(direct_read_mode);
-    hash.update(tokens.size());
 
+    hash.update(tokens.size());
     for (const auto & token : tokens)
         hash.update(token);
+
+    hash.update(patterns.size());
+    for (const auto & pattern : patterns)
+    {
+        if (const auto & re2 = pattern.getRE2())
+        {
+            hash.update(re2->pattern());
+        }
+        else
+        {
+            std::string required_substring;
+            bool is_trivial;
+            bool required_substring_is_prefix;
+            pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+            hash.update(required_substring);
+            hash.update(is_trivial);
+            hash.update(required_substring_is_prefix);
+        }
+    }
 
     return hash;
 }
@@ -108,6 +131,9 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         {
             all_search_tokens_set.insert(search_query->tokens.begin(), search_query->tokens.end());
             all_search_queries[search_query->getHash().get128()] = search_query;
+
+            for (const auto & pattern : search_query->patterns)
+                all_search_patterns.push_back(&pattern);
         }
 
         if (getTextSearchMode(element) == TextSearchMode::Any)
@@ -208,7 +234,7 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
-    if (query.tokens.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
+    if (query.tokens.empty() && query.patterns.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
@@ -241,6 +267,8 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_NOT_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
+         RPNElement::FUNCTION_LIKE,
+         RPNElement::FUNCTION_NOT_LIKE,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_NOT_IN,
          RPNElement::FUNCTION_MATCH});
@@ -260,6 +288,16 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_LIKE || element.function == RPNElement::FUNCTION_NOT_LIKE)
+        {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasAnyQueryPatterns(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+
+            if (element.function == RPNElement::FUNCTION_NOT_LIKE)
+                rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_TOKENS)
         {
@@ -476,6 +514,119 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     return tokenizer->compactTokens(tokens);
 }
 
+std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, std::vector<String> & exact_tokens) const
+{
+    const String value = preprocessor->processConstant(field.safeGet<String>());
+    if (value.empty())
+        return {};
+
+    std::vector<OptimizedRegularExpression> patterns;
+    const char * data = value.data();
+    const size_t length = value.size();
+
+    const auto is_token_char = [](unsigned char c) { return isASCII(c) && isAlphaNumericASCII(static_cast<char>(c)); };
+
+    /// We do a single forward pass, maintaining a "current group" that accumulates content
+    /// for one sub-pattern. A group is split (emitted and restarted) when an unescaped
+    /// wildcard ('%' or '_') or a regular non-alpha separator is encountered.
+    ///
+    /// Escape sequences ('\%', '\_', '\\') are treated as literal characters and are
+    /// included as-is in the group content — they do NOT cause a split.
+    ///
+    /// Examples:
+    ///   %foobar%   → [%foobar%]       '%' splits; 'foobar' is one group
+    ///   %foo bar%  → [%foo, bar%]     space splits; two groups
+    ///   %foo%bar%  → [%foo%, %bar%]   '%' splits; two groups
+    ///   %foo_b%    → [%foo, b%]       '_' splits; two groups
+    ///   %foo\_%bar% → [%foo\_%, %bar%] '\_%' = literal '_' then '%' wildcard; the '%' splits
+    ///   %foo\%bar% → [%foo\%bar%]     '\%' is literal, stays in group; one group
+    ///   %foo\_bar% → [%foo\_bar%]     '\_' is literal, stays in group; one group
+
+    bool left_free = false;        /// current group is preceded by an unescaped '%'
+    bool group_has_content = false; /// current group contains at least one alphanumeric char
+    size_t group_start = 0;        /// start of the current group's content in 'data'
+    size_t group_end = 0;          /// end of the current group's content (exclusive)
+
+    const auto emit_group = [&](bool right_free)
+    {
+        if (!group_has_content)
+            return;
+        /// A group bounded on both sides (no free wildcards) is an exact token:
+        /// it can be looked up directly via posting lists instead of pattern matching.
+        if (!left_free && !right_free)
+        {
+            exact_tokens.emplace_back(data + group_start, group_end - group_start);
+            return;
+        }
+        String sub_pattern;
+        if (left_free)
+            sub_pattern += '%';
+        sub_pattern.append(data + group_start, group_end - group_start);
+        if (right_free)
+            sub_pattern += '%';
+        patterns.emplace_back(Regexps::createRegexp<true, true, false>(sub_pattern));
+    };
+
+    const auto reset_group = [&](bool new_left_free, size_t new_start)
+    {
+        left_free = new_left_free;
+        group_has_content = false;
+        group_start = new_start;
+        group_end = new_start;
+    };
+
+    for (size_t pos = 0; pos < length; )
+    {
+        unsigned char c = static_cast<unsigned char>(data[pos]);
+
+        if (c == '\\' && pos + 1 < length)
+        {
+            /// Escape sequence: include both chars as literal content in the current group.
+            pos += 2;
+            group_end = pos;
+            continue;
+        }
+
+        if (is_token_char(c))
+        {
+            group_has_content = true;
+            ++pos;
+            group_end = pos;
+            continue;
+        }
+
+        if (c == '%')
+        {
+            emit_group(/* right_free = */ true);
+            reset_group(/* left_free = */ true, pos + 1);
+            ++pos;
+            continue;
+        }
+
+        if (c == '_')
+        {
+            emit_group(/* right_free = */ false);
+            reset_group(/* left_free = */ false, pos + 1);
+            ++pos;
+            continue;
+        }
+
+        /// Regular non-alpha separator (space, punctuation, …): split the group.
+        emit_group(/* right_free = */ false);
+        reset_group(/* left_free = */ false, pos + 1);
+        ++pos;
+    }
+
+    emit_group(/* right_free = */ false);
+
+    if (patterns.empty() && exact_tokens.empty())
+        patterns.emplace_back(Regexps::createRegexp<true, true, false>(value));
+
+    return patterns;
+}
+
+
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -611,20 +762,35 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
-    if (function_name == "like" && tokenizer->supportsStringLike())
+    if ((function_name == "like" || function_name == "notLike") && tokenizer->supportsStringLike())
     {
-        std::vector<String> tokens = stringLikeToTokens(value_field);
+        /// like/notLike optimization is only supported for the SplitByNonAlpha tokenizer.
+        if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha)
+        {
+            /// TODO(ahmadov): FIX!
+            /// 1. Handle multiple patterns e.g. %foo bar% -> postings_pattern(%foo) && postings_pattern(bar%) && regex(%foo bar%)
+            /// 2. Handle exact tokens and patterns e.g. %foo bar baz% -> postings_exact(bar) && postings_pattern(%foo) && postings_pattern(bar%)
+            /// 3. Fall-back to the brute-force search for short patterns e.g. %a% -> reading postings for tokens containing 'a' is expensive.
+            /// 4. Fall-back to the brute-force search for other cases for now.
+            /// Follow-up:
+            /// 1. Handle more complex patterns e.g. %foo%bar% -> (postings_pattern(%foo%) && postings_pattern(%bar%)) || postings_pattern(%foo%bar%)
+            std::vector<String> like_tokens;
+            auto patterns = stringLikeToPatterns(value_field, like_tokens);
+            like_tokens = tokenizer->compactTokens(like_tokens);
 
-        out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-        return true;
-    }
-    if (function_name == "notLike" && tokenizer->supportsStringLike())
-    {
-        std::vector<String> tokens = stringLikeToTokens(value_field);
+            out.function = function_name == "like" ? RPNElement::FUNCTION_LIKE : RPNElement::FUNCTION_NOT_LIKE;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(like_tokens), std::move(patterns)));
+            return true;
+        }
 
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        std::vector<String> exact_tokens = stringLikeToTokens(value_field);
+
+        /// If exact tokens are empty, do not use the text index at all.
+        if (exact_tokens.empty())
+            return false;
+
+        out.function = function_name == "like" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
         return true;
     }
     if (function_name == "match" && tokenizer->supportsStringLike())

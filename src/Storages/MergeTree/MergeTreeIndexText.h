@@ -250,8 +250,8 @@ struct TextIndexSerialization
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
-    using TokenToPostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
+    using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfo>;
+    using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, PostingListCodecPtr posting_list_codec_);
     ~MergeTreeIndexGranuleText() override = default;
@@ -270,7 +270,10 @@ public:
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
+    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
+
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
+    const TokenToPostingsInfosMap & getPatternTokens() const { return pattern_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     void resetAfterAnalysis();
@@ -285,15 +288,18 @@ public:
 private:
     void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     /// Header of the text index contains the number of tokens and sparse index.
     DictionarySparseIndexPtr sparse_index;
-    /// Tokens that are in the index granule after analysis.
+    /// Tokens that are in the index granule after analysis of tokens.
     TokenToPostingsInfosMap remaining_tokens;
+    /// Tokens that are in the index granule after analysis of patterns.
+    TokenToPostingsInfosMap pattern_tokens;
     /// Tokens with postings lists that have only one block.
     TokenToPostingsMap rare_tokens_postings;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
