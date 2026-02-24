@@ -55,7 +55,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | Argument                         | Description                                                                                                                                                                                                                                                                                                                                               |
 |----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `connection_string`              | A connection string that includes embedded credentials (account name + account key or SAS token). When using this form, `account_name` and `account_key` should **not** be passed separately. See [Configure a connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account). |
-| `storage_account_url`            | The storage account endpoint URL, e.g. `https://myaccount.blob.core.windows.net/`. When using this form, you **must** also pass `account_name` and `account_key` (unless the data is publicly accessible).                                                                                                                                                |
+| `storage_account_url`            | The storage account endpoint URL, e.g. `https://myaccount.blob.core.windows.net/`. When using this form, you **must** also pass `account_name` and `account_key`.                                                                                                                                                                                         |
 | `container_name`                 | Container name.                                                                                                                                                                                                                                                                                                                                           |
 | `blobpath`                       | File path. Supports the following wildcards in read-only mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                                                                                                                                                                                            |
 | `account_name`                   | Storage account name. **Required** when using `storage_account_url`; must **not** be passed when using `connection_string`.                                                                                                                                                                                                                               |
@@ -121,23 +121,20 @@ A table with the specified structure for reading or writing data in the specifie
 
 ### Reading with `storage_account_url` form
 
-The following example reads from the public NYC Taxi open dataset hosted on Azure, which does not require authentication. When using the `storage_account_url` form with public data, you can pass empty strings for `account_name` and `account_key`:
-
 ```sql
-SELECT COUNT(*)
+SELECT *
 FROM azureBlobStorage(
-    'https://azureopendatastorage.blob.core.windows.net/',
-    'nyctlc',
-    'yellow/puYear=2024/puMonth=1/*.parquet',
-    '',
-    '',
+    'https://myaccount.blob.core.windows.net/',
+    'mycontainer',
+    'data/*.parquet',
+    'myaccount',
+    'mykey...==',
     'Parquet'
-);
+)
+LIMIT 5;
 ```
 
 ### Reading with `connection_string` form
-
-Using a connection string (replace with your actual credentials):
 
 ```sql
 SELECT *
