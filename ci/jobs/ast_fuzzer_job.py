@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import os
+import random
 import subprocess
 import sys
 import traceback
@@ -26,6 +27,7 @@ def get_run_command(
     image: DockerImage,
     buzzhouse: bool,
     targeted_queries_file: Path | None = None,
+    compatibility_setting: str | None = None,
 ) -> str:
     from ci.jobs.ci_utils import is_extended_run
 
@@ -36,6 +38,8 @@ def get_run_command(
     ]
     if targeted_queries_file:
         envs.append(f"-e TARGETED_QUERIES_FILE='{targeted_queries_file}'")
+    if compatibility_setting:
+        envs.append(f"-e FUZZER_COMPATIBILITY='{compatibility_setting}'")
 
     env_str = " ".join(envs)
 
@@ -123,11 +127,19 @@ def run_fuzz_job(check_name: str):
             ).complete_job()
         targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
 
+    compatibility_setting: str | None = None
+    if not buzzhouse:
+        compatibility_setting = (
+            f"{random.randint(20, 27)}.{random.randint(1, 12)}"
+        )
+        logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)
+
     run_command = get_run_command(
         workspace_path,
         docker_image,
         buzzhouse,
         targeted_queries_file=targeted_queries_file,
+        compatibility_setting=compatibility_setting,
     )
     logging.info("Going to run %s", run_command)
 
