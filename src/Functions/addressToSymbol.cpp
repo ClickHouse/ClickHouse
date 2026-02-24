@@ -47,16 +47,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument; passed {}.",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"address_of_binary_instruction", nullptr, checkAndGetColumnConstStringOrFixedString, "UInt64"}
+        };
 
-        const auto & type = arguments[0].type;
-
-        if (!WhichDataType(type.get()).isUInt64())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be UInt64. "
-                "Found {} instead.", getName(), type->getName());
-
+        validateFunctionArguments(*this, arguments, mandatory_args);
         return std::make_shared<DataTypeString>();
     }
 

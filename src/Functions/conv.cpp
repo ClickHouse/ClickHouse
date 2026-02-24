@@ -53,7 +53,7 @@ public:
             {"to_base", &isNativeInteger, nullptr, "Integer"}
         };
 
-        validateFunctionArguments(*this, arguments, mandatory_args, {});
+        validateFunctionArguments(*this, arguments, mandatory_args);
         return std::make_shared<DataTypeString>();
     }
 
