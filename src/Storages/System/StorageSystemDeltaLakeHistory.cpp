@@ -197,7 +197,7 @@ private:
 
 #if USE_PARQUET
     ContextMutablePtr context_copy;
-    std::shared_ptr<const ContextAccess> access;
+    std::shared_ptr<const ContextAccessWrapper> access;
     DatabaseCatalog::Databases databases;
     DatabaseCatalog::Databases::iterator db_it;
     DatabaseTablesIteratorPtr table_it;
