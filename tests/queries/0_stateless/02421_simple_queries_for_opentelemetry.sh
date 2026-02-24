@@ -12,7 +12,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # $2 - query
 function execute_query()
 {
-  ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=1 --query_id $1 -q "
+  ${CLICKHOUSE_CLIENT} --async_insert=0 --opentelemetry_start_trace_probability=1 --query_id $1 -q "
       ${2}
   "
 }
@@ -98,7 +98,7 @@ function check_tcp_attributes()
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
-  
+
   if [[ $result == *"client.version"* ]]; then
     client_version="present"
   fi
@@ -118,7 +118,7 @@ function check_http_attributes()
   local referer="not found"
   local agent="not found"
   local method="not found"
-  
+
   result=$(${CLICKHOUSE_CLIENT} -q "
       SYSTEM FLUSH LOGS opentelemetry_span_log;
       SELECT attribute['http.referer'],
@@ -135,11 +135,11 @@ function check_http_attributes()
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
-  
+
   if [[ $result == *"http.referer"* ]]; then
     referer="present"
   fi
-  
+
   if [[ $result == *"http.user.agent"* ]]; then
     agent="present"
   fi

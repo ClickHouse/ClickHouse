@@ -33,7 +33,7 @@ function test()
     query_id="$(random_str 10)"
     # We are going to insert an invalid number into table_exception_a. This will fail when inserting into
     # table_exception_b via matview_exception_a_to_b, and will work ok when inserting into table_exception_c
-    ${CLICKHOUSE_CLIENT} "$@" --log_queries=1 --log_query_views=1  --query_id="$query_id" -q "INSERT INTO table_exception_a VALUES ('0.Aa234', 22)" > /dev/null 2>&1 || true;
+    ${CLICKHOUSE_CLIENT} "$@" --async_insert=0 --log_queries=1 --log_query_views=1  --query_id="$query_id" -q "INSERT INTO table_exception_a VALUES ('0.Aa234', 22)" > /dev/null 2>&1 || true;
     ${CLICKHOUSE_CLIENT} -q "
         SELECT * FROM
         (

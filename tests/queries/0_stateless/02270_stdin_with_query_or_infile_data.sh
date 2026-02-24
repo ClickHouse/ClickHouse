@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_02270"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_02270 (x UInt32) ENGINE=Memory"
 
-echo "(42)" | $CLICKHOUSE_CLIENT -q "INSERT INTO test_02270 FORMAT Values (24)"
+echo "(42)" | $CLICKHOUSE_CLIENT --async_insert=0 -q "INSERT INTO test_02270 FORMAT Values (24)"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_02270 ORDER BY x"
 
 echo "(24)" > 02270_data.values

@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE
 
 query_prefix="$CLICKHOUSE_DATABASE"
 query_id="${query_prefix}_insert"
-${CLICKHOUSE_CLIENT} --query-id="${query_id}" --materialized_views_ignore_errors=1 --query "INSERT INTO root VALUES (2)" 2>/dev/null
+${CLICKHOUSE_CLIENT} --async_insert=0 --query-id="${query_id}" --materialized_views_ignore_errors=1 --query "INSERT INTO root VALUES (2)" 2>/dev/null
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_views_log";
 ${CLICKHOUSE_CLIENT} --query "SELECT view_name, status FROM system.query_views_log WHERE initial_query_id = '${query_id}' ORDER BY view_name ASC" | sed 's/ExceptionWhileProcessing/Ex*WhileProcessing/g'
