@@ -822,10 +822,20 @@ template <typename... Params, typename... Args>
 void SerializationLowCardinality::serializeImpl(
     const IColumn & column, size_t row_num, SerializationLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
 {
-    const auto & low_cardinality_column = getColumnLowCardinality(column);
-    size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
     auto serialization = dictionary_type->getDefaultSerialization();
-    (serialization.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
+    if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        size_t unique_row_number = low_cardinality_column->getIndexes().getUInt(row_num);
+        (serialization.get()->*func)(*low_cardinality_column->getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
+    }
+    else
+    {
+        /// The column may already be unwrapped, e.g. when LowCardinality lives inside
+        /// a Variant type and the LowCardinality wrapper was stripped during function
+        /// execution while the data type was preserved. Serialize using the dictionary
+        /// (inner) type directly.
+        (serialization.get()->*func)(column, row_num, std::forward<Args>(args)...);
+    }
 }
 
 template <typename... Params, typename... Args>
