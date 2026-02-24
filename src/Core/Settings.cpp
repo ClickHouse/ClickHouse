@@ -5611,6 +5611,10 @@ Read/write timeout in seconds. Now supported only for MySQL
 Allow to execute correlated subqueries.
 )", BETA) \
     \
+    DECLARE(Bool, allow_experimental_lateral_join, false, R"(
+Allow LATERAL JOIN syntax. When enabled, subqueries in the right side of a JOIN can reference columns from the left side, enabling correlated subqueries in the FROM clause (SQL standard LATERAL JOIN).
+)", EXPERIMENTAL) \
+    \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
 

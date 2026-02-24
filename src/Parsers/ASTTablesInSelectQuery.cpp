@@ -47,6 +47,7 @@ void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(locality);
     hash_state.update(strictness);
     hash_state.update(kind);
+    hash_state.update(lateral);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -228,6 +229,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
             ostr << "PASTE JOIN";
             break;
     }
+
+    if (lateral)
+        ostr << " LATERAL";
 }
 
 
