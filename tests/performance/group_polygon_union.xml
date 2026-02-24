@@ -16,7 +16,7 @@
                 toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
                 toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
             ), range(5))]
-        FROM numbers_mt(1_800_000)
+        FROM numbers_mt(180000)
         SETTINGS max_insert_threads = 2
     </create_query>
 
