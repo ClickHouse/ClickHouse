@@ -213,6 +213,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
+    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec())
 {
     cursors.resize(segments.size());
     inputs.resize(segments.size());
@@ -220,7 +221,6 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     output_tokens = ColumnString::create();
     params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
-    postings_serialization = PostingsSerialization(typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec());
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -326,7 +326,7 @@ void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization.posting_list_codec);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
 
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
@@ -369,7 +369,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
             const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            PostingsSerialization::serialize(roaring_bitmap, output_infos[i].header, ostr);
+            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
         }
     }
 

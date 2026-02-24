@@ -139,7 +139,7 @@ struct TokenPostingsInfo;
 
 struct PostingsSerialization
 {
-    explicit PostingsSerialization(PostingListCodecPtr posting_list_codec_ = nullptr);
+    explicit PostingsSerialization(PostingListCodecPtr posting_list_codec_);
 
     enum Flags : UInt64
     {
@@ -155,14 +155,15 @@ struct PostingsSerialization
         IsCompressed = 1ULL << 3,
     };
 
-    static void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
-    static void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
-    static void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
+    void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
+    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
+    void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
-
-    PostingListCodecPtr posting_list_codec;
+    PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
 
 private:
+    PostingListCodecPtr posting_list_codec;
+
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
     std::vector<char> deserialization_buffer;
@@ -247,7 +248,7 @@ struct TextIndexSerialization
         PostingListBuilder & postings,
         MergeTreeIndexWriterStream & postings_stream,
         const MergeTreeIndexTextParams & params,
-        PostingListCodecPtr posting_list_codec);
+        PostingsSerialization & postings_serialization);
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
@@ -299,13 +300,15 @@ public:
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
+    const String & getIndexIdForCaches() const { return index_id_for_caches; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
         MergeTreeIndexDeserializationState & state,
         const TokenPostingsInfo & token_info,
         size_t block_idx,
-        PostingsSerialization & postings_serialization);
+        PostingsSerialization & postings_serialization,
+        const String & index_id_for_caches);
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
@@ -324,6 +327,7 @@ private:
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
     std::optional<RowsRange> current_range;
     PostingListCodecPtr posting_list_codec;
+    String index_id_for_caches;
 };
 
 /// Text index granule created on writing of the index.
