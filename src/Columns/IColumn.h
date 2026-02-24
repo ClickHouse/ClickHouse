@@ -4,6 +4,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
@@ -85,8 +86,8 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
 struct ColumnsWithRowNumbers
 {
     /// `columns` and `row_numbers` must have same size
-    std::vector<const ColumnsInfo *, AllocatorWithMemoryTracking<const ColumnsInfo *>> columns;
-    std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
+    VectorWithMemoryTracking<const ColumnsInfo *> columns;
+    VectorWithMemoryTracking<UInt32> row_numbers;
 };
 
 /// Helper throw functions so Column headers don't need to include Exception.h.

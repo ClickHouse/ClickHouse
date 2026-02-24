@@ -129,7 +129,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatter(size_t num_colum
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
             selector.size(), toString(s));
 
-    std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
+    VectorWithMemoryTracking<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
     VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
     for (size_t i = 0; i < num_columns; ++i)

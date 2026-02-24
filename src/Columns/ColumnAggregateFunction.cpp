@@ -460,11 +460,11 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
     WeakHash32 hash(s);
     auto & hash_data = hash.getData();
 
-    std::vector<UInt8> v;
+    VectorWithMemoryTracking<UInt8> v;
     for (size_t i = 0; i < s; ++i)
     {
         {
-            WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+            WriteBufferFromVector<VectorWithMemoryTracking<UInt8>> wbuf(v);
             func->serialize(data[i], wbuf, version);
         }
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
