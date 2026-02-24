@@ -116,7 +116,7 @@ public:
 
         if (DatabaseCatalog::instance().isTableExist(inner_storage->getStorageID(), context))
         {
-            auto inner_context = Context::createCopy(context);
+            inner_context = Context::createCopy(context);
             const auto & storage_id = inner_storage->getStorageID();
             buildInterpreterQueryPlan(
                 plan, storage_id.database_name, storage_id.table_name,
@@ -142,6 +142,7 @@ public:
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
             query_pipeline = QueryPipeline(std::move(pipe));
+            query_pipeline.addResources(std::move(resources));
             executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
         }
         loop = true;
@@ -193,6 +194,7 @@ private:
     StoragePtr inner_storage;
     size_t max_block_size;
     size_t num_streams;
+    ContextPtr inner_context;
     // add retries. If inner_storage failed to pull X times in a row we'd better to fail here not to hang
     size_t retries_count = 0;
     size_t max_retries_count = 3;
