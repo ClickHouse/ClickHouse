@@ -4499,6 +4499,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         bool intersects = element.range.intersectsRange(key_range);
                         bool contains   = element.range.containsRange(key_range);
 
+                        /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
+                        /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
+                        if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+                            contains = false;
+
                         rpn_stack.emplace_back(intersects, !contains);
                         /// we don't create bloom_filter_data if monotonic_functions_chain is present
                     }
@@ -4507,6 +4512,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 {
                     bool intersects = element.range.intersectsRange(key_range);
                     bool contains = element.range.containsRange(key_range);
+
+                    /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
+                    /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
+                    if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+                        contains = false;
 
                     rpn_stack.emplace_back(intersects, !contains);
 
@@ -4721,6 +4731,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 bool contains   = element.range.containsRange(*key_range);
 
                 rpn_stack.emplace_back(intersects, !contains);
+
+                if (element.relaxed)
+                    rpn_stack.back().can_be_false = true;
+
                 if (element.function == RPNElement::FUNCTION_IS_NULL)
                     rpn_stack.back() = !rpn_stack.back();
             }
@@ -4773,6 +4787,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
             rpn_stack.emplace_back(element.set_index->checkInRange(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, single_point));
+
+            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
+            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+            /// Therefore, we must set `can_be_false = true` to be safe.
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
 
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
