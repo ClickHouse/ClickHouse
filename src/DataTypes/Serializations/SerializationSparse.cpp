@@ -345,7 +345,14 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     size_t values_limit = offsets_data.size() - old_size;
 
     settings.path.back() = Substream::SparseElements;
-    nested->deserializeBinaryBulkWithMultipleStreams(values_column, skipped_values_rows, values_limit, settings, state_sparse->nested, cache);
+    /// We cannot use column from substream cache during deserialization of sparse values column, because
+    /// sparse values column must always contain default value at the first row that is added during ColumnSparse
+    /// creation. Using column from substream cache will lead to loss of this value and unexpected column size.
+    /// So, we should set insert_only_rows_in_current_range_from_substreams_cache flag to true
+    /// to insert only rows in current range from substream cache instead of using the whole cached column if any.
+    auto values_settings = settings;
+    values_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
+    nested->deserializeBinaryBulkWithMultipleStreams(values_column, skipped_values_rows, values_limit, values_settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
     if (offsets_data.size() + 1 != values_column->size())
