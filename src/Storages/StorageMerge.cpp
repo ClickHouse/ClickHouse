@@ -372,14 +372,20 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
-    /// In case of JOIN the first stage (which includes JOIN)
+    /// In case of JOIN or ARRAY JOIN the first stage (which includes JOIN/ARRAY JOIN)
     /// should be done on the initiator always.
     ///
     /// Since in case of JOIN query on shards will receive query without JOIN (and their columns).
     /// (see removeJoin())
     ///
+    /// ARRAY JOIN also requires FetchColumns because `buildQueryPlanForArrayJoinNode` expects
+    /// the child plan to be at FetchColumns stage. If we return a later stage here,
+    /// the ARRAY JOIN processing is skipped entirely in `buildJoinTreeQueryPlan`
+    /// (see the early return when stage != FetchColumns), leading to missing chunk info
+    /// in MergingAggregatedTransform.
+    ///
     /// And for this we need to return FetchColumns.
-    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
+    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && (hasJoin(*select) || hasArrayJoin(*select)))
         return QueryProcessingStage::FetchColumns;
 
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
