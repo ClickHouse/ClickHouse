@@ -257,12 +257,12 @@ struct HashTableGrower
         else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
             size_degree = initial_size_degree;
         else
-            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
+            size_degree = static_cast<UInt8>(static_cast<size_t>(log2(num_elems - 1)) + 2);
     }
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        size_degree = static_cast<UInt8>(static_cast<size_t>(log2(buf_size_ - 1) + 1));
     }
 };
 
@@ -319,13 +319,13 @@ public:
         else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
             size_degree = initial_size_degree;
         else
-            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
+            size_degree = static_cast<UInt8>(log2(num_elems - 1)) + 2;
         increaseSizeDegree(0);
     }
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
         increaseSizeDegree(0);
     }
 };
@@ -532,32 +532,33 @@ protected:
             new_grower.increaseSize();
 
         /// Expand the space.
-
         size_t old_buffer_size = getBufferSizeInBytes();
         buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
-
         grower = new_grower;
 
-        /** Now some items may need to be moved to a new location.
-          * The element can stay in place, or move to a new location "on the right",
-          *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
-          */
-        size_t i = 0;
-        for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this))
-                reinsert(buf[i], buf[i].getHash(*this));
+        if (!empty())
+        {
+            /** Now some items may need to be moved to a new location.
+              * The element can stay in place, or move to a new location "on the right",
+              *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
+              */
+            size_t i = 0;
+            for (; i < old_size; ++i)
+                if (!buf[i].isZero(*this))
+                    reinsert(buf[i], buf[i].getHash(*this));
 
-        /** There is also a special case:
-          *    if the element was to be at the end of the old buffer,                  [        x]
-          *    but is at the beginning because of the collision resolution chain,      [o       x]
-          *    then after resizing, it will first be out of place again,               [        xo        ]
-          *    and in order to transfer it where necessary,
-          *    after transferring all the elements from the old halves you need to     [         o   x    ]
-          *    process tail from the collision resolution chain immediately after it   [        o    x    ]
-          */
-        size_t new_size = grower.bufSize();
-        for (; i < new_size && !buf[i].isZero(*this); ++i)
-            reinsert(buf[i], buf[i].getHash(*this));
+            /** There is also a special case:
+              *    if the element was to be at the end of the old buffer,                  [        x]
+              *    but is at the beginning because of the collision resolution chain,      [o       x]
+              *    then after resizing, it will first be out of place again,               [        xo        ]
+              *    and in order to transfer it where necessary,
+              *    after transferring all the elements from the old halves you need to     [         o   x    ]
+              *    process tail from the collision resolution chain immediately after it   [        o    x    ]
+              */
+            size_t new_size = grower.bufSize();
+            for (; i < new_size && !buf[i].isZero(*this); ++i)
+                reinsert(buf[i], buf[i].getHash(*this));
+        }
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
@@ -848,7 +849,7 @@ public:
         return *this;
     }
 
-    HashTable & operator=(const HashTable & rhs) noexcept
+    HashTable & operator=(const HashTable & rhs)
     {
         if (this == &rhs)
             return *this;

@@ -1,6 +1,6 @@
 Expression ((Projection + Before ORDER BY))
   Filter (WHERE)
-    ReadFromMergeTree (02911_support_alias_column_in_indices.test1)
+    ReadFromMergeTree (default.test1)
     Indexes:
       PrimaryKey
         Keys:
@@ -18,7 +18,7 @@ Expression ((Projection + Before ORDER BY))
       Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + (Change column names to column identifiers + Compute alias columns)))
-    ReadFromMergeTree (02911_support_alias_column_in_indices.test1)
+    ReadFromMergeTree (default.test1)
     Indexes:
       PrimaryKey
         Keys:
@@ -36,7 +36,7 @@ Expression ((Project names + Projection))
       Ranges: 1
 Expression ((Projection + Before ORDER BY))
   Filter (WHERE)
-    ReadFromMergeTree (02911_support_alias_column_in_indices.test2)
+    ReadFromMergeTree (default.test2)
     Indexes:
       PrimaryKey
         Keys:
@@ -54,7 +54,7 @@ Expression ((Projection + Before ORDER BY))
       Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + (Change column names to column identifiers + Compute alias columns)))
-    ReadFromMergeTree (02911_support_alias_column_in_indices.test2)
+    ReadFromMergeTree (default.test2)
     Indexes:
       PrimaryKey
         Keys:

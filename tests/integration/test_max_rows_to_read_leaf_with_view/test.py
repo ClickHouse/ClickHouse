@@ -35,7 +35,7 @@ def test_max_rows_to_read_leaf_via_view(started_cluster):
     for node in (node1, node2):
         node.query(
             f"""
-            CREATE TABLE local_table(id UInt32, d DateTime) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/max_rows_read_leaf', '{node}') PARTITION BY toYYYYMM(d) ORDER BY d;
+            CREATE TABLE local_table(id UInt32, d DateTime) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/max_rows_read_leaf', '{node.name}') PARTITION BY toYYYYMM(d) ORDER BY d;
 
             CREATE TABLE distributed_table(id UInt32, d DateTime) ENGINE = Distributed(two_shards, default, local_table);
 
@@ -45,6 +45,10 @@ def test_max_rows_to_read_leaf_via_view(started_cluster):
 
     node1.query(
         "INSERT INTO local_table (id) select * from system.numbers limit 200"
+    )
+
+    node2.query(
+        "SYSTEM SYNC REPLICA local_table"
     )
 
     """
@@ -71,9 +75,9 @@ def test_max_rows_to_read_leaf_via_view(started_cluster):
         )
 
     for node in (node1, node2):
-        node.query("DROP VIEW IF EXISTS test_view")
-        node.query("DROP TABLE IF EXISTS distributed_table")
-        node.query("DROP TABLE IF EXISTS local_table")
+        node.query("DROP VIEW IF EXISTS test_view SYNC")
+        node.query("DROP TABLE IF EXISTS distributed_table SYNC")
+        node.query("DROP TABLE IF EXISTS local_table SYNC")
 
 
 if __name__ == "__main__":

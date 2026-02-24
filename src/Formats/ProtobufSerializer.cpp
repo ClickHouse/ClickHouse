@@ -102,7 +102,7 @@ namespace
 
         static char convertChar(char c)
         {
-            c = tolower(c);
+            c = static_cast<char>(tolower(c));
             if (c == '.')
                 c = '_';
             return c;
@@ -2020,6 +2020,8 @@ namespace
         {
             if (presence_column)
             {
+                if (row_num < presence_column->size())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
                 presence_column->insert(field_tag);
             }
             nested_serializer->readRow(row_num);
@@ -2127,7 +2129,7 @@ namespace
             if (row_num < column_nullable.size())
                 return;
             column_nullable.getNestedColumn().insertDefault();
-            column_nullable.getNullMapData().push_back(0);
+            column_nullable.getNullMapData().push_back(false);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2839,7 +2841,11 @@ namespace
 
         void finalizeWrite() override
         {
-            writer->endMessage(/*with_length_delimiter = */ true);
+            /// Only write the envelope message if we actually wrote any rows.
+            /// Otherwise we would write a zero-length message (a single 0x00 byte),
+            /// which when read back would be interpreted as a message with default values.
+            if (!first_call_of_write_row)
+                writer->endMessage(/*with_length_delimiter = */ true);
         }
 
         void reset() override
@@ -2847,17 +2853,22 @@ namespace
             first_call_of_write_row = true;
         }
 
-        void readRow(size_t row_num) override
+        void startReading() override
         {
             if (first_call_of_read_row)
             {
                 reader->startMessage(/*with_length_delimiter = */ true);
                 first_call_of_read_row = false;
             }
+        }
+
+        void readRow(size_t row_num) override
+        {
+            startReading();
 
             int field_tag;
-            [[maybe_unused]] bool ret = reader->readFieldNumber(field_tag);
-            assert(ret);
+            if (!reader->readFieldNumber(field_tag))
+                throw Exception(ErrorCodes::PROTOBUF_BAD_CAST, "Unexpected end of ProtobufList message");
 
             serializer->readRow(row_num);
         }

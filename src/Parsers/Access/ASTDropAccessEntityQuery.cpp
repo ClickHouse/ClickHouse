@@ -30,10 +30,10 @@ String ASTDropAccessEntityQuery::getID(char) const
 
 ASTPtr ASTDropAccessEntityQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropAccessEntityQuery>(*this);
+    auto res = make_intrusive<ASTDropAccessEntityQuery>(*this);
 
     if (row_policy_names)
-        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
+        res->row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
 
     if (masking_policy_name)
         res->masking_policy_name = std::make_shared<MaskingPolicyName>(*masking_policy_name);

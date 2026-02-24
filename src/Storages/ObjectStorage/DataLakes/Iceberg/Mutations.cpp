@@ -623,7 +623,7 @@ void mutate(
                 storage_id,
                 metadata,
                 partititon_spec,
-                partition_spec_id,
+                static_cast<Int32>(partition_spec_id),
                 chunk_partitioner,
                 Iceberg::FileContentType::POSITION_DELETE,
                 std::make_shared<const Block>(getPositionDeleteFileSampleBlock()),
@@ -647,7 +647,7 @@ void mutate(
                     storage_id,
                     metadata,
                     partititon_spec,
-                    partition_spec_id,
+                    static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
                     Iceberg::FileContentType::DATA,
                     sample_block,
@@ -713,6 +713,9 @@ void alter(
                 break;
             case AlterCommand::Type::MODIFY_COLUMN:
                 metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
+                break;
+            case AlterCommand::Type::RENAME_COLUMN:
+                metadata_json_generator.generateRenameColumnMetadata(params[0].column_name, params[0].rename_to);
                 break;
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);

@@ -1,7 +1,6 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <base/demangle.h>
-#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>

@@ -24,8 +24,9 @@ class ITTLMergeSelector::MergeRangesConstructor
 
         size_t usable_memory = constraint.max_size_bytes - center->size;
         size_t usable_rows = constraint.max_size_rows - center->rows;
-        PartsIterator left = merge_selector.findLeftRangeBorder(center_position, usable_memory, usable_rows, disjoint_set);
-        PartsIterator right = merge_selector.findRightRangeBorder(center_position, usable_memory, usable_rows, disjoint_set);
+        size_t usable_parts = merge_selector.max_parts_to_merge_at_once ? merge_selector.max_parts_to_merge_at_once - 1 : std::numeric_limits<size_t>::max();
+        PartsIterator left = merge_selector.findLeftRangeBorder(center_position, usable_memory, usable_rows, usable_parts, disjoint_set);
+        PartsIterator right = merge_selector.findRightRangeBorder(center_position, usable_memory, usable_rows, usable_parts, disjoint_set);
 
         if (range_filter && !range_filter({left, right}))
             return std::nullopt;
@@ -37,7 +38,10 @@ class ITTLMergeSelector::MergeRangesConstructor
     }
 
 public:
-    explicit MergeRangesConstructor(const ITTLMergeSelector & merge_selector_, const PartsRanges & parts_ranges, const RangeFilter & range_filter_)
+    explicit MergeRangesConstructor(
+        const ITTLMergeSelector & merge_selector_,
+        const PartsRanges & parts_ranges,
+        const RangeFilter & range_filter_)
         : merge_selector(merge_selector_)
         , range_filter(range_filter_)
         , disjoint_set(parts_ranges)
@@ -118,12 +122,20 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
     return centers;
 }
 
-PartsIterator ITTLMergeSelector::findLeftRangeBorder(const CenterPosition & center_position, size_t & usable_memory, size_t & usable_rows, DisjointPartsRangesSet & disjoint_set) const
+PartsIterator ITTLMergeSelector::findLeftRangeBorder(
+    const CenterPosition & center_position,
+    size_t & usable_memory,
+    size_t & usable_rows,
+    size_t & usable_parts,
+    DisjointPartsRangesSet & disjoint_set) const
 {
     PartsIterator left = center_position.center;
 
     while (left != center_position.range->begin())
     {
+        if (!usable_parts)
+            break;
+
         auto next_to_check = std::prev(left);
         if (!canConsiderPart(*next_to_check))
             break;
@@ -137,18 +149,27 @@ PartsIterator ITTLMergeSelector::findLeftRangeBorder(const CenterPosition & cent
 
         usable_memory -= next_to_check->size;
         usable_rows -= next_to_check->rows;
+        usable_parts -= 1;
         left = next_to_check;
     }
 
     return left;
 }
 
-PartsIterator ITTLMergeSelector::findRightRangeBorder(const CenterPosition & center_position, size_t & usable_memory, size_t & usable_rows, DisjointPartsRangesSet & disjoint_set) const
+PartsIterator ITTLMergeSelector::findRightRangeBorder(
+    const CenterPosition & center_position,
+    size_t & usable_memory,
+    size_t & usable_rows,
+    size_t & usable_parts,
+    DisjointPartsRangesSet & disjoint_set) const
 {
     PartsIterator right = std::next(center_position.center);
 
     while (right != center_position.range->end())
     {
+        if (!usable_parts)
+            break;
+
         if (!canConsiderPart(*right))
             break;
 
@@ -161,15 +182,20 @@ PartsIterator ITTLMergeSelector::findRightRangeBorder(const CenterPosition & cen
 
         usable_memory -= right->size;
         usable_rows -= right->rows;
+        usable_parts -= 1;
         right = std::next(right);
     }
 
     return right;
 }
 
-ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_)
+ITTLMergeSelector::ITTLMergeSelector(
+    const PartitionIdToTTLs * merge_due_times_,
+    time_t current_time_,
+    size_t max_parts_to_merge_at_once_)
     : current_time(current_time_)
     , merge_due_times(merge_due_times_)
+    , max_parts_to_merge_at_once(max_parts_to_merge_at_once_)
 {
 }
 
@@ -192,8 +218,8 @@ PartsRanges ITTLMergeSelector::select(
     return result;
 }
 
-TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_)
-    : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
+TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_, size_t max_parts_to_drop_at_once_)
+    : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_, max_parts_to_drop_at_once_)
 {
 }
 

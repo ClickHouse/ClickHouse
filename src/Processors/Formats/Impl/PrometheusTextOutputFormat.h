@@ -1,10 +1,11 @@
 #pragma once
 
-#include <string>
-
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>
+
+#include <map>
+#include <string>
 
 
 namespace DB

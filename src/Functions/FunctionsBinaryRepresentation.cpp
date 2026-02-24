@@ -11,7 +11,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Common/BinStringDecodeHelper.h>
-#include <Common/BitHelpers.h>
 
 namespace DB
 {

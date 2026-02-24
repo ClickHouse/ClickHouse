@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-azure-blob-storage
 # Tag no-fasttest: 45 seconds running
 
 # Creation of a database with Ordinary engine emits a warning.

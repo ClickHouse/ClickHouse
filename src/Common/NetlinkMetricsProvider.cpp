@@ -1,5 +1,6 @@
 #include <Common/NetlinkMetricsProvider.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -162,7 +163,7 @@ NetlinkMessage query(
     request.generic_header.version = 1;
 
     request.payload.attribute.header.nla_type = attribute_type;
-    request.payload.attribute.header.nla_len = attribute_size + NLA_HDRLEN;
+    request.payload.attribute.header.nla_len = static_cast<__u16>(attribute_size + NLA_HDRLEN);
 
     memcpy(&request.payload.attribute.payload, attribute_data, attribute_size);
 

@@ -24,7 +24,7 @@ public:
     bool if_exists = false;
     Strings names;
     String storage_name;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     std::shared_ptr<MaskingPolicyName> masking_policy_name;
 
     String getID(char) const override;

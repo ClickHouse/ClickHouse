@@ -7,6 +7,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/ErrorCodes.h>
 #include <Core/Settings.h>
 #include <Processors/Sources/YTsaurusSource.h>
@@ -86,15 +87,51 @@ Pipe StorageYTsaurus::read(
     return Pipe(ptr);
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context)
+YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
+    const NamedCollection & named_collection, const YTsaurusSettings& settings, bool is_for_dictionary = false)
 {
-    YTsaurusStorageConfiguration configuration{.settings = settings};
-    for (auto & engine_arg : engine_args)
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"http_proxy_urls", "cypress_path", "oauth_token"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"ytsaurus_columns_description"};
+    if (is_for_dictionary)
     {
-        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+        for (const auto & name : settings.getAllRegisteredNames())
+        {
+            optional_arguments.insert(name);
+        }
+        optional_arguments.insert("name");
     }
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
+
+
+    YTsaurusStorageConfiguration configuration{.settings = settings};
+    configuration.settings.loadFromNamedCollection(named_collection);
+
+    boost::split(configuration.http_proxy_urls, named_collection.get<String>("http_proxy_urls"), [](char c) { return c == '|'; });
+    configuration.cypress_path = named_collection.get<String>("cypress_path");
+    configuration.oauth_token = named_collection.get<String>("oauth_token");
+
+    if (is_for_dictionary)
+    {
+        auto column_description = named_collection.getOrDefault<String>("ytsaurus_columns_description", "");
+        if (!column_description.empty())
+            configuration.ytsaurus_columns_description = std::move(column_description);
+    }
+    return configuration;
+}
+
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id)
+{
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
+    {
+        return StorageYTsaurus::processNamedCollectionResult(*named_collection, settings);
+    }
+    YTsaurusStorageConfiguration configuration{.settings = settings};
     if (engine_args.size() == 3)
     {
+        for (auto & engine_arg : engine_args)
+        {
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+        }
         boost::split(configuration.http_proxy_urls, checkAndGetLiteralArgument<String>(engine_args[0], "http_proxy_urls"), [](char c) { return c == '|'; });
         configuration.cypress_path = checkAndGetLiteralArgument<String>(engine_args[1], "cypress_path");
         configuration.oauth_token = checkAndGetLiteralArgument<String>(engine_args[2], "oauth_token");
@@ -114,7 +151,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext()),
+            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
             args.columns,
             args.constraints,
             args.comment);

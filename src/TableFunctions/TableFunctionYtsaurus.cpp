@@ -102,9 +102,14 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
             break;
         }
     }
-
-
-    if (args.size() == 4)
+    if (args.size() == 2)
+    {
+        // With Named Collection
+        ASTs main_arguments(args.begin(), args.begin() + 1);
+        configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context));
+        structure = checkAndGetLiteralArgument<String>(args[1], "structure");
+    }
+    else if (args.size() == 4)
     {
         ASTs main_arguments(args.begin(), args.begin() + 3);
         configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context));
@@ -115,7 +120,9 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function 'ytsaurus' 4 parameters: "
-            "ytsaurus('http_proxy_url', cypress_path, oauth_token, structure).");
+            "ytsaurus('http_proxy_url', cypress_path, oauth_token, structure) "
+            "or with 2 parameters: ytsaurus(named_collections, structure)."
+        );
     }
 }
 

@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
-#include <fcntl.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <AggregateFunctions/SingleValueData.h>
@@ -20,7 +19,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -28,8 +26,6 @@
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Poco/Exception.h>
-#include <Poco/Logger.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -223,7 +219,7 @@ public:
 
         Float64 ratio = 0;
         if (compressed_size > 0)
-            ratio = static_cast<Float64>(uncompressed_size) / compressed_size;
+            ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);
 
         assert_cast<ColumnFloat64 &>(to).getData().push_back(ratio);
     }
@@ -347,6 +343,6 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(
         "estimateCompressionRatio",
-        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}, documentation});
+        {createAggregateFunctionEstimateCompressionRatio, documentation, {.is_order_dependent = true, .is_window_function = true}});
 }
 }
