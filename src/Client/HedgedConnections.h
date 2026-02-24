@@ -129,6 +129,9 @@ public:
 
     void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
+    /// Return the pool of the connected replica, used for error tracking during retries.
+    ConnectionPoolPtr getReplicaPool() override { return replica_pool; }
+
     void setAsyncCallback(AsyncCallback async_callback) override;
 
 private:
@@ -216,6 +219,9 @@ private:
     bool cancelled = false;
 
     ReplicaInfo replica_info;
+
+    /// The pool of the replica we connected to, for error tracking during retries.
+    ConnectionPoolPtr replica_pool;
 
     mutable std::mutex cancel_mutex;
 };
