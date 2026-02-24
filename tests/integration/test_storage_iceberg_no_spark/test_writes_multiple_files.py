@@ -23,7 +23,7 @@ def test_writes_multiple_files(started_cluster_iceberg_no_spark, format_version,
         data += f"({i}), "
         expected_result += f"{i}\n"
     data = data[:len(data) - 2]
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES {data};", settings={"allow_experimental_insert_into_iceberg": 1, "iceberg_insert_max_rows_in_data_file" : 1})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES {data};", settings={"allow_insert_into_iceberg": 1, "iceberg_insert_max_rows_in_data_file" : 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == expected_result
 
     files = default_download_directory(

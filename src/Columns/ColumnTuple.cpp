@@ -293,6 +293,9 @@ void ColumnTuple::insertDefault()
 
 void ColumnTuple::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     column_length -= n;
     for (auto & column : columns)
         column->popBack(n);
@@ -780,7 +783,7 @@ void ColumnTuple::protect()
         column->protect();
 }
 
-void ColumnTuple::getExtremes(Field & min, Field & max) const
+void ColumnTuple::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     const size_t tuple_size = columns.size();
 
@@ -788,7 +791,7 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     Tuple max_tuple(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
+        columns[i]->getExtremes(min_tuple[i], max_tuple[i], start, end);
 
     min = min_tuple;
     max = max_tuple;

@@ -994,7 +994,7 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!isTuple(type0) || !isTuple(type1))
+        if (!isTuple(removeNullable(type0)) || !isTuple(removeNullable(type1)))
             return {};
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
@@ -1023,7 +1023,8 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!(isTuple(type0) && isNumber(type1)) && !(isTuple(type1) && isNumber(type0)))
+        if (!(isTuple(removeNullable(type0)) && isNumber(removeNullable(type1)))
+            && !(isTuple(removeNullable(type1)) && isNumber(removeNullable(type0))))
             return {};
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
@@ -1883,9 +1884,6 @@ public:
             if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
-            // if (isTime(new_arguments[0].type))
-            //     new_arguments[0].type = std::make_shared<Int64>();
-
             /// Change interval argument to its representation
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
@@ -2601,12 +2599,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             {
                 auto res = removeNullable(result_type)->createColumn();
                 res->insertManyDefaults(input_rows_count);
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 1);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, true);
                 return !null_map_col->empty() ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
             }
             else if (result_type->isNullable())
             {
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, false);
                 PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                     null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
@@ -3005,36 +3003,53 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
-        /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
-        bool division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
-            && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
-                || (IsOperation<Op>::div_floating
-                    && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
+        /// Only division-like operations can have division_by_nullable=true.
+        /// Using if constexpr avoids instantiating FunctionBinaryArithmetic<..., true> and
+        /// FunctionBinaryArithmeticWithConstants<..., true> for all other operations,
+        /// significantly reducing template bloat.
+        static constexpr bool can_have_division_by_nullable =
+            IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo || IsOperation<Op>::div_floating;
+
+        bool division_by_nullable = false;
+        if constexpr (can_have_division_by_nullable)
+        {
+            /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
+            /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
+            division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
+                && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
+                    || (IsOperation<Op>::div_floating
+                        && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
+        }
+
+        auto make_adaptor = [&](auto function)
+        {
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                function,
+                DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
+                return_type);
+        };
 
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2
             && ((arguments[0].column && isColumnConst(*arguments[0].column))
                 || (arguments[1].column && isColumnConst(*arguments[1].column))))
         {
-            auto function = division_by_nullable ? FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(
-                    arguments[0], arguments[1], return_type, context)
-                : FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(
-                    arguments[0], arguments[1], return_type, context);
-
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                function,
-                DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
-                return_type);
+            if constexpr (can_have_division_by_nullable)
+            {
+                if (division_by_nullable)
+                    return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(
+                        arguments[0], arguments[1], return_type, context));
+            }
+            return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(
+                arguments[0], arguments[1], return_type, context));
         }
-        auto function = division_by_nullable
-            ? FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context)
-            : FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context);
 
-        return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            function,
-            DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
-            return_type);
+        if constexpr (can_have_division_by_nullable)
+        {
+            if (division_by_nullable)
+                return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context));
+        }
+        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

@@ -30,15 +30,15 @@ public:
     void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         if (settings.enable_heuristic_to_remove_small_parts_at_right)
-            while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
+            while (end >= begin + 3 && static_cast<double>((end - 1)->size) < settings.heuristic_to_remove_small_parts_at_right_max_ratio * static_cast<double>(sum_size))
                 --end;
 
-        double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
+        double current_score = score(static_cast<double>(end - begin), static_cast<double>(sum_size), static_cast<double>(settings.size_fixed_cost_to_add));
 
         if (settings.enable_heuristic_to_align_parts
-            && size_prev_at_left > sum_size * settings.heuristic_to_align_parts_min_ratio_of_sum_size_to_prev_part)
+            && static_cast<double>(size_prev_at_left) > static_cast<double>(sum_size) * settings.heuristic_to_align_parts_min_ratio_of_sum_size_to_prev_part)
         {
-            double difference = std::abs(log2(static_cast<double>(sum_size) / size_prev_at_left));
+            double difference = std::abs(log2(static_cast<double>(sum_size) / static_cast<double>(size_prev_at_left)));
             if (difference < settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two)
                 current_score *= interpolateLinear(settings.heuristic_to_align_parts_max_score_adjustment, 1,
                     difference / settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two);
@@ -144,7 +144,7 @@ bool allow(
     if (range_filter && !range_filter({begin, end}))
         return false;
 
-    if (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge)
+    if (settings.min_age_to_force_merge && min_age >= static_cast<double>(settings.min_age_to_force_merge))
         return true;
 
     const size_t size = end - begin;
@@ -157,19 +157,19 @@ bool allow(
     /// Also log1p seems to be slow and significantly affect performance of merges assignment.
     double size_normalized = mapPiecewiseLinearToUnit(log(1 + sum_size), min_size_to_lower_base_log, max_size_to_lower_base_log);
     /// Calculate boundaries for age
-    double min_age_to_lower_base = interpolateLinear(settings.min_age_to_lower_base_at_min_size, settings.min_age_to_lower_base_at_max_size, size_normalized);
-    double max_age_to_lower_base = interpolateLinear(settings.max_age_to_lower_base_at_min_size, settings.max_age_to_lower_base_at_max_size, size_normalized);
+    double min_age_to_lower_base = interpolateLinear(static_cast<double>(settings.min_age_to_lower_base_at_min_size), static_cast<double>(settings.min_age_to_lower_base_at_max_size), size_normalized);
+    double max_age_to_lower_base = interpolateLinear(static_cast<double>(settings.max_age_to_lower_base_at_min_size), static_cast<double>(settings.max_age_to_lower_base_at_max_size), size_normalized);
     /// Map age to 0..1
     double age_normalized = mapPiecewiseLinearToUnit(min_age, min_age_to_lower_base, max_age_to_lower_base);
     /// Map partition_size to 0..1
-    double num_parts_normalized = mapPiecewiseLinearToUnit(partition_size, settings.min_parts_to_lower_base, settings.max_parts_to_lower_base);
+    double num_parts_normalized = mapPiecewiseLinearToUnit(partition_size, static_cast<double>(settings.min_parts_to_lower_base), static_cast<double>(settings.max_parts_to_lower_base));
     /// The ratio should be within [0, 1]
     double combined_ratio = std::min(1.0, age_normalized + num_parts_normalized);
 
     double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
     if (settings.use_blurry_base)
     {
-        double partition_fill_factor = std::max(0., 1 - partition_size / settings.parts_to_throw_insert);
+        double partition_fill_factor = std::max(0., 1 - partition_size / static_cast<double>(settings.parts_to_throw_insert));
         /// Scale factor controls when (relativelty to the number of parts in partition)
         /// do we activate our special algorithm.
         /// With standard parameters the logic kicks in starting from 80% empty factor.
@@ -182,7 +182,7 @@ bool allow(
         lowered_base = std::min(distribution(thread_local_rng), std::max(1.01, lowered_base));
     }
 
-    return (sum_size + size * settings.size_fixed_cost_to_add) / (max_size + settings.size_fixed_cost_to_add) >= lowered_base;
+    return (sum_size + static_cast<double>(size) * static_cast<double>(settings.size_fixed_cost_to_add)) / (max_size + static_cast<double>(settings.size_fixed_cost_to_add)) >= lowered_base;
 }
 
 
@@ -241,7 +241,7 @@ void selectWithinPartsRange(
         assert(range_it->size() > 1);
         const auto & partition_stats = settings.partitions_stats->at(range_it->front().info.getPartitionId());
 
-        if (partition_stats.part_count < settings.base)
+        if (static_cast<double>(partition_stats.part_count) < settings.base)
         {
             /// Partition is not filled
         }
@@ -256,7 +256,7 @@ void selectWithinPartsRange(
             size_t exponent = settings.heuristic_to_lower_max_parts_to_merge_at_once_exponent;
             max_parts_to_merge_at_once = static_cast<size_t>(
                 settings.base +
-                (max_parts_to_merge_at_once - settings.base) * (1.0 - std::pow((partition_stats.part_count - settings.base) / (settings.parts_to_throw_insert - settings.base), exponent))
+                (static_cast<double>(max_parts_to_merge_at_once) - settings.base) * (1.0 - std::pow((static_cast<double>(partition_stats.part_count) - settings.base) / (static_cast<double>(settings.parts_to_throw_insert) - settings.base), exponent))
             );
         }
     }
@@ -292,7 +292,17 @@ void selectWithinPartsRange(
             auto range_begin = parts.begin() + begin;
             auto range_end = parts.begin() + end;
 
-            if (allow(sum_size, max_size, min_age, parts_count, min_size_to_lower_base_log, max_size_to_lower_base_log, range_begin, range_end, range_filter, settings))
+            if (allow(
+                    static_cast<double>(sum_size),
+                    static_cast<double>(max_size),
+                    static_cast<double>(min_age),
+                    static_cast<double>(parts_count),
+                    min_size_to_lower_base_log,
+                    max_size_to_lower_base_log,
+                    range_begin,
+                    range_end,
+                    range_filter,
+                    settings))
                 estimator.consider(
                     range_it,
                     range_begin,

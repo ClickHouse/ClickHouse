@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -16,9 +15,7 @@
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>
-#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -77,7 +74,14 @@ public:
 
     ~TemporaryReplicationSlot()
     {
-        handler->dropReplicationSlot(*tx, /* temporary */true);
+        try
+        {
+            handler->dropReplicationSlot(*tx, /* temporary */true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("TemporaryReplicationSlot");
+        }
     }
 
 private:
@@ -487,7 +491,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = nested_storage->getStorageID();
 
     auto insert_context = materialized_storage->getNestedTableContext();
@@ -807,11 +811,14 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     {
         shutdown();
 
+        /// Do not use fault injection during cleanup: leaked replication slots
+        /// can exhaust PostgreSQL's max_replication_slots and break subsequent
+        /// MaterializedPostgreSQL databases.
         postgres::Connection connection(connection_info);
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
         String last_committed_lsn;
 
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
@@ -820,7 +827,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         if (user_managed_slot)
             return;
 
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);

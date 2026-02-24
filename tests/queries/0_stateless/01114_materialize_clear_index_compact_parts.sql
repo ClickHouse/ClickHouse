@@ -3,7 +3,6 @@ SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injectio
 
 -- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
 SET parallel_replicas_index_analysis_only_on_coordinator = 0;
-SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS minmax_compact;
 

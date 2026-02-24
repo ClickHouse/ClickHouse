@@ -44,7 +44,7 @@ StorageType parseStorageTypeFromString(const std::string & type)
     {
         auto result = Poco::toLower(s);
         if (!result.empty())
-            result[0] = std::toupper(result[0]);
+            result[0] = static_cast<char>(std::toupper(result[0]));
         return result;
     };
 
@@ -277,6 +277,8 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("aws_access_key_id", aws_access_key_id);
     changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
     changes.emplace_back("region", region);
+    changes.emplace_back("aws_role_arn", aws_role_arn);
+    changes.emplace_back("aws_role_session_name", aws_role_session_name);
 
     return changes;
 }

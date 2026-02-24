@@ -17,6 +17,8 @@
 #include <Storages/StorageDictionary.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 
@@ -319,6 +321,12 @@ public:
         }
 
         if (getSettings()[Setting::rewrite_in_to_join])
+            return;
+
+        /// This rewrite turns `dictGet(...)` predicates into `IN (SELECT ... FROM dictionary(...))`.
+        /// The `dictionary()` table function requires `CREATE TEMPORARY TABLE`; if that grant is missing,
+        /// skip the optimization to avoid `ACCESS_DENIED`.
+        if (!getContext()->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE))
             return;
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");

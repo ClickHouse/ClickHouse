@@ -9,7 +9,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/PODArray.h>
-#include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 
@@ -191,8 +190,8 @@ private:
                 delta = delta + 1;
 
             X value = point.getKey() - from_x;
-            Float64 w = histogram.size();
-            size_t index = std::min<size_t>(static_cast<size_t>(w / delta * value), histogram.size() - 1);
+            Float64 w = static_cast<Float64>(histogram.size());
+            size_t index = std::min<size_t>(static_cast<size_t>(w / static_cast<Float64>(delta) * static_cast<Float64>(value)), histogram.size() - 1);
 
             Y res;
             bool has_overfllow = false;
@@ -217,7 +216,10 @@ private:
         for (size_t i = 0; i < histogram.size(); ++i)
         {
             if (count_histogram[i] > 0)
-                histogram[i] = histogram[i] / count_histogram[i];
+            {
+                using CountHistogramType = std::conditional_t<is_floating_point<Y>, Y, UInt64>;
+                histogram[i] = histogram[i] / static_cast<CountHistogramType>(count_histogram[i]);
+            }
         }
 
         Y y_max{};
@@ -236,6 +238,7 @@ private:
         }
 
         /// Scale the histogram to the range [0, BAR_LEVELS]
+#pragma clang loop vectorize(disable) /// Workaround for a bug in clang-23
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
@@ -429,7 +432,7 @@ SELECT sparkbar(9, toDate('2020-01-01'), toDate('2020-01-10'))(event_date, cnt) 
     FunctionDocumentation::Category category_sparkbar = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_sparkbar = {description_sparkbar, syntax_sparkbar, arguments_sparkbar, parameters_sparkbar, returned_value_sparkbar, examples_sparkbar, introduced_in_sparkbar, category_sparkbar};
 
-    factory.registerFunction("sparkbar", {createAggregateFunctionSparkbar, {}, documentation_sparkbar});
+    factory.registerFunction("sparkbar", {createAggregateFunctionSparkbar, documentation_sparkbar});
     factory.registerAlias("sparkBar", "sparkbar");
 }
 

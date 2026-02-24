@@ -62,6 +62,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
     extern const Event MergeTreeDataProjectionWriterSortingBlocksMicroseconds;
     extern const Event MergeTreeDataProjectionWriterMergingBlocksMicroseconds;
+    extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
     extern const Event RejectedInserts;
 }
 
@@ -616,8 +617,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum min_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>());
-        DayNum max_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>());
+        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
+        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
 
         const auto & date_lut = DateLUT::serverTimezoneInstance();
 
@@ -660,11 +661,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         else /// All indexes will be materialized on INSERT
             indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
     }
-
-
-    ColumnsStatistics statistics;
-    if (global_settings[Setting::materialize_statistics_on_insert])
-        statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
@@ -720,6 +716,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
     }
 
+    ColumnsStatistics statistics;
+    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+        statistics.build(block);
+    }
+
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
@@ -734,10 +738,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(context, ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
-    VolumePtr volume = data.getStoragePolicy()->getVolume(0);
-    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
-
     const UInt64 & min_bytes_to_perform_insert =
             (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert].changed
             ? (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert]
@@ -750,33 +750,38 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     const bool is_system_database = (data.getStorageID().getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
+    VolumePtr volume = data.getStoragePolicy()->getVolume(0);
+    ReservationPtr reservation;
+
     if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0))
     {
-        const auto & disk = data_part_volume->getDisk();
-        const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
-        const UInt64 & free_disk_bytes = disk->getUnreservedSpace().value_or(0);
+        ReservationConstraints constraints(min_bytes_to_perform_insert, min_ratio_to_perform_insert);
 
-        const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
-        const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
+        /// Try to reserve space on volume with constraints
+        reservation = volume->reserve(expected_size, constraints);
 
-        if (needed_free_bytes > free_disk_bytes)
+        if (!reservation)
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
                 "Could not perform insert. "
-                "The amount of free space ({}) on disk {} is less than the configured threshold ({})."
+                "None of the disks in volume '{}' have enough free space to meet the configured threshold. "
                 "The threshold can be configured either in MergeTree settings or User settings, "
                 "using the following settings: "
-                "(1) `min_free_disk_bytes_to_perform_insert` "
-                "(2) `min_free_disk_ratio_to_perform_insert`. "
-                "The total disk capacity of {} is {}",
-                formatReadableSizeWithBinarySuffix(free_disk_bytes),
-                backQuote(disk->getName()),
-                formatReadableSizeWithBinarySuffix(needed_free_bytes),
-                backQuote(disk->getName()),
-                formatReadableSizeWithBinarySuffix(total_disk_bytes));
+                "(1) `min_free_disk_bytes_to_perform_insert` = {} "
+                "(2) `min_free_disk_ratio_to_perform_insert` = {}",
+                volume->getName(),
+                min_bytes_to_perform_insert,
+                min_ratio_to_perform_insert);
         }
     }
+    else
+    {
+        /// No free space check needed, use default reservation
+        reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
+    }
+
+    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
         .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
@@ -867,20 +872,23 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
+    IMergedBlockOutputStream::GatheredData gathered_data;
+    gathered_data.statistics = std::move(statistics);
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
         metadata_snapshot,
         columns,
         indices,
-        statistics,
         compression_codec,
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        context->getWriteSettings());
+        context->getWriteSettings(),
+        static_cast<WrittenOffsetSubstreams *>(nullptr));
 
     out->writeWithPermutation(block, perm_ptr);
 
@@ -904,10 +912,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         }
     }
 
+    out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(
         new_data_part,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert],
-        nullptr, nullptr);
+        gathered_data,
+        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -1041,18 +1050,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
-        /// TODO(hanfei): It should be helpful to write statistics for projection result.
-        ColumnsStatistics{},
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings());
+        data.getContext()->getWriteSettings(),
+        static_cast<WrittenOffsetSubstreams *>(nullptr));
 
     out->writeWithPermutation(block, perm_ptr);
-    auto finalizer = out->finalizePartAsync(new_data_part, false);
+    out->finalizeIndexGranularity();
+    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 

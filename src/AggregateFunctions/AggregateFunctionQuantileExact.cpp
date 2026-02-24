@@ -100,8 +100,8 @@ SELECT quantileExact(number) FROM numbers(10);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExact::name, {createAggregateFunctionQuantile<FuncQuantileExact>, {}, documentation});
-    factory.registerFunction(NameQuantilesExact::name, { createAggregateFunctionQuantile<FuncQuantilesExact>, properties });
+    factory.registerFunction(NameQuantileExact::name, {createAggregateFunctionQuantile<FuncQuantileExact>, documentation});
+    factory.registerFunction(NameQuantilesExact::name, { createAggregateFunctionQuantile<FuncQuantilesExact>, {}, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianExact", NameQuantileExact::name);

@@ -348,7 +348,7 @@ Starting from version 25.7, ClickHouse supports modifications of user’s Iceber
 Currently, this is an experimental feature, so you first need to enable it:
 
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 ```
 
 ### Creating table {#create-iceberg-table}
@@ -420,7 +420,7 @@ y: 993
 
 ### Schema evolution {#iceberg-writes-schema-evolution}
 
-ClickHouse allows you to add, drop, or modify columns with simple types (non-tuple, non-array, non-map).
+ClickHouse allows you to add, drop, modify, or rename columns with simple types (non-tuple, non-array, non-map).
 
 ### Example {#example-iceberg-writes-evolution}
 
@@ -479,6 +479,27 @@ Row 1:
 ──────
 x: Ivanov
 y: 993
+
+ALTER TABLE iceberg_writes_example RENAME COLUMN y TO value;
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `value` Nullable(Int64)                              ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+value: 993
 ```
 
 ### Compaction {#iceberg-writes-compaction}

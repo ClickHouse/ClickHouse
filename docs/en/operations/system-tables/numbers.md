@@ -41,7 +41,7 @@ SELECT * FROM system.numbers LIMIT 10;
 You can also limit the output by predicates.
 
 ```sql
-SELECT * FROM system.numbers < 10;
+SELECT * FROM system.numbers WHERE number < 10;
 ```
 
 ```response

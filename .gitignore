@@ -111,6 +111,7 @@ nbproject/*
 
 # Microsoft Visual Studio Code
 .vscode
+.devcontainer/
 
 config-preprocessed.xml
 
@@ -183,4 +184,4 @@ tests/casa_del_dolor/_instances*
 /rust/**/vendor
 
 # Claude preferences
-.claude
+.claude/*.local.*
