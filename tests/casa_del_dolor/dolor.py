@@ -802,9 +802,7 @@ if not all_running:
                 )
                 good_exit = False
         if server.grep_in_log("Logical error:", from_host=True):
-            logging.error(
-                f"Logical error in instance '{server.name}':\n{logical_error_log}"
-            )
+            logging.error(f"Logical error in instance '{server.name}'")
             good_exit = False
         if server.grep_in_log("<Fatal>", from_host=True):
             logging.error(f"Crash in instance '{server.name}'")
