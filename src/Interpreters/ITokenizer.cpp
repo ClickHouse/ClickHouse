@@ -222,7 +222,10 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
         else if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
         {
             if (!bad_token && !token.empty())
+            {
+                ++pos;
                 return true;
+            }
 
             token.clear();
             bad_token = false;

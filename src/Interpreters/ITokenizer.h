@@ -36,6 +36,9 @@ public:
     /// Returns a formatted description of the tokenizer with arguments.
     virtual String getDescription() const = 0;
 
+    virtual const char * getTokenizerName() const = 0;
+    virtual const char * getTokenizerExternalName() const = 0;
+
     /// Fast inplace implementation for regular use.
     /// Gets string (data ptr and len) and start position for extracting next token (state of tokenizer).
     /// Returns false if parsing is finished, otherwise returns true.
@@ -109,6 +112,9 @@ class ITokenizerHelper : public ITokenizer
 {
 protected:
     explicit ITokenizerHelper(Type type_) : ITokenizer(type_) {}
+
+    const char * getTokenizerName() const override { return Derived::getName(); }
+    const char * getTokenizerExternalName() const override { return Derived::getExternalName(); }
 
 private:
     std::unique_ptr<ITokenizer> clone() const override
