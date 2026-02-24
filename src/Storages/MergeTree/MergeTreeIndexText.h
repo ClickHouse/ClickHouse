@@ -267,7 +267,7 @@ struct TextIndexSerialization
         PostingsSerialization & postings_serialization);
 
     /// Deserializes tokens from a dictionary block. Returns the tokens column and the tokens format.
-    static ColumnPtr deserializeTokens(ReadBuffer & istr);
+    static std::pair<ColumnPtr, UInt64> deserializeTokens(ReadBuffer & istr);
 
     /// Deserializes a dictionary block into a new DictionaryBlock.
     static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, PostingsSerialization * postings_serialization);

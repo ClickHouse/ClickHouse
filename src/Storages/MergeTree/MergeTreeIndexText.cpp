@@ -388,7 +388,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
 
         ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
-        auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer);
+        auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer).first;
         const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
         size_t num_tokens = block_tokens.size();
 
@@ -1002,7 +1002,7 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     }
 }
 
-ColumnPtr TextIndexSerialization::deserializeTokens(ReadBuffer & istr)
+std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffer & istr)
 {
     UInt64 tokens_format;
     readVarUInt(tokens_format, istr);
@@ -1013,9 +1013,9 @@ ColumnPtr TextIndexSerialization::deserializeTokens(ReadBuffer & istr)
     switch (tokens_format)
     {
         case static_cast<UInt64>(TokensFormat::RawStrings):
-            return deserializeTokensRaw(istr, num_tokens);
+            return {deserializeTokensRaw(istr, num_tokens), tokens_format};
         case static_cast<UInt64>(TokensFormat::FrontCodedStrings):
-            return deserializeTokensFrontCoding(istr, num_tokens);
+            return {deserializeTokensFrontCoding(istr, num_tokens), tokens_format};
         default:
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
     }
@@ -1056,7 +1056,7 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
-    auto tokens_column = deserializeTokens(istr);
+    auto [tokens_column, tokens_format] = deserializeTokens(istr);
     size_t num_tokens = tokens_column->size();
 
     std::vector<TokenPostingsInfo> token_infos;
@@ -1065,8 +1065,7 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
     for (size_t i = 0; i < num_tokens; ++i)
         token_infos.emplace_back(deserializeTokenInfo(istr, postings_serialization));
 
-    DictionaryBlock result{std::move(tokens_column), std::move(token_infos), tokens_format};
-    return result;
+    return DictionaryBlock{std::move(tokens_column), std::move(token_infos), std::move(tokens_format)};
 }
 
 template <typename Stream>
