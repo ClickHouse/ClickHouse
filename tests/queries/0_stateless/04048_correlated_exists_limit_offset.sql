@@ -1,8 +1,11 @@
 -- Bug test for PR #99005 (Fix EXISTS not respecting LIMIT and OFFSET in subqueries).
--- PR #99005 correctly fixes non-correlated EXISTS with LIMIT/OFFSET, but correlated
--- EXISTS with LIMIT offset>0 or limit=0 now throws NOT_IMPLEMENTED because
--- optimizePlanForExists preserves the LimitStep while decorrelateQueryPlan cannot
--- handle it.
+-- PR #99005 correctly fixes non-correlated EXISTS with LIMIT/OFFSET.
+-- Correlated EXISTS with LIMIT/OFFSET is now supported via LimitStep decorrelation
+-- (LimitStep is converted to LimitByStep grouped by correlated columns).
+-- Requires the new analyzer for correlated subquery decorrelation.
+
+SET enable_analyzer = 1;
+SET allow_experimental_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS t_04048_outer;
 DROP TABLE IF EXISTS t_04048_inner;
@@ -13,19 +16,19 @@ CREATE TABLE t_04048_inner (x UInt64) ENGINE = MergeTree() ORDER BY x;
 INSERT INTO t_04048_outer VALUES (1), (2), (3);
 INSERT INTO t_04048_inner VALUES (1), (1), (1), (2), (2);
 
--- Correlated EXISTS with OFFSET that skips all matching rows → NOT_IMPLEMENTED
+-- Correlated EXISTS with OFFSET that skips all matching rows → false
 SELECT x, EXISTS (
     SELECT 1 FROM t_04048_inner
     WHERE t_04048_inner.x = t_04048_outer.x
     LIMIT 3 OFFSET 10
-) AS e FROM t_04048_outer ORDER BY x; -- { serverError NOT_IMPLEMENTED, UNKNOWN_IDENTIFIER }
+) AS e FROM t_04048_outer ORDER BY x;
 
--- Correlated EXISTS with LIMIT 0 → NOT_IMPLEMENTED
+-- Correlated EXISTS with LIMIT 0 → false
 SELECT x, EXISTS (
     SELECT 1 FROM t_04048_inner
     WHERE t_04048_inner.x = t_04048_outer.x
     LIMIT 0
-) AS e FROM t_04048_outer ORDER BY x; -- { serverError NOT_IMPLEMENTED, UNKNOWN_IDENTIFIER }
+) AS e FROM t_04048_outer ORDER BY x;
 
 
 DROP TABLE t_04048_outer;

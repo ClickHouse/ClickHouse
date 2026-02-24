@@ -72,6 +72,7 @@ struct ASTTableJoin : public IAST
     JoinLocality locality = JoinLocality::Unspecified;
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
+    bool lateral = false;
 
     /// Set for NATURAL JOIN — the USING columns are derived automatically from the common columns.
     bool is_natural = false;

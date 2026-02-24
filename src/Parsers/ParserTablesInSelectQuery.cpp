@@ -281,6 +281,14 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 return false;
         }
 
+        if (ParserKeyword(Keyword::LATERAL).ignore(pos, expected))
+        {
+            table_join->lateral = true;
+
+            if (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Comma)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "LATERAL is not supported with {} JOIN", toString(table_join->kind));
+        }
+
         if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
             return false;
 
