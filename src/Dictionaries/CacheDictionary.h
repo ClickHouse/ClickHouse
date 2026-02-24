@@ -211,6 +211,10 @@ private:
     /// readers. Surprisingly this lock is also used for last_exception pointer.
     mutable SharedMutex rw_lock;
 
+    /// Serializes writers without blocking readers, when the storage supports concurrent reads
+    /// during insert. See the fine-grained path in `update`.
+    mutable std::mutex write_mutex;
+
     mutable std::exception_ptr last_exception;
     mutable std::atomic<size_t> error_count {0};
     mutable std::atomic<std::chrono::system_clock::time_point> backoff_end_time{std::chrono::system_clock::time_point{}};

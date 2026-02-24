@@ -4,6 +4,7 @@
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
@@ -120,6 +121,14 @@ public:
 
     /// Return bytes allocated in storage
     virtual size_t getBytesAllocated() const = 0;
+
+    /// If true, the owner serializes writers itself and passes the shared reader lock via
+    /// `setInsertReaderLock`; the storage then locks it only around each brief per-key commit.
+    /// If false, the owner must hold an exclusive lock for the whole insert.
+    virtual bool supportsConcurrentReadsDuringInsert() const { return false; }
+
+    /// Only meaningful when `supportsConcurrentReadsDuringInsert` is true. Must outlive inserts.
+    virtual void setInsertReaderLock(SharedMutex * /*reader_lock*/) {}
 
 };
 
