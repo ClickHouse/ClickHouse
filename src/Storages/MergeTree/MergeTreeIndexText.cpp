@@ -501,7 +501,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality);
     };
 
-    auto hash = TextIndexPostingsCache::hash(data_path, index_name, token_info.offsets[block_idx]);
+    auto hash = TextIndexPostingsCache::hash(state.part.getDataPartStorage().getDiskName(), data_path, index_name, token_info.offsets[block_idx]);
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 

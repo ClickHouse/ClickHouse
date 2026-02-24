@@ -71,6 +71,7 @@ const constexpr uint64_t allow_replacing_mergetree
     allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45);
 
 extern const DB::Strings compressionMethods;
+extern const DB::Strings codecs;
 
 using JSONObjectType = JSONParserImpl::Element;
 
@@ -261,6 +262,30 @@ public:
     }
 };
 
+class Tokenizer
+{
+public:
+    String name;
+    String type;
+
+    Tokenizer()
+        : name("ngrams")
+        , type("Ngrams")
+    {
+    }
+
+    Tokenizer(const String & name_, const String & type_)
+        : name(name_)
+        , type(type_)
+    {
+    }
+
+    Tokenizer(const Tokenizer & c) = default;
+    Tokenizer(Tokenizer && c) = default;
+    Tokenizer & operator=(const Tokenizer & c) = default;
+    Tokenizer & operator=(Tokenizer && c) noexcept = default;
+};
+
 class FuzzConfig
 {
 private:
@@ -285,6 +310,7 @@ public:
     DB::Strings hot_settings;
     DB::Strings disallowed_settings;
     DB::Strings hot_table_settings;
+    std::vector<Tokenizer> tokenizers;
 
     std::optional<ServerCredentials> clickhouse_server;
     std::optional<ServerCredentials> mysql_server;

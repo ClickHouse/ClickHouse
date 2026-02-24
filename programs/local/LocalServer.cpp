@@ -29,6 +29,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
+#include <base/errnoToString.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStatus.h>
