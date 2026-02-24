@@ -322,17 +322,10 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         {
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
 
-            /// There are special const columns for example after prewhere sections
-            /// or when skip index expressions produce constants.
-            if (isColumnConst(*column.column))
-            {
-                def.column_numbers_not_to_aggregate.push_back(i);
-                continue;
-            }
-
+            /// There are special const columns for example after prewhere sections.
             if (!aggregate_all_columns)
             {
-                if (!column.type->isSummable() && !is_agg_func && !simple)
+                if ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column))
                 {
                     def.column_numbers_not_to_aggregate.push_back(i);
                     continue;
@@ -823,7 +816,6 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
 
@@ -836,7 +828,6 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);

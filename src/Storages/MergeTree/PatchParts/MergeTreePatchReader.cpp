@@ -16,7 +16,6 @@
 namespace ProfileEvents
 {
     extern const Event ReadPatchesMicroseconds;
-    extern const Event PatchesReadRows;
     extern const Event PatchesReadUncompressedBytes;
 }
 
@@ -48,15 +47,13 @@ MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRanges(MarkRange
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the full ranges ({}) for patch part {}", ranges.describe(), patch_part.part->getPartName());
 
     for (auto & column : read_result.columns)
-        column = removeSpecialRepresentations(column);
+        column = recursiveRemoveSparse(column);
 
     if (patch_part.perform_alter_conversions)
         range_reader.getReader()->performRequiredConversions(read_result.columns);
 
     ProfileEvents::increment(ProfileEvents::ReadPatchesMicroseconds, watch.elapsedMicroseconds());
-    ProfileEvents::increment(ProfileEvents::PatchesReadRows, read_result.num_rows);
     ProfileEvents::increment(ProfileEvents::PatchesReadUncompressedBytes, read_result.numBytesRead());
-
     return read_result;
 }
 
@@ -159,7 +156,7 @@ static MinMaxStat getResultBlockStat(const Block & result_block, const String & 
     Field min_value;
     Field max_value;
 
-    column->getExtremes(min_value, max_value, 0, column->size());
+    column->getExtremes(min_value, max_value);
     return {min_value.safeGet<UInt64>(), max_value.safeGet<UInt64>()};
 }
 
@@ -167,7 +164,7 @@ static void filterReadRanges(MarkRanges & all_ranges, const MarkRanges & read_ra
 {
     std::unordered_set<MarkRange, MarkRangeHash> read_ranges_set(read_ranges.begin(), read_ranges.end());
 
-    for (auto * it = all_ranges.begin(); it != all_ranges.end();)
+    for (auto it = all_ranges.begin(); it != all_ranges.end();)
     {
         if (read_ranges_set.contains(*it))
             it = all_ranges.erase(it);
