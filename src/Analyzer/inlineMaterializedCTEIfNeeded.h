@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <unordered_set>
 
@@ -10,10 +11,10 @@ namespace DB
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
-struct TemporaryTableHolder;
-using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+struct MaterializedCTE;
+using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
 
-using ReusedMaterializedCTEs = std::unordered_set<TemporaryTableHolderPtr>;
+using ReusedMaterializedCTEs = std::unordered_set<MaterializedCTEPtr>;
 
 void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, const ReusedMaterializedCTEs & reused_materialized_cte, ContextPtr context);
 

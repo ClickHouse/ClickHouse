@@ -1,4 +1,5 @@
 #include <Core/Block_fwd.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Processors/Transforms/MaterializingCTETransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -761,8 +762,8 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
 }
 
 void QueryPipelineBuilder::addMaterializingCTETransform(
-    [[maybe_unused]] SharedHeader res_header,
-    TemporaryTableHolderPtr temporary_table_holder
+    SharedHeader res_header,
+    MaterializedCTEPtr materialized_cte
 )
 {
     checkInitializedAndNotCompleted();
@@ -771,7 +772,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
     auto transform = std::make_shared<MaterializingCTETransform>(
             getSharedHeader(),
             res_header,
-            temporary_table_holder);
+            std::move(materialized_cte));
 
     pipe.addTransform(std::move(transform));
 }

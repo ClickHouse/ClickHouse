@@ -26,6 +26,9 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 struct TemporaryTableHolder;
 using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 
+struct MaterializedCTE;
+using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
+
 class TableNode : public IQueryTreeNode
 {
 public:
@@ -109,9 +112,9 @@ public:
         table_expression_modifiers = std::move(table_expression_modifiers_value);
     }
 
-    const TemporaryTableHolderPtr & getTemporaryTableHolder() const
+    const MaterializedCTEPtr & getMaterializedCTE() const
     {
-        return temporary_table_holder;
+        return materialized_cte;
     }
 
     bool isMaterializedCTE() const
@@ -154,7 +157,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
-    TemporaryTableHolderPtr temporary_table_holder;
+    MaterializedCTEPtr materialized_cte;
 
     static constexpr size_t materialized_cte_subquery_index = 0;
     static constexpr size_t children_size = materialized_cte_subquery_index + 1;

@@ -35,16 +35,16 @@ constexpr ITransformingStep::Traits getMaterializingCTETraits()
 
 MaterializingCTEStep::MaterializingCTEStep(
     SharedHeader input_header_,
-    TemporaryTableHolderPtr temporary_table_holder_
+    MaterializedCTEPtr materialized_cte_
 )
     : ITransformingStep(std::move(input_header_), std::make_shared<const Block>(Block{}), getMaterializingCTETraits())
-    , temporary_table_holder(std::move(temporary_table_holder_))
+    , materialized_cte(std::move(materialized_cte_))
 {
 }
 
 void MaterializingCTEStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addMaterializingCTETransform(getOutputHeader(), temporary_table_holder);
+    pipeline.addMaterializingCTETransform(getOutputHeader(), materialized_cte);
 }
 
 void MaterializingCTEStep::describeActions([[maybe_unused]] JSONBuilder::JSONMap & map) const
@@ -89,6 +89,35 @@ QueryPipelineBuilderPtr MaterializingCTEsStep::updatePipeline(QueryPipelineBuild
     processors.insert(processors.end(), added_processors.begin(), added_processors.end());
 
     return main_pipeline;
+}
+
+DelayedMaterializingCTEsStep::DelayedMaterializingCTEsStep(
+    SharedHeader input_header,
+    std::vector<CTEPlan> cte_plans_)
+    : cte_plans(std::move(cte_plans_))
+{
+    input_headers = {input_header};
+    output_header = std::move(input_header);
+}
+
+QueryPipelineBuilderPtr DelayedMaterializingCTEsStep::updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &)
+{
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Cannot build pipeline in DelayedMaterializingCTEs. This step should be optimized out.");
+}
+
+std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
+{
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+    for (auto & [materialized_cte, plan] : step.cte_plans)
+    {
+        if (materialized_cte->is_materialized)
+            continue;
+
+        plans.emplace_back(std::move(plan));
+    }
+    return plans;
 }
 
 }

@@ -1468,6 +1468,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     {
         auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
+        subquery_options.forceMaterializeCTE();
         /// I don't know if this is a good decision,
         /// but for now it is done in the same way as in old analyzer.
         /// This would not ignore limits for subqueries (affects mutations only).
@@ -1514,50 +1515,21 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
     if (materialized_ctes.empty())
         return;
 
-    auto plan_header = query_plan.getCurrentHeader();
-
-    // The main idea of the algorithm is to unite plans for Materialized CTEs of the same level
-    // with the main query plan by MaterializingCTEsStep.
+    // The CTEs are added as DelayedMaterializingCTEsStep nodes — one per level — so that
+    // resolveMaterializingCTEs can skip already-materialized CTEs. This is important when
+    // buildOrderedSetInplace runs a subquery plan that contains CTEs: by the time the main
+    // plan's resolveMaterializingCTEs fires, is_materialized is already true for those CTEs
+    // so they won't be materialized a second time.
     //
-    // This allows to ensure following properties:
-    // 1) All CTEs are executed before the main query.
-    // 2) If CTE A depends on CTE B, then A will be executed after B, because A will be on the next level after B.
-    // 3) CTEs on the same level are independent.
-    // 3) CTEs of the same level will be executed in the same MaterializingCTEsStep, so they will be executed in parallel.
-    // 4) Materialized CTEs are executed only once.
-    //
-    // Example of query plan structure for query with 2 levels of CTEs:
-    //
-    //                                  ┌───────────────────────┐
-    //                                  │                       │
-    //                             ┌────│ MaterializingCTEsStep │────────────────────────────┐
-    //                             │    │                       │         │                  │
-    //                             │    └───────────────────────┘         │                  │
-    //                             │                                      │                  │
-    //                             │                                      │                  │
-    //                 ┌───────────▼───────────┐                 ┌────────▼───────┐ ┌────────▼───────┐
-    //                 │                       │                 │                │ │                │
-    //        ┌────────│ MaterializingCTEsStep │─────────┐       │ CTE (level: 0) │ │ CTE (level: 0) │
-    //        │        │                       │         │       │                │ │                │
-    //        │        └───────────────────────┘         │       └────────────────┘ └────────────────┘
-    //        │                                          │
-    //        │                                          │
-    // ┌──────▼─────┐                           ┌────────▼───────┐
-    // │            │                           │                │
-    // │ Query Plan │                           │ CTE (level: 1) │
-    // │            │                           │                │
-    // └────────────┘                           └────────────────┘
+    // The level structure is preserved: for each level we push one DelayedMaterializingCTEsStep
+    // on top of the current plan, wrapping it the same way the old eager approach did with
+    // MaterializingCTEsStep. resolveMaterializingCTEs processes nodes post-order, so the inner
+    // (lower-level) step is resolved before the outer one, guaranteeing that a CTE at level N
+    // is always materialized before the CTE at level N-1 that depends on it.
     for (const auto & cte_level : materialized_ctes)
     {
-        SharedHeaders headers;
-        std::vector<std::unique_ptr<QueryPlan>> plans;
-
-        headers.reserve(cte_level.size() + 1);
-        plans.reserve(cte_level.size() + 1);
-        headers.emplace_back(plan_header);
-        plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
-
-        query_plan = QueryPlan();
+        std::vector<DelayedMaterializingCTEsStep::CTEPlan> cte_plans;
+        cte_plans.reserve(cte_level.size());
 
         for (const auto & cte_node : cte_level)
         {
@@ -1573,14 +1545,17 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
 
             auto step = std::make_unique<MaterializingCTEStep>(
                 cte_plan.getCurrentHeader(),
-                cte_table_node->getTemporaryTableHolder());
+                cte_table_node->getMaterializedCTE());
             step->setStepDescription("Materializing CTE: " + cte_table_node->getTemporaryTableName(), 100);
             cte_plan.addStep(std::move(step));
 
-            headers.emplace_back(cte_plan.getCurrentHeader());
-            plans.emplace_back(std::make_unique<QueryPlan>(std::move(cte_plan)));
+            cte_plans.push_back({cte_table_node->getMaterializedCTE(), std::make_unique<QueryPlan>(std::move(cte_plan))});
         }
-        query_plan.unitePlans(std::make_unique<MaterializingCTEsStep>(std::move(headers)), std::move(plans));
+
+        auto delayed_step = std::make_unique<DelayedMaterializingCTEsStep>(
+            query_plan.getCurrentHeader(),
+            std::move(cte_plans));
+        query_plan.addStep(std::move(delayed_step));
     }
 }
 

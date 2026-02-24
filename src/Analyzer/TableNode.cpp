@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Parsers/ASTIdentifier.h>
 
 #include <Storages/IStorage.h>
@@ -50,7 +50,7 @@ TableNode::TableNode(
 )
     : TableNode(temporary_table_holder_->getTable(), context_)
 {
-    temporary_table_holder = std::move(temporary_table_holder_);
+    materialized_cte = std::make_shared<MaterializedCTE>(std::move(*temporary_table_holder_));
     children[materialized_cte_subquery_index] = std::move(materialized_cte_subquery_);
 }
 
@@ -122,7 +122,7 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     result_table_node->table_expression_modifiers = table_expression_modifiers;
     result_table_node->temporary_table_name = temporary_table_name;
 
-    result_table_node->temporary_table_holder = temporary_table_holder;
+    result_table_node->materialized_cte = materialized_cte;
     result_table_node->children[materialized_cte_subquery_index] = getMaterializedCTESubquery();
 
     return result_table_node;

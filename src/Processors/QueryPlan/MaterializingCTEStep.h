@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/MaterializedCTE.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -7,15 +8,13 @@
 namespace DB
 {
 
-struct TemporaryTableHolder;
-using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 
 class MaterializingCTEStep : public ITransformingStep
 {
 public:
     explicit MaterializingCTEStep(
         SharedHeader input_header_,
-        TemporaryTableHolderPtr temporary_table_holder_
+        MaterializedCTEPtr materialized_cte_
     );
 
     String getName() const override { return "MaterializingCTE"; }
@@ -29,7 +28,7 @@ private:
 
     void updateOutputHeader() override {} // Output header should stay empty.
 
-    TemporaryTableHolderPtr temporary_table_holder;
+    MaterializedCTEPtr materialized_cte;
 };
 
 
@@ -46,5 +45,40 @@ private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 };
 
+
+/// Stores pre-built CTE plans and materializes them lazily during query plan
+/// optimization. This is the analogue of `DelayedCreatingSetsStep` for materialized CTEs.
+///
+/// The step cannot build a pipeline directly and must be converted to
+/// `MaterializingCTEsStep` during the `addStepsToBuildSets` optimization pass.
+///
+/// Using a delayed step (rather than eagerly inserting `MaterializingCTEsStep`)
+/// lets `addPlansForMaterializingCTEs` skip CTEs whose `is_materialized` flag is
+/// already set — which happens when `buildOrderedSetInplace` already executed the
+/// CTE as part of primary-key index analysis before the main plan runs.
+class DelayedMaterializingCTEsStep final : public IQueryPlanStep
+{
+public:
+    struct CTEPlan
+    {
+        MaterializedCTEPtr materialized_cte;
+        std::unique_ptr<QueryPlan> plan;
+    };
+
+    DelayedMaterializingCTEsStep(SharedHeader input_header, std::vector<CTEPlan> cte_plans_);
+
+    String getName() const override { return "DelayedMaterializingCTEs"; }
+
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
+
+    /// Returns the subset of pre-built CTE plans that still need to be executed,
+    /// atomically marking each as materialized. CTEs already marked are skipped.
+    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
+
+private:
+    void updateOutputHeader() override { output_header = getInputHeaders().front(); }
+
+    std::vector<CTEPlan> cte_plans;
+};
 
 }

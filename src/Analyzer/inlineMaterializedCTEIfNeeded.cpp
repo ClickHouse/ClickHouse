@@ -26,8 +26,8 @@ public:
         {
             if (table_node->isMaterializedCTE())
             {
-                const auto & temporary_table_holder = table_node->getTemporaryTableHolder();
-                if (!reused_materialized_cte.contains(temporary_table_holder))
+                const auto & materialized_cte = table_node->getMaterializedCTE();
+                if (!reused_materialized_cte.contains(materialized_cte))
                 {
                     replacement_map.emplace(table_node, table_node->getMaterializedCTESubquery());
                 }

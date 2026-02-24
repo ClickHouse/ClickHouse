@@ -1,4 +1,3 @@
-#include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Transforms/MaterializingCTETransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Storages/IStorage.h>
@@ -9,16 +8,15 @@ namespace DB
 MaterializingCTETransform::MaterializingCTETransform(
     const SharedHeader & input_header_,
     const SharedHeader & output_header_,
-    TemporaryTableHolderPtr temporary_table_holder_
+    MaterializedCTEPtr materialized_cte_
 )
     : IAccumulatingTransform(input_header_, output_header_)
-    , temporary_table_holder(std::move(temporary_table_holder_))
+    , materialized_cte(std::move(materialized_cte_))
 {
-    auto storage = temporary_table_holder->getTable();
+    auto storage = materialized_cte->holder.getTable();
     table_out = QueryPipeline(storage->write({}, storage->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
     executor = std::make_unique<PushingPipelineExecutor>(table_out);
     executor->start();
-
 }
 
 void MaterializingCTETransform::consume(Chunk chunk)
@@ -31,6 +29,8 @@ Chunk MaterializingCTETransform::generate()
     executor->finish();
     executor.reset();
     table_out.reset();
+
+    materialized_cte->is_materialized = true;
 
     return {};
 }

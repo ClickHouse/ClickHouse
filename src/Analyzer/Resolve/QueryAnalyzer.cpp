@@ -1418,7 +1418,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             {
                 if (table_node->isMaterializedCTE())
                 {
-                    reused_materialized_cte.insert(table_node->getTemporaryTableHolder());
+                    reused_materialized_cte.insert(table_node->getMaterializedCTE());
                 }
             }
 

@@ -6,20 +6,26 @@
 namespace DB
 {
 
-struct MaterializedCTE
+
+namespace
+{
+
+struct MaterializedCteWithLevel
 {
     QueryTreeNodePtr table_node;
     size_t level;
 };
 
-using TableHolderToCTEMap = std::unordered_map<const TemporaryTableHolder *, MaterializedCTE>;
+using CTEToLevelMap = std::unordered_map<MaterializedCTEPtr, MaterializedCteWithLevel>;
+
+}
 
 OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, const SelectQueryOptions & select_query_options)
 {
-    if (select_query_options.is_subquery)
+    if (select_query_options.is_subquery && !select_query_options.force_materialize_cte)
         return {};
 
-    TableHolderToCTEMap materialized_ctes;
+    CTEToLevelMap materialized_ctes;
     OrderedMaterializedCTEs ctes_by_level;
 
     size_t level = 0;
@@ -31,7 +37,7 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
         {
             if (table_node->isMaterializedCTE())
             {
-                auto [it, _] = materialized_ctes.emplace(table_node->getTemporaryTableHolder().get(), MaterializedCTE{current_node, level});
+                auto [it, _] = materialized_ctes.emplace(table_node->getMaterializedCTE(), MaterializedCteWithLevel{current_node, level});
 
                 it->second.level = std::max(it->second.level, level);
                 max_level = std::max(max_level, level);
