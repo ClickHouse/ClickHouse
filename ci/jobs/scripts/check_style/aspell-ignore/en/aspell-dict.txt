@@ -3052,6 +3052,9 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceMatchEvents
+sequenceMatchEventsAll
+sequenceMatchEventsFirst
+sequenceMatchEventsLast
 sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey

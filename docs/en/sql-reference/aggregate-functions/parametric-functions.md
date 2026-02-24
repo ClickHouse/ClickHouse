@@ -293,6 +293,217 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 **See Also**
 
 - [sequenceMatch](#sequencematch)
+- [sequenceMatchEventsFirst](#sequencematcheventsfirst)
+- [sequenceMatchEventsLast](#sequencematcheventslast)
+- [sequenceMatchEventsAll](#sequencematcheventsall)
+
+## sequenceMatchEventsFirst {#sequencematcheventsfirst}
+
+Return event timestamps of the first event chain (chronologically) that matched the pattern. The function searches for non-overlapping matches and returns the earliest one found. Unlike `sequenceMatchEvents` which returns the longest match, this function returns the first match encountered in time order.
+
+:::note
+Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+:::
+
+**Syntax**
+
+```sql
+sequenceMatchEventsFirst(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**Arguments**
+
+- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql-reference/data-types/int-uint.md) data types.
+
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+
+**Parameters**
+
+- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
+
+**Returned values**
+
+- Array of timestamps for the first matched chain. Returns partial match if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all.
+
+Type: Array.
+
+**Example**
+
+Consider data in the `t` table:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      1 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      1 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+Find the first occurrence of pattern `(?1)(?1)(?2)` (two consecutive number=1, followed by number=2):
+
+```sql
+SELECT sequenceMatchEventsFirst('(?1)(?1)(?2)')(time, number = 1, number = 2) FROM t
+```
+
+```text
+┌─sequenceMatchEventsFirst('(?1)(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│ [1,2,3]                                                                               │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The function returns `[1,2,3]` (first match) even though there is also a later match `[4,5,6]`.
+
+**See Also**
+
+- [sequenceMatchEvents](#sequencematchevents)
+- [sequenceMatchEventsLast](#sequencematcheventslast)
+- [sequenceMatchEventsAll](#sequencematcheventsall)
+
+## sequenceMatchEventsLast {#sequencematcheventslast}
+
+Return event timestamps of the last event chain (chronologically) that matched the pattern. The function searches for non-overlapping matches and returns the latest one found.
+
+:::note
+Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+:::
+
+**Syntax**
+
+```sql
+sequenceMatchEventsLast(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**Arguments**
+
+- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql-reference/data-types/int-uint.md) data types.
+
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+
+**Parameters**
+
+- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
+
+**Returned values**
+
+- Array of timestamps for the last matched chain. Returns partial match if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all.
+
+Type: Array.
+
+**Example**
+
+Consider data in the `t` table:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      1 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      1 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+Find the last occurrence of pattern `(?1)(?1)(?2)` (two consecutive number=1, followed by number=2):
+
+```sql
+SELECT sequenceMatchEventsLast('(?1)(?1)(?2)')(time, number = 1, number = 2) FROM t
+```
+
+```text
+┌─sequenceMatchEventsLast('(?1)(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│ [4,5,6]                                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The function returns `[4,5,6]` (last match) even though there is also an earlier match `[1,2,3]`.
+
+**See Also**
+
+- [sequenceMatchEvents](#sequencematchevents)
+- [sequenceMatchEventsFirst](#sequencematcheventsfirst)
+- [sequenceMatchEventsAll](#sequencematcheventsall)
+
+## sequenceMatchEventsAll {#sequencematcheventsall}
+
+Return event timestamps of all non-overlapping event chains that matched the pattern. The function searches for all possible non-overlapping matches and returns them as an array of arrays.
+
+:::note
+Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+:::
+
+**Syntax**
+
+```sql
+sequenceMatchEventsAll(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**Arguments**
+
+- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql-reference/data-types/int-uint.md) data types.
+
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+
+**Parameters**
+
+- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
+
+**Returned values**
+
+- Array of arrays, where each inner array contains timestamps for a matched chain. The last match may be partial if the pattern cannot be fully satisfied. Returns empty array if no events match the pattern at all.
+
+Type: Array(Array).
+
+**Example**
+
+Consider data in the `t` table:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      1 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      1 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+Find all occurrences of pattern `(?1)(?1)(?2)` (two consecutive number=1, followed by number=2):
+
+```sql
+SELECT sequenceMatchEventsAll('(?1)(?1)(?2)')(time, number = 1, number = 2) FROM t
+```
+
+```text
+┌─sequenceMatchEventsAll('(?1)(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│ [[1,2,3],[4,5,6]]                                                                   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The function returns both matches: `[1,2,3]` and `[4,5,6]`. Note that matches are non-overlapping, similar to how `sequenceCount` works.
+
+To count the number of matches:
+
+```sql
+SELECT length(sequenceMatchEventsAll('(?1)(?1)(?2)')(time, number = 1, number = 2)) FROM t
+```
+
+```text
+┌─length(sequenceMatchEventsAll('(?1)(?1)(?2)')(time, equals(number, 1), equals(number, 2)))─┐
+│                                                                                           2 │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [sequenceMatchEvents](#sequencematchevents)
+- [sequenceMatchEventsFirst](#sequencematcheventsfirst)
+- [sequenceMatchEventsLast](#sequencematcheventslast)
+- [sequenceCount](#sequencecount)
 
 ## windowFunnel {#windowfunnel}
 
