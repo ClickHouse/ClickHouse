@@ -1281,7 +1281,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (top_n)
     {
         if (!method.top_n_heap.heap_column)
-            method.top_n_heap.init(*state.getKeyColumn(), params.top_n_keys_sort_direction, params.top_n_keys, params.top_n_keys_collator);
+            method.top_n_heap.init(*state.getKeyColumn(), params.top_n_keys, params.top_n_keys_collator);
     }
     else
     {
@@ -1292,7 +1292,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if (params.top_n_keys > 0)
         {
             if (!method.top_n_heap.heap_column)
-                method.top_n_heap.init(*state.getKeyColumn(), params.top_n_keys_sort_direction, params.top_n_keys, params.top_n_keys_collator);
+                method.top_n_heap.init(*state.getKeyColumn(), params.top_n_keys, params.top_n_keys_collator);
 
             executeImplBatch<prefetch, true>(
                 method, state, aggregates_pool, row_begin, row_end, aggregate_instructions,
@@ -1593,6 +1593,14 @@ void NO_INLINE Aggregator::executeImplBatch(
         has_only_one_value,
         all_keys_are_const,
         use_compiled_functions);
+
+    /// Destroy the throwaway aggregate state used for skipped rows.
+    /// The memory itself lives in the arena and will be freed with it.
+    if constexpr (top_n)
+    {
+        for (size_t j = 0; j < aggregate_functions.size(); ++j)
+            aggregate_functions[j]->destroy(temp + offsets_of_aggregate_states[j]);
+    }
 }
 
 void Aggregator::executeAggregateInstructions(

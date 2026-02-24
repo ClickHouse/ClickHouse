@@ -440,6 +440,11 @@ struct HashMethodSerialized
                 }
             }
         }
+
+        /// For single-key GROUP BY, initialize key_column so that the top-N heap
+        /// optimization can use getKeyColumn() for IColumn::compareAt comparisons.
+        if (keys_size == 1)
+            this->setKeyColumn(key_columns_[0]);
     }
 
     bool shouldUseBatchSerialize() const

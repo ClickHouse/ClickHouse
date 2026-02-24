@@ -11,21 +11,23 @@
 namespace DB
 {
 
-/** A bounded heap that tracks the top-N smallest (ascending) or largest (descending) keys
+/** A bounded heap that tracks the top-N smallest (ascending) keys
   * seen during aggregation. Keys are stored in a small IColumn and compared using
   * IColumn::compareAt / compareAtWithCollation, which correctly handles all types
   * (signed integers, floats, strings, Nullable, LowCardinality, Enum, collations, etc.)
   * without extracting Field values.
   *
+  * Only ascending sort order is supported, since the optimization is gated at the planner
+  * level to ASC-only (see testForAggregationLimitPushdownOptimization in Planner.cpp).
+  *
   * Uses std::priority_queue over row indices into `heap_column`.
-  * The boundary element (the "worst" kept key that would be evicted next) is at the top.
+  * The boundary element (the largest kept key that would be evicted next) is at the top.
   */
 struct ColumnBoundedHeap
 {
     /// Column holding the key values currently in the heap.
     MutableColumnPtr heap_column;
 
-    int direction = 0;      /// 1 = ASC (max-heap to evict largest), -1 = DESC (min-heap to evict smallest)
     int nan_direction_hint = 1;  /// NULLs/NaNs go last by default
     const Collator * collator = nullptr;
 
@@ -37,13 +39,12 @@ struct ColumnBoundedHeap
     /// which would otherwise dangle after std::move.
     ColumnBoundedHeap(ColumnBoundedHeap && other) noexcept
         : heap_column(std::move(other.heap_column))
-        , direction(other.direction)
         , nan_direction_hint(other.nan_direction_hint)
         , collator(other.collator)
         , capacity(other.capacity)
         , compaction_threshold(other.compaction_threshold)
     {
-        if (direction != 0)  /// initialized
+        if (heap_column)  /// initialized
         {
             /// Reconstruct the priority queue with the correct 'this' pointer in the comparator.
             /// Extract the underlying container from the old priority_queue via a helper struct
@@ -65,12 +66,11 @@ struct ColumnBoundedHeap
         if (this != &other)
         {
             heap_column = std::move(other.heap_column);
-            direction = other.direction;
             nan_direction_hint = other.nan_direction_hint;
             collator = other.collator;
             capacity = other.capacity;
             compaction_threshold = other.compaction_threshold;
-            if (direction != 0)  /// initialized
+            if (heap_column)  /// initialized
             {
                 struct HeapAccess : std::priority_queue<size_t, std::vector<size_t>, HeapComparator>
                 {
@@ -80,7 +80,7 @@ struct ColumnBoundedHeap
                 };
                 HeapAccess other_access(std::move(other.heap));
                 heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(
-                    HeapComparator{this}, other_access.takeContainer());
+                    HeapComparator{this}, std::move(other_access.takeContainer()));
             }
             else
             {
@@ -90,14 +90,12 @@ struct ColumnBoundedHeap
         return *this;
     }
 
-    void init(const IColumn & source_column, int dir, size_t cap, const Collator * col = nullptr)
+    void init(const IColumn & source_column, size_t cap, const Collator * col = nullptr)
     {
-        direction = dir;
         collator = col;
         capacity = cap;
-        /// For ascending sort, NaN/NULL should be greater (direction_hint=1) so they get evicted first.
-        /// For descending sort, NaN/NULL should be less (direction_hint=-1) so they get evicted first.
-        nan_direction_hint = dir;
+        /// NaN/NULL should be greater (direction_hint=1) so they get evicted first in ASC order.
+        nan_direction_hint = 1;
         heap_column = source_column.cloneEmpty();
         heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(HeapComparator{this});
         compaction_threshold = capacity + capacity / 2;  /// 1.5x capacity
@@ -193,7 +191,7 @@ struct ColumnBoundedHeap
 
 private:
     /// Compare a row in source_column against a row in heap_column.
-    /// Returns true if source row should be "above" the heap row (i.e. is worse).
+    /// Returns true if source row is greater than the heap row (i.e. worse for ASC order).
     bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
     {
         int cmp;
@@ -201,13 +199,12 @@ private:
             cmp = source_column.compareAtWithCollation(source_row, heap_row, *heap_column, nan_direction_hint, *collator);
         else
             cmp = source_column.compareAt(source_row, heap_row, *heap_column, nan_direction_hint);
-        return direction == 1 ? (cmp > 0) : (cmp < 0);
+        return cmp > 0;
     }
 
     /// Comparator for the priority queue. The "greatest" element sits at the top,
     /// so we return true when a should be below b.
-    /// For ascending (max-heap): root = max, so a is below b when a < b.
-    /// For descending (min-heap): root = min, so a is below b when a > b.
+    /// For ascending (max-heap): root = max boundary, so a is below b when a < b.
     struct HeapComparator
     {
         const ColumnBoundedHeap * owner;
@@ -219,11 +216,7 @@ private:
                 cmp = owner->heap_column->compareAtWithCollation(a, b, *owner->heap_column, owner->nan_direction_hint, *owner->collator);
             else
                 cmp = owner->heap_column->compareAt(a, b, *owner->heap_column, owner->nan_direction_hint);
-            /// priority_queue puts the "greatest" element on top.
-            /// We want the boundary (worst kept key) on top.
-            /// For ASC (max-heap): boundary = max, so "greater" = larger value → return cmp < 0 (a < b means a is "less" in pq order).
-            /// For DESC (min-heap): boundary = min, so "greater" = smaller value → return cmp > 0.
-            return owner->direction == 1 ? (cmp < 0) : (cmp > 0);
+            return cmp < 0;
         }
     };
 
