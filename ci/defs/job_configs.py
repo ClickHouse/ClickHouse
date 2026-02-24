@@ -1234,7 +1234,6 @@ class JobConfigs:
             ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
             *LLVM_ARTIFACTS_LIST,
-            ArtifactNames.LLVM_COVERAGE_INFO_FILE
         ],
         provides=[
             ArtifactNames.LLVM_COVERAGE_INFO_FILE,
