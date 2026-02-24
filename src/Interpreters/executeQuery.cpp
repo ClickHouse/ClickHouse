@@ -2113,10 +2113,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         });
     }
 
-    // Implicit transactions cause issues with fuzzing because we copy the query context which can contain an already
-    // committed transaction. Because of the different assertions in setCurrentTransaction, initCurrentTransaction and
-    // MergeTreeTransactionHolder, it is not trivial how to start a new transaction in the same session context for a
-    // new query, thus let's just not fuzz queries with implicit transactions.
+    /// Implicit transactions cause issues with fuzzing because we copy the query context which can contain an already
+    /// committed transaction. Because of the different assertions in setCurrentTransaction, initCurrentTransaction and
+    /// MergeTreeTransactionHolder, it is not trivial how to start a new transaction in the same session context for a
+    /// new query, thus let's just not fuzz queries with implicit transactions.
     if (!flags.internal && ast && !implicit_tcl_executor->transactionRunning())
     {
         Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
