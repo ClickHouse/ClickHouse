@@ -5425,7 +5425,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
 
         /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
-        transaction.rollback(lock);
+        transaction.rollback(&lock);
         new_data_part->remove_time.store(0, std::memory_order_relaxed);
         /// Such parts are always local, they don't participate in replication, they don't have shared blobs.
         /// So we don't have locks for shared data in zk for them, and can just remove blobs (this avoids leaving garbage in S3)
@@ -7075,14 +7075,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     UNREACHABLE();
 }
 
-String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
-{
-    auto lock = readLockParts();
-    return getPartitionIDFromQuery(ast, local_context, lock);
-}
-
-
-String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsAnyLock & lock) const
+String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
@@ -7240,13 +7233,19 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     MergeTreePartition partition(std::move(partition_row));
     String partition_id = partition.getID(*this);
 
-    DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, lock);
-    if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
     {
-        auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
-                        "doesn't match partition value for an existing part with the same partition ID: {}",
-                        partition_str, existing_part_in_partition->name);
+        DataPartPtr existing_part_in_partition;
+        if (acquired_lock)
+            existing_part_in_partition = getAnyPartInPartition(partition_id, *acquired_lock);
+        else
+            existing_part_in_partition = getAnyPartInPartition(partition_id, readLockParts());
+        if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
+        {
+            auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
+                            "doesn't match partition value for an existing part with the same partition ID: {}",
+                            partition_str, existing_part_in_partition->name);
+        }
     }
 
     return partition_id;
@@ -8250,15 +8249,6 @@ void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part, bool need_re
         precommitted_parts_need_rename.insert(part);
 }
 
-void MergeTreeData::Transaction::rollback()
-{
-    if (!isEmpty())
-    {
-        auto lock = data.lockParts();
-        rollback(lock);
-    }
-}
-
 MergeTreeData::Transaction::~Transaction()
 {
     try
@@ -8271,7 +8261,7 @@ MergeTreeData::Transaction::~Transaction()
     }
 }
 
-void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
+void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
 {
     if (!isEmpty())
     {
@@ -8311,6 +8301,9 @@ void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
             buf << ".";
         }
         LOG_DEBUG(data.log, "Undoing transaction {}. {}", getTID(), buf.str());
+
+        std::optional<DataPartsLock> own_lock;
+        auto & lock = acquired_lock ? *acquired_lock : own_lock.emplace(data.lockParts());
 
         if (data.data_parts_indexes.empty())
         {

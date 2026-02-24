@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 
+--- Verifies that direct read on partially materialized text indexes
+
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
@@ -15,8 +17,8 @@ CREATE TABLE tab_fully (
 Engine = MergeTree()
 ORDER BY id;
 
-ALTER TABLE tab_fully drop index if exists idx;
-ALTER TABLE tab_fully add index idx(text) TYPE text(tokenizer = ngrams(3));
+ALTER TABLE tab_fully DROP INDEX IF exists idx;
+ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3));
 
 SYSTEM STOP MERGES tab_fully;
 

@@ -102,9 +102,10 @@ size_t DictionarySparseIndex::memoryUsageBytes() const
     return sizeof(*this) + tokens->allocatedBytes() + offsets_in_file->allocatedBytes();
 }
 
-DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_)
+DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
     : DictionaryBlockBase(std::move(tokens_))
     , token_infos(std::move(token_infos_))
+    , tokens_format(tokens_format_)
 {
 }
 
@@ -898,7 +899,8 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
     for (size_t i = 0; i < num_tokens; ++i)
         token_infos.emplace_back(TextIndexSerialization::deserializeTokenInfo(istr, posting_list_codec));
 
-    return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
+    DictionaryBlock result{std::move(tokens_column), std::move(token_infos), tokens_format};
+    return result;
 }
 
 template <typename Stream>
@@ -1209,8 +1211,9 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
-    if (checksums.files.contains(path_prefix + ".idx"))
+    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
         return {1, getSubstreams()};
+
     return {0, {}};
 }
 

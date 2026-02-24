@@ -54,8 +54,8 @@ $CLICKHOUSE_CLIENT -q "
     FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka;
 "
 
-# Wait for messages to be consumed
-for i in $(seq 1 30); do
+# Wait for messages to be consumed (120s to allow for slow consumer group assignment)
+for i in $(seq 1 120); do
     count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst")
     if [ "$count" -ge 3 ]; then
         break

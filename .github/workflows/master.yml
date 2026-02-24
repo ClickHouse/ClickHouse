@@ -5525,11 +5525,11 @@ jobs:
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  llvm_coverage_merge:
+  llvm_coverage:
     runs-on: [self-hosted, amd-medium]
     needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, integration_tests_amd_llvm_coverage_1_5, integration_tests_amd_llvm_coverage_2_5, integration_tests_amd_llvm_coverage_3_5, integration_tests_amd_llvm_coverage_4_5, integration_tests_amd_llvm_coverage_5_5, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, unit_tests_amd_llvm_coverage]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TExWTSBDb3ZlcmFnZSBNZXJnZQ==') }}
-    name: "LLVM Coverage Merge"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TExWTSBDb3ZlcmFnZQ==') }}
+    name: "LLVM Coverage"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -5559,7 +5559,7 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'LLVM Coverage Merge' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'LLVM Coverage' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 

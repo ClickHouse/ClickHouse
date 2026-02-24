@@ -31,7 +31,7 @@ public:
     static FunctionFactory & instance();
 
     template <typename Function>
-    void registerFunction(FunctionDocumentation doc = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(FunctionDocumentation doc, Case case_sensitiveness = Case::Sensitive)
     {
         registerFunction<Function>(Function::name, std::move(doc), case_sensitiveness);
     }
@@ -56,13 +56,13 @@ public:
     void registerFunction(
         const std::string & name,
         FunctionCreator creator,
-        FunctionDocumentation doc = {},
+        FunctionDocumentation doc,
         Case case_sensitiveness = Case::Sensitive);
 
     void registerFunction(
         const std::string & name,
         FunctionSimpleCreator creator,
-        FunctionDocumentation doc = {},
+        FunctionDocumentation doc,
         Case case_sensitiveness = Case::Sensitive);
 
     FunctionDocumentation getDocumentation(const std::string & name) const;
@@ -80,7 +80,7 @@ private:
     String getFactoryName() const override { return "FunctionFactory"; }
 
     template <typename Function>
-    void registerFunction(const std::string & name, FunctionDocumentation doc = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(const std::string & name, FunctionDocumentation doc, Case case_sensitiveness = Case::Sensitive)
     {
         registerFunction(name, &Function::create, std::move(doc), case_sensitiveness);
     }
