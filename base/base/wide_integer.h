@@ -112,9 +112,8 @@ public:
 
     constexpr explicit operator bool() const noexcept;
 
-    template <typename T>
-    requires(std::is_arithmetic_v<T>)
-    constexpr operator T() const noexcept;
+    template <std::integral T>
+    constexpr explicit operator T() const noexcept;
 
     constexpr operator long double() const noexcept;
     constexpr operator double() const noexcept;

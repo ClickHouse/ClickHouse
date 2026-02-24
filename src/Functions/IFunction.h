@@ -60,8 +60,12 @@ protected:
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
       *  if some of arguments are Nullable, then execute function as usual for columns,
-      *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
+      *   where Nullable columns are substituted with nested columns,
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
+      * The underlying function may or may not be called for the rows containing NULLs. When called,
+      * arbitrary values are used instead of NULLs - whatever values happened to be in ColumnNullable's
+      * nested column; typically default values, but that's not guaranteed.
+      * So this only makes sense for functions that don't fail and don't have side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
@@ -423,6 +427,16 @@ protected:
       */
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
+    /** If useDefaultImplementationForVariant() is true, then special FunctionBaseVariantAdaptor will be used
+     *  if function arguments has Variant column. This adaptor will build and execute this function for all
+     *  internal types inside Variant column separately and construct result based on results for these types.
+     *  The result will be Variant with the union of all variant types from arguments.
+     *
+     *  We cannot use default implementation for Variant if function doesn't use default implementation for NULLs,
+     *  because Variant column can contain NULLs and we should know how to process them.
+      */
+    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -440,6 +454,11 @@ public:
 
     virtual String getName() const = 0;
 
+    /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
+    ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting
+    ///  getReturnTypeImpl sometimes; I didn't understand it. This only applies to conversion functions,
+    ///  not any IFunction. Are there other cases where getReturnTypeImpl result is not passed through?
+    ///  I don't know. If you know, consider documenting it here.)
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
@@ -493,6 +512,8 @@ public:
 
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
+
+    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
     /** True if function can be called on default arguments (include Nullable's) and won't throw.
       * Counterexample: modulo(0, 0)

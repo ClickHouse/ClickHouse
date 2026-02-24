@@ -164,7 +164,6 @@ public:
     void addCreatingSetsTransform(
         SharedHeader res_header,
         SetAndKeyPtr set_and_key,
-        StoragePtr external_table,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
 

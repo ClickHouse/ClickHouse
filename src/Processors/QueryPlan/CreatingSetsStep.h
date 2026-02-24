@@ -19,7 +19,6 @@ public:
     CreatingSetStep(
         const SharedHeader & input_header_,
         SetAndKeyPtr set_and_key_,
-        StoragePtr external_table_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_);
 
@@ -34,7 +33,6 @@ private:
     void updateOutputHeader() override;
 
     SetAndKeyPtr set_and_key;
-    StoragePtr external_table;
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
 };

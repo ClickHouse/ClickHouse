@@ -460,8 +460,11 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
             using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
 
-            auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<std::vector<typename Attribute::RowsMask>>(configuration.shards) : std::nullopt;
-            Attribute attribute{dictionary_attribute.underlying_type, AttributeContainerShardsType<ValueType>(configuration.shards), std::move(is_index_null)};
+            auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<VectorWithMemoryTracking<typename Attribute::RowsMask>>(configuration.shards) : std::nullopt;
+            Attribute attribute{
+                .containers = AttributeContainerShardsType<ValueType>(configuration.shards),
+                .is_index_null = std::move(is_index_null),
+                .type = dictionary_attribute.underlying_type};
             attributes.emplace_back(std::move(attribute));
         };
 
@@ -483,12 +486,13 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -985,9 +989,6 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
-
         UInt64 pull_time_microseconds = 0;
         UInt64 process_time_microseconds = 0;
 
@@ -997,6 +998,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (true)
             {
@@ -1029,12 +1033,16 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         if (parallel_loader)
             parallel_loader->finish();
 
-        LOG_DEBUG(log,
-            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
+        LOG_DEBUG(
+            log,
+            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} "
+            "sec",
             configuration.use_async_executor ? "asynchronous " : "",
-            total_blocks, total_rows,
+            total_blocks,
+            total_rows,
             dictionary_name,
-            pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
+            static_cast<double>(pull_time_microseconds) / 1000000.0,
+            static_cast<double>(process_time_microseconds) / 1000000.0);
     }
     else
     {

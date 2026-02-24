@@ -158,9 +158,7 @@ String FunctionDocumentation::argumentsAsString() const
 
 String FunctionDocumentation::parametersAsString() const
 {
-    /// TODO Replace dummy parameters by actual parameters
-    Parameters dummy_parameters;
-    return argumentsOrParametersAsString(dummy_parameters, syntax);
+    return argumentsOrParametersAsString(parameters, syntax);
 }
 
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
@@ -272,6 +270,8 @@ String FunctionDocumentation::categoryAsString() const
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
 
+        {Category::Internal, "Internal"},
+
         {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
@@ -281,4 +281,7 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
+
+FunctionDocumentation FunctionDocumentation::INTERNAL_FUNCTION_DOCS = {"", "", {}, {}, {"", {}}, {}, FunctionDocumentation::VERSION_UNKNOWN, FunctionDocumentation::Category::Internal};
+
 }

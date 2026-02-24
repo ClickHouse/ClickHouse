@@ -109,7 +109,7 @@ constexpr int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
 class CredentialsProviderCache : boost::noncopyable
 {
     using CredentialsProviderKey
-        = std::variant<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey, AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey>;
+        = std::variant<AWSInstanceProfileCredentialsProvider::CacheKey, AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey, AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey>;
 
     struct CredentialsKeyHash
     {
@@ -551,6 +551,27 @@ void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
     Reload();
 }
 
+void AWSInstanceProfileCredentialsProvider::CacheKey::updateHash(SipHash & hash) const
+{
+    hash.update(endpoint);
+    hash.update(use_secure_pull);
+}
+
+std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AWSInstanceProfileCredentialsProvider::create(
+    const Aws::Client::ClientConfiguration & client_configuration, bool use_secure_pull)
+{
+    auto endpoint = getAWSMetadataEndpoint();
+
+    return CredentialsProviderCache::instance().getOrSet(
+        AWSInstanceProfileCredentialsProvider::CacheKey{endpoint, use_secure_pull},
+        [&]
+        {
+            auto ec2_metadata_client = std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
+            auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, use_secure_pull);
+            return std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader);
+        });
+}
+
 void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey::updateHash(SipHash & hash) const
 {
     hash.update(role_arn);
@@ -978,10 +999,9 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             aws_client_configuration.requestTimeoutMs = 1000;
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
-            auto ec2_metadata_client = createEC2MetadataClient(aws_client_configuration);
-            auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
-            AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
+            AddProvider(AWSInstanceProfileCredentialsProvider::create(
+                aws_client_configuration, !credentials_configuration.use_insecure_imds_request));
             LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
         }
     }

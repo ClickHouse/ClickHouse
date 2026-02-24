@@ -79,11 +79,13 @@ private:
 };
 
 
-class ReadFromParallelRemoteReplicasStep : public ISourceStep
+class ReadFromParallelRemoteReplicasStep : public SourceStepWithFilterBase
 {
 public:
     ReadFromParallelRemoteReplicasStep(
         ASTPtr query_ast_,
+        const QueryTreeNodePtr & query_tree_,
+        const PlannerContextPtr & planner_context,
         ClusterPtr cluster_,
         const StorageID & storage_id_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
@@ -97,7 +99,8 @@ public:
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         std::vector<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -119,6 +122,8 @@ private:
 
     ClusterPtr cluster;
     ASTPtr query_ast;
+    QueryTreeNodePtr query_tree;
+    PlannerContextPtr planner_context;
     StorageID storage_id;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
@@ -131,6 +136,14 @@ private:
     std::vector<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
+    std::shared_ptr<const QueryPlan> query_plan;
 };
+
+ASTPtr tryBuildAdditionalFilterAST(
+    const ActionsDAG & dag,
+    const std::unordered_set<std::string> & projection_names,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    Tables * external_tables,
+    ContextMutablePtr & context);
 
 }

@@ -173,15 +173,15 @@ private:
 
 
 template <> inline bool                 Value::get<bool                 >() const { return getBool(); }
-template <> inline char                 Value::get<char                 >() const { return getInt(); }
-template <> inline signed char          Value::get<signed char          >() const { return getInt(); }
-template <> inline unsigned char        Value::get<unsigned char        >() const { return getUInt(); }
-template <> inline char8_t              Value::get<char8_t              >() const { return getUInt(); }
-template <> inline short                Value::get<short                >() const { return getInt(); } /// NOLINT
-template <> inline unsigned short       Value::get<unsigned short       >() const { return getUInt(); } /// NOLINT
+template <> inline char                 Value::get<char                 >() const { return static_cast<char>(getInt()); }
+template <> inline signed char          Value::get<signed char          >() const { return static_cast<signed char>(getInt()); }
+template <> inline unsigned char        Value::get<unsigned char        >() const { return static_cast<unsigned char>(getUInt()); }
+template <> inline char8_t              Value::get<char8_t              >() const { return static_cast<char8_t>(getUInt()); }
+template <> inline short                Value::get<short                >() const { return static_cast<short>(getInt()); } /// NOLINT
+template <> inline unsigned short       Value::get<unsigned short       >() const { return static_cast<unsigned short>(getUInt()); } /// NOLINT
 template <> inline int                  Value::get<int                  >() const { return static_cast<int>(getInt()); }
 template <> inline unsigned int         Value::get<unsigned int         >() const { return static_cast<unsigned int>(getUInt()); }
-template <> inline long                 Value::get<long                 >() const { return getInt(); } /// NOLINT
+template <> inline long                 Value::get<long                 >() const { return static_cast<long>(getInt()); } /// NOLINT
 template <> inline unsigned long        Value::get<unsigned long        >() const { return getUInt(); } /// NOLINT
 template <> inline long long            Value::get<long long            >() const { return getInt(); } /// NOLINT
 template <> inline unsigned long long   Value::get<unsigned long long   >() const { return getUInt(); } /// NOLINT

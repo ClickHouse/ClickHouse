@@ -595,8 +595,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     HashSet<KeyType> not_found_keys;
 
-    std::vector<UInt64> requested_keys_vector;
-    std::vector<size_t> requested_complex_key_rows;
+    VectorWithMemoryTracking<UInt64> requested_keys_vector;
+    VectorWithMemoryTracking<size_t> requested_complex_key_rows;
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         requested_keys_vector.reserve(requested_keys.size());
@@ -646,11 +646,11 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
-            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-            io.pipeline.setConcurrencyControl(false);
-
             io.executeWithCallbacks([&]()
             {
+                DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+                io.pipeline.setConcurrencyControl(false);
+
                 Block block;
                 while (executor.pull(block))
                 {

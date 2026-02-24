@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <ranges>
@@ -72,6 +71,10 @@ void MergeTreeReaderCompact::fillColumnPositions()
     {
         auto & column_to_read = columns_to_read[i];
         auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
+
+        /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
+        if (position.has_value() && isColumnDroppedByPendingMutation(i))
+            position.reset();
 
         if (position.has_value() && column_to_read.isSubcolumn())
         {
@@ -269,7 +272,7 @@ void MergeTreeReaderCompact::readData(
                         columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
                 }
 
-                auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column, serialization);
+                auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column);
 
                 /// TODO: Avoid extra copying.
                 if (column->empty())

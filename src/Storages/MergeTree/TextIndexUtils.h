@@ -98,6 +98,8 @@ public:
 
     bool executeStep() override;
     void cancel() noexcept override;
+
+    MutableDataPartsVector extractTemporaryParts() override { return {}; }
     void addToChecksums(MergeTreeDataPartChecksums & checksums) override;
 
 private:
@@ -147,6 +149,8 @@ private:
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
+
+    PostingListCodecPtr posting_list_codec;
 
     bool is_initialized = false;
 };

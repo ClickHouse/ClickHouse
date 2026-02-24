@@ -56,23 +56,37 @@ struct DivideIntegralByConstantImpl
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
-        if (unlikely(is_signed_v<B> && b == -1))
+        if constexpr (is_signed_v<B>)
         {
-            for (size_t i = 0; i < size; ++i)
-                c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
-            return;
+            if (b == -1) [[unlikely]]
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
+                return;
+            }
         }
 
         /// Division with too large divisor.
-        if (unlikely(b > std::numeric_limits<A>::max()
-            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        if (b > std::numeric_limits<A>::max()) [[unlikely]]
         {
             for (size_t i = 0; i < size; ++i)
                 c_pos[i] = 0;
             return;
         }
+        else
+        {
+            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
+            {
+                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        c_pos[i] = 0;
+                    return;
+                }
+            }
+        }
 
-        if (unlikely(static_cast<A>(b) == 0))
+        if (static_cast<A>(b) == 0) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         divideImpl(a_pos, b, c_pos, size);
@@ -159,8 +173,8 @@ large number: While processing intDiv(1, 0.001) AS res, toTypeName(res).
     };
     FunctionDocumentation::Examples examples = {example1, example2};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIntDiv>(documentation);
 }
@@ -187,8 +201,8 @@ minimal negative number by minus one.
         {"Dividing a minimal negative number by minus 1", "SELECT intDivOrNull(-9223372036854775808, -1)", "\\N"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIntDivOrNull>(documentation);
 }

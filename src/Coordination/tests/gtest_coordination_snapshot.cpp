@@ -5,7 +5,6 @@
 
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/SnapshotableHashTable.h>
-#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage.h>
 
 #include <Common/SipHash.h>

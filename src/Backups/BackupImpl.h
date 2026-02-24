@@ -5,6 +5,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
+#include <Common/Logger_fwd.h>
 #include <map>
 #include <mutex>
 
@@ -32,6 +33,7 @@ public:
         String compression_method;
         int compression_level = 0;
         size_t max_volume_size = 0;
+        size_t adaptive_buffer_max_size = 8 * DBMS_DEFAULT_BUFFER_SIZE;
     };
 
     using SnapshotReaderCreator = std::function<std::shared_ptr<IBackupReader>(const String &, const String &)>;
@@ -88,7 +90,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
-    bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept override;
+    void removeAllFilesUnderDirectory(const String & directory) const override;
 
 private:
     void open();

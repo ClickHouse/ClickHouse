@@ -56,7 +56,7 @@ template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
     if (!object_storage)
-        object_storage = configuration->createObjectStorage(context, create_readonly);
+        object_storage = configuration->createObjectStorage(context, create_readonly, std::nullopt);
     return object_storage;
 }
 
@@ -178,7 +178,7 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
     /// e.g. `s3(endpoint, ..., SETTINGS setting=value, ..., setting=value)`
     /// We do similarly for some other table functions
     /// whose storage implementation supports storage settings (for example, MySQL).
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -270,7 +270,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             columns,
             ConstraintsDescription{},
             partition_by,
-            context);
+            context,
+            /* is_table_function */true);
 
         storage->startup();
         return storage;
@@ -418,6 +419,10 @@ template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfigurati
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
+#if USE_AVRO
+template class TableFunctionObjectStorage<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
+#endif
+
 #if USE_AVRO && USE_AWS_S3
 template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
 template class TableFunctionObjectStorage<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
@@ -449,7 +454,7 @@ template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3D
 template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
 #endif
 
-#if USE_PARQUET && USE_AZURE_BLOB_STORAGE
+#if USE_PARQUET && USE_AZURE_BLOB_STORAGE && USE_DELTA_KERNEL_RS
 template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 

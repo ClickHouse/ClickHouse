@@ -99,6 +99,21 @@ std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & s
     return getColumnAndSubcolumnPair(name, storage_columns).first;
 }
 
+std::optional<String> tryGetColumnNameInStorage(const String & name, const NameSet & storage_columns)
+{
+    if (storage_columns.contains(name))
+        return name;
+
+    auto subcolumn_pairs = Nested::getAllColumnAndSubcolumnPairs(name);
+    for (const auto & [column_name, _] : subcolumn_pairs)
+    {
+        if (storage_columns.contains(String(column_name)))
+            return String(column_name);
+    }
+
+    return std::nullopt;
+}
+
 std::string extractTableName(const std::string & nested_name)
 {
     auto split = splitName(nested_name);

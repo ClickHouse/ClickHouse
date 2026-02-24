@@ -1,7 +1,5 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionSpaceFillingCurve.h>
@@ -293,8 +291,8 @@ public:
                                         TargetSpecific::Default::FunctionMortonDecode>();
 
 #if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
-        selector.registerImplementation<TargetArch::AVX2,
-                                        TargetSpecific::AVX2::FunctionMortonDecode>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+                                        TargetSpecific::x86_64_v3::FunctionMortonDecode>();
 #endif
     }
 

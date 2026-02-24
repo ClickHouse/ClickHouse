@@ -28,7 +28,16 @@ from pyspark.sql.types import (
     MapType,
     DataType,
 )
+
+try:
+    from pyspark.sql.types import VariantType
+
+    HAS_VARIANT_TYPE = True
+except ImportError:
+    HAS_VARIANT_TYPE = False
+
 from .tablegenerator import LakeTableGenerator
+from .clickhousetospark import ClickHouseTypeMapper
 
 from .laketables import SparkTable
 
@@ -177,6 +186,7 @@ class LakeDataGenerator:
         self._thread_local._max_str_len = 100
         self.logger = logging.getLogger(__name__)
         self.spark_query_logger = query_logger
+        self.type_generator = ClickHouseTypeMapper()
 
     # ============================================================
     # Random data
@@ -293,6 +303,12 @@ class LakeDataGenerator:
             return self._rand_date()
         if isinstance(dtype, TimestampType):
             return self._rand_timestamp()
+        if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
+            # Spark stores variants as self-describing values, so any type works.
+            inner_type = self.type_generator.generate_random_spark_type(
+                allow_variant=False, max_depth=random.randint(1, 5)
+            )
+            return self._random_value_for_type(inner_type, null_rate)
         if isinstance(dtype, ArrayType):
             # Arrays of variable length
             elem_null_rate = null_rate if dtype.containsNull else 0.0
@@ -437,20 +453,20 @@ class LakeDataGenerator:
         match_options = [
             "DELETE",
             "UPDATE SET *",
-            f"UPDATE SET {",".join([f"t.{cname} = s.{cname}" for cname in to_update])}",
+            f"UPDATE SET {','.join([f't.{cname} = s.{cname}' for cname in to_update])}",
         ]
 
         self.logger.info(f"Merging {nrows} row(s) into {table.get_table_full_path()}")
         self.run_query(
             spark,
             f"MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
- WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET THEN INSERT *" if random.randint(1, 4) == 1 else ""}\
-{f" WHEN NOT MATCHED BY SOURCE THEN DELETE" if random.randint(1, 4) == 1 else ""};",
+ WHEN MATCHED THEN {random.choice(match_options)}{' WHEN NOT MATCHED BY TARGET THEN INSERT *' if random.randint(1, 4) == 1 else ''}\
+{f' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
         delete_key = random.choice(list(table.flat_columns().keys()))
-        predicate = f"{delete_key} IS{random.choice([""," NOT"])} NULL"
+        predicate = f"{delete_key} IS{random.choice(['',' NOT'])} NULL"
 
         self.logger.info(f"Delete from table {table.get_table_full_path()}")
         self.run_query(

@@ -89,6 +89,7 @@ LogStream::LogStream(Logger& logger, Message::Priority priority):
 	LogIOS(logger, priority),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -98,12 +99,12 @@ LogStream::LogStream(const std::string& loggerName, Message::Priority priority):
 {
 }
 
-	
+
 LogStream::~LogStream()
 {
 }
 
-	
+
 LogStream& LogStream::fatal()
 {
 	return priority(Message::PRIO_FATAL);
@@ -116,7 +117,7 @@ LogStream& LogStream::fatal(const std::string& message)
 	return priority(Message::PRIO_FATAL);
 }
 
-	
+
 LogStream& LogStream::critical()
 {
 	return priority(Message::PRIO_CRITICAL);

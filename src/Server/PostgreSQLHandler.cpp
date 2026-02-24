@@ -98,8 +98,12 @@ PostgreSQLHandler::PostgreSQLHandler(
     params.certificateFile = config.getString(prefix + Poco::Net::SSLManager::CFG_CERTIFICATE_FILE, params.privateKeyFile);
     if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
     {
-        auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
-        params.caLocation = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, ctx->getCAPaths().caLocation);
+        params.caLocation = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
+        if (params.caLocation.empty())
+        {
+            auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
+            params.caLocation = ctx->getCAPaths().caLocation;
+        }
 
         params.verificationMode = Poco::Net::SSLManager::VAL_VER_MODE;
         if (config.hasProperty(prefix + Poco::Net::SSLManager::CFG_VER_MODE))
@@ -339,7 +343,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 void PostgreSQLHandler::makeSecureConnectionSSL()
 {
     message_transport->send('S', true);
-    auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
+    Poco::Net::Context::Ptr ctx;
     if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
     {
         ctx = Poco::Net::SSLManager::instance().getCustomServerContext(prefix);
@@ -353,6 +357,10 @@ void PostgreSQLHandler::makeSecureConnectionSSL()
             CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
             ctx = Poco::Net::SSLManager::instance().setCustomServerContext(prefix, ctx);
         }
+    }
+    else
+    {
+        ctx = Poco::Net::SSLManager::instance().defaultServerContext();
     }
     ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));
     changeIO(*ss);
@@ -437,7 +445,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
-        CurrentThread::QueryScope query_scope{query_context};
+        CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
         String columns_to_insert;
         if (!copy_query->column_names.empty())
@@ -533,7 +541,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-        CurrentThread::QueryScope query_scope{query_context};
+        CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
         String columns_to_select = "*";
         if (!copy_query->column_names.empty())
@@ -631,14 +639,14 @@ void PostgreSQLHandler::processQuery()
             secret_key = dis(gen);
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-            CurrentThread::QueryScope query_scope{query_context};
+            CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
 
             UInt64 affected_rows = executeQueryWithTracking(std::move(spl_query), query_context, command);
 
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
         }
 
     }
@@ -726,11 +734,11 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);
 
-    CurrentThread::QueryScope query_scope{query_context};
+    CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
     UInt64 affected_rows = executeQueryWithTracking(std::move(result_query), query_context, command);
 
-    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
 
     return true;
 }
@@ -763,7 +771,7 @@ void PostgreSQLHandler::processParseQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::ParseQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::ParseQuery>();
 
-        auto statement = std::make_shared<ASTPreparedStatement>();
+        auto statement = make_intrusive<ASTPreparedStatement>();
         statement->function_name = query->function_name;
         statement->function_body = query->sql_query;
         prepared_statements_manager.addStatement(statement.get());
@@ -830,7 +838,7 @@ void PostgreSQLHandler::processExecuteQuery()
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
-        CurrentThread::QueryScope query_scope{query_context};
+        CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
 
         PostgreSQLProtocol::Messaging::CommandComplete::Command command =
@@ -838,7 +846,7 @@ void PostgreSQLHandler::processExecuteQuery()
 
         UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
-        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
     }
     catch (const Exception & e)
     {

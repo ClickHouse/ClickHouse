@@ -168,9 +168,6 @@ Pipe::Pipe(ProcessorPtr source)
 {
     checkSource(*source);
 
-    if (collected_processors)
-        collected_processors->emplace_back(source);
-
     output_ports.push_back(&source->getOutputs().front());
     header = output_ports.front()->getSharedHeader();
     processors->emplace_back(std::move(source));

@@ -928,8 +928,8 @@ void AggregatingTransform::initGenerate()
 
     LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
-        elapsed_seconds, src_rows / elapsed_seconds,
-        ReadableSize(src_bytes / elapsed_seconds));
+        elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
+        ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryData())
     {

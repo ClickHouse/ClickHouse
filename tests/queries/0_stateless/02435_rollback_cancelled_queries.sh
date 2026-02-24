@@ -46,11 +46,12 @@ function insert_data
         $CLICKHOUSE_CLIENT --stacktrace --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
             --max_block_size=1000 --max_insert_block_size=1000 -q \
             "${BEGIN}insert into dedup_test settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV$COMMIT" < $DATA_FILE \
-            | grep -Fv "Transaction is not in RUNNING state"
+            | grep -Fv "Transaction is not in RUNNING state" | grep -Fv "There is no current transaction"
     fi
 
     if [[ "$IMPLICIT" -eq 0 ]]; then
-        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1" 2>&1| grep -Fav "Transaction is not in RUNNING state"
+        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1" 2>&1 \
+            | grep -Fav "Transaction is not in RUNNING state" | grep -Fav "There is no current transaction"
     fi
 }
 

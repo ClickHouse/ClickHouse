@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 
@@ -226,7 +225,7 @@ FROM example_table;
     FunctionDocumentation documentation_uniq = {description_uniq, syntax_uniq, arguments_uniq, {}, returned_value_uniq, examples_uniq, introduced_in_uniq, category_uniq};
 
     factory.registerFunction("uniq",
-        {createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>, properties, documentation_uniq});
+        {createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>, documentation_uniq, properties});
 
     /// uniqHLL12 documentation
     FunctionDocumentation::Description description_uniqHLL12 = R"(
@@ -243,7 +242,7 @@ It uses the HyperLogLog algorithm to approximate the number of different argumen
 
 2^12 5-bit cells are used.
 The size of the state is slightly more than 2.5 KB.
-The result is not very accurate (up to ~10% error) for small data sets (<10K elements).
+The result is not very accurate (up to ~10% error) for small data sets (\<10K elements).
 However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%.
 Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
@@ -261,15 +260,17 @@ uniqHLL12(x[, ...])
     {
         "Basic usage",
         R"(
-CREATE TABLE example_hll (
+CREATE TABLE example_hll
+(
     id UInt32,
     category String
-) ENGINE = Memory;
+)
+ENGINE = Memory;
 
 INSERT INTO example_hll VALUES
 (1, 'A'), (2, 'B'), (3, 'A'), (4, 'C'), (5, 'B'), (6, 'A');
 
-SELECT uniqHLL12(category) as hll_unique_categories
+SELECT uniqHLL12(category) AS hll_unique_categories
 FROM example_hll;
         )",
         R"(
@@ -284,7 +285,7 @@ FROM example_hll;
     FunctionDocumentation documentation_uniqHLL12 = {description_uniqHLL12, syntax_uniqHLL12, arguments_uniqHLL12, {}, returned_value_uniqHLL12, examples_uniqHLL12, introduced_in_uniqHLL12, category_uniqHLL12};
 
     factory.registerFunction("uniqHLL12",
-        {createAggregateFunctionUniq<false, AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic, false /* is_able_to_parallelize_merge */>, properties, documentation_uniqHLL12});
+        {createAggregateFunctionUniq<false, AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic, false /* is_able_to_parallelize_merge */>, documentation_uniqHLL12, properties});
 
     auto assign_bool_param = [](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
     {
@@ -320,10 +321,12 @@ uniqExact(x[, ...])
     {
         "Basic usage",
         R"(
-CREATE TABLE example_data (
+CREATE TABLE example_data
+(
     id UInt32,
     category String
-) ENGINE = Memory;
+)
+ENGINE = Memory;
 
 INSERT INTO example_data VALUES
 (1, 'A'), (2, 'B'), (3, 'A'), (4, 'C'), (5, 'B'), (6, 'A');
@@ -354,7 +357,7 @@ FROM example_data;
     FunctionDocumentation::Category category_uniqExact = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_uniqExact = {description_uniqExact, syntax_uniqExact, arguments_uniqExact, {}, returned_value_uniqExact, examples_uniqExact, introduced_in_uniqExact, category_uniqExact};
 
-    factory.registerFunction("uniqExact", {assign_bool_param, properties, documentation_uniqExact});
+    factory.registerFunction("uniqExact", {assign_bool_param, documentation_uniqExact, properties});
 
 #if USE_DATASKETCHES
     /// uniqTheta documentation
@@ -363,6 +366,7 @@ Calculates the approximate number of different argument values, using the [Theta
 
 <details>
 <summary>Implementation details</summary>
+
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses the [KMV](https://datasketches.apache.org/docs/Theta/InverseEstimate.html) algorithm to approximate the number of different argument values.
 
@@ -383,10 +387,12 @@ uniqTheta(x[, ...])
     {
         "Basic usage",
         R"(
-CREATE TABLE example_theta (
+CREATE TABLE example_theta
+(
     id UInt32,
     category String
-) ENGINE = Memory;
+)
+ENGINE = Memory;
 
 INSERT INTO example_theta VALUES
 (1, 'A'), (2, 'B'), (3, 'A'), (4, 'C'), (5, 'B'), (6, 'A');
@@ -406,7 +412,7 @@ FROM example_theta;
     FunctionDocumentation documentation_uniqTheta = {description_uniqTheta, syntax_uniqTheta, arguments_uniqTheta, {}, returned_value_uniqTheta, examples_uniqTheta, introduced_in_uniqTheta, category_uniqTheta};
 
     factory.registerFunction("uniqTheta",
-        {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaDataForVariadic>, properties, documentation_uniqTheta});
+        {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaDataForVariadic>, documentation_uniqTheta, properties});
 #endif
 
 }

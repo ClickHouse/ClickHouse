@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -8,9 +8,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -76,7 +73,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            UInt8 res = isPentagon(data[row]);
+            validateH3Cell(data[row]);
+            auto res = static_cast<UInt8>(isPentagon(data[row]));
             dst_data[row] = res;
         }
         return dst;

@@ -4,10 +4,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsRandom.h>
-#include <Functions/PerformanceAdaptors.h>
-#include <pcg_random.hpp>
-#include <Common/randomSeed.h>
-#include <base/unaligned.h>
 
 
 namespace DB
@@ -102,8 +98,8 @@ public:
             FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomStringImpl<TargetSpecific::AVX2::RandImpl>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
     #endif
     }
 

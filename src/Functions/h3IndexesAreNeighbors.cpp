@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -8,9 +8,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -97,7 +94,10 @@ public:
             const UInt64 hindex_origin = data_hindex_origin[row];
             const UInt64 hindex_dest = data_hindex_dest[row];
 
-            UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
+            validateH3Cell(hindex_origin);
+            validateH3Cell(hindex_dest);
+
+            auto res = static_cast<UInt8>(areNeighborCells(hindex_origin, hindex_dest));
 
             dst_data[row] = res;
         }

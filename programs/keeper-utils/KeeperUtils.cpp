@@ -58,7 +58,7 @@ uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
 {
     std::filesystem::path path(snapshot_path);
     std::string filename = path.stem();
-    Strings name_parts;
+    std::vector<std::string_view> name_parts;
     splitInto<'_', '.'>(name_parts, filename);
     return parse<uint64_t>(name_parts[1]);
 }
