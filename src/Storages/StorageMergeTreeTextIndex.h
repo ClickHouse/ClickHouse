@@ -2,25 +2,22 @@
 
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
 {
 
-/// Internal temporary storage for table function mergeTreeIndex(...)
-class StorageMergeTreeIndex final : public IStorage
+/// Internal temporary storage for table function mergeTreeTextIndex(...)
+class StorageMergeTreeTextIndex final : public IStorage
 {
 public:
     static const ColumnWithTypeAndName part_name_column;
-    static const ColumnWithTypeAndName mark_number_column;
-    static const ColumnWithTypeAndName rows_in_granule_column;
-    static const Block virtuals_sample_block;
 
-    StorageMergeTreeIndex(
+    StorageMergeTreeTextIndex(
         const StorageID & table_id_,
         const StoragePtr & source_table_,
-        const ColumnsDescription & columns,
-        bool with_marks_,
-        bool with_minmax_);
+        MergeTreeIndexPtr text_index_,
+        const ColumnsDescription & columns);
 
     void read(
         QueryPlan & query_plan,
@@ -32,18 +29,14 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    String getName() const override { return "MergeTreeIndex"; }
+    String getName() const override { return "MergeTreeTextIndex"; }
 
 private:
-    friend class ReadFromMergeTreeIndex;
+    friend class ReadFromMergeTreeTextIndex;
 
     StoragePtr source_table;
-    bool with_marks;
-    bool with_minmax;
-
+    MergeTreeIndexPtr text_index;
     MergeTreeData::DataPartsVector data_parts;
-    SharedHeader key_sample_block;
-    SharedHeader minmax_sample_block;
 };
 
 }
