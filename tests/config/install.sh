@@ -161,6 +161,7 @@ ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/jemalloc_enable_global_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/wait_remaining_connections.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/kafka.xml $DEST_SERVER_PATH/config.d/
@@ -170,8 +171,12 @@ if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
 fi
 
-# SSH protocol support (not supported with fasttest).
-if [ "$FAST_TEST" != "1" ]; then
+# SSH protocol support (not supported with fasttest or OpenSSL FIPS).
+function is_openssl_fips_build()
+{
+    [ "$(clickhouse local --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
+}
+if [ "$FAST_TEST" != "1" ] && ! is_openssl_fips_build; then
     ln -sf $SRC_PATH/config.d/ssh.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/ssh_host_rsa_key $DEST_SERVER_PATH/config.d/
 fi

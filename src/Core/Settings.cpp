@@ -1684,9 +1684,6 @@ ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
 )", 0) \
-    DECLARE(Bool, text_index_use_bloom_filter, true, R"(
-For testing purposes, enables or disables usage of bloom filter in text index.
-)", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
 )", 0) \
@@ -3127,6 +3124,21 @@ but the query will fail.
     DECLARE(UInt64, max_expanded_ast_elements, 500000, R"(
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
 )", 0) \
+    \
+    DECLARE(Float, ast_fuzzer_runs, 0, R"(
+Enables the server-side AST fuzzer that runs randomized queries after each normal query, discarding their results.
+- 0: disabled (default).
+- A value between 0 and 1 (exclusive): probability of running a single fuzzed query.
+- A value >= 1: the number of fuzzed queries to run per normal query.
+
+The fuzzer accumulates AST fragments from all queries across all sessions, producing increasingly interesting mutations over time. Fuzzed queries that fail are silently discarded; results are never returned to the client.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, ast_fuzzer_any_query, false, R"(
+When false (default), the server-side AST fuzzer (controlled by `ast_fuzzer_runs`) only fuzzes read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). When true, all query types including DDL and INSERT are fuzzed.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_fuzz_query_functions, false, R"(
+Enables the `fuzzQuery` function that applies random AST mutations to a query string.
+)", EXPERIMENTAL) \
     \
     DECLARE(UInt64, readonly, 0, R"(
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
@@ -6150,6 +6162,10 @@ Maximum memory usage for prefetches.
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
 )", 0) \
     \
+    DECLARE(Bool, allow_calculating_subcolumns_sizes_for_merge_tree_reading, true, R"(
+When enabled, ClickHouse will calculate the size of files required for each subcolumn reading for better task and block sizes calculation.
+)", 0) \
+\
     DECLARE(UInt64, use_structure_from_insertion_table_in_table_functions, 2, R"(
 Use structure from insertion table instead of schema inference from data. Possible values: 0 - disabled, 1 - enabled, 2 - auto
 )", 0) \
@@ -7308,6 +7324,15 @@ See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
 Collect jemalloc allocation and deallocation samples in trace log.
     )", 0) \
+    DECLARE(JemallocProfileFormat, jemalloc_profile_text_output_format, JemallocProfileFormat::Collapsed, R"(
+Output format for jemalloc heap profile in system.jemalloc_profile_text table. Can be: 'raw' (raw profile), 'symbolized' (jeprof format with symbols), or 'collapsed' (FlameGraph format).
+    )", 0) \
+    DECLARE(Bool, jemalloc_profile_text_symbolize_with_inline, true, R"(
+Whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included which can slow down symbolization process drastically; when disabled, they are skipped. Only affects 'symbolized' and 'collapsed' output formats.
+    )", 0) \
+    DECLARE(Bool, jemalloc_profile_text_collapsed_use_count, false, R"(
+When using the 'collapsed' output format for jemalloc heap profile, aggregate by allocation count instead of bytes. When false (default), each stack is weighted by live bytes; when true, by live allocation count.
+    )", 0) \
     DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
 
@@ -7421,7 +7446,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
-)", BETA, allow_experimental_full_text_index) \
+)", 0, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \
@@ -7542,7 +7567,7 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", BETA) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
-Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
+Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
 Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
@@ -7701,6 +7726,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_s3queue, true) \
+    MAKE_OBSOLETE(M, Bool, text_index_use_bloom_filter, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \

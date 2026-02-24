@@ -852,6 +852,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
             }
 
+            /// If the second argument of IN is a non-constant, non-table expression (e.g. a column reference
+            /// from `IN (col)` where the parentheses were stripped by the parser), wrap it in tuple()
+            /// so it can be handled by the tuple/array → has() rewrite below.
+            if (in_second_argument->as<ColumnNode>())
+            {
+                auto tuple_function = std::make_shared<FunctionNode>("tuple");
+                tuple_function->getArguments().getNodes().push_back(std::move(in_second_argument));
+                in_second_argument = std::move(tuple_function);
+                resolveFunction(in_second_argument, scope);
+            }
+
             /// If it's a function node like array(..) or tuple(..), consider rewriting them to 'has':
             if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
             {
