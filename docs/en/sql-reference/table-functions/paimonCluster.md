@@ -8,11 +8,7 @@ title: 'paimonCluster'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # paimonCluster Table Function
-
-<ExperimentalBadge />
 
 This is an extension to the [paimon](/sql-reference/table-functions/paimon.md) table function.
 

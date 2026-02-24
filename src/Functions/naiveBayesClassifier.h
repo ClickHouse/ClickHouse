@@ -10,7 +10,6 @@
 #include <vector>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <base/StringViewHash.h>
 #include <fmt/ranges.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -150,7 +149,7 @@ struct TokenPolicy
 using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>;
 using ClassCountMaps = std::vector<ClassCountMap>;
 
-using NGramIndexMap = HashMap<std::string_view, UInt32, StringViewHash>;
+using NGramIndexMap = HashMap<StringRef, UInt32, StringRefHash>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 using LogProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
@@ -243,7 +242,7 @@ public:
 
             DB::readBinary(count, in); // read the 4-byte count
 
-            ArenaKeyHolder key_holder{std::string_view(ngram.data(), ngram_length), pool};
+            ArenaKeyHolder key_holder{StringRef(ngram.data(), ngram_length), pool};
             NGramIndexMap::LookupResult it;
             bool inserted = false;
 
@@ -342,7 +341,7 @@ public:
             {
                 tokenizer.join(&tokens[i], n, ngram);
 
-                std::string_view ngram_ref(ngram);
+                StringRef ngram_ref(ngram);
                 const auto * const ref_it = ngram_to_class_count_index.find(ngram_ref);
                 const bool token_exists = (ref_it != ngram_to_class_count_index.end());
 
@@ -359,7 +358,7 @@ public:
                         if (it != token_class_map->end())
                             count = static_cast<double>(it->getMapped());
                     }
-                    const double probability = (count + alpha) / (class_total + alpha * static_cast<double>(vocabulary_size));
+                    const double probability = (count + alpha) / (class_total + alpha * vocabulary_size);
                     class_log_probabilities[class_id] += std::log(probability);
                 }
             }

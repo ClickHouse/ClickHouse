@@ -92,7 +92,6 @@ public:
         MergeTreeData::MergingParams merging_params,
         MergeTreeTransactionPtr txn,
         bool need_prefix = true,
-        ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
@@ -135,7 +134,5 @@ private:
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
-
-std::string convertMergeConstraintsToString(const MergeConstraints & constraints);
 
 }

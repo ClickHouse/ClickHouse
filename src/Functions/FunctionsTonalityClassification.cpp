@@ -6,6 +6,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -53,8 +55,8 @@ struct FunctionDetectTonalityImpl
         /// Calculate average value of tonality.
         /// Convert values -12..6 to -1..1
         if (weight > 0)
-            return static_cast<Float32>(weight / static_cast<Float64>(count_words) / 6);
-        return static_cast<Float32>(weight / static_cast<Float64>(count_words) / 12);
+            return static_cast<Float32>(weight / count_words / 6);
+        return static_cast<Float32>(weight / count_words / 12);
     }
 
     static void vector(
@@ -109,7 +111,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDetectTonality>(documentation);
 }

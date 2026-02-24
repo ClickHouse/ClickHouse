@@ -13,6 +13,7 @@
 #include <charconv>
 
 
+#include <Common/logger_useful.h>
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -173,7 +174,7 @@ namespace DB
             {
                 return IPAddressVariant(col_addr->getElement(n));
             }
-            return IPAddressVariant(col_addr->getDataAt(n));
+            return IPAddressVariant(col_addr->getDataAt(n).toView());
         }
 
     #pragma clang diagnostic ignored "-Wshadow"
@@ -262,7 +263,7 @@ namespace DB
             const auto & col_cidr = col_cidr_const.getDataColumn();
 
             const auto addr = parseConstantIP(col_addr_const);
-            const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(0));
+            const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(0).toView());
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(1);
             ColumnUInt8::Container & vec_res = col_res->getData();
@@ -277,14 +278,14 @@ namespace DB
         {
             const auto addr = parseConstantIP(col_addr_const);
             if (!addr.has_value())
-                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+                return ColumnUInt8::create(input_rows_count, 0);
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i));
+                const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i).toView());
                 vec_res[i] = isAddressInRange(*addr, cidr) ? 1 : 0;
             }
             return col_res;
@@ -341,7 +342,7 @@ namespace DB
         /// CIDR is constant.
         static ColumnPtr executeImpl(const IColumn & col_addr, const ColumnConst & col_cidr_const, size_t input_rows_count)
         {
-            const auto cidr = parseIPWithCIDR(col_cidr_const.getDataAt(0));
+            const auto cidr = parseIPWithCIDR(col_cidr_const.getDataAt(0).toView());
             return executeImpl<IPAddressCIDR>(col_addr, cidr, input_rows_count);
         }
 
@@ -354,7 +355,7 @@ namespace DB
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const auto addr = parseIP<kind>(col_addr, i);
-                const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i));
+                const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i).toView());
                 vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
             }
             return col_res;
@@ -372,7 +373,7 @@ namespace DB
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i));
+                const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i).toView());
                 if (nullable_column->isNullAt(i))
                     vec_res[i] = 0;
                 else
@@ -405,7 +406,7 @@ This function accepts both IPv4 and IPv6 addresses (and networks) represented as
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::IPAddress;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionIsIPAddressContainedIn>(documentation);
     }

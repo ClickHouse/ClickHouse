@@ -1,5 +1,4 @@
 #pragma once
-#include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -51,7 +50,9 @@ public:
      * (In case of MergeTree* tables). Mostly needed for reading from remote fs.
      */
     void adjustRightMark(size_t right_mark);
+
     ReadBuffer * getDataBuffer();
+    CompressedReadBufferBase * getCompressedDataBuffer();
 
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
@@ -70,13 +71,15 @@ private:
     const std::string data_file_extension;
 
     UncompressedCache * const uncompressed_cache;
-    ReadBuffer * data_buffer = nullptr;
-    ReadBufferFromFileBase * plain_file_buffer = nullptr;
-    CompressedReadBufferBase * compressed_data_buffer = nullptr;
-    std::unique_ptr<ReadBuffer> read_buffer_holder;
+
+    ReadBuffer * data_buffer;
+    CompressedReadBufferBase * compressed_data_buffer;
 
     bool initialized = false;
     std::optional<size_t> last_right_offset;
+
+    std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+    std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 
 protected:
     void init();

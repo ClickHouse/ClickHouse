@@ -103,7 +103,6 @@ public:
     NamesAndTypesList getNamesAndTypesList() const;
     NamesAndTypes getNamesAndTypes() const;
     Names getNames() const;
-    NameSet getNameSet() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
 
@@ -157,8 +156,6 @@ public:
 
     /** Get columns from block for mutation. Columns in block will be nullptr. */
     MutableColumns mutateColumns();
-
-    Columns detachColumns();
 
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);

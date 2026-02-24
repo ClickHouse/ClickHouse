@@ -118,10 +118,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
         chassert(n < size());
-        return std::string_view(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n));
+        return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
     bool isDefaultAt(size_t n) const override
@@ -196,9 +196,6 @@ public:
 
     void popBack(size_t n) override
     {
-        if (n > size())
-            throwCannotPopBack(n, getName(), size());
-
         size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
         chars.resize(chars.size() - nested_n);
         offsets.resize_assume_reserved(offsets.size() - n);
@@ -212,7 +209,7 @@ public:
 
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
     void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
@@ -234,8 +231,6 @@ public:
 #endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-
-    void filter(const Filter & filt) override;
 
     void expand(const Filter & mask, bool inverted) override;
 
@@ -296,7 +291,7 @@ public:
     void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
 
     bool canBeInsideNullable() const override { return true; }
 

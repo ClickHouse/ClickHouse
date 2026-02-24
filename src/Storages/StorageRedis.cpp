@@ -351,14 +351,15 @@ void ReadFromRedis::describeActions(JSONBuilder::JSONMap & map) const
 
 namespace
 {
-    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context, const StorageID & table_id)
+    //  host:port, db_index, password, pool_size
+    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context)
     {
         RedisConfiguration configuration;
 
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad arguments count when creating Redis table engine");
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, &table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
             validateNamedCollection(
                 *named_collection,
@@ -401,7 +402,7 @@ namespace
 
     StoragePtr createStorageRedis(const StorageFactory::Arguments & args)
     {
-        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext(), args.table_id);
+        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext());
 
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
@@ -533,7 +534,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
     return ret;
 }
 
-Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
+Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());

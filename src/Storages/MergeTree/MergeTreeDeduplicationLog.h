@@ -1,6 +1,6 @@
 #pragma once
-#include <base/StringViewHash.h>
 #include <Core/Types.h>
+#include <base/StringRef.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Disks/IDisk.h>
 #include <map>
@@ -35,7 +35,7 @@ private:
         V value;
     };
     using Queue = std::list<ListNode>;
-    using IndexMap = std::unordered_map<std::string_view, typename Queue::iterator, StringViewHash>;
+    using IndexMap = std::unordered_map<StringRef, typename Queue::iterator, StringRefHash>;
 
     Queue queue;
     IndexMap map;
@@ -140,15 +140,10 @@ public:
         const MergeTreeDataFormatVersion & format_version_,
         DiskPtr disk_);
 
-    struct AddPartResult
-    {
-        MergeTreePartInfo part_info;
-        std::string block_id;
-    };
     /// Add part into in-memory hash table and to disk
-    /// Return empty block_id and part info if insertion was successful.
-    /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
-    std::vector<AddPartResult> addPart(const std::vector<std::string> & block_id, const MergeTreePartInfo & part);
+    /// Return true and part info if insertion was successful.
+    /// Otherwise, in case of duplicate, return false and previous part name with same hash (useful for logging)
+    std::pair<MergeTreePartInfo, bool> addPart(const std::string & block_id, const MergeTreePartInfo & part);
 
     /// Remove all covered parts from in memory table and add DROP records to the disk
     void dropPart(const MergeTreePartInfo & drop_part_info);

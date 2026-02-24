@@ -117,7 +117,7 @@ bool ColumnMap::isDefaultAt(size_t n) const
     return nested->isDefaultAt(n);
 }
 
-std::string_view ColumnMap::getDataAt(size_t) const
+StringRef ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -151,7 +151,7 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     return nested->serializeValueIntoArena(n, arena, begin, settings);
 }
@@ -224,11 +224,6 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     auto filtered = nested->filter(filt, result_size_hint);
     return ColumnMap::create(filtered);
-}
-
-void ColumnMap::filter(const Filter & filt)
-{
-    nested->filter(filt);
 }
 
 void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
@@ -336,12 +331,12 @@ void ColumnMap::protect()
     nested->protect();
 }
 
-void ColumnMap::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnMap::getExtremes(Field & min, Field & max) const
 {
     Field nested_min;
     Field nested_max;
 
-    nested->getExtremes(nested_min, nested_max, start, end);
+    nested->getExtremes(nested_min, nested_max);
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 

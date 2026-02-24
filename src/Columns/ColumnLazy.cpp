@@ -82,7 +82,7 @@ bool ColumnLazy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for {}", getName());
 }
 
-std::string_view ColumnLazy::getDataAt(size_t) const
+StringRef ColumnLazy::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -211,19 +211,6 @@ ColumnPtr ColumnLazy::filter(const Filter & filt, ssize_t result_size_hint) cons
         new_columns[i] = captured_columns[i]->filter(filt, result_size_hint);
 
     return ColumnLazy::create(new_columns);
-}
-
-void ColumnLazy::filter(const Filter & filt)
-{
-    if (captured_columns.empty())
-    {
-        s = countBytesInFilter(filt);
-        return;
-    }
-
-    const size_t column_size = captured_columns.size();
-    for (size_t i = 0; i < column_size; ++i)
-        captured_columns[i]->filter(filt);
 }
 
 void ColumnLazy::expand(const Filter &, bool)
@@ -373,7 +360,7 @@ void ColumnLazy::protect()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method protect is not supported for {}", getName());
 }
 
-void ColumnLazy::getExtremes(Field &, Field &, size_t, size_t) const
+void ColumnLazy::getExtremes(Field &, Field &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getExtremes is not supported for {}", getName());
 }

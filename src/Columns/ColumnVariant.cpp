@@ -48,53 +48,15 @@ std::string ColumnVariant::getName() const
     return res.str();
 }
 
+
 void ColumnVariant::initIdentityGlobalToLocalDiscriminatorsMapping()
 {
     local_to_global_discriminators.reserve(variants.size());
     global_to_local_discriminators.reserve(variants.size());
-    for (Discriminator i = 0; i != variants.size(); ++i)
+    for (size_t i = 0; i != variants.size(); ++i)
     {
         local_to_global_discriminators.push_back(i);
         global_to_local_discriminators.push_back(i);
-    }
-}
-
-void ColumnVariant::constructOffsetsFromDiscriminators()
-{
-    const ColumnDiscriminators * discriminators_concrete = typeid_cast<const ColumnDiscriminators *>(local_discriminators.get());
-    Offsets & offsets_data = typeid_cast<ColumnOffsets *>(offsets.get())->getData();
-    offsets_data.clear();
-    offsets_data.reserve(discriminators_concrete->size());
-    /// If we have only NULLs, offsets column will not contain any real offsets.
-    if (hasOnlyNulls())
-    {
-        offsets_data.resize(discriminators_concrete->size());
-    }
-    /// If we have only one non empty variant and no NULLs,
-    /// offsets column will contain just sequential offsets 0, 1, 2, ...
-    else if (getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-    {
-        for (size_t i = 0; i != discriminators_concrete->size(); ++i)
-            offsets_data.push_back(i);
-    }
-    /// Otherwise we should iterate through discriminators and
-    /// remember current offset for each variant column.
-    else
-    {
-        std::vector<Offset> nested_offsets;
-        nested_offsets.resize(variants.size());
-        for (Discriminator discr : discriminators_concrete->getData())
-        {
-            if (discr == NULL_DISCRIMINATOR)
-            {
-                offsets_data.emplace_back();
-            }
-            else
-            {
-                offsets_data.push_back(nested_offsets[discr]);
-                ++nested_offsets[discr];
-            }
-        }
     }
 }
 
@@ -187,7 +149,34 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
     {
         /// If no offsets column was provided, construct offsets based on discriminators.
         offsets = ColumnOffsets::create();
-        constructOffsetsFromDiscriminators();
+        Offsets & offsets_data = typeid_cast<ColumnOffsets *>(offsets.get())->getData();
+        offsets_data.reserve(discriminators_concrete->size());
+        /// If we have only NULLs, offsets column will not contain any real offsets.
+        if (hasOnlyNulls())
+        {
+            offsets_data.resize(discriminators_concrete->size());
+        }
+        /// If we have only one non empty variant and no NULLs,
+        /// offsets column will contain just sequential offsets 0, 1, 2, ...
+        else if (getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+        {
+            for (size_t i = 0; i != discriminators_concrete->size(); ++i)
+                offsets_data.push_back(i);
+        }
+        /// Otherwise we should iterate through discriminators and
+        /// remember current offset for each variant column.
+        else
+        {
+            std::vector<Offset> nested_offsets;
+            nested_offsets.resize(variants.size());
+            for (Discriminator discr : discriminators_concrete->getData())
+            {
+                if (discr == NULL_DISCRIMINATOR)
+                    offsets_data.emplace_back();
+                else
+                    offsets_data.push_back(nested_offsets[discr]++);
+            }
+        }
     }
 
     /// Empty global_discriminators means that variants are already in global order.
@@ -207,7 +196,7 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
         local_to_global_discriminators = local_to_global_discriminators_;
         global_to_local_discriminators.resize(local_to_global_discriminators.size());
         /// Create mapping global discriminator -> local discriminator
-        for (Discriminator i = 0; i != local_to_global_discriminators.size(); ++i)
+        for (size_t i = 0; i != local_to_global_discriminators.size(); ++i)
         {
             if (local_to_global_discriminators[i] > variants.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid global discriminator {}. The number of variants: {}", UInt64(local_to_global_discriminators[i]), variants_.size());
@@ -443,7 +432,7 @@ bool ColumnVariant::isNullAt(size_t n) const
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
 }
 
-std::string_view ColumnVariant::getDataAt(size_t) const
+StringRef ColumnVariant::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -456,7 +445,7 @@ void ColumnVariant::insertData(const char *, size_t)
 void ColumnVariant::insert(const Field & x)
 {
     if (!tryInsert(x))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} into column {}", fieldToString(x), getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} into column {}", toString(x), getName());
 }
 
 bool ColumnVariant::tryInsert(const DB::Field & x)
@@ -467,7 +456,7 @@ bool ColumnVariant::tryInsert(const DB::Field & x)
         return true;
     }
 
-    for (Discriminator i = 0; i != variants.size(); ++i)
+    for (size_t i = 0; i != variants.size(); ++i)
     {
         if (variants[i]->tryInsert(x))
         {
@@ -582,7 +571,7 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
         }
     }
 
-    for (Discriminator src_local_discr = 0; src_local_discr != nested_ranges.size(); ++src_local_discr)
+    for (size_t src_local_discr = 0; src_local_discr != nested_ranges.size(); ++src_local_discr)
     {
         auto [nested_start, nested_length] = nested_ranges[src_local_discr];
         Discriminator src_global_discr = src.globalDiscriminatorByLocal(src_local_discr);
@@ -731,9 +720,6 @@ void ColumnVariant::insertManyDefaults(size_t length)
 
 void ColumnVariant::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
     /// If we have only NULLs, just pop back from local_discriminators and offsets.
     if (hasOnlyNulls())
     {
@@ -807,19 +793,22 @@ void ColumnVariant::rollback(const ColumnCheckpoint & checkpoint)
         variants[i]->rollback(*checkpoints[i]);
 }
 
-std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
     char * pos = arena.allocContinue(sizeof(global_discr), begin);
     memcpy(pos, &global_discr, sizeof(global_discr));
-    std::string_view res(pos, sizeof(global_discr));
+    StringRef res(pos, sizeof(global_discr));
 
     if (global_discr == NULL_DISCRIMINATOR)
         return res;
 
     auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoArena(offsetAt(n), arena, begin, settings);
-    return std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
+    res.data = value_ref.data - res.size;
+    res.size += value_ref.size;
+
+    return res;
 }
 
 void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
@@ -944,16 +933,8 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// In this case we can just filter this variant and resize discriminators/offsets.
     if (auto non_empty_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
     {
-        const size_t num_variants = variants.size();
-        Columns new_variants;
-        new_variants.reserve(num_variants);
-        for (size_t i = 0; i != num_variants; ++i)
-        {
-            if (i == *non_empty_discr)
-                new_variants.emplace_back(variants[i]->filter(filt, result_size_hint));
-            else
-                new_variants.emplace_back(variants[i]->cloneEmpty());
-        }
+        Columns new_variants(variants.begin(), variants.end());
+        new_variants[*non_empty_discr] = variants[*non_empty_discr]->filter(filt, result_size_hint);
         size_t new_size = new_variants[*non_empty_discr]->size();
         ColumnPtr new_discriminators = local_discriminators->cloneResized(new_size);
         ColumnPtr new_offsets = offsets->cloneResized(new_size);
@@ -998,70 +979,6 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     return ColumnVariant::create(local_discriminators->filter(filt, result_size_hint), new_variants, local_to_global_discriminators);
 }
 
-void ColumnVariant::filter(const Filter & filt)
-{
-    if (size() != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
-
-    ColumnDiscriminators * discriminators_concrete = typeid_cast<ColumnDiscriminators *>(local_discriminators.get());
-    if (!discriminators_concrete)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "discriminator column must be a ColumnUInt8");
-
-    /// If we have only NULLs, just filter local_discriminators column.
-    if (hasOnlyNulls())
-    {
-        discriminators_concrete->filter(filt);
-        /// In case of all NULL values offsets doesn't contain any useful values, just resize it.
-        size_t pop_back_count = size() - discriminators_concrete->size();
-        offsets->popBack(pop_back_count);
-        return;
-    }
-
-    /// Optimization for case when there is only 1 non-empty variant and no NULLs.
-    /// In this case we can just filter this variant and resize discriminators/offsets.
-    if (auto non_empty_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-    {
-        variants[*non_empty_discr]->filter(filt);
-        size_t pop_back_count = size() - variants[*non_empty_discr]->size();
-        discriminators_concrete->popBack(pop_back_count);
-        offsets->popBack(pop_back_count);
-        return;
-    }
-
-    /// We should create filter for each variant
-    /// according to local_discriminators and given filter.
-    const size_t num_variants = variants.size();
-    std::vector<Filter> nested_filters(num_variants);
-    for (size_t i = 0; i != num_variants; ++i)
-        nested_filters[i].reserve_exact(variants[i]->size());
-
-    std::vector<bool> variant_result_is_empty(num_variants, true);
-
-    const auto & local_discriminators_data = getLocalDiscriminators();
-    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
-    {
-        Discriminator discr = local_discriminators_data[i];
-        if (discr != NULL_DISCRIMINATOR)
-        {
-            nested_filters[discr].push_back(filt[i]);
-            variant_result_is_empty[discr] = variant_result_is_empty[discr] && !filt[i];
-        }
-    }
-
-    for (size_t i = 0; i != num_variants; ++i)
-    {
-        /// It make sense to call filter() on variant only if the result size is not 0.
-        if (!variant_result_is_empty[i])
-            variants[i]->filter(nested_filters[i]);
-        /// If result variant size is 0, we need to make this variant empty.
-        else
-            variants[i] = variants[i]->cloneEmpty();
-    }
-
-    discriminators_concrete->filter(filt);
-    constructOffsetsFromDiscriminators();
-}
-
 void ColumnVariant::expand(const Filter & mask, bool inverted)
 {
     /// Expand local_discriminators using NULL_DISCRIMINATOR for 0-rows.
@@ -1095,7 +1012,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->permute(perm, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->cloneEmpty());
+                new_variants.emplace_back(variants[i]->assumeMutable());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1125,7 +1042,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
             if (i == *non_empty_local_discr)
                 new_variants.emplace_back(variants[*non_empty_local_discr]->index(indexes, limit)->assumeMutable());
             else
-                new_variants.emplace_back(variants[i]->cloneEmpty());
+                new_variants.emplace_back(variants[i]->assumeMutable());
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
@@ -1191,7 +1108,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     if (size() != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", replicate_offsets.size(), size());
 
-    if (empty() || replicate_offsets.back() == 0)
+    if (empty())
         return cloneEmpty();
 
     /// If we have only NULLs, just resize column to the new size.
@@ -1502,7 +1419,7 @@ void ColumnVariant::protect()
         variant->protect();
 }
 
-void ColumnVariant::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
+void ColumnVariant::getExtremes(Field & min, Field & max) const
 {
     min = Null();
     max = Null();
@@ -1562,7 +1479,7 @@ bool ColumnVariant::structureEquals(const IColumn & rhs) const
     if (num_variants != rhs_variant->variants.size())
         return false;
 
-    for (Discriminator i = 0; i < static_cast<Discriminator>(num_variants); ++i)
+    for (size_t i = 0; i < num_variants; ++i)
         if (!variants[i]->structureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
             return false;
 
@@ -1579,7 +1496,7 @@ bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
     if (num_variants != rhs_variant->variants.size())
         return false;
 
-    for (Discriminator i = 0; i < static_cast<Discriminator>(num_variants); ++i)
+    for (size_t i = 0; i < num_variants; ++i)
         if (!variants[i]->dynamicStructureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
             return false;
 
@@ -1614,7 +1531,7 @@ ColumnPtr ColumnVariant::compress(bool force_compression) const
 double ColumnVariant::getRatioOfDefaultRows(double) const
 {
     UInt64 num_defaults = getNumberOfDefaultRows();
-    return static_cast<double>(num_defaults) / static_cast<double>(local_discriminators->size());
+    return static_cast<double>(num_defaults) / local_discriminators->size();
 }
 
 UInt64 ColumnVariant::getNumberOfDefaultRows() const
@@ -1672,7 +1589,7 @@ std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminato
 std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariant() const
 {
     std::optional<ColumnVariant::Discriminator> discr;
-    for (Discriminator i = 0; i != variants.size(); ++i)
+    for (size_t i = 0; i != variants.size(); ++i)
     {
         if (!variants[i]->empty())
         {
@@ -1736,12 +1653,12 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
             {
                 if (null_map[i])
                 {
-                    filter.push_back(static_cast<UInt8>(0));
+                    filter.push_back(0);
                     local_discriminators_data[i] = NULL_DISCRIMINATOR;
                 }
                 else
                 {
-                   filter.push_back(static_cast<UInt8>(1));
+                   filter.push_back(1);
                    offsets_data[i] = size_hint++;
                 }
             }

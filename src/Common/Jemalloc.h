@@ -4,7 +4,7 @@
 
 #if USE_JEMALLOC
 
-#include <string_view>
+#include <string>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>
 
@@ -22,7 +22,7 @@ void checkProfilingEnabled();
 
 void setProfileActive(bool value);
 
-std::string_view flushProfile(const char * file_prefix);
+std::string_view flushProfile(const std::string & file_prefix);
 
 void setBackgroundThreads(bool enabled);
 
@@ -90,7 +90,6 @@ const MibCache<bool> & getThreadProfileInitMib();
 void setCollectLocalProfileSamplesInTraceLog(bool value);
 
 std::string_view getLastFlushProfileForThread();
-
 
 }
 

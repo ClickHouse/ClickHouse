@@ -34,7 +34,7 @@ public:
         return convertToFullColumn();
     }
 
-    ColumnPtr convertToFullColumnIfLowCardinality() const override;
+    ColumnPtr removeLowCardinality() const;
 
     std::string getName() const override
     {
@@ -76,7 +76,7 @@ public:
         return data->getValueNameAndTypeImpl(name_buf, 0, options);
     }
 
-    std::string_view getDataAt(size_t) const override
+    StringRef getDataAt(size_t) const override
     {
         return data->getDataAt(0);
     }
@@ -170,9 +170,12 @@ public:
         ++s;
     }
 
-    void popBack(size_t n) override;
+    void popBack(size_t n) override
+    {
+        s -= n;
+    }
 
-    std::string_view
+    StringRef
     serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
         return data->serializeValueIntoArena(0, arena, begin, settings);
@@ -208,7 +211,6 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
@@ -253,9 +255,9 @@ public:
 
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
+    void getExtremes(Field & min, Field & max) const override
     {
-        data->getExtremes(min, max, start, end);
+        data->getExtremes(min, max);
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override
