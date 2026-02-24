@@ -238,7 +238,9 @@ def run_fuzz_job(check_name: str):
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
         error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        Result.create_from(
+            status=Result.Status.ERROR, info=error_info, stopwatch=sw
+        ).complete_job()
 
     result = analyze_job_logs(
         paths,
