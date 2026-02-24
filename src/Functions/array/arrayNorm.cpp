@@ -296,7 +296,7 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
                     "Argument p of function {} must be numeric constant",
                     getName());
 
-    if (!isColumnConst(*arguments[1].column) && arguments[1].column->size() != 1)
+    if (!isColumnConst(*arguments[1].column))
         throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Second argument for function {} must be either constant Float64 or constant UInt",

@@ -132,6 +132,8 @@ public:
                 size_t j = 0;
                 while (generator.get(token_begin, token_end))
                 {
+                    chassert(token_begin >= pos && token_end >= token_begin);
+                    chassert(token_end <= end);
                     size_t token_size = token_end - token_begin;
 
                     res_strings_chars.resize(res_strings_chars.size() + token_size);

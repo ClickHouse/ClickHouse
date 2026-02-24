@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -188,31 +189,43 @@ public:
         if (all_when_then_values_constant)
         {
             ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-            return FunctionFactory::instance().get("transform", context)->build(transform_args)
-                ->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
-        }
-        else
-        {
-            ColumnsWithTypeAndName multi_if_args;
-
-            // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
-            for (size_t i = 1; i < args.size() - 1; i += 2)
+            FunctionBasePtr function_base;
+            try
             {
-                // use CASE WHEN equality semantics (NULL = NULL is true)
-                auto condition = caseWhenEquals(args.front(), args[i], input_rows_count);
+                function_base = FunctionFactory::instance().get("transform", context)->build(transform_args);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                    throw;
 
-                multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
-                multi_if_args.push_back(args[i + 1]); // Then value
+                /// Function 'transform' doesn't support some data types, e.g. Int128.
+                /// Fall back to multiIf.
             }
 
-            // Add an ELSE value
-            multi_if_args.push_back(args.back());
-
-            // Execute multiIf
-            return FunctionFactory::instance().get("multiIf", context)
-                ->build(multi_if_args)
-                ->execute(multi_if_args, result_type, input_rows_count, false);
+            if (function_base)
+                return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
         }
+
+        ColumnsWithTypeAndName multi_if_args;
+
+        // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
+        for (size_t i = 1; i < args.size() - 1; i += 2)
+        {
+            // use CASE WHEN equality semantics (NULL = NULL is true)
+            auto condition = caseWhenEquals(args.front(), args[i], input_rows_count);
+
+            multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
+            multi_if_args.push_back(args[i + 1]); // Then value
+        }
+
+        // Add an ELSE value
+        multi_if_args.push_back(args.back());
+
+        // Execute multiIf
+        return FunctionFactory::instance().get("multiIf", context)
+            ->build(multi_if_args)
+            ->execute(multi_if_args, result_type, input_rows_count, false);
     }
 
 private:

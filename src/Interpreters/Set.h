@@ -193,10 +193,6 @@ using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
 
 
-class IFunction;
-using FunctionPtr = std::shared_ptr<IFunction>;
-
-
 /// Class for checkInRange function.
 class MergeTreeSetIndex
 {

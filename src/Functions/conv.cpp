@@ -20,6 +20,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_COLUMN;
 }
 
 class FunctionConv : public IFunction
@@ -69,7 +71,7 @@ public:
         const auto * number_const_col = checkAndGetColumnConst<ColumnString>(number_column.get());
         if (!number_col && !number_const_col)
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of first argument of function {}",
                 arguments[0].column->getName(),
                 getName());
@@ -97,11 +99,11 @@ private:
     {
         if (from_base < 2 || from_base > 36 || to_base < 2 || to_base > 36)
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                ErrorCodes::BAD_ARGUMENTS,
                 "Base is less than 2 or greater than 36 which is not supported");
         if (number.empty())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                ErrorCodes::BAD_ARGUMENTS,
                 "Number for conversion is empty");
         std::string clean_number = number;
         bool is_negative = false;
@@ -140,7 +142,7 @@ private:
         catch (...)
         {
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                ErrorCodes::BAD_ARGUMENTS,
                 "Invalid number format for base conversion in function conv");
 
         }

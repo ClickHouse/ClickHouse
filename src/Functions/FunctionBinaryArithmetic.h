@@ -1776,7 +1776,7 @@ public:
             return arguments[0];
         }
 
-        /// Special case - one argument is IPv4 and the other is Ipv4 or an integer
+        /// Special case - one argument is IPv4 and the other is IPv4 or an integer
         if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
             || (isIPv4(arguments[1]) && isInteger(arguments[0])))
         {
@@ -2224,7 +2224,7 @@ public:
 
                 auto res = OpImpl::constConst(a, b);
 
-                return DataTypeUInt64{}.createColumnConst(1, res);
+                return DataTypeUInt64{}.createColumnConst(col_left_const->size(), res);
             }
         }
 

@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/Kusto/KqlFunctionBase.h>
 
 namespace DB
 {
@@ -19,7 +18,7 @@ namespace ErrorCodes
 }
 
 template <typename Name, bool is_desc>
-class FunctionKqlArraySort : public KqlFunctionBase
+class FunctionKqlArraySort : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -44,8 +43,18 @@ public:
 
         auto array_count = arguments.size();
 
-        if (!isArray(arguments.at(array_count - 1).type))
+        const auto & last_arg = arguments[array_count - 1];
+        if (!isArray(last_arg.type))
+        {
             --array_count;
+
+            if (!isUInt8(last_arg.type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument null_last of function {} must have type UInt8 or Bool.", getName());
+            if (!last_arg.column || !last_arg.column->isConst())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument null_last of function {} must be constant.", getName());
+        }
 
         DataTypes nested_types;
         for (size_t index = 0; index < array_count; ++index)
@@ -79,7 +88,7 @@ public:
         if (!isArray(last_arg.type))
         {
             --array_count;
-            null_last = check_condition(last_arg, context, input_rows_count);
+            null_last = last_arg.column->getBool(0);
         }
 
         ColumnsWithTypeAndName new_args;
@@ -158,7 +167,8 @@ public:
                 auto out_tmp = ColumnArray::create(nested_types[i]->createColumn());
 
                 size_t array_size = tuple_coulmn->size();
-                const auto & arr = checkAndGetColumn<ColumnArray>(*tuple_coulmn);
+                auto holder = tuple_coulmn->convertToFullColumnIfConst();
+                const auto & arr = checkAndGetColumn<ColumnArray>(*holder);
 
                 for (size_t j = 0; j < array_size; ++j)
                 {

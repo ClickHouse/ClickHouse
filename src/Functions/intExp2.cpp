@@ -54,16 +54,15 @@ struct IntExp2Impl
 #endif
 };
 
-/// Assumed to be injective for the purpose of query optimization, but in fact it is not injective because of possible overflow.
 struct NameIntExp2 { static constexpr auto name = "intExp2"; };
-using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, true>;
+using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, false>;
 
 }
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
         Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
@@ -71,7 +70,10 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
         if (left_float < 0 || right_float > 63)
             return {};
 
-        return { .is_monotonic = true, .is_strict = true, };
+        /// For floating-point inputs, the value is truncated to int, so `intExp2` is not
+        /// strictly monotonic (e.g. `intExp2(1.5)` == `intExp2(1.9)`).
+        bool is_strict = type.isValueRepresentedByInteger();
+        return { .is_monotonic = true, .is_strict = is_strict };
     }
 };
 
