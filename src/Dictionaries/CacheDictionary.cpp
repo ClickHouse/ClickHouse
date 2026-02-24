@@ -66,6 +66,11 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
 {
     if (!source_ptr->supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", getFullName());
+
+    /// Safe only because a storage has a single live owner: `rw_lock` is per-dictionary but shared
+    /// with clones, and cache dictionaries never auto-reload.
+    if (cache_storage_ptr->supportsConcurrentReadsDuringInsert())
+        cache_storage_ptr->setInsertReaderLock(&rw_lock);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -696,6 +701,21 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             for (const auto & fetched_column : fetched_columns_during_update)
                 update_unit_ptr_mutable_columns.emplace_back(fetched_column->assumeMutable());
 
+            if (cache_storage_ptr->supportsConcurrentReadsDuringInsert())
+            {
+                /// Serialize writers without blocking readers; the storage locks `rw_lock` itself
+                /// only around each per-key commit.
+                std::lock_guard write_guard(write_mutex);
+                cache_storage_ptr->insertColumnsForKeys(found_keys_in_source, fetched_columns_during_update);
+                cache_storage_ptr->insertDefaultKeys(not_found_keys_in_source);
+
+                /// `last_exception` is guarded by `rw_lock`.
+                const ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+                error_count = 0;
+                last_exception = std::exception_ptr{};
+                backoff_end_time = std::chrono::system_clock::time_point{};
+            }
+            else
             {
                 /// Lock for cache modification
                 ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};

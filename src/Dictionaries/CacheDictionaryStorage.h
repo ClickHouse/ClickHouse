@@ -1,6 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <mutex>
+#include <optional>
 #include <variant>
 
 #include <pcg_random.hpp>
@@ -9,6 +12,8 @@
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaUtils.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/SharedMutex.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 
@@ -31,15 +36,12 @@ struct CacheDictionaryStorageConfiguration
     const DictionaryLifetime lifetime;
 };
 
-/** ICacheDictionaryStorage implementation that keeps key in hash table with fixed collision length.
-  * Value in hash table point to index in attributes arrays.
+/** ICacheDictionaryStorage implementation that keeps keys in a HashMap
+  * with global LRU eviction. Value in hash table points to index in attributes arrays.
   */
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryStorage final : public ICacheDictionaryStorage
 {
-
-    static constexpr size_t max_collision_length = 10;
-
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
@@ -49,11 +51,9 @@ public:
         : configuration(configuration_)
         , rnd_engine(randomSeed())
     {
-        size_t cells_size = roundUpToPowerOfTwoOrZero(std::max(configuration.max_size_in_cells, max_collision_length));
-
-        cells.resize_fill(cells_size);
-        size_overlap_mask = cells_size - 1;
-
+        storage.resize_fill(configuration.max_size_in_cells);
+        /// Pre-size the map so it never rehashes inside the per-key commit lock.
+        key_to_storage.reserve(configuration.max_size_in_cells);
         createAttributes(dictionary_structure);
     }
 
@@ -157,8 +157,12 @@ public:
             });
         }
 
-        return arena.allocatedBytes() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
+        return arena.allocatedBytes() + storage.allocated_bytes() + key_to_storage.getBufferSizeInBytes() + attributes_size_in_bytes;
     }
+
+    bool supportsConcurrentReadsDuringInsert() const override { return true; }
+
+    void setInsertReaderLock(SharedMutex * reader_lock) override { insert_reader_lock = reader_lock; }
 
 private:
 
@@ -195,7 +199,7 @@ private:
         for (size_t key_index = 0; key_index < keys_size; ++key_index)
         {
             auto key = keys[key_index];
-            auto [key_state, cell_index] = getKeyStateAndCellIndex(key, now);
+            auto [key_state, storage_index] = findKey(key, now);
 
             if (unlikely(key_state == KeyState::not_found))
             {
@@ -204,7 +208,8 @@ private:
                 continue;
             }
 
-            auto & cell = cells[cell_index];
+            auto & cell = storage[storage_index];
+            std::atomic_ref<uint8_t>(cell.clock_count).store(max_clock_count, std::memory_order_relaxed);
 
             result.expired_keys_size += static_cast<size_t>(key_state == KeyState::expired);
 
@@ -395,8 +400,15 @@ private:
         {
             auto key = keys[key_index];
 
-            size_t cell_index = getCellIndexForInsert(key);
-            auto & cell = cells[cell_index];
+            /// Eviction scan runs without the reader lock (writers are serialized by the owner).
+            size_t slot = selectSlotForInsert(key);
+
+            /// Lock per key so readers never see a half-updated cell, and get a window between keys.
+            std::optional<std::unique_lock<SharedMutex>> commit_lock;
+            if (insert_reader_lock)
+                commit_lock.emplace(*insert_reader_lock);
+
+            auto & cell = storage[slot];
 
             bool cell_was_default = cell.is_default;
             cell.is_default = false;
@@ -446,6 +458,9 @@ private:
             {
                 if (cell.key != key)
                 {
+                    /// Slot reused for a different key (eviction): drop the victim from the map.
+                    key_to_storage.erase(cell.key);
+
                     if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
                         char * data = const_cast<char *>(cell.key.data());
@@ -494,7 +509,11 @@ private:
                 }
             }
 
+            /// After cell.key is set: for string_view keys it points to stable arena memory.
+            key_to_storage[cell.key] = slot;
+
             setCellDeadline(cell, now);
+            std::atomic_ref<uint8_t>(cell.clock_count).store(max_clock_count, std::memory_order_relaxed);
         }
     }
 
@@ -508,8 +527,15 @@ private:
         {
             auto key = keys[key_index];
 
-            size_t cell_index = getCellIndexForInsert(key);
-            auto & cell = cells[cell_index];
+            /// Eviction scan runs without the reader lock (writers are serialized by the owner).
+            size_t slot = selectSlotForInsert(key);
+
+            /// Lock per key so readers never see a half-updated cell.
+            std::optional<std::unique_lock<SharedMutex>> commit_lock;
+            if (insert_reader_lock)
+                commit_lock.emplace(*insert_reader_lock);
+
+            auto & cell = storage[slot];
 
             bool was_inserted = cell.deadline == 0;
             bool cell_was_default = cell.is_default;
@@ -555,6 +581,9 @@ private:
 
                 if (cell.key != key)
                 {
+                    /// Slot reused for a different key (eviction): drop the victim from the map.
+                    key_to_storage.erase(cell.key);
+
                     if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
                         char * data = const_cast<char *>(cell.key.data());
@@ -566,7 +595,11 @@ private:
                 }
             }
 
+            /// After cell.key is set: for string_view keys it points to stable arena memory.
+            key_to_storage[cell.key] = slot;
+
             setCellDeadline(cell, now);
+            std::atomic_ref<uint8_t>(cell.clock_count).store(max_clock_count, std::memory_order_relaxed);
         }
     }
 
@@ -575,7 +608,7 @@ private:
         PaddedPODArray<KeyType> result;
         result.reserve(size);
 
-        for (auto & cell : cells)
+        for (auto & cell : storage)
         {
             if (cell.deadline == 0)
                 continue;
@@ -771,17 +804,25 @@ private:
         size_t element_index;
         bool is_default;
         time_t deadline;
+        /// GCLOCK counter: 0 — evictable, >0 — decremented each time the clock hand passes.
+        /// Recharged to max_clock_count on both hit and insert.
+        uint8_t clock_count = 0;
     };
+
+    static constexpr uint8_t max_clock_count = 3;
 
     CacheDictionaryStorageConfiguration configuration;
 
     pcg64 rnd_engine;
 
-    size_t size_overlap_mask = 0;
-
     size_t size = 0;
 
-    PaddedPODArray<Cell> cells;
+    HashMap<KeyType, size_t> key_to_storage;
+    PaddedPODArray<Cell> storage;
+    size_t clock_hand = 0;
+
+    /// Owned by CacheDictionary. When set, inserts lock it only around each per-key commit.
+    SharedMutex * insert_reader_lock = nullptr;
 
     ArenaWithFreeLists arena;
 
@@ -807,69 +848,76 @@ private:
         cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    size_t getCellIndex(const KeyType key) const
-    {
-        const size_t hash = DefaultHash<KeyType>()(key);
-        const size_t index = hash & size_overlap_mask;
-        return index;
-    }
-
     using KeyStateAndCellIndex = std::pair<KeyState::State, size_t>;
 
-    KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
+    /// Returns the key state and its storage index (undefined when not found).
+    KeyStateAndCellIndex findKey(const KeyType key, const time_t now)
     {
-        size_t place_value = getCellIndex(key);
-        const size_t place_value_end = place_value + max_collision_length;
+        auto it = key_to_storage.find(key);
+        if (it == key_to_storage.end())
+            return {KeyState::not_found, 0};
+
+        size_t storage_index = it->getMapped();
+        const auto & cell = storage[storage_index];
 
         time_t max_lifetime_seconds = static_cast<time_t>(configuration.strict_max_lifetime_seconds);
 
-        for (; place_value < place_value_end; ++place_value)
-        {
-            const auto cell_place_value = place_value & size_overlap_mask;
-            const auto & cell = cells[cell_place_value];
+        if (unlikely(now > cell.deadline + max_lifetime_seconds))
+            return {KeyState::not_found, storage_index};
 
-            if (cell.key != key)
-                continue;
+        if (unlikely(now > cell.deadline))
+            return {KeyState::expired, storage_index};
 
-            if (unlikely(now > cell.deadline + max_lifetime_seconds))
-                return std::make_pair(KeyState::not_found, cell_place_value);
-
-            if (unlikely(now > cell.deadline))
-                return std::make_pair(KeyState::expired, cell_place_value);
-
-            return std::make_pair(KeyState::found, cell_place_value);
-        }
-
-        return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
+        return {KeyState::found, storage_index};
     }
 
-    size_t getCellIndexForInsert(const KeyType & key) const
+    /// Returns the slot to insert `key` into, without mutating the map or cell contents (only ages
+    /// `clock_count`). Returns the key's current slot, a fresh slot, or a GCLOCK eviction victim;
+    /// for a victim the caller must erase its old key from the map. Amortized O(1): each access
+    /// recharges a counter by at most `max_clock_count`, so a miss may sweep all cells but at most
+    /// `max_clock_count` full sweeps drain the counters to 0.
+    ///
+    /// Reads `size`/`clock_hand`/the map without the reader lock; safe only because writers are
+    /// serialized by the owner, so select and commit are sequential in a single writer thread.
+    size_t selectSlotForInsert(const KeyType & key)
     {
-        size_t place_value = getCellIndex(key);
-        const size_t place_value_end = place_value + max_collision_length;
-        size_t oldest_place_value = place_value;
+        auto it = key_to_storage.find(key);
+        if (it != key_to_storage.end())
+            return it->getMapped();
 
-        time_t oldest_time = std::numeric_limits<time_t>::max();
+        if (size < configuration.max_size_in_cells)
+            return size;
 
-        for (; place_value < place_value_end; ++place_value)
+        /// Sweep at most N cells: evict the first with clock_count == 0, else the lowest seen.
+        size_t current_victim = clock_hand;
+        uint8_t min_count = std::atomic_ref<uint8_t>(storage[clock_hand].clock_count).load(std::memory_order_relaxed);
+
+        for (size_t i = 0; i < configuration.max_size_in_cells; ++i)
         {
-            const size_t cell_place_value = place_value & size_overlap_mask;
-            const Cell cell = cells[cell_place_value];
+            std::atomic_ref<uint8_t> count_ref(storage[clock_hand].clock_count);
+            uint8_t count = count_ref.load(std::memory_order_relaxed);
 
-            if (cell.deadline == 0)
-                return cell_place_value;
-
-            if (cell.key == key)
-                return cell_place_value;
-
-            if (cell.deadline < oldest_time)
+            if (count == 0)
             {
-                oldest_time = cell.deadline;
-                oldest_place_value = cell_place_value;
+                size_t victim = clock_hand;
+                clock_hand = (clock_hand + 1) % configuration.max_size_in_cells;
+                return victim;
             }
+
+            if (count < min_count)
+            {
+                min_count = count;
+                current_victim = clock_hand;
+            }
+
+            /// count >= 1 here and only readers raise it, so this never underflows.
+            count_ref.fetch_sub(1, std::memory_order_relaxed);
+            clock_hand = (clock_hand + 1) % configuration.max_size_in_cells;
         }
 
-        return oldest_place_value;
+        /// No cell had clock_count == 0; evict the one with the lowest count.
+        clock_hand = (current_victim + 1) % configuration.max_size_in_cells;
+        return current_victim;
     }
 };
 
