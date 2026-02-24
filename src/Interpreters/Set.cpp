@@ -680,8 +680,19 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         ordered_set[i] = block_to_sort.getByPosition(i).column;
 }
 
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
+/** Return the BoolMask where:
+  * 1: the intersection of the set and the range is non-empty
+  * 2: the range contains elements not in the set
+  */
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const std::vector<Range> & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
 {
+    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
+    {
+        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
+        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
+        return {is_key_col_present, sparse_pos};
+    };
+
     size_t tuple_size = indexes_mapping.size();
 
     struct FieldValueRange
@@ -698,16 +709,35 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        size_t key_column = indexes_mapping[i].key_index;
+        auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+
+        ranges.emplace_back(*ordered_set[i]);
+
+        if (!is_key_col_present)
+        {
+            /// We have no range information for this key column.
+            /// Most likely earlier columns were high cardinality, so this column and later column marks were not loaded into memory
+            /// Treat it as completely unconstrained; since we do not have the type information,
+            /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
+            /// So, we choose the more relaxed option:
+            /// [-inf, +inf] instead of ( -inf, +inf ).
+            ranges.back().left.update(NEGATIVE_INFINITY);
+            ranges.back().right.update(POSITIVE_INFINITY);
+            ranges.back().left_included = true;
+            ranges.back().right_included = true;
+            continue;
+        }
+
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            key_ranges[indexes_mapping[i].key_index],
+            sparse_key_ranges[sparse_pos],
             indexes_mapping[i].functions,
-            data_types[indexes_mapping[i].key_index],
+            sparse_data_types[sparse_pos],
             single_point);
 
         if (!new_range)
             return {true, true};
 
-        ranges.emplace_back(*ordered_set[i]);
         ranges.back().left.update(new_range->left);
         ranges.back().right.update(new_range->right);
         ranges.back().left_included = new_range->left_included;
@@ -823,19 +853,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     return {can_be_true, true};
 }
 
-/** Return the BoolMask where:
-  * 1: the intersection of the set and the range is non-empty
-  * 2: the range contains elements not in the set
-  */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const std::vector<Range> & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
-    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
-    {
-        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
-        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
-        return {is_key_col_present, sparse_pos};
-    };
-
     size_t tuple_size = indexes_mapping.size();
 
     struct FieldValueRange
@@ -852,35 +871,16 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
     ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        size_t key_column = indexes_mapping[i].key_index;
-        auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
-
-        ranges.emplace_back(*ordered_set[i]);
-
-        if (!is_key_col_present)
-        {
-            /// We have no range information for this key column.
-            /// Most likely earlier columns were high cardinality, so this column and later column marks were not loaded into memory
-            /// Treat it as completely unconstrained; since we do not have the type information,
-            /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
-            /// So, we choose the more relaxed option:
-            /// [-inf, +inf] instead of ( -inf, +inf ).
-            ranges.back().left.update(NEGATIVE_INFINITY);
-            ranges.back().right.update(POSITIVE_INFINITY);
-            ranges.back().left_included = true;
-            ranges.back().right_included = true;
-            continue;
-        }
-
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            sparse_key_ranges[sparse_pos],
+            key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
-            sparse_data_types[sparse_pos],
+            data_types[indexes_mapping[i].key_index],
             single_point);
 
         if (!new_range)
             return {true, true};
 
+        ranges.emplace_back(*ordered_set[i]);
         ranges.back().left.update(new_range->left);
         ranges.back().right.update(new_range->right);
         ranges.back().left_included = new_range->left_included;
