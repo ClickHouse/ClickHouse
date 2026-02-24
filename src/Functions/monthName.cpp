@@ -2,17 +2,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/FunctionFactory.h>
-#include "DataTypes/IDataType.h"
-#include "Functions/FunctionHelpers.h"
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
 
 namespace
 {

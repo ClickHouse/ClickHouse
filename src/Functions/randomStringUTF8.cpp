@@ -6,7 +6,7 @@
 #include <pcg_random.hpp>
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
-#include "Core/ColumnsWithTypeAndName.h"
+#include <Core/ColumnsWithTypeAndName.h>
 
 #include <base/defines.h>
 
@@ -14,7 +14,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
