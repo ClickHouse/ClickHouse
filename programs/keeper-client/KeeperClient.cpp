@@ -230,7 +230,6 @@ std::vector<String> KeeperClient::getCompletions(String prefix) const
 }
 
 
-
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 {
     Poco::Util::Application::defineOptions(options);
