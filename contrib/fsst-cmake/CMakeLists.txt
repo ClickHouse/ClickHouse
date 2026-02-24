@@ -1,9 +1,9 @@
-option(ENABLE_FSST "Enable FSST (Fast Static Symbol Table)" ${ENABLE_LIBRARIES})
+# option(ENABLE_FSST "Enable FSST (Fast Static Symbol Table)" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_FSST)
-    message (STATUS "Not using FSST (Fast Static Symbol Table)")
-    return()
-endif()
+# if (NOT ENABLE_FSST)
+#     message (STATUS "Not using FSST (Fast Static Symbol Table)")
+#     return()
+# endif()
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/fsst")
 set(SRCS
