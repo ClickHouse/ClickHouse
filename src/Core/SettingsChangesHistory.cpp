@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"materialize_statistics_on_insert", true, false, "Disable materialization of statistics on insert after enabling auto statistics"},
             {"allow_statistics", false, true, "Statistics are now GA"},
             {"allow_experimental_statistics", false, true, "Statistics are now GA"},
+            {"allow_experimental_statistic", false, true, "Statistics are now GA"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
