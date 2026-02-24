@@ -14,6 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/ErrnoException.h>
 
 namespace fs = std::filesystem;
 

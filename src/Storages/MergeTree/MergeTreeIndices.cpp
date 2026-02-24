@@ -98,33 +98,29 @@ MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescripti
     return result;
 }
 
-void MergeTreeIndexFactory::implicitValidation(const IndexDescription & index)
-{
-    if (index.expression->hasArrayJoin())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
-
-    try
-    {
-        index.expression->assertDeterministic();
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("for secondary index '{}'", index.name));
-        throw;
-    }
-
-    for (const auto & elem : index.sample_block)
-        if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
-}
-
-
 void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
 {
     /// Do not allow constant and non-deterministic expressions.
     /// Do not throw on attach for compatibility.
     if (!attach)
-        implicitValidation(index);
+    {
+        if (index.expression->hasArrayJoin())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
+
+        try
+        {
+            index.expression->assertDeterministic();
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("for secondary index '{}'", index.name));
+            throw;
+        }
+
+        for (const auto & elem : index.sample_block)
+            if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
+    }
 
     auto it = validators.find(index.type);
     if (it == validators.end())

@@ -1822,7 +1822,10 @@ bool StatementGenerator::generateGroupBy(
             if ((ssc->has_pre_where() || ssc->has_where()) && rg.nextMediumNumber() < 16)
             {
                 /// Sometimes use the same predicate for having and where
-                whr->CopyFrom((!ssc->has_pre_where() || rg.nextBool()) ? ssc->where() : ssc->pre_where());
+                if (ssc->has_pre_where() && ssc->has_where())
+                    whr->CopyFrom(rg.nextBool() ? ssc->where() : ssc->pre_where());
+                else
+                    whr->CopyFrom(ssc->has_where() ? ssc->where() : ssc->pre_where());
             }
             else
             {
@@ -2314,14 +2317,16 @@ void StatementGenerator::generateSelect(
             if ((ssc->has_pre_where() || ssc->has_where() || (ssc->has_groupby() && ssc->groupby().has_having_expr()))
                 && rg.nextMediumNumber() < 16)
             {
-                const uint32_t choice = rg.nextSmallNumber();
+                std::vector<std::function<const WhereStatement &()>> candidates;
 
                 /// Sometimes use the same predicate for having and where
-                whr->CopyFrom(
-                    ((!ssc->has_pre_where() && (!ssc->has_groupby() || !ssc->groupby().has_having_expr())) || choice < 5) ? ssc->where()
-                        : ((ssc->has_pre_where() && (!ssc->has_groupby() || !ssc->groupby().has_having_expr())) || choice < 8)
-                        ? ssc->pre_where()
-                        : ssc->groupby().having_expr());
+                if (ssc->has_pre_where())
+                    candidates.push_back([&]() -> const WhereStatement & { return ssc->pre_where(); });
+                if (ssc->has_where())
+                    candidates.push_back([&]() -> const WhereStatement & { return ssc->where(); });
+                if (ssc->has_groupby() && ssc->groupby().has_having_expr())
+                    candidates.push_back([&]() -> const WhereStatement & { return ssc->groupby().having_expr(); });
+                whr->CopyFrom(rg.pickRandomly(candidates)());
             }
             else
             {

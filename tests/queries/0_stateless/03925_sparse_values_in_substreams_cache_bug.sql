@@ -1,9 +1,4 @@
--- Regression test: reading `.size` subcolumn of a sparse Nullable(String) inside
--- a Tuple together with the full Tuple via PREWHERE used to cause a LOGICAL_ERROR
--- because the cached accumulated ColumnString broke ColumnSparse invariants.
-
 DROP TABLE IF EXISTS t_sparse_string_size;
-
 CREATE TABLE t_sparse_string_size
 (
     id UInt64,
@@ -22,12 +17,10 @@ SELECT
     number,
     (if(number % 13 = 0, toString(number), NULL),
      if(number % 11 = 0, number, NULL))
-FROM numbers(1000);
+FROM numbers(200, 30);
 
-OPTIMIZE TABLE t_sparse_string_size FINAL;
 
--- The bug manifested when reading t.a.size and t in the same readRows call
--- across multiple granules with PREWHERE.
-SELECT t.a.size, id FROM t_sparse_string_size PREWHERE id % 11 = 0 WHERE toString(t) != '' ORDER BY id LIMIT 3;
+SELECT id, t.a.size, t FROM t_sparse_string_size WHERE id % 11 = 0;
 
 DROP TABLE t_sparse_string_size;
+

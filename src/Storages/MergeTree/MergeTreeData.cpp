@@ -10328,6 +10328,9 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & mutations_snapshot = snapshot_data.mutations_snapshot;
 
+    if (!mutations_snapshot)
+        return !settings[Setting::apply_mutations_on_fly] && !settings[Setting::apply_patch_parts];
+
     return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts();
 }
 
