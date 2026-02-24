@@ -1,9 +1,7 @@
 #include <KeeperClient.h>
 #include <algorithm>
 #include <cctype>
-#include <iterator>
 #include <string_view>
-#include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
@@ -36,6 +34,12 @@ char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n";
 ///     ls     => ls
 ///     ls /   => ls "/
 ///     ls "/  => ls "/
+///     ls '/  => ls '/   (already quoted, no change)
+///
+/// Also handles the case where cursor is right before a closing quote
+/// (e.g. user typed `ls "/foo"` then moved cursor left before `"`).
+/// We strip that trailing quote so completion can re-add it with the
+/// correct suffix (closing quote for leaf, `/` for directory).
 ///
 void prependDoubleQuoteForPath(replxx::Replxx & rx)
 {
@@ -44,12 +48,6 @@ void prependDoubleQuoteForPath(replxx::Replxx & rx)
 
     size_t cursor = state.cursor_position();
     std::string text(state.text());
-
-    /// Example of algorith for 'ls /foo':
-    ///
-    /// std::string(text.begin(), word_begin) = 'ls '
-    /// std::string(word_begin, word_end) = '/foo'
-    /// std::string(word_end, text.end()) = ''
 
     auto word_begin = std::find_first_of(text.rbegin() + text.size() - cursor, text.rend(), word_breaks.begin(), word_breaks.end()).base();
     /// Do not quote first argument (w/o moving word_begin)
@@ -62,16 +60,29 @@ void prependDoubleQuoteForPath(replxx::Replxx & rx)
     }
 
     auto word_end = std::find_first_of(text.begin() + cursor, text.end(), word_breaks.begin(), word_breaks.end());
-    if (std::distance(word_begin, word_end) < 1)
-        return;
 
-    if (*word_begin != '"')
+    if (std::distance(word_begin, word_end) < 1)
+    {
+        /// Empty word (cursor right after a space, e.g. "ls "), insert opening quote at cursor position
+        text.insert(text.begin() + cursor, '"');
+        ++cursor;
+    }
+    else if (*word_begin != '\'' && *word_begin != '"')
     {
         text.insert(word_begin, '"');
         ++cursor;
     }
+    else
+    {
+        /// Word already starts with a quote. If cursor is right before a matching
+        /// closing quote, remove it — completion will re-add it with the correct
+        /// suffix (closing quote for leaves, '/' for directories).
+        char open_quote = *word_begin;
+        if (cursor < text.size() && text[cursor] == open_quote)
+            text.erase(cursor, 1);
+    }
 
-    rx.set_state(replxx::Replxx::State(text.c_str(), cursor));
+    rx.set_state(replxx::Replxx::State(text.c_str(), static_cast<int>(cursor)));
 }
 
 }
@@ -110,28 +121,61 @@ String KeeperClient::executeFourLetterCommand(const String & command)
 
 std::vector<String> KeeperClient::getCompletions(String prefix) const
 {
-    /// Append trailing double quote to pass the parser correctly
-    if (!prefix.ends_with('"'))
-        prefix.append("\"");
+    /// First, tokenize the original prefix (without any appended quote) to determine
+    /// whether we are completing a command name or a path argument.
+    ///
+    /// Cases:
+    ///   ""           → complete commands (empty input)
+    ///   "ls"         → complete commands (single bare word, no space after)
+    ///   "ls "        → complete paths (command + whitespace, path argument expected)
+    ///   "ls \"/foo"  → complete paths (command + quoted path prefix)
+
+    Tokens probe_tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
+    IParser::Pos probe_pos(probe_tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    /// If the first token is not a bare word (command name), return command completions.
+    if (probe_pos->type != TokenType::BareWord)
+        return registered_commands_and_four_letter_words;
+
+    ++probe_pos;
+
+    /// If there is nothing after the command word (e.g. "ls" or "get_d"), return command completions.
+    if (probe_pos->isEnd())
+        return registered_commands_and_four_letter_words;
+
+    /// There is something after the command word — we are completing a path argument.
+    /// Now determine the quote character and build the quoted prefix for path parsing.
+    char quote_char = '"';
+    {
+        std::string_view word_breaks(WORD_BREAK_CHARACTERS);
+        auto last_word_pos = prefix.find_last_of(word_breaks);
+        std::string_view last_word = (last_word_pos == String::npos)
+            ? std::string_view{prefix}
+            : std::string_view{prefix}.substr(last_word_pos + 1);
+        if (!last_word.empty() && (last_word[0] == '\'' || last_word[0] == '"'))
+            quote_char = last_word[0];
+    }
+
+    /// Append a closing quote so the tokenizer produces a valid
+    /// StringLiteral ('...') or QuotedIdentifier ("...") that parseKeeperPath can parse.
+    prefix.push_back(quote_char);
+
     Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
     IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-    if (pos->type != TokenType::BareWord)
-        return registered_commands_and_four_letter_words;
-
+    /// Skip the command word (already verified above).
     ++pos;
-    if (pos->isEnd())
-        return registered_commands_and_four_letter_words;
-
     ParserToken{TokenType::Whitespace}.ignore(pos);
 
     std::vector<String> result;
     String string_path;
     Expected expected;
-    if (!parseKeeperPath(pos, expected, string_path))
+    bool parsed = parseKeeperPath(pos, expected, string_path);
+    if (!parsed)
         string_path = cwd;
 
-    if (!pos->isEnd())
+    /// If the path parsed successfully but there are leftover tokens, something is wrong.
+    if (parsed && !pos->isEnd())
         return result;
 
     fs::path path = string_path;
@@ -147,59 +191,44 @@ std::vector<String> KeeperClient::getCompletions(String prefix) const
     if (!parent_prefix.ends_with('/'))
         parent_prefix.append("/");
 
+    Strings children;
     try
     {
-        for (const auto & child : zookeeper->getChildren(parent_path))
-            result.push_back("\"" + parent_prefix + child);
+        children = zookeeper->getChildren(parent_path);
     }
     catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
+
+    String quote_str(1, quote_char);
+
+    for (const auto & child : children)
+    {
+        String completion = quote_str + parent_prefix + child;
+        String full_path = parent_prefix + child;
+
+        /// Check if this node has children to decide the suffix:
+        ///   - has children  → append '/' so the user can Tab-complete the next segment
+        ///   - leaf node     → append closing quote so the path is ready to execute
+        bool has_children = false;
+        try
+        {
+            Strings sub = zookeeper->getChildren(full_path);
+            has_children = !sub.empty();
+        }
+        catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
+
+        if (has_children)
+            completion += '/';
+        else
+            completion += quote_char;
+
+        result.push_back(std::move(completion));
+    }
 
     std::sort(result.begin(), result.end());
 
     return result;
 }
 
-void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
-{
-    if (!ask_confirmation)
-    {
-        callback();
-        return;
-    }
-
-    std::cout << prompt << " Continue?\n";
-    waiting_confirmation = true;
-    confirmation_callback = callback;
-}
-
-fs::path KeeperClient::getAbsolutePath(const String & relative) const
-{
-    String result;
-    if (relative.starts_with('/'))
-        result = fs::weakly_canonical(relative);
-    else
-        result = fs::weakly_canonical(cwd / relative);
-
-    if (result.ends_with('/') && result.size() > 1)
-        result.pop_back();
-
-    return result;
-}
-
-void KeeperClient::loadCommands(std::vector<Command> && new_commands)
-{
-    for (const auto & command : new_commands)
-    {
-        String name = command->getName();
-        commands.insert({name, command});
-        registered_commands_and_four_letter_words.push_back(std::move(name));
-    }
-
-    for (const auto & command : four_letter_word_commands)
-        registered_commands_and_four_letter_words.push_back(command);
-
-    std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
-}
 
 
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
@@ -341,48 +370,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
 
     EventNotifier::init();
-}
-
-std::vector<String> KeeperClient::getCompletions(const String & prefix) const
-{
-    Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    if (pos->type != TokenType::BareWord)
-        return registered_commands_and_four_letter_words;
-
-    ++pos;
-    if (pos->isEnd())
-        return registered_commands_and_four_letter_words;
-
-    ParserToken{TokenType::Whitespace}.ignore(pos);
-
-    std::vector<String> result;
-    String string_path;
-    Expected expected;
-    if (!parseKeeperPath(pos, expected, string_path))
-        string_path = cwd;
-
-    if (!pos->isEnd())
-        return result;
-
-    fs::path path = string_path;
-    String parent_path;
-    if (string_path.ends_with("/"))
-        parent_path = getAbsolutePath(string_path);
-    else
-        parent_path = getAbsolutePath(path.parent_path());
-
-    try
-    {
-        for (const auto & child : zookeeper->getChildren(parent_path))
-            result.push_back(child);
-    }
-    catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
-
-    std::sort(result.begin(), result.end());
-
-    return result;
 }
 
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)

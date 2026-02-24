@@ -1,0 +1,5 @@
+command_completion: OK
+path_completion_unique_match: OK
+directory_completion_trailing_slash: OK
+leaf_completion_closing_quote: OK
+drill_into_directory: OK
