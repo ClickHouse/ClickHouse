@@ -1,5 +1,7 @@
 -- Tags: no-ordinary-database, no-encrypted-storage
 
+set async_insert=0;
+
 drop table if exists mt1;
 drop table if exists mt2;
 

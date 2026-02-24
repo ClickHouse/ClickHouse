@@ -29,7 +29,7 @@ ret=1
 for i in {1..100}; do
     query_id="insert-$i-$CLICKHOUSE_DATABASE"
 
-    $CLICKHOUSE_CLIENT --query_id "$query_id" -q "insert into data_fsync_pe values (1)"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --async_insert=0 -q "insert into data_fsync_pe values (1)"
 
     read -r FileSync FileOpen DirectorySync FileSyncElapsedMicroseconds DirectorySyncElapsedMicroseconds <<<"$(
     $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "

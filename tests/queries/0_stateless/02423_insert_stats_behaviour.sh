@@ -15,14 +15,14 @@ $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW floats_to_target TO target_1 AS 
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW floats_to_target_2 TO target_2 AS SELECT v FROM floats, numbers(2) n"
 
 # Insertions into table without MVs
-$CLICKHOUSE_CLIENT -q "INSERT into target_1 FORMAT CSV 1.0"
-$CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format Native | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+target_1+FORMAT+Native" --data-binary @-
-$CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format RowBinary | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+target_1+FORMAT+RowBinary" --data-binary @-
+$CLICKHOUSE_CLIENT --async_insert=0 -q "INSERT into target_1 FORMAT CSV 1.0"
+$CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format Native | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+target_1+FORMAT+Native" --data-binary @-
+$CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format RowBinary | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+target_1+FORMAT+RowBinary" --data-binary @-
 
 # Insertions into table without 2 MVs (1:1 and 1:2 rows)
-$CLICKHOUSE_CLIENT -q "INSERT into floats FORMAT CSV 1.0"
-$CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format Native | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+floats+FORMAT+Native" --data-binary @-
-$CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format RowBinary | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+floats+FORMAT+RowBinary" --data-binary @-
+$CLICKHOUSE_CLIENT --async_insert=0 -q "INSERT into floats FORMAT CSV 1.0"
+$CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format Native | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+floats+FORMAT+Native" --data-binary @-
+$CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format RowBinary | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+floats+FORMAT+RowBinary" --data-binary @-
 
 # Wait for all 6 insert queries to appear in query_log.
 # There is a race between HTTP response being sent and the query_log entry being written,
