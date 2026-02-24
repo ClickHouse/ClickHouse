@@ -162,11 +162,11 @@ def test_retry_count_never_exceeded(started_cluster):
     # Every query should have retried, and never more than the configured limit (5)
     result = node1.query(
         f"SELECT count(), "
-        f"countIf(ProfileEvents['DistributedTryCount'] > 5) "
+        f"countIf(ProfileEvents['DistributedTryCount'] != 5) "
         f"FROM system.query_log "
         f"WHERE query_id LIKE '{tag}-%' AND type = 'ExceptionWhileProcessing'"
     ).strip()
 
     total, too_many = result.split("\t")
     assert int(total) == num_queries, f"Expected {num_queries} failed queries, got {total}"
-    assert int(too_many) == 0, f"Expected DistributedTryCount <= 5 for all queries, but {too_many} exceeded the limit"
+    assert int(too_many) == 0, f"Expected DistributedTryCount == 5 for all queries, but {too_many} had a different value"
