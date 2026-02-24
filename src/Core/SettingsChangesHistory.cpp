@@ -70,6 +70,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"jemalloc_profile_text_collapsed_use_count", false, false, "New setting to aggregate by allocation count instead of bytes in the collapsed jemalloc heap profile format"},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
             {"materialize_statistics_on_insert", true, false, "Disable materialization of statistics on insert after enabling auto statistics"},
+            {"allow_statistics", false, true, "Statistics are now GA"},
+            {"allow_experimental_statistics", false, true, "Statistics are now GA"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

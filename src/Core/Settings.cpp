@@ -7431,14 +7431,17 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
     \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries
-)", BETA, allow_statistic_optimize) \
+)", 0, allow_statistic_optimize) \
     DECLARE_WITH_ALIAS(Bool, use_statistics, true, R"( /// preferred over 'allow_statistics_optimize' because of consistency with 'use_primary_key' and 'use_skip_indexes'
 Allows using statistics to optimize queries
-)", BETA, allow_statistic_optimize) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, false, R"(
+)", 0, allow_statistic_optimize) \
+    DECLARE_WITH_ALIAS(Bool, allow_statistics, true, R"(
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
-)", EXPERIMENTAL, allow_experimental_statistic) \
-    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
+)", 0, allow_experimental_statistic) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, true, R"(
+Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
+)", 0, allow_experimental_statistic) \
+    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", 0) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
