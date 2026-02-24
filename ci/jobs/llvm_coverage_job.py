@@ -1,18 +1,68 @@
+import json
 import os
+import re
+import shlex
+from datetime import datetime, timezone
 from pathlib import Path
+from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
-
+from ci.praktika.mangle import _get_workflows
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
+import ci.praktika.cidb as CIDB
+from ci.praktika.settings import Settings
+from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 
-current_directory = Utils.cwd()
-temp_dir = f"{current_directory}/ci/tmp/"
+WORKFLOW = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
+CURRENT_DIR = Utils.cwd()
+TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
+
+
+def get_lcov_summary_percentages(info_file_path: str) -> tuple[float, float, float]:
+    # lcov --summary writes to stderr, so merge stderr into stdout with 2>&1
+    output = Shell.get_output(
+        " ".join(
+            [
+                "lcov",
+                "--ignore-errors",
+                "inconsistent,corrupt",
+                "--branch-coverage",
+                "--summary",
+                shlex.quote(info_file_path),
+                "2>&1",
+            ]
+        ),
+        strict=True,
+        verbose=True,
+    )
+
+    def extract_percent(metric: str) -> float:
+        match = re.search(
+            rf"^\s*{metric}\.*:\s*([0-9]+(?:\.[0-9]+)?)%", output, re.MULTILINE
+        )
+        if match:
+            return float(match.group(1))
+        if re.search(rf"^\s*{metric}\.*:\s*no data found", output, re.MULTILINE):
+            raise ValueError(
+                f"lcov summary contains no data for '{metric}'. "
+                "Make sure you run lcov with --branch-coverage when you need branch stats."
+            )
+        raise ValueError(
+            f"Failed to parse '{metric}' percentage from lcov output:\n{output}"
+        )
+
+    return (
+        extract_percent("lines"),
+        extract_percent("functions"),
+        extract_percent("branches"),
+    )
+
 
 def add_html_report_to_ci(folder_path):
     files_to_attach = []
     assets_to_attach = []
     # Attach all HTML report files preserving directory structure
-    html_report_dir = Path(temp_dir) / folder_path
+    html_report_dir = Path(TEMP_DIR) / folder_path
     if html_report_dir.exists():
         # Add index.html first as it's the entry point (root level only)
         index_file = html_report_dir / "index.html"
@@ -25,9 +75,70 @@ def add_html_report_to_ci(folder_path):
                 assets_to_attach.append(str(file_path))
     return files_to_attach, assets_to_attach
 
+
+def save_date_into_ci_db(
+    date_str: str,
+    pr_number: int,
+    current_commit_sha: str,
+    branch: str,
+    merge_base_commit_sha: str,
+    base_branch: str,
+    b_line_cov: float,
+    b_function_cov: float,
+    b_branch_cov: float,
+    c_line_cov: float,
+    c_function_cov: float,
+    c_branch_cov: float,
+    delta: float,
+    status: str,
+    coverage_report_url: str = "",
+    diff_coverage_report_url: str = "",
+    uncovered_code_url: str = "",
+):
+    cidb = CIDB.CIDB(
+        WORKFLOW.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
+        WORKFLOW.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
+        WORKFLOW.get_secret(Settings.SECRET_CI_DB_PASSWORD).get_value(),
+    )
+    is_ok, error = cidb.check()
+    if not is_ok:
+        raise RuntimeError(f"CI DB connection check failed: {error}")
+
+    row = json.dumps(
+        {
+            "check_start_time": date_str,
+            "pull_request_number": pr_number,
+            "commit_sha": current_commit_sha,
+            "base_commit_sha": merge_base_commit_sha,
+            "branch": branch,
+            "base_branch": base_branch,
+            "status": status,
+            "baseline_line_cov": b_line_cov,
+            "baseline_func_cov": b_function_cov,
+            "baseline_branch_cov": b_branch_cov,
+            "current_line_cov": c_line_cov,
+            "current_func_cov": c_function_cov,
+            "current_branch_cov": c_branch_cov,
+            "delta_line_cov": delta,
+            "coverage_report_url": coverage_report_url,
+            "diff_coverage_report_url": diff_coverage_report_url,
+            "uncovered_code_url": uncovered_code_url,
+        }
+    )
+
+    # Temporarily point insert_rows at our custom database/table.
+    _orig_db, _orig_table = Settings.CI_DB_DB_NAME, Settings.CI_DB_TABLE_NAME
+    try:
+        Settings.CI_DB_DB_NAME = "coverage_ci"
+        Settings.CI_DB_TABLE_NAME = "coverage_data"
+        cidb.insert_rows([row])
+    finally:
+        Settings.CI_DB_DB_NAME, Settings.CI_DB_TABLE_NAME = _orig_db, _orig_table
+
+
 if __name__ == "__main__":
     # Pass workspace path to the shell script via environment variable
-    os.environ["WORKSPACE_PATH"] = current_directory
+    os.environ["WORKSPACE_PATH"] = CURRENT_DIR
 
     info = Info()
 
@@ -56,40 +167,95 @@ if __name__ == "__main__":
     os.environ["REPO_NAME"] = repo_name
     os.environ["PR_NUMBER"] = str(pr_number)
     os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits or [])
-    
+
     is_master_branch = branch == "master"
 
-    results=[]
+    results = []
 
-    results.append(Result.from_commands_run(
-        name="Merge LLVM Coverage",
-        command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
-    ))
+    results.append(
+        Result.from_commands_run(
+            name="Generate LLVM Coverage Report",
+            command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
+        )
+    )
+
+    # Compress the diff HTML report for full coverage
     Utils.compress_gz(
-        f"{temp_dir}/llvm_coverage_html_report",
-        f"{temp_dir}/llvm_coverage_html_report.tar.gz",
+        f"{TEMP_DIR}/llvm_coverage_html_report",
+        f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
     )
 
     if not is_master_branch:
-        results.append(
-            Result.from_commands_run(
-                name="LLVM Coverage Check",
-                command=["bash ci/jobs/scripts/diff_coverage.sh"],
-        ))
+        diff_res = Result.from_commands_run(
+            name="Generate LLVM Coverage Diff Report",
+            command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
+        )
+
+        # Baseline coverage percentages for the current branch (from the merged report)
+        b_line_cov, b_function_cov, b_branch_cov = get_lcov_summary_percentages(
+            f"{TEMP_DIR}/base_llvm_coverage.info"
+        )
+
+        # Current coverage percentages for the current branch
+        c_line_cov, c_function_cov, c_branch_cov = get_lcov_summary_percentages(
+            f"{TEMP_DIR}/current_llvm_coverage.info"
+        )
+
+        delta = c_line_cov - b_line_cov
+        print(f"Baseline coverage : {b_line_cov:.2f}%")
+        print(f"Current coverage  : {c_line_cov:.2f}%")
+        print(f"Delta             : {delta:+.2f}%")
+
+        if c_line_cov < b_line_cov:
+            diff_res.set_failed()
+            print("Coverage degraded.")
+        else:
+            print("Coverage did not degrade.")
+
+        results.append(diff_res)
 
         # Generate report for changed blocks only
-        results.append(
-            Result.from_commands_run(
-                name="Print uncovered changed code with context",
-                command=["python3 ci/jobs/scripts/print_uncovered_code.py"],
-                with_log=True,
-                with_info=True,
-                with_info_on_failure=True,
-            )
+        print_res = Result.from_commands_run(
+            name="Print uncovered changed code with context",
+            command=["python3 ci/jobs/scripts/print_uncovered_code.py"],
+            with_log=True,
+            with_info=True,
+            with_info_on_failure=True,
         )
+        print_res.set_status(diff_res.status)
+        results.append(print_res)
+
+        # Compress the diff HTML report
         Utils.compress_gz(
-            f"{temp_dir}/llvm_coverage_diff_html_report",
-            f"{temp_dir}/llvm_coverage_diff_html_report.tar.gz",
+            f"{TEMP_DIR}/llvm_coverage_diff_html_report",
+            f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz",
+        )
+
+        # Construct S3 artifact URLs from the known upload path structure:
+        #   files/assets → https://<report_endpoint>/<s3_prefix>/<path_relative_to_TEMP_DIR>
+        #   log files    → https://<report_endpoint>/<s3_prefix>/<normalize(result.name)>/<log_basename>
+        _env = _Environment.get()
+        _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
+        _log_name = f"{Utils.normalize_string(print_res.name)}.log"
+
+        save_date_into_ci_db(
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            pr_number,
+            current_commit_sha,
+            branch,
+            merge_base_commit_sha,
+            base_branch,
+            b_line_cov,
+            b_function_cov,
+            b_branch_cov,
+            c_line_cov,
+            c_function_cov,
+            c_branch_cov,
+            delta,
+            diff_res.status,
+            coverage_report_url=f"{_s3_base}/llvm_coverage_html_report/index.html",
+            diff_coverage_report_url=f"{_s3_base}/llvm_coverage_diff_html_report/index.html",
+            uncovered_code_url=f"{_s3_base}/{Utils.normalize_string(print_res.name)}/{_log_name}",
         )
     else:
         print("On master branch, skipping diff coverage generation")
@@ -98,15 +264,17 @@ if __name__ == "__main__":
     assets_to_attach = []
 
     # Attach merged HTML report for full coverage
-    files_to_attach.append(f"{temp_dir}/llvm_coverage_html_report.tar.gz")
+    files_to_attach.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
     merged_files, merged_assets = add_html_report_to_ci("llvm_coverage_html_report")
     files_to_attach.extend(merged_files)
     assets_to_attach.extend(merged_assets)
 
     if not is_master_branch:
         # Attach merged HTML report for diff coverage
-        files_to_attach.append(f"{temp_dir}/llvm_coverage_diff_html_report.tar.gz")
-        merged_files, merged_assets = add_html_report_to_ci("llvm_coverage_diff_html_report")
+        files_to_attach.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
+        merged_files, merged_assets = add_html_report_to_ci(
+            "llvm_coverage_diff_html_report"
+        )
         files_to_attach.extend(merged_files)
         assets_to_attach.extend(merged_assets)
 

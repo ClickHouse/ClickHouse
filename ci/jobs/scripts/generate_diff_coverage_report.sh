@@ -145,26 +145,3 @@ genhtml \
   current.changed.info \
   2>/dev/null
 
-lcov --version
-base_line_coverage=$(lcov --ignore-errors inconsistent,corrupt --summary base_llvm_coverage.info 2>/dev/null | awk '/^  lines\.*:/{gsub(/%/,"",$2); print $2}')
-curr_line_coverage=$(lcov --ignore-errors inconsistent,corrupt --summary current_llvm_coverage.info 2>/dev/null | awk '/^  lines\.*:/{gsub(/%/,"",$2); print $2}')
-
-python3 - <<PY
-import sys
-
-base = float("${base_line_coverage}")
-current = float("${curr_line_coverage}")
-
-delta = current - base
-
-print(f"Baseline coverage : {base:.2f}%")
-print(f"Current coverage  : {current:.2f}%")
-print(f"Delta             : {delta:+.2f}%")
-
-if current < base:
-    print("Coverage degraded.")
-    sys.exit(1)
-else:
-    print("Coverage did not degrade.")
-    sys.exit(0)
-PY
