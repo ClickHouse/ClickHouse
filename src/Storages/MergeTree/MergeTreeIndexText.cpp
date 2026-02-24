@@ -102,10 +102,9 @@ size_t DictionarySparseIndex::memoryUsageBytes() const
     return sizeof(*this) + tokens->allocatedBytes() + offsets_in_file->allocatedBytes();
 }
 
-DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
+DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_)
     : DictionaryBlockBase(std::move(tokens_))
     , token_infos(std::move(token_infos_))
-    , tokens_format(tokens_format_)
 {
 }
 
@@ -899,8 +898,7 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
     for (size_t i = 0; i < num_tokens; ++i)
         token_infos.emplace_back(TextIndexSerialization::deserializeTokenInfo(istr, posting_list_codec));
 
-    DictionaryBlock result{std::move(tokens_column), std::move(token_infos), tokens_format};
-    return result;
+    return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
 }
 
 template <typename Stream>
