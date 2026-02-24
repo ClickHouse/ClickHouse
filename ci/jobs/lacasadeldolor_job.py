@@ -130,6 +130,7 @@ def get_node_workspace_logs(workspace_path: Path, node_index: int):
 
 
 def main():
+    sw = Utils.Stopwatch()
     info = Info()
     args = parse_args()
     job_params = args.options.split(",") if args.options else []
@@ -378,16 +379,16 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 
     # Safety net: detect Python-level crashes in the fuzzer log even if the
     # exit code was somehow swallowed (e.g. future command changes drop pipefail)
-    if cmd_ok and fuzzer_log.exists():
+    if not cmd_ok and fuzzer_log.exists():
         tail = fuzzer_log.read_text(encoding="utf-8", errors="replace")[-2000:]
         if "Traceback (most recent call last):" in tail:
-            # Extract the last traceback for the error message
             tb_start = tail.rfind("Traceback (most recent call last):")
-            tb_snippet = tail[tb_start : tb_start + 1000].strip()
+            tb_snippet = tail[tb_start:].strip()
             Result.create_from(
                 status=Result.StatusExtended.FAIL,
                 info=f"Python exception in dolor.py:\n{tb_snippet}",
                 files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
+                stopwatch=sw,
             ).complete_job()
             return
 
@@ -410,6 +411,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             status=Result.Status.ERROR,
             info=f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}",
             files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
+            stopwatch=sw,
         ).complete_job()
         return
 
@@ -434,14 +436,16 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         server_logs,
         stderr_logs,
         fatal_logs,
+        sw,
     )
     if not cmd_ok and result.is_ok():
-        result = Result(
-            name="dolor",
+        Result.create_from(
             status=Result.StatusExtended.FAIL,
             info="dolor.py exited with non-zero code but no specific error was identified. Check fuzzer.log.",
             files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
-        )
+            stopwatch=sw,
+        ).complete_job()
+        return
 
     result.complete_job()
 

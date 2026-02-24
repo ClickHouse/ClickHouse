@@ -61,6 +61,7 @@ def analyze_job_logs(
     server_logs: list[Path],
     stderr_logs: list[Path],
     fatal_logs: list[Path],
+    sw: Utils.Stopwatch,
 ) -> Result:
     # parse runner script exit status
     status = Result.Status.FAILED
@@ -150,7 +151,7 @@ def analyze_job_logs(
             )
 
     result = Result.create_from(
-        results=results, status=status if not results else None, info=info
+        results=results, status=status if not results else None, info=info, stopwatch=sw
     )
 
     if is_failed:
@@ -167,6 +168,7 @@ def analyze_job_logs(
 
 
 def run_fuzz_job(check_name: str):
+    sw = Utils.Stopwatch()
     logging.basicConfig(level=logging.INFO)
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
@@ -249,6 +251,7 @@ def run_fuzz_job(check_name: str):
         [server_log],
         [stderr_log],
         [fatal_log],
+        sw,
     )
 
     result.complete_job()
