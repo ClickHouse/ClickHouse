@@ -320,10 +320,6 @@ private:
      */
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
 
-    /// The pool of the replica we're currently connected to.
-    /// Captured at connection creation time for error tracking during retries.
-    ConnectionPoolPtr connected_replica_pool;
-
 #if defined(OS_LINUX)
     bool packet_in_progress = false;
 #endif

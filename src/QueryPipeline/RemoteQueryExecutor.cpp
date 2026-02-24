@@ -242,6 +242,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 #endif
 
         std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolPtr replica_pool;
         std::optional<bool> skip_unavailable_endpoints;
         if (extension && extension->parallel_reading_coordinator)
             skip_unavailable_endpoints = true;
@@ -259,8 +260,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             connection_entries.reserve(try_results.size());
             for (auto & try_result : try_results)
             {
-                if (!connected_replica_pool && try_result.pool)
-                    connected_replica_pool = try_result.pool;
+                if (!replica_pool && try_result.pool)
+                    replica_pool = try_result.pool;
                 connection_entries.emplace_back(std::move(try_result.entry));
             }
         }
@@ -271,6 +272,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         }
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
+        if (replica_pool)
+            res->setReplicaPool(std::move(replica_pool));
         if (extension && extension->replica_info)
             res->setReplicaInfo(*extension->replica_info);
         return res;
@@ -638,7 +641,6 @@ void RemoteQueryExecutor::resetQueryState()
     sent_query = false;
     was_cancelled = false;
     received_data_from_replica = false;
-    connected_replica_pool = nullptr;
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs()
@@ -688,12 +690,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::retryQuery()
             return ReadResult(Block());
 
         /// Deprioritize the failed replica so it's less likely to be chosen on the next attempt.
-        if (connection_pool_with_failover && connected_replica_pool)
+        auto failed_pool = connections->getReplicaPool();
+        if (connection_pool_with_failover && failed_pool)
         {
-            connection_pool_with_failover->incrementErrorCount(connected_replica_pool);
+            connection_pool_with_failover->incrementErrorCount(failed_pool);
             if (log)
                 LOG_DEBUG(log, "Incremented connection pool error count for {} due to error code {}",
-                          connected_replica_pool->getHost(), last_retry_error_code);
+                          failed_pool->getHost(), last_retry_error_code);
         }
 
         got_exception_from_replica = false;
@@ -701,7 +704,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::retryQuery()
         if (log)
             LOG_DEBUG(log, "Retrying query on a different replica after exception code {} from host {}",
                       last_retry_error_code,
-                      connected_replica_pool ? connected_replica_pool->getHost() : connections->dumpAddresses());
+                      failed_pool ? failed_pool->getHost() : connections->dumpAddresses());
 
         /// Cancel previous query and disconnect before retry.
         cancelUnlocked();
@@ -768,9 +771,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
                 if (log)
                 {
+                    auto pool_for_log = connections->getReplicaPool();
                     LOG_DEBUG(log, "try {} of {} failed due to error code {} from host {}",
                               retry_count, static_cast<uint64_t>(max_retries) + 1, packet.exception->code(),
-                              connected_replica_pool ? connected_replica_pool->getHost() : connections->dumpAddresses());
+                              pool_for_log ? pool_for_log->getHost() : connections->dumpAddresses());
                 }
 
                 last_retry_error_code = packet.exception->code();
