@@ -394,6 +394,7 @@ void SplitByNonAlphaTokenExtractor::forEachTokenImpl(const char * __restrict dat
         {
             if (result_bitmask == 0)
             {
+                /// end of token started on previous haystack
                 if (pos > begin)
                 {
                     if (callback(begin, pos - begin))
@@ -406,6 +407,7 @@ void SplitByNonAlphaTokenExtractor::forEachTokenImpl(const char * __restrict dat
             }
 
             const auto token_start_pos_in_current_haystack = std::countr_zero(result_bitmask);
+            /// end of token starting in one of previous haystacks
             if (token_start_pos_in_current_haystack != 0)
             {
                 if (begin < pos)

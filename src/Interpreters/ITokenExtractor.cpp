@@ -704,7 +704,7 @@ bool UnicodeWordTokenExtractor::nextInString(
 
         std::string_view utf8_char(data + pos, char_len);
 
-        /// 3a. Stop words (Chinese punctuation, etc.): skip
+        /// 3a. Stop words: skip
         if (stop_words.contains(utf8_char))
         {
             pos += char_len;
@@ -859,14 +859,14 @@ bool UnicodeWordTokenExtractor::nextInStringLike(const char * data, size_t lengt
         /// Prevent out-of-bounds
         if (pos + char_len > length)
         {
-            ++pos;
+            pos += char_len;
             escaped = false;
             continue;
         }
 
         token = {data + pos, char_len};
 
-        /// 3a. Stop words (Chinese punctuation, etc.): skip
+        /// 3a. Stop words: skip
         if (stop_words.contains(token))
         {
             pos += char_len;
