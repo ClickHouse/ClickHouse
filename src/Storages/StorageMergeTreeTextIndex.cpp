@@ -123,7 +123,13 @@ protected:
                 {
                     auto & data = assert_cast<ColumnUInt64 &>(*result_columns[pos]).getData();
                     for (size_t i = 0; i < block_size; ++i)
-                        data.push_back(static_cast<UInt64>(dict_block->token_infos[i].offsets.size()));
+                    {
+                        /// If postings are embedded, offsets are not filled.
+                        if (dict_block->token_infos[i].header & EmbeddedPostings)
+                            data.push_back(static_cast<UInt64>(1));
+                        else
+                            data.push_back(static_cast<UInt64>(dict_block->token_infos[i].offsets.size()));
+                    }
                 }
                 else if (column_name == "has_embedded_postings")
                 {
