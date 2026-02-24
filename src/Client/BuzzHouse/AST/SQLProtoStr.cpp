@@ -5132,6 +5132,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "RECONNECT ZOOKEEPER";
             can_set_cluster = true;
             break;
+        case CmdType::kDropTextIndexTokensCache:
+            ret += "DROP TEXT INDEX TOKENS CACHE";
+            can_set_cluster = true;
+            break;
         case CmdType::kDropTextIndexHeaderCache:
             ret += "DROP TEXT INDEX HEADER CACHE";
             can_set_cluster = true;

@@ -2820,6 +2820,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t enable_failpoint = 20 * static_cast<uint32_t>(!fc.failpoints.empty());
     const uint32_t disable_failpoint = 5 * static_cast<uint32_t>(!fc.failpoints.empty());
     const uint32_t reconnect_keeper = 5;
+    const uint32_t drop_text_index_tokens_cache = 3;
     const uint32_t drop_text_index_header_cache = 3;
     const uint32_t drop_text_index_postings_cache = 3;
     const uint32_t drop_text_index_caches = 3;
@@ -2845,7 +2846,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         + drop_primary_index_cache + drop_index_mark_cache + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache
         + drop_schema_cache + drop_s3_client_cache + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache
         + reload_dictionary + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache
-        + enable_failpoint + disable_failpoint + reconnect_keeper + drop_text_index_header_cache
+        + enable_failpoint + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache +
         + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
         + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
         + unfreeze + drop_replica + drop_database_replica;
@@ -3736,6 +3737,25 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         sc->set_reconnect_keeper(true);
     }
     else if (
+        drop_text_index_tokens_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + 1))
+    {
+        sc->set_drop_text_index_tokens_cache(true);
+    }
+    else if (
         drop_text_index_header_cache
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
@@ -3750,7 +3770,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_header_cache + 1))
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache + 1))
     {
         sc->set_drop_text_index_header_cache(true);
     }
@@ -3769,7 +3789,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + 1))
     {
         sc->set_drop_text_index_postings_cache(true);
@@ -3789,7 +3809,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + 1))
     {
         sc->set_drop_text_index_caches(true);
@@ -3809,7 +3829,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + 1))
     {
         sc->set_iceberg_metadata_cache(true);
@@ -3829,7 +3849,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + 1))
     {
         sc->set_reset_ddl_worker(true);
@@ -3849,7 +3869,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint + 1))
     {
         sc->set_wait_failpoint(rg.pickRandomly(fc.failpoints));
@@ -3869,7 +3889,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
                + notify_failpoint + 1))
     {
@@ -3890,7 +3910,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
                + notify_failpoint + reload_delta_kernel_tracing + 1))
     {
@@ -3913,7 +3933,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache  + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
                + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + 1))
     {
@@ -3937,7 +3957,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
                + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + 1))
     {
@@ -3958,7 +3978,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
                + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
                + 1))
@@ -3980,7 +4000,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
                + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
                + unfreeze + 1))
@@ -4003,7 +4023,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
                + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
                + unfreeze + drop_replica + 1))
@@ -4037,7 +4057,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
                + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
                + unfreeze + drop_replica + drop_database_replica + 1))

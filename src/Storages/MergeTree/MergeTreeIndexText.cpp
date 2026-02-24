@@ -937,7 +937,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         {
             chassert(info.header & RawPostings);
             for (size_t i = 0; i < info.cardinality; ++i)
-                skipVarUInt(istr);
+                ignoreVarUInt(istr);
         }
         else
         {
@@ -984,7 +984,7 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     {
         chassert(header & RawPostings);
         for (size_t i = 0; i < cardinality; ++i)
-            skipVarUInt(istr);
+            ignoreVarUInt(istr);
     }
     else
     {
@@ -995,9 +995,9 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
 
         for (size_t j = 0; j < num_postings_blocks; ++j)
         {
-            skipVarUInt(istr);
-            skipVarUInt(istr);
-            skipVarUInt(istr);
+            ignoreVarUInt(istr);
+            ignoreVarUInt(istr);
+            ignoreVarUInt(istr);
         }
     }
 }

@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"use_text_index_tokens_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -175,7 +176,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
-            {"use_text_index_tokens_cache", false, false, "New setting"},
+            {"use_text_index_dictionary_cache", false, false, "New setting"},
             {"use_text_index_header_cache", false, false, "New setting"},
             {"use_text_index_postings_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},

@@ -4321,6 +4321,18 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
     shared->vector_similarity_index_cache->clear();
 
+    if (!shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
+    shared->text_index_tokens_cache->clear();
+
+    if (!shared->text_index_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
+    shared->text_index_header_cache->clear();
+
+    if (!shared->text_index_postings_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index postings cache was not created yet.");
+    shared->text_index_postings_cache->clear();
+
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
     shared->mmap_cache->clear();

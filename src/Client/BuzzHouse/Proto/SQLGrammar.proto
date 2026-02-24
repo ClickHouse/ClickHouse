@@ -4152,6 +4152,7 @@ message SystemCommand {
         string disable_failpoint = 70;
         bool iceberg_metadata_cache = 71;
         bool reconnect_keeper = 72;
+        bool drop_text_index_tokens_cache = 73;
         bool drop_text_index_header_cache = 74;
         bool drop_text_index_postings_cache = 75;
         bool drop_text_index_caches = 76;

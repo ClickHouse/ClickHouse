@@ -8,6 +8,7 @@ SET use_skip_indexes_on_data_read = 1;
 
 -- Force-enable text index caches
 SET use_text_index_header_cache = 1;
+SET use_text_index_tokens_cache = 1;
 SET use_text_index_postings_cache = 1;
 
 CREATE TABLE tab
@@ -32,6 +33,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['TextIndexHeaderCacheMisses'] > 0,
+    ProfileEvents['TextIndexTokensCacheMisses'] > 0,
     ProfileEvents['TextIndexPostingsCacheMisses'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND query LIKE '%SELECT count() FROM tab%' AND type = 'QueryFinish'

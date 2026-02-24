@@ -29,11 +29,9 @@ namespace DB
 /// Estimate of the memory usage (bytes) of a token info in cache
 struct TextIndexTokensWeightFunction
 {
-    static constexpr size_t TOKENS_CACHE_OVERHEAD = 64;
-
     size_t operator()(const TokenPostingsInfo & token_info) const
     {
-        return token_info.bytesAllocated() + TOKENS_CACHE_OVERHEAD;
+        return token_info.bytesAllocated();
     }
 };
 

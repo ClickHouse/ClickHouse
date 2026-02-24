@@ -7739,7 +7739,8 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, use_json_alias_for_old_object_type, false) \
     MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
-    MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"})
+    MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
+    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
