@@ -2150,6 +2150,7 @@ groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
+gsutil
 gtest
 gtid
 gunzip
