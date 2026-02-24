@@ -22,4 +22,9 @@ OPTIMIZE TABLE t FINAL;
 -- not 10001 (10000 data marks at 1 row each, plus final mark).
 SELECT marks FROM system.parts
 WHERE database = currentDatabase() AND table = 't' AND active;
+
+-- Verify that SELECT actually works (roundRowsOrBytesToMarks must not divide by zero).
+SELECT count() FROM t;
+SELECT * FROM t FORMAT Null;
+
 DROP TABLE t;
