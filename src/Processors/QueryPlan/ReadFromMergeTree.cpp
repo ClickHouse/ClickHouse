@@ -2047,7 +2047,13 @@ void ReadFromMergeTree::buildIndexes(
                 auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
 
                 for (const auto & substream : format.substreams)
-                    index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
+                {
+                    String stream_name = idx.index->getFileName() + substream.suffix;
+                    /// Check for both original and hashed filenames
+                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, part.data_part->checksums);
+                    if (actual_stream_name)
+                        index_size += part.data_part->getFileSizeOrZero(*actual_stream_name + substream.extension);
+                }
 
                 index_sizes.emplace_back(index_size);
             }
