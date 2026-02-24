@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-msan
+# Tags: no-sanitizers, long
 # It's not clear why distributed aggregation is much slower with sanitizers (https://github.com/ClickHouse/ClickHouse/issues/60625)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
