@@ -47,13 +47,3 @@ set(LLVMSYSTEMZCODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/SystemZ/SystemZTargetTransformInfo.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/SystemZ/SystemZTDC.cpp
 )
-
-# SystemZ AsmParser sources
-set(LLVMSYSTEMZASMPARSER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/SystemZ/AsmParser/SystemZAsmParser.cpp
-)
-
-# SystemZ Disassembler sources
-set(LLVMSYSTEMZDISASSEMBLER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/SystemZ/Disassembler/SystemZDisassembler.cpp
-)

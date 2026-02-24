@@ -71,13 +71,3 @@ set(LLVMRISCVCODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/RISCV/RISCVVMV0Elimination.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/RISCV/RISCVZacasABIFix.cpp
 )
-
-# RISCV AsmParser sources
-set(LLVMRISCVASMPARSER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/RISCV/AsmParser/RISCVAsmParser.cpp
-)
-
-# RISCV Disassembler sources
-set(LLVMRISCVDISASSEMBLER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
-)

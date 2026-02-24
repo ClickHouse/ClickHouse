@@ -89,14 +89,3 @@ set(LLVMAARCH64CODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/SMEPeepholeOpt.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/AArch64/SVEIntrinsicOpts.cpp
 )
-
-# AArch64 AsmParser sources
-set(LLVMAARCH64ASMPARSER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/AsmParser/AArch64AsmParser.cpp
-)
-
-# AArch64 Disassembler sources
-set(LLVMAARCH64DISASSEMBLER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/Disassembler/AArch64Disassembler.cpp
-    ${LLVM_SOURCE_DIR}/lib/Target/AArch64/Disassembler/AArch64ExternalSymbolizer.cpp
-)

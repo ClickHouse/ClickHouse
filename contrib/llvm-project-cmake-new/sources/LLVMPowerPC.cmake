@@ -63,13 +63,3 @@ set(LLVMPOWERPCCODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/PowerPC/PPCVSXFMAMutate.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/PowerPC/PPCVSXSwapRemoval.cpp
 )
-
-# PowerPC AsmParser sources
-set(LLVMPOWERPCASMPARSER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/PowerPC/AsmParser/PPCAsmParser.cpp
-)
-
-# PowerPC Disassembler sources
-set(LLVMPOWERPCDISASSEMBLER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/PowerPC/Disassembler/PPCDisassembler.cpp
-)

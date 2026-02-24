@@ -95,13 +95,3 @@ set(LLVMX86CODEGEN_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86WinEHState.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/X86/X86WinEHUnwindV2.cpp
 )
-
-# X86 AsmParser sources
-set(LLVMX86ASMPARSER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/X86/AsmParser/X86AsmParser.cpp
-)
-
-# X86 Disassembler sources
-set(LLVMX86DISASSEMBLER_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/X86/Disassembler/X86Disassembler.cpp
-)
