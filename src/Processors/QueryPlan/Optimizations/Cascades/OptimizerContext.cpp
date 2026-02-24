@@ -29,10 +29,12 @@ OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDistributionEnforcer();
 OptimizationRulePtr createSortingEnforcer();
 
-OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
+OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, size_t cluster_node_count)
     : cost_estimator(memo)
     , statistics_derivation(memo, statistics)
 {
+    memo.setClusterNodeCount(cluster_node_count);
+
     addRule(createJoinCommutativity());
     addRule(createHashJoinImplementation());
     addRule(createDefaultImplementation());

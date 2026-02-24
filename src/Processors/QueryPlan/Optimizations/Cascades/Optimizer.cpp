@@ -47,7 +47,14 @@ void CascadesOptimizer::optimize()
     else
         statistics = createEmptyStatistics();
 
-    OptimizerContext optimizer_context(*statistics);
+    /// Extract cluster node count from query parameters (for testing) or fall back to a default.
+    /// TODO: derive from actual cluster topology (e.g. Context::getCluster).
+    size_t cluster_node_count = 4;
+    constexpr auto cluster_node_count_param_name = "_internal_cascades_cluster_node_count";
+    if (query_context->getQueryParameters().contains(cluster_node_count_param_name))
+        cluster_node_count = std::stoull(query_context->getQueryParameters().at(cluster_node_count_param_name));
+
+    OptimizerContext optimizer_context(*statistics, cluster_node_count);
 
     LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
 

@@ -79,49 +79,46 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             "AggregationImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    /// Partial (non-final) aggregation: create a single distributed implementation on
-    /// cluster_node_count nodes. The output distribution is `{node_count, []}` (no column
-    /// guarantee). When the parent (MergingAggregated) requires `{1 node}`, the
-    /// DistributionEnforcer bridges the gap via GatherExchange — crucially on the PARTIAL
-    /// output (~25 rows) rather than the raw input (~1M rows). This produces:
+    const size_t cluster_node_count = memo.getClusterNodeCount();
+    const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
+
+    /// Partial (non-final) aggregation: create distributed implementations at each candidate
+    /// node count. The output distribution is `{node_count, []}` (no column guarantee).
+    /// When the parent (MergingAggregated) requires `{1 node}`, the DistributionEnforcer
+    /// bridges the gap via GatherExchange — crucially on the PARTIAL output (~25 rows) rather
+    /// than the raw input (~1M rows). This produces:
     ///   ParallelRead → Expression → PartialAgg({N nodes}) → GatherExchange → MergeAgg
     /// We intentionally do NOT create a `{1 node}` variant here: if one existed, it would
     /// become the best for `{1 node}` immediately, preventing the enforcer from ever running
     /// and producing the cheaper GatherExchange-on-partial-output plan.
     if (!agg_step->getFinal())
     {
-        const size_t cluster_node_count = 4;    /// TODO: get actual cluster topology
-        const size_t node_count = std::max(required_properties.distribution.node_count, cluster_node_count);
+        std::vector<GroupExpressionPtr> result;
+        for (size_t candidate_node_count : candidate_node_counts)
+        {
+            auto new_step = agg_step->clone();
+            new_step->setStepDescription(*agg_step);
 
-        auto new_step = agg_step->clone();
-        new_step->setStepDescription(*agg_step);
+            GroupExpressionPtr partial_impl = std::make_shared<GroupExpression>(*expression);
+            partial_impl->plan_step = std::move(new_step);
+            partial_impl->strategy = std::make_shared<PartialAggregationStrategy>();
 
-        GroupExpressionPtr partial_impl = std::make_shared<GroupExpression>(*expression);
-        partial_impl->plan_step = std::move(new_step);
-        partial_impl->strategy = std::make_shared<PartialAggregationStrategy>();
+            DistributionDescription dist;
+            dist.node_count = candidate_node_count;
+            partial_impl->inputs[0].required_properties.distribution = dist;
+            partial_impl->properties.distribution = dist;
 
-        DistributionDescription dist;
-        dist.node_count = node_count;
-        partial_impl->inputs[0].required_properties.distribution = dist;
-        partial_impl->properties.distribution = dist;
-
-        partial_impl->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(partial_impl);
-        return {partial_impl};
+            partial_impl->setApplied(*this, required_properties);
+            memo.getGroup(expression->group_id)->addPhysicalExpression(partial_impl);
+            result.push_back(partial_impl);
+        }
+        return result;
     }
-
-    const size_t cluster_node_count = 4;    /// TODO: get actual cluster topology
-
-    /// When the parent explicitly requires multi-node distribution, match that count.
-    /// Otherwise fall back to the cluster size.
-    const size_t distributed_node_count = required_properties.distribution.node_count > 1
-        ? required_properties.distribution.node_count
-        : cluster_node_count;
 
     std::vector<GroupExpressionPtr> result;
 
     /// Strategy A: Local — gather all input to one node, aggregate there.
-    /// Always applicable; when distributed_node_count == 1 it is also the only meaningful strategy.
+    /// Always applicable; when the cluster has only 1 node it is also the only meaningful strategy.
     {
         auto new_step = agg_step->clone();
         new_step->setStepDescription(fmt::format("Local {}", agg_step->getStepDescription()), 200);
@@ -140,7 +137,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     }
 
     /// For a single-node cluster distributed strategies are identical to local — skip them.
-    if (distributed_node_count == 1)
+    if (candidate_node_counts.empty())
         return result;
 
     /// Strategy B: Shuffle — input pre-distributed by group keys, each node aggregates its
@@ -148,23 +145,26 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// Not applicable for global aggregations (e.g. COUNT(*)) that have no group keys.
     if (!agg_step->getParams().keys.empty())
     {
-        auto new_step = agg_step->clone();
-        new_step->setStepDescription(fmt::format("Shuffle {}", agg_step->getStepDescription()), 200);
+        for (size_t candidate_node_count : candidate_node_counts)
+        {
+            auto new_step = agg_step->clone();
+            new_step->setStepDescription(fmt::format("Shuffle {}", agg_step->getStepDescription()), 200);
 
-        DistributionDescription by_keys;
-        by_keys.node_count = distributed_node_count;
-        for (const auto & key : agg_step->getParams().keys)
-            by_keys.columns.push_back({key});
+            DistributionDescription by_keys;
+            by_keys.node_count = candidate_node_count;
+            for (const auto & key : agg_step->getParams().keys)
+                by_keys.columns.push_back({key});
 
-        GroupExpressionPtr shuffle_agg = std::make_shared<GroupExpression>(*expression);
-        shuffle_agg->plan_step = std::move(new_step);
-        shuffle_agg->strategy = std::make_shared<ShuffleAggregationStrategy>();
-        shuffle_agg->inputs[0].required_properties.distribution = by_keys;
-        shuffle_agg->properties.distribution = by_keys;
+            GroupExpressionPtr shuffle_agg = std::make_shared<GroupExpression>(*expression);
+            shuffle_agg->plan_step = std::move(new_step);
+            shuffle_agg->strategy = std::make_shared<ShuffleAggregationStrategy>();
+            shuffle_agg->inputs[0].required_properties.distribution = by_keys;
+            shuffle_agg->properties.distribution = by_keys;
 
-        shuffle_agg->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(shuffle_agg);
-        result.push_back(shuffle_agg);
+            shuffle_agg->setApplied(*this, required_properties);
+            memo.getGroup(expression->group_id)->addPhysicalExpression(shuffle_agg);
+            result.push_back(shuffle_agg);
+        }
     }
 
     return result;

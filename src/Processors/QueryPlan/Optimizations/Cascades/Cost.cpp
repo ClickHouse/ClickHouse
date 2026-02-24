@@ -48,6 +48,8 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
             "Group state:\n{}",
             expression->group_id, expression->getDescription(), group->dump());
 
+    const Float64 distribution_node_count = static_cast<Float64>(std::max<size_t>(expression->properties.distribution.node_count, 1));
+
     ExpressionCost total_cost;
     IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
     if (const auto * join_step = typeid_cast<JoinStepLogical *>(expression_plan_step))
@@ -57,12 +59,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         auto left_input_group = memo.getGroup(left_input.group_id);
         auto right_input_group = memo.getGroup(right_input.group_id);
         const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(expression->strategy.get());
-        total_cost = estimateHashJoinCost(*join_step, join_strategy, *group->statistics, *left_input_group->statistics, *right_input_group->statistics);
+        total_cost = estimateHashJoinCost(*join_step, join_strategy, *group->statistics, *left_input_group->statistics, *right_input_group->statistics, distribution_node_count);
     }
     else if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(expression_plan_step))
     {
         const auto * read_strategy = dynamic_cast<const IReadStrategy *>(expression->strategy.get());
-        total_cost = estimateReadCost(*read_step, read_strategy, *group->statistics);
+        total_cost = estimateReadCost(*read_step, read_strategy, *group->statistics, distribution_node_count);
     }
     else if (typeid_cast<FilterStep *>(expression_plan_step))
     {
@@ -78,7 +80,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         const auto * aggregation_strategy = dynamic_cast<const IAggregationStrategy *>(expression->strategy.get());
-        total_cost = estimateAggregationCost(*aggregating_step, aggregation_strategy, *group->statistics, *input_group->statistics);
+        total_cost = estimateAggregationCost(*aggregating_step, aggregation_strategy, *group->statistics, *input_group->statistics, distribution_node_count);
     }
     else if (typeid_cast<MergingAggregatedStep *>(expression_plan_step))
     {
@@ -131,7 +133,8 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
         const IJoinStrategy * strategy,
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & left_statistics,
-        const ExpressionStatistics & right_statistics)
+        const ExpressionStatistics & right_statistics,
+        Float64 distribution_node_count)
 {
     const bool is_broadcast = dynamic_cast<const BroadcastJoinStrategy *>(strategy) != nullptr;
     const bool is_shuffle = dynamic_cast<const ShuffleJoinStrategy *>(strategy) != nullptr;
@@ -139,13 +142,11 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
     ExpressionCost join_cost;
     join_cost.cost.cpu = this_step_statistics.estimated_row_count;       /// Number of output rows
 
-    const size_t node_count = 4;
-
     if (is_broadcast)
     {
         /// Hash table is built from the full right table on every node.
         /// Network cost is already modeled by the BroadcastExchange expression.
-        join_cost.cost.memory += right_statistics.estimated_row_count * node_count;
+        join_cost.cost.memory += right_statistics.estimated_row_count * distribution_node_count;
     }
     else if (is_shuffle)
     {
@@ -170,14 +171,14 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
 ExpressionCost CostEstimator::estimateReadCost(
     const ReadFromMergeTree & /*read_step*/,
     const IReadStrategy * strategy,
-    const ExpressionStatistics & this_step_statistics)
+    const ExpressionStatistics & this_step_statistics,
+    Float64 distribution_node_count)
 {
     /// FIXME: hack to simulate that parallel read is faster
     if (dynamic_cast<const ParallelReadStrategy *>(strategy) != nullptr)
     {
-        const size_t node_count = 4;
         return ExpressionCost{
-            .cost = Cost{.io = this_step_statistics.estimated_row_count / node_count},
+            .cost = Cost{.io = this_step_statistics.estimated_row_count / distribution_node_count},
             .subtree_cost = {},
         };
     }
@@ -192,15 +193,14 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     const AggregatingStep & /*aggregating_step*/,
     const IAggregationStrategy * strategy,
     const ExpressionStatistics & this_step_statistics,
-    const ExpressionStatistics & input_statistics)
+    const ExpressionStatistics & input_statistics,
+    Float64 distribution_node_count)
 {
     const bool is_local = dynamic_cast<const LocalAggregationStrategy *>(strategy) != nullptr;
     const bool is_shuffle = dynamic_cast<const ShuffleAggregationStrategy *>(strategy) != nullptr;
     const bool is_partial = dynamic_cast<const PartialAggregationStrategy *>(strategy) != nullptr;
 
     ExpressionCost aggregation_cost;
-
-    const size_t node_count = 4;
 
     if (is_local)
     {
@@ -211,15 +211,15 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     else if (is_shuffle)
     {
         aggregation_cost.cost.cpu +=
-            this_step_statistics.estimated_row_count / node_count +
-            input_statistics.estimated_row_count / node_count;
+            this_step_statistics.estimated_row_count / distribution_node_count +
+            input_statistics.estimated_row_count / distribution_node_count;
         aggregation_cost.cost.network += input_statistics.estimated_row_count;
     }
     else if (is_partial)
     {
         aggregation_cost.cost.cpu +=
-            this_step_statistics.estimated_row_count / node_count +
-            input_statistics.estimated_row_count / node_count;
+            this_step_statistics.estimated_row_count / distribution_node_count +
+            input_statistics.estimated_row_count / distribution_node_count;
     }
     else
     {

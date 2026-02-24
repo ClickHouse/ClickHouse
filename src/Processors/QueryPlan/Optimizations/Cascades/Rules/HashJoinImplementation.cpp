@@ -45,21 +45,14 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     chassert(join_step);
     chassert(expression->inputs.size() == 2);
 
-    const size_t cluster_node_count = 4;    /// TODO: get actual cluster topology
-
-    /// Determine the node count for distributed strategies.
-    /// When the parent explicitly requires multi-node distribution, match that count so the
-    /// join output can directly satisfy the requirement without an extra exchange.
-    /// Otherwise fall back to the cluster size.
-    const size_t distributed_node_count = required_properties.distribution.node_count > 1
-        ? required_properties.distribution.node_count
-        : cluster_node_count;
+    const size_t cluster_node_count = memo.getClusterNodeCount();
+    const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
     std::vector<GroupExpressionPtr> result;
 
     /// Strategy 1: Local join — both inputs gathered to a single node.
-    /// Always applicable; when distributed_node_count == 1 it is also the only strategy
-    /// because all three strategies produce the same plan on a single-node cluster.
+    /// Always applicable; when cluster has only 1 node it is also the only strategy
+    /// because all distributed strategies produce the same plan on a single-node cluster.
     {
         auto new_join_step = join_step->clone();
         new_join_step->setStepDescription(fmt::format("Local HashJoin {}", join_step->getStepDescription()), 200);
@@ -79,45 +72,14 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     }
 
     /// For a single-node cluster all distributed strategies are identical to local join — skip them.
-    if (distributed_node_count == 1)
+    if (candidate_node_counts.empty())
         return result;
 
-    /// Strategy 2: Broadcast join — left input partitioned any way across N nodes,
-    /// right input replicated to all N nodes.
-    {
-        auto new_join_step = join_step->clone();
-        new_join_step->setStepDescription(fmt::format("Broadcast HashJoin {}", join_step->getStepDescription()), 200);
-
-        /// Left input: partitioned across N nodes (any column set is acceptable)
-        DistributionDescription left_dist;
-        left_dist.node_count = distributed_node_count;
-
-        /// Right input: replicated to all N nodes
-        DistributionDescription right_dist;
-        right_dist.node_count = distributed_node_count;
-        right_dist.is_replicated = true;
-
-        GroupExpressionPtr broadcast_join = std::make_shared<GroupExpression>(*expression);
-        broadcast_join->plan_step = std::move(new_join_step);
-        broadcast_join->strategy = std::make_shared<BroadcastJoinStrategy>();
-        broadcast_join->inputs[0].required_properties.distribution = left_dist;
-        broadcast_join->inputs[1].required_properties.distribution = right_dist;
-        /// Output inherits the left input's partitioning (any N-node partitioned distribution)
-        broadcast_join->properties.distribution = left_dist;
-
-        broadcast_join->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(broadcast_join);
-        result.push_back(broadcast_join);
-    }
-
-    /// Strategy 3: Partitioned (shuffle) join — both inputs shuffled by join key columns.
-    /// Only applicable when the join has equi-join predicates.
+    /// Pre-compute equi-join key pairs for shuffle strategies (shared across all node counts).
+    struct JoinKeyPair { String left; String right; };
+    std::vector<JoinKeyPair> equi_keys;
     if (!join_step->getJoinOperator().expression.empty())
     {
-        /// Collect all equi-join key pairs, normalizing so that left_node
-        /// comes from the join's left input and right_node from the right input.
-        struct JoinKeyPair { String left; String right; };
-        std::vector<JoinKeyPair> equi_keys;
         for (const auto & predicate : join_step->getJoinOperator().expression)
         {
             auto [op, left_node, right_node] = predicate.asBinaryPredicate();
@@ -131,17 +93,51 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
 
             equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName()});
         }
+    }
 
+    /// Enumerate distributed strategies at each candidate node count.
+    for (size_t candidate_node_count : candidate_node_counts)
+    {
+        /// Strategy 2: Broadcast join — left input partitioned any way across N nodes,
+        /// right input replicated to all N nodes.
+        {
+            auto new_join_step = join_step->clone();
+            new_join_step->setStepDescription(fmt::format("Broadcast HashJoin {}", join_step->getStepDescription()), 200);
+
+            /// Left input: partitioned across N nodes (any column set is acceptable)
+            DistributionDescription left_dist;
+            left_dist.node_count = candidate_node_count;
+
+            /// Right input: replicated to all N nodes
+            DistributionDescription right_dist;
+            right_dist.node_count = candidate_node_count;
+            right_dist.is_replicated = true;
+
+            GroupExpressionPtr broadcast_join = std::make_shared<GroupExpression>(*expression);
+            broadcast_join->plan_step = std::move(new_join_step);
+            broadcast_join->strategy = std::make_shared<BroadcastJoinStrategy>();
+            broadcast_join->inputs[0].required_properties.distribution = left_dist;
+            broadcast_join->inputs[1].required_properties.distribution = right_dist;
+            /// Output inherits the left input's partitioning (any N-node partitioned distribution)
+            broadcast_join->properties.distribution = left_dist;
+
+            broadcast_join->setApplied(*this, required_properties);
+            memo.getGroup(expression->group_id)->addPhysicalExpression(broadcast_join);
+            result.push_back(broadcast_join);
+        }
+
+        /// Strategy 3: Partitioned (shuffle) join — both inputs shuffled by join key columns.
+        /// Only applicable when the join has equi-join predicates.
         if (!equi_keys.empty())
         {
             DistributionDescription left_dist;
-            left_dist.node_count = distributed_node_count;
+            left_dist.node_count = candidate_node_count;
 
             DistributionDescription right_dist;
-            right_dist.node_count = distributed_node_count;
+            right_dist.node_count = candidate_node_count;
 
             DistributionDescription output_dist;
-            output_dist.node_count = distributed_node_count;
+            output_dist.node_count = candidate_node_count;
 
             /// If the parent requires specific distribution columns, try to match them to join
             /// keys so the join output directly satisfies the parent's distribution requirement.

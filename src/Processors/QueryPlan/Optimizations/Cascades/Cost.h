@@ -79,18 +79,21 @@ private:
         const IJoinStrategy * strategy,
         const ExpressionStatistics & this_step_statistics,
         const ExpressionStatistics & left_statistics,
-        const ExpressionStatistics & right_statistics);
+        const ExpressionStatistics & right_statistics,
+        Float64 distribution_node_count);
 
     ExpressionCost estimateReadCost(
         const ReadFromMergeTree & read_step,
         const IReadStrategy * strategy,
-        const ExpressionStatistics & this_step_statistics);
+        const ExpressionStatistics & this_step_statistics,
+        Float64 distribution_node_count);
 
     ExpressionCost estimateAggregationCost(
         const AggregatingStep & aggregating_step,
         const IAggregationStrategy * strategy,
         const ExpressionStatistics & this_step_statistics,
-        const ExpressionStatistics & input_statistics);
+        const ExpressionStatistics & input_statistics,
+        Float64 distribution_node_count);
 
     Memo & memo;
     LoggerPtr log = getLogger("CostEstimator");
