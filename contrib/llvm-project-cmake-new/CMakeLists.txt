@@ -176,10 +176,19 @@ else()
 endif()
 
 # mallinfo is only available on Linux with glibc (not musl, not BSD, not macOS)
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CXX_FLAGS MATCHES "musl")
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT USE_MUSL)
     set(HAVE_MALLINFO_DEFINE "#define HAVE_MALLINFO 1")
 else()
     set(HAVE_MALLINFO_DEFINE "/* #undef HAVE_MALLINFO */")
+endif()
+
+# backtrace/execinfo.h is available on glibc and macOS/BSD, but NOT on musl
+if (USE_MUSL)
+    set(HAVE_BACKTRACE_DEFINE "/* #undef HAVE_BACKTRACE */")
+    set(BACKTRACE_HEADER_DEFINE "/* No backtrace header on musl */")
+else()
+    set(HAVE_BACKTRACE_DEFINE "#define HAVE_BACKTRACE 1")
+    set(BACKTRACE_HEADER_DEFINE "#define BACKTRACE_HEADER <execinfo.h>")
 endif()
 
 # getauxval is Linux-specific
@@ -380,9 +389,12 @@ target_include_directories(llvm-min-tblgen PRIVATE
 
 target_compile_definitions(llvm-min-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 
-# On Linux, link with pthread and dl
-if (UNIX AND NOT APPLE)
+# On Linux with glibc, link with pthread and dl
+# musl has these in libc, so no separate libraries needed
+if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-min-tblgen PRIVATE pthread dl)
+elseif (UNIX AND NOT APPLE)
+    target_link_libraries(llvm-min-tblgen PRIVATE pthread)
 endif()
 
 #
@@ -520,8 +532,12 @@ target_include_directories(llvm-tblgen PRIVATE
 
 target_compile_definitions(llvm-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 
-if (UNIX AND NOT APPLE)
+# On Linux with glibc, link with pthread and dl
+# musl has these in libc, so no separate libraries needed
+if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-tblgen PRIVATE pthread dl)
+elseif (UNIX AND NOT APPLE)
+    target_link_libraries(llvm-tblgen PRIVATE pthread)
 endif()
 
 # End of native tablegen build block

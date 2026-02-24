@@ -66,6 +66,11 @@ else()
     set(HAVE_MALLINFO_DEFINE "/* #undef HAVE_MALLINFO */")
 endif()
 
+# backtrace/execinfo.h - available on glibc Linux and macOS/BSD
+# For native-tblgen we assume the host has it (glibc or macOS)
+set(HAVE_BACKTRACE_DEFINE "#define HAVE_BACKTRACE 1")
+set(BACKTRACE_HEADER_DEFINE "#define BACKTRACE_HEADER <execinfo.h>")
+
 # getauxval is Linux-specific
 if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
     set(HAVE_GETAUXVAL_DEFINE "#define HAVE_GETAUXVAL 1")

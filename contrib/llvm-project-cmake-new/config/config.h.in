@@ -24,9 +24,9 @@
 #define LLVM_WINDOWS_PREFER_FORWARD_SLASH 0
 
 /* Define to 1 if you have the `backtrace' function. */
-#define HAVE_BACKTRACE TRUE
+@HAVE_BACKTRACE_DEFINE@
 
-#define BACKTRACE_HEADER <execinfo.h>
+@BACKTRACE_HEADER_DEFINE@
 
 /* Define to 1 if you have the <CrashReporterClient.h> header file. */
 /* #undef HAVE_CRASHREPORTERCLIENT_H */
