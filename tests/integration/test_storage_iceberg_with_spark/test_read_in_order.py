@@ -119,14 +119,14 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
 
 def test_defining_columns_with_special_character(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    table_name = "demo_event" + "_" + get_uuid_str()
+    table_name = "demo_event"
     spark = started_cluster_iceberg_with_spark.spark_session
 
     spark.conf.set("spark.sql.iceberg.commit.sync", "true")
 
     spark.sql(
         f"""
-            CREATE TABLE {table_name} 
+            CREATE IF NOT EXISTS TABLE {table_name} 
             ( 
             `#event` STRING NOT NULL ,
             `#data_lifecycle` STRING NOT NULL, 
