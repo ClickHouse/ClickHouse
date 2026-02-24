@@ -35,7 +35,7 @@ UInt64 readBits(const UInt64 * src, size_t bit_offset, size_t num_bits)
     UInt64 value = src[bit_offset / 64] >> mod;
     if (mod)
         value |= src[bit_offset / 64 + 1] << (64 - mod);
-    return value & maskLowBits<UInt64>(num_bits);
+    return value & maskLowBits<UInt64>(static_cast<unsigned char>(num_bits));
 }
 
 MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
@@ -68,8 +68,9 @@ MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
                 = std::min(block.trailing_zero_bits_in_y, static_cast<UInt8>(getTrailingZeroBits(mark.offset_in_decompressed_block)));
         }
 
-        block.bits_for_x = sizeof(size_t) * 8 - getLeadingZeroBits(max_x - block.min_x);
-        block.bits_for_y = sizeof(size_t) * 8 - getLeadingZeroBits((max_y - block.min_y) >> block.trailing_zero_bits_in_y);
+        block.bits_for_x = static_cast<UInt8>(sizeof(size_t) * 8 - getLeadingZeroBits(max_x - block.min_x));
+        block.bits_for_y
+            = static_cast<UInt8>(sizeof(size_t) * 8 - getLeadingZeroBits((max_y - block.min_y) >> block.trailing_zero_bits_in_y));
         packed_bits += num_marks_in_this_block * (block.bits_for_x + block.bits_for_y);
     }
 

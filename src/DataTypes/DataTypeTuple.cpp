@@ -272,7 +272,7 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
 }
 
 
-size_t DataTypeTuple::getPositionByName(const String & name, bool case_insensitive) const
+size_t DataTypeTuple::getPositionByName(std::string_view name, bool case_insensitive) const
 {
     for (size_t i = 0; i < elems.size(); ++i)
     {
@@ -290,7 +290,7 @@ size_t DataTypeTuple::getPositionByName(const String & name, bool case_insensiti
     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name);
 }
 
-std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name, bool case_insensitive) const
+std::optional<size_t> DataTypeTuple::tryGetPositionByName(std::string_view name, bool case_insensitive) const
 {
     for (size_t i = 0; i < elems.size(); ++i)
     {
@@ -325,11 +325,6 @@ bool DataTypeTuple::textCanContainOnlyValidUTF8() const
 bool DataTypeTuple::haveMaximumSizeOfValue() const
 {
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
-}
-
-bool DataTypeTuple::hasDynamicSubcolumnsDeprecated() const
-{
-    return std::any_of(elems.begin(), elems.end(), [](auto && elem) { return elem->hasDynamicSubcolumnsDeprecated(); });
 }
 
 bool DataTypeTuple::isComparable() const
@@ -382,7 +377,8 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     auto kinds = info.getKindStack();
     /// Compatibility with older version that may propagate Sparse serialization for Tuple itself (in serialization.json)
     std::erase(kinds, ISerialization::Kind::SPARSE);
-    return IDataType::getSerialization(kinds, std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names));
+    return IDataType::getSerialization(
+        kinds, info.getSettings(), std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names));
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const

@@ -1,12 +1,13 @@
 -- Tags: no-replicated-database
 -- no-replicated-database: read_rows in query_log differs because of replicated database.
+-- add_minmax_index_for_numeric_columns=0: Less read_rows
 
 DROP TABLE IF EXISTS t_lwd_index SYNC;
 
 CREATE TABLE t_lwd_index (id UInt64)
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwd_index/', '1')
 ORDER BY id
-SETTINGS index_granularity = 1, enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS index_granularity = 1, enable_block_number_column = 1, enable_block_offset_column = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO t_lwd_index SELECT * FROM numbers(1000);
 

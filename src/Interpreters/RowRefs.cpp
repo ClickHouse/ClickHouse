@@ -1,6 +1,7 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Columns/ColumnDecimal.h>
+#include <Common/Exception.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
@@ -10,6 +11,8 @@
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
 #include <Common/RadixSort.h>
+
+#include <mutex>
 
 
 namespace DB

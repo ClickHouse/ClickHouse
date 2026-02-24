@@ -45,6 +45,6 @@ SELECT * FROM dt32;
 
 **See Also**
 
-- [toDate32](../../sql-reference/functions/type-conversion-functions.md#todate32)
-- [toDate32OrZero](/sql-reference/functions/type-conversion-functions#todate32orzero)
-- [toDate32OrNull](/sql-reference/functions/type-conversion-functions#todate32ornull)
+- [toDate32](../../sql-reference/functions/type-conversion-functions.md#toDate32)
+- [toDate32OrZero](/sql-reference/functions/type-conversion-functions#toDate32OrZero)
+- [toDate32OrNull](/sql-reference/functions/type-conversion-functions#toDate32OrNull)

@@ -29,7 +29,7 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
     };
     auto get_cast_func = [from = arg, to = type, cast_type]
     {
-        return createInternalCast(from, to, cast_type, {});
+        return createInternalCast(from, to, cast_type, {}, nullptr);
     };
 
     FunctionBasePtr func_cast = cache ? cache->getOrSet(cast_type, from_name, to_name, std::move(get_cast_func)) : get_cast_func();

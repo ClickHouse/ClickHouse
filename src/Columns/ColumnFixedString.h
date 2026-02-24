@@ -1,8 +1,6 @@
 #pragma once
 
 #include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/PODArray.h>
 #include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
@@ -90,16 +88,11 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override
-    {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
-        return std::make_shared<DataTypeString>();
-    }
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
 
-    StringRef getDataAt(size_t index) const override
+    std::string_view getDataAt(size_t index) const override
     {
-        return StringRef(&chars[n * index], n);
+        return {reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
     bool isDefaultAt(size_t index) const override;
@@ -134,12 +127,15 @@ public:
 
     void popBack(size_t elems) override
     {
+        if (elems > size())
+            throwCannotPopBack(n, getName(), size());
+
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
@@ -174,6 +170,8 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
+    void filter(const IColumn::Filter & filt) override;
+
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
@@ -207,7 +205,7 @@ public:
         chars.resize(n * size);
     }
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {

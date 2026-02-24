@@ -1,6 +1,7 @@
 #include <exception>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Common/ThreadStatus.h>
+#include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
 
@@ -77,6 +78,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
         {
             stage = Stage::Exception;
             onException(data.exception);
+            cancel();
             output.pushData(std::move(data));
             return Status::PortFull;
         }
@@ -94,7 +96,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
 
 static std::exception_ptr runStep(std::function<void()> step, ThreadGroupPtr & thread_group)
 {
-    ThreadGroupSwitcher switcher(thread_group, "RuntimeData", /*allow_existing_group*/ true);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::RUNTIME_DATA, /*allow_existing_group*/ true);
 
     std::exception_ptr res;
 

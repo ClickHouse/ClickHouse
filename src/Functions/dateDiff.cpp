@@ -33,13 +33,12 @@ namespace ErrorCodes
 namespace
 {
 
-template <bool is_diff>
 class DateDiffImpl
 {
 public:
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    explicit DateDiffImpl(const String & name_) : name(name_) {}
+    DateDiffImpl(const String & name_, bool is_diff_) : name(name_), is_diff(is_diff_) {}
 
     template <typename Transform>
     void dispatchForColumns(
@@ -167,7 +166,7 @@ public:
     {
         auto res =  static_cast<Int64>(transform_y.execute(y, timezone_y)) - static_cast<Int64>(transform_x.execute(x, timezone_x));
 
-        if constexpr (is_diff)
+        if (is_diff)
         {
             return res;
         }
@@ -232,8 +231,8 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
-                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
+                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
+                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
                 if ((x_day_of_week > y_day_of_week)
                     || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
@@ -312,11 +311,12 @@ public:
     }
 private:
     String name;
+    bool is_diff;
 };
 
 
-/** dateDiff('unit', t1, t2, [timezone])
-  * age('unit', t1, t2, [timezone])
+/** dateDiff('unit', t1, t2[, timezone])
+  * age('unit', t1, t2[, timezone])
   * t1 and t2 can be Date, Date32, DateTime or DateTime64
   *
   * If timezone is specified, it is applied to both arguments.
@@ -325,14 +325,18 @@ private:
   *
   * The timezone matters because days can have different lengths.
   */
-template <bool is_relative>
 class FunctionDateDiff : public IFunction
 {
 public:
-    static constexpr auto name = is_relative ? "dateDiff" : "age";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
+    FunctionDateDiff(const char * name_, bool is_relative_)
+        : function_name(name_), impl{function_name, is_relative_} {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, bool is_relative)
+    {
+        return std::make_shared<FunctionDateDiff>(name, is_relative);
+    }
+
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -406,7 +410,8 @@ public:
         return col_res;
     }
 private:
-    DateDiffImpl<is_relative> impl{name};
+    const char * function_name;
+    DateDiffImpl impl;
 };
 
 
@@ -456,7 +461,7 @@ public:
         return col_res;
     }
 private:
-    DateDiffImpl<true> impl{name};
+    DateDiffImpl impl{name, true};
 };
 
 }
@@ -475,7 +480,7 @@ Note that this behavior is different from that of function `toWeek()` in which w
 For an alternative to `dateDiff`, see function [`age`](#age).
     )";
     FunctionDocumentation::Syntax syntax = R"(
-dateDiff(unit, startdate, enddate, [timezone])
+dateDiff(unit, startdate, enddate[, timezone])
     )";
     FunctionDocumentation::Arguments arguments =
     {
@@ -526,14 +531,16 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDateDiff<true>>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
-    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
-    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
-    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
-    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
+    factory.registerFunction("dateDiff",
+        [](ContextPtr){ return FunctionDateDiff::create("dateDiff", true); },
+        documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("date_diff", "dateDiff");
+    factory.registerAlias("DATE_DIFF", "dateDiff");
+    factory.registerAlias("timestampDiff", "dateDiff");
+    factory.registerAlias("timestamp_diff", "dateDiff");
+    factory.registerAlias("TIMESTAMP_DIFF", "dateDiff");
 }
 
 REGISTER_FUNCTION(TimeDiff)
@@ -586,7 +593,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeDiff>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -603,7 +610,7 @@ For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the 
 For an alternative to age, see function [`dateDiff`](#dateDiff).
     )";
     FunctionDocumentation::Syntax syntax = R"(
-age('unit', startdate, enddate, [timezone])
+age('unit', startdate, enddate[, timezone])
     )";
     FunctionDocumentation::Arguments arguments =
     {
@@ -654,9 +661,11 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDateDiff<false>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("age",
+        [](ContextPtr){ return FunctionDateDiff::create("age", false); },
+        documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

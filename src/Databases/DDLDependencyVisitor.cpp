@@ -41,8 +41,8 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_)
         {
         }
 
@@ -79,7 +79,7 @@ namespace
             }
             else if (const auto * function = ast->as<ASTFunction>())
             {
-                if (function->kind == ASTFunction::Kind::TABLE_ENGINE)
+                if (function->getKind() == ASTFunction::Kind::TABLE_ENGINE)
                     visitTableEngine(*function);
                 else
                     visitFunction(*function);
@@ -95,6 +95,7 @@ namespace
         ContextPtr global_context;
         TableNamesSet dependencies;
         bool can_throw;
+        bool validate_current_database;
         std::optional<StorageID> mv_to_dependency;
         std::optional<StorageID> mv_from_dependency;
 
@@ -153,7 +154,19 @@ namespace
                         auto select_copy = create.select->clone();
                         ApplyWithSubqueryVisitor(global_context).visit(select_copy);
 
-                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, global_context);
+                        /// Use the database where the materialized view is created to resolve nested views.
+                        /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery
+                        /// (which strips the database before serialization). In that case, keep the global context's current database.
+                        ContextMutablePtr mv_db_context = Context::createCopy(global_context);
+                        if (!table_name.database.empty())
+                        {
+                            /// During bootstrap/restore scenarios, the database may not exist yet, so we provide a way to skip this validation
+                            if (validate_current_database)
+                                mv_db_context->setCurrentDatabase(table_name.database);
+                            else
+                                mv_db_context->setCurrentDatabaseUnchecked(table_name.database);
+                        }
+                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, mv_db_context);
                         if (!select_query.select_table_id.empty())
                         {
                             mv_from_dependency = select_query.select_table_id;
@@ -207,7 +220,6 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
-            LOG_TRACE(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
             if (!expr.database_and_table_name)
                 return;
 
@@ -248,7 +260,7 @@ namespace
                 visitDistributedTableEngine(table_engine);
 
             /// Alias(table_name) or Alias(db_name, table_name)
-            if (table_engine.name == "Alias")
+            if (table_engine.name == "Alias" && table_engine.arguments)
             {
                 if (table_engine.arguments->children.size() == 1)
                     addQualifiedNameFromArgument(table_engine, 0);
@@ -387,34 +399,32 @@ namespace
 
             const auto & arg = args[arg_idx];
 
-            if (evaluate)
+            if (const auto * id = arg->as<ASTIdentifier>())
+                return id->name();
+
+            if (const auto * literal = arg->as<ASTLiteral>())
             {
-                try
-                {
-                    /// We're just searching for dependencies here, it's not safe to execute subqueries now.
-                    /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
-                    ContextMutablePtr global_context_copy = Context::createCopy(global_context);
-                    global_context_copy->setCurrentDatabase(current_database);
-                    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
-                    const auto * literal = evaluated->as<ASTLiteral>();
-                    if (!literal || (literal->value.getType() != Field::Types::String))
-                        return {};
+                if (literal->value.getType() == Field::Types::String)
                     return literal->value.safeGet<String>();
-                }
-                catch (...)
-                {
-                    return {};
-                }
             }
-            else
+
+            if (!evaluate)
+                return {};
+
+            try
             {
-                if (const auto * id = arg->as<ASTIdentifier>())
-                    return id->name();
-                if (const auto * literal = arg->as<ASTLiteral>())
-                {
-                    if (literal->value.getType() == Field::Types::String)
-                        return literal->value.safeGet<String>();
-                }
+                /// We're just searching for dependencies here, it's not safe to execute subqueries now.
+                /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
+                ContextMutablePtr global_context_copy = Context::createCopy(global_context);
+                global_context_copy->setCurrentDatabase(current_database);
+                auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
+                const auto * literal = evaluated->as<ASTLiteral>();
+                if (!literal || (literal->value.getType() != Field::Types::String))
+                    return {};
+                return literal->value.safeGet<String>();
+            }
+            catch (...)
+            {
                 return {};
             }
         }
@@ -554,9 +564,9 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
     return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
@@ -564,7 +574,7 @@ CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
 {
-    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw};
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true};
     tryVisitNestedSelect(select_query, data);
     return std::move(data).getDependencies();
 }

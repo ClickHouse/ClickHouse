@@ -44,12 +44,12 @@ Enum fromIntChecked(int64_t underlying)
     return checked.value();
 }
 
-static void serializeCommittingBlockOpToBuffer(CommittingBlock::Op op, WriteBuffer & out)
+void serializeCommittingBlockOpToBuffer(CommittingBlock::Op op, WriteBuffer & out)
 {
     out << "operation: " << toIntChecked(op) << "\n";
 }
 
-static CommittingBlock::Op deserializeCommittingBlockOpFromBuffer(ReadBuffer & in)
+CommittingBlock::Op deserializeCommittingBlockOpFromBuffer(ReadBuffer & in)
 {
     int64_t op;
     in >> "operation: " >> op >> "\n";

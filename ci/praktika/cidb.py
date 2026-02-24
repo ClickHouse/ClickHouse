@@ -2,7 +2,7 @@ import copy
 import dataclasses
 import json
 import urllib
-from typing import Optional
+from typing import List, Optional
 
 from ._environment import _Environment
 from .info import Info
@@ -55,18 +55,76 @@ class CIDB:
         }
 
     def get_link_to_test_case_statistics(
-        self, test_name: str, job_name: Optional[str] = None, url="", user=""
+        self,
+        test_name: str,
+        job_name: Optional[str] = None,
+        failure_patterns=None,
+        test_output="",
+        url="",
+        user="",
+        pr_base_branches: Optional[List[str]] = None,
     ) -> str:
         """
         Build a link to query CI DB statistics for a specific test case.
-        The link format follows the Play-style URL: <self.url>[?user=<user>]#<base64(sql)>.
-        Groups by day and shows recent failures for the test. Optionally filters by job_name.
+
+        The generated link includes a SQL query that filters historical failures by the same pattern
+        found in the current test output. This helps narrow down similar failures and check their history.
+
+        Args:
+            test_name: Name of the test case
+            job_name: Optional job name for filtering
+            failure_patterns: List of substring patterns configured in CI settings (Settings.TEST_FAILURE_PATTERNS)
+            test_output: The current test failure output to match against patterns
+            url: Optional base URL (defaults to self.url)
+            user: Optional username for ClickHouse Play authentication
+            pr_base_branches: Optional list of base branches to include PR runs. If provided, includes PRs targeting any of these branches. If omitted, only main branch runs are included.
+
+        Pattern Matching Logic:
+            - Scans test_output for first matching pattern from failure_patterns list
+            - If match found: adds "AND test_context_raw LIKE '%pattern%'" filter to SQL query
+            - If no match: adds commented placeholder for manual editing
+            - This ensures the CIDB link in PR comments and CI reports shows only relevant historical failures
+
+        Returns:
+            URL with base64-encoded SQL query for viewing test failure history
         """
         # Basic sanitization for SQL string literals
         tn = (test_name or "").replace("'", "''")
         jn = (job_name or "").replace("'", "''") if job_name else None
         # Prefer configured table name if available, fall back to default
         table = Settings.CI_DB_TABLE_NAME or "checks"
+
+        # Find first matching failure pattern in test output
+        matched_pattern = None
+        if failure_patterns and test_output:
+            for pattern in failure_patterns:
+                if pattern in test_output:
+                    # Sanitize pattern for SQL and use first match
+                    matched_pattern = pattern.replace("'", "''")
+                    break
+
+        # Build failure pattern filter line
+        if matched_pattern:
+            failure_filter = f"    AND test_context_raw LIKE '%{matched_pattern}%'"
+        else:
+            # Add commented placeholder for manual editing
+            failure_filter = "    -- AND test_context_raw LIKE '%pattern%'  -- uncomment and edit to filter by failure pattern"
+
+        # Build PR filter based on pr_base_branches parameter
+        if pr_base_branches:
+            pr_base_branches = list(set(pr_base_branches))
+            # Sanitize branch names and build IN clause
+            sanitized_branches = [
+                branch.replace("'", "''") for branch in pr_base_branches
+            ]
+            branches_list = ", ".join(f"'{branch}'" for branch in sanitized_branches)
+            # Include both main branch runs and PRs targeting any of the specified base branches
+            pr_filter = (
+                f"    AND (pull_request_number = 0 OR base_ref IN ({branches_list}))"
+            )
+        else:
+            # Only include main branch runs
+            pr_filter = "    AND pull_request_number = 0"
 
         query = f"""\
 WITH
@@ -79,9 +137,10 @@ SELECT
 FROM {table}
 WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     AND test_name = '{tn}'
-    -- AND check_name = '{job_name}'
+    -- AND check_name = '{jn}'
     AND test_status IN ('FAIL', 'ERROR')
-    AND ((head_ref = 'master' AND pull_request_number = 0) OR pull_request_number != 0)
+{pr_filter}
+{failure_filter}
 GROUP BY day
 ORDER BY day DESC
 """
@@ -124,7 +183,7 @@ ORDER BY day DESC
             base_repo=env.REPOSITORY,
             head_ref=env.BRANCH,
             head_repo=env.FORK_NAME,
-            task_url="",
+            task_url=Info().get_job_url(),
             instance_type=",".join(
                 filter(None, [env.INSTANCE_TYPE, env.INSTANCE_LIFE_CYCLE])
             ),
@@ -155,7 +214,7 @@ ORDER BY day DESC
                 record.test_context_raw = result_.info
                 yield json.dumps(dataclasses.asdict(record))
 
-    def query(self, query: str, retries: int = 1):
+    def query(self, query: str, retries: int = 1, log_level="warning"):
         """
         Executes a SELECT query on CI DB with retry support.
 
@@ -166,8 +225,10 @@ ORDER BY day DESC
         params = {
             "database": Settings.CI_DB_DB_NAME,
             "query": query,
-            "send_logs_level": "warning",
         }
+
+        if log_level:
+            params["send_logs_level"] = log_level
 
         for attempt in range(1, retries + 1):
             try:

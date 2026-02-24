@@ -191,7 +191,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
             for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
             {
                 auto view = chunk.GetView(row_i);
-                ReadBufferFromMemory rb(view.data(), view.size());
+                ReadBufferFromMemory rb(view);
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
@@ -205,7 +205,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
                     continue;
                 }
                 auto view = chunk.GetView(row_i);
-                ReadBufferFromMemory rb(view.data(), view.size());
+                ReadBufferFromMemory rb(view);
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
@@ -506,7 +506,7 @@ static ColumnWithTypeAndName readColumnWithDecimalData(const std::shared_ptr<arr
 static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column)
 {
     if (!arrow_column->null_count())
-        return ColumnUInt8::create(arrow_column->length(), 0);
+        return ColumnUInt8::create(arrow_column->length(), static_cast<UInt8>(0));
 
     auto nullmap_column = ColumnUInt8::create();
     PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*nullmap_column).getData();
@@ -682,15 +682,15 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         ///     indexes: [1, 2, 1]
         /// LowCardinality(Nullable):
         ///     dict: [null, "", "one", "two"]
-        ///     indexes: [2, 3, 2]
+        ///     indexes: [2, 3, 2]`
         else if (default_value_index == -1)
         {
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
                 if (chunk->IsNull(i))
-                    column_data.push_back(0);
+                    column_data.push_back(static_cast<NumericType>(0));
                 else
-                    column_data.push_back(data[i] + shift);
+                    column_data.push_back(static_cast<NumericType>(data[i] + shift));
             }
         }
         /// If dictionary contains default value, we change all indexes of it to
@@ -716,7 +716,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
                 if (chunk->IsNull(i))
-                    column_data.push_back(0);
+                    column_data.push_back(static_cast<NumericType>(0));
                 else
                 {
                     NumericType value = data[i];
@@ -980,9 +980,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithDate32Data(arrow_column, column_name, type_hint, settings.date_time_overflow_behavior);
         case arrow::Type::DATE64:
             return readColumnWithDate64Data(arrow_column, column_name);
-        // ClickHouse writes Date as arrow UINT16 and DateTime as arrow UINT32,
-        // so, read UINT16 as Date and UINT32 as DateTime to perform correct conversion
-        // between Date and DateTime further.
+        // ClickHouse writes DateTime as arrow UINT32,
+        // so, read UINT32 as DateTime to perform correct conversion further.
+        // UINT16 is also read as Date for backward compatibility with older Arrow files.
         case arrow::Type::UINT16:
         {
             auto column = readColumnWithNumericData<UInt16>(arrow_column, column_name);

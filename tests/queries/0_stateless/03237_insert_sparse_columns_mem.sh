@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-azure-blob-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -51,7 +51,7 @@ $MY_CLICKHOUSE_CLIENT --query "DETACH TABLE t_insert_mem"
 $MY_CLICKHOUSE_CLIENT --query "ATTACH TABLE t_insert_mem"
 
 $MY_CLICKHOUSE_CLIENT --query "INSERT INTO t_insert_mem SELECT * FROM s3(s3_conn, filename='$filename', format='JSONEachRow')"
-$MY_CLICKHOUSE_CLIENT --query "SELECT * FROM file('$filename', LineAsString) FORMAT LineAsString" | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+t_insert_mem+FORMAT+JSONEachRow&enable_parsing_to_custom_serialization=1" --data-binary @-
+$MY_CLICKHOUSE_CLIENT --query "SELECT * FROM file('$filename', LineAsString) FORMAT LineAsString" | ${CLICKHOUSE_CURL} -sS --max-time 240 "${CLICKHOUSE_URL}&query=INSERT+INTO+t_insert_mem+FORMAT+JSONEachRow&enable_parsing_to_custom_serialization=1" --data-binary @-
 
 $MY_CLICKHOUSE_CLIENT --query "
     SELECT count() FROM t_insert_mem;
@@ -61,9 +61,18 @@ $MY_CLICKHOUSE_CLIENT --query "
     SELECT serialization_kind, count() FROM system.parts_columns
     WHERE table = 't_insert_mem' AND database = '$CLICKHOUSE_DATABASE'
     GROUP BY serialization_kind ORDER BY serialization_kind;
+"
 
-    SYSTEM FLUSH LOGS query_log;
+# Wait for all INSERT query_log entries to appear.
+# There is a race between HTTP response being sent and the query_log entry being written.
+for _ in $(seq 1 60); do
+    $MY_CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    count=$($MY_CLICKHOUSE_CLIENT --query "SELECT count() FROM system.query_log WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'")
+    [ "$count" -ge 4 ] && break
+    sleep 0.5
+done
 
+$MY_CLICKHOUSE_CLIENT --query "
     SELECT written_bytes <= 10000000 FROM system.query_log
     WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'
     ORDER BY event_time_microseconds;

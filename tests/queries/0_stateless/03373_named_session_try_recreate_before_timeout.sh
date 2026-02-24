@@ -21,7 +21,8 @@ $CLICKHOUSE_CURL -sS -d "select value, changed from system.settings where name =
 $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$SETTINGS"
 $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$SETTINGS&close_session=1"
 
-$CLICKHOUSE_CURL -sS -X POST --data-binary @- \
+# Deferred HTTP 100 response from ClickHouse prevents curl from sending body using potentially closed connection
+$CLICKHOUSE_CURL -sS -X POST -H "X-ClickHouse-100-Continue: defer" --data-binary @- \
   "$CLICKHOUSE_URL&$SETTINGS&session_check=1&query=insert+into+$TABLE_NAME+format+TSV" \
   < "$DATA_FILE" 2>&1 | {
     response=$(cat)

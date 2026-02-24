@@ -7,5 +7,6 @@ services:
       - data1-1:/data1
     command: azurite-blob --blobHost 0.0.0.0 --blobPort ${AZURITE_PORT} --debug /azurite_log
     stop_grace_period: 5s
+    cpus: 3
 volumes:
   data1-1:

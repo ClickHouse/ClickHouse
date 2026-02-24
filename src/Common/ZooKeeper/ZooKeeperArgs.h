@@ -53,6 +53,7 @@ struct ZooKeeperArgs
     UInt64 recv_sleep_ms = 0;
     bool use_compression = false;
     bool use_xid_64 = false;
+    bool pass_opentelemetry_tracing_context = false;
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
     String password;
@@ -76,6 +77,8 @@ struct ZooKeeperArgs
 
     SessionLifetimeConfiguration fallback_session_lifetime = {};
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;
+
+    int64_t last_zxid_seen = 0;
 
 private:
     void initFromKeeperServerSection(const Poco::Util::AbstractConfiguration & config);
