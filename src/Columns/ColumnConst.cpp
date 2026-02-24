@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 #include <Common/iota.h>
@@ -52,7 +53,7 @@ ColumnPtr ColumnConst::convertToFullColumn() const
     return data->replicate(Offsets(1, s));
 }
 
-ColumnPtr ColumnConst::removeLowCardinality() const
+ColumnPtr ColumnConst::convertToFullColumnIfLowCardinality() const
 {
     return ColumnConst::create(data->convertToFullColumnIfLowCardinality(), s);
 }
@@ -135,6 +136,14 @@ MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selecto
         res[i] = cloneResized(counts[i]);
 
     return res;
+}
+
+void ColumnConst::popBack(size_t n)
+{
+    if (n > s)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    s -= n;
 }
 
 void ColumnConst::gather(ColumnGathererStream &)

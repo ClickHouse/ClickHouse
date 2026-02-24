@@ -527,7 +527,7 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN)
+            && command.type != AlterCommand::Type::MODIFY_COLUMN && command.type != AlterCommand::Type::RENAME_COLUMN)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage", command.type);
     }
 }
@@ -1061,7 +1061,7 @@ SinkToStoragePtr IcebergMetadata::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Insert into iceberg is experimental. "
+            "Insert into iceberg is in beta."
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 }
