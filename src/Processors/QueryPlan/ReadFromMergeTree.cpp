@@ -2021,7 +2021,8 @@ void ReadFromMergeTree::buildIndexes(
 
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
-                                                    && !indexes->key_condition_rpn_template->hasOnlyConjunctions();
+                                                    && !indexes->key_condition_rpn_template->hasOnlyConjunctions()
+                                                    && indexes->key_condition_rpn_template->getRPN().size() <= MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
 
     indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
                                                         && query_info_.isFinal()
@@ -2046,7 +2047,13 @@ void ReadFromMergeTree::buildIndexes(
                 auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
 
                 for (const auto & substream : format.substreams)
-                    index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
+                {
+                    String stream_name = idx.index->getFileName() + substream.suffix;
+                    /// Check for both original and hashed filenames
+                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, part.data_part->checksums);
+                    if (actual_stream_name)
+                        index_size += part.data_part->getFileSizeOrZero(*actual_stream_name + substream.extension);
+                }
 
                 index_sizes.emplace_back(index_size);
             }
@@ -2266,6 +2273,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_,
             metadata_snapshot);
 
+    NameSet indexes_column_names(primary_key_column_names.begin(), primary_key_column_names.end());
+    for (const auto & skip_index : indexes->skip_indexes.useful_indices)
+    {
+        const auto & skip_index_required_columns = skip_index.index->getColumnsRequiredForIndexCalc();
+        indexes_column_names.insert(skip_index_required_columns.begin(), skip_index_required_columns.end());
+    }
+
     indexes->use_skip_indexes_on_data_read = supports_skip_indexes_on_data_read;
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
@@ -2409,7 +2423,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
             };
 
-            DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_.filter_actions_dag.get(), primary_key_column_names, res_parts, vector_search_parameters, local_index_analysis_callback, context_);
+            DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_.filter_actions_dag.get(), indexes_column_names, res_parts, vector_search_parameters, local_index_analysis_callback, context_);
             IndexAnalysisPartsRanges analyzed_parts_ranges;
 
             /// Index stats
