@@ -127,12 +127,21 @@ def run_fuzz_job(check_name: str):
             ).complete_job()
         targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
 
+    is_old_compatibility = "old_compatibility" in check_name.lower()
     compatibility_setting: str | None = None
     if not buzzhouse:
-        compatibility_setting = (
-            f"{random.randint(20, 27)}.{random.randint(1, 12)}"
-        )
-        logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)
+        if is_old_compatibility:
+            compatibility_setting = "22.1"
+        elif is_targeted:
+            compatibility_setting = None
+        else:
+            compatibility_setting = (
+                f"{random.randint(22, 27)}.{random.randint(1, 12)}"
+            )
+        if compatibility_setting:
+            logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)
+        else:
+            logging.info("AST fuzzer compatibility setting is not set")
 
     run_command = get_run_command(
         workspace_path,

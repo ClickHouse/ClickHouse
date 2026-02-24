@@ -989,10 +989,16 @@ class JobConfigs:
         ),
     ).parametrize(
         Job.ParamSet(
-            parameter="arm_asan, targeted",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.CH_ARM_ASAN],
+            parameter="amd_debug, targeted",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
+        Job.ParamSet(
+            parameter="amd_debug, targeted, old_compatibility",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+
     )
     buzz_fuzzer_jobs = Job.Config(
         name=JobNames.BUZZHOUSE,
