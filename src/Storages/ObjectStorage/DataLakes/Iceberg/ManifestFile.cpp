@@ -638,33 +638,6 @@ ManifestFileEntryPtr ManifestFileIterator::next()
     return entry;
 }
 
-// We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
-void ManifestFileIterator::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files)
-{
-    std::vector<size_t> indices(files.size());
-    std::iota(indices.begin(), indices.end(), 0);
-
-    std::sort(
-        indices.begin(),
-        indices.end(),
-        [&](size_t i, size_t j)
-        {
-            if (files[i]->schema_id != files[j]->schema_id)
-            {
-                return files[i]->schema_id < files[j]->schema_id;
-            }
-            return i < j;
-        });
-
-    std::vector<ManifestFileEntryPtr> sorted_files;
-    sorted_files.reserve(files.size());
-    for (const auto & index : indices)
-    {
-        sorted_files.emplace_back(std::move(files[index]));
-    }
-    files = std::move(sorted_files);
-}
-
 bool ManifestFileIterator::hasPartitionKey() const
 {
     return partition_key_description.has_value();

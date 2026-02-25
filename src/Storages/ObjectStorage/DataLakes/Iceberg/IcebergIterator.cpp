@@ -79,6 +79,94 @@ extern const SettingsBool use_iceberg_partition_pruning;
 
 using namespace Iceberg;
 
+// struct ManifestFilesAsyncronousIterator
+// {
+//     ConcurrentBoundedQueue<Iceberg::ManifestFilePtr> blocking_queue;
+//     std::atomic<size_t> index;
+//     const Iceberg::ManifestFileContentType manifest_file_content_type;
+//     const DB::ManifestFileCacheKeys manifest_list_entries;
+//     bool use_partition_pruning;
+//     PersistentTableComponents persistent_components;
+//     std::deque<ThreadFromGlobalPool> workers;
+
+//     Iceberg::ManifestFilePtr next();
+
+//     ManifestFilesAsyncronousIterator(
+//         ObjectStoragePtr object_storage_,
+//         ContextPtr local_context_,
+//         Iceberg::ManifestFileContentType manifest_file_content_type_,
+//         size_t number_of_workers_,
+//         size_t max_sum_size_of_manifest_files_in_queue_,
+//         PersistentTableComponents persistent_components_,
+//         bool use_partition_pruning_);
+// };
+
+// ManifestFilesAsyncronousIterator::ManifestFilesAsyncronousIterator(
+//     ObjectStoragePtr object_storage_,
+//     ContextPtr local_context_,
+//     Iceberg::ManifestFileContentType manifest_file_content_type_,
+//     size_t number_of_workers_,
+//     size_t max_sum_size_of_manifest_files_in_queue_,
+//     PersistentTableComponents persistent_components_,
+//     bool use_partition_pruning_)
+//     : index(0)
+//     : manifest_file_content_type(manifest_file_content_type_)
+//     : manifest_list_entries(manifest_list_entries_)
+//     : use_partition_pruning(use_partition_pruning_)
+//     : persistent_components(persistent_components_)
+// {
+//     current_manifest_file_content = Iceberg::getManifestFile(
+//         object_storage,
+//         persistent_components,
+//         local_context,
+//         log,
+//         data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
+//         data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
+//         data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
+// }
+
+Iceberg::ManifestFilePtr SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::next()
+{
+    while (true)
+    {
+        auto current_index = index.fetch_add(1);
+        if (current_index >= parent.data_snapshot->manifest_list_entries.size())
+        {
+            return nullptr;
+        }
+        if (parent.persistent_components.format_version > 1
+            && parent.data_snapshot->manifest_list_entries[current_index].content_type != manifest_file_content_type)
+        {
+            continue;
+        }
+
+        auto manifest_file_cacheable_part = Iceberg::getManifestFile(
+            parent.object_storage,
+            parent.persistent_components,
+            parent.local_context,
+            parent.log,
+            parent.data_snapshot->manifest_list_entries[current_index].manifest_file_path,
+            parent.data_snapshot->manifest_list_entries[current_index].manifest_file_byte_size);
+
+        // TODO: recall what was the difference between file_path and filename
+        return std::make_shared<Iceberg::ManifestFileIterator>(
+            manifest_file_cacheable_part.deserializer,
+            parent.data_snapshot->manifest_list_entries[current_index].manifest_file_path,
+            parent.persistent_components.format_version,
+            parent.persistent_components.table_path,
+            *parent.persistent_components.schema_processor,
+            parent.data_snapshot->manifest_list_entries[current_index].added_sequence_number,
+            parent.data_snapshot->manifest_list_entries[current_index].added_snapshot_id,
+            parent.persistent_components.table_location,
+            parent.local_context,
+            parent.data_snapshot->manifest_list_entries[current_index].manifest_file_path,
+            parent.use_partition_pruning,
+            parent.filter_dag,
+            parent.table_snapshot->schema_id);
+    }
+}
+
+
 namespace
 {
 std::span<const ManifestFileEntryPtr> defineDeletesSpan(
@@ -175,51 +263,52 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
             internal_data_index = 0;
             files = files_generator(current_manifest_file_content);
         }
-        while (internal_data_index < files.size())
-        {
-            const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
-            if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
+        while (current_manifest_file_content->manifest_file_content_type ==)
+            while (internal_data_index < files.size())
             {
-                previous_entry_schema = manifest_file_entry->schema_id;
-                if (previous_entry_schema > manifest_file_entry->schema_id)
+                const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
+                if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
                 {
-                    LOG_WARNING(
-                        log,
-                        "Manifest entries in file {} are not sorted by schema id",
-                        current_manifest_file_content->getPathToManifestFile());
+                    previous_entry_schema = manifest_file_entry->schema_id;
+                    if (previous_entry_schema > manifest_file_entry->schema_id)
+                    {
+                        LOG_WARNING(
+                            log,
+                            "Manifest entries in file {} are not sorted by schema id",
+                            current_manifest_file_content->getPathToManifestFile());
+                    }
+                    current_pruner.emplace(
+                        *persistent_components.schema_processor,
+                        table_snapshot->schema_id,
+                        manifest_file_entry->schema_id,
+                        filter_dag.get(),
+                        *current_manifest_file_content,
+                        local_context);
                 }
-                current_pruner.emplace(
-                    *persistent_components.schema_processor,
-                    table_snapshot->schema_id,
-                    manifest_file_entry->schema_id,
-                    filter_dag.get(),
-                    *current_manifest_file_content,
-                    local_context);
+                auto pruning_status = current_pruner ? current_pruner->canBePruned(manifest_file_entry) : PruningReturnStatus::NOT_PRUNED;
+                insertRowToLogTable(
+                    local_context,
+                    "",
+                    DB::IcebergMetadataLogLevel::ManifestFileEntry,
+                    persistent_components.table_path,
+                    current_manifest_file_content->getPathToManifestFile(),
+                    manifest_file_entry->row_number,
+                    pruning_status);
+                switch (pruning_status)
+                {
+                    case PruningReturnStatus::NOT_PRUNED:
+                        return manifest_file_entry;
+                    case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
+                        ++min_max_index_pruned_files;
+                        break;
+                    }
+                    case PruningReturnStatus::PARTITION_PRUNED: {
+                        ++partition_pruned_files;
+                        break;
+                    }
+                        return nullptr;
+                }
             }
-            auto pruning_status = current_pruner ? current_pruner->canBePruned(manifest_file_entry) : PruningReturnStatus::NOT_PRUNED;
-            insertRowToLogTable(
-                local_context,
-                "",
-                DB::IcebergMetadataLogLevel::ManifestFileEntry,
-                persistent_components.table_path,
-                current_manifest_file_content->getPathToManifestFile(),
-                manifest_file_entry->row_number,
-                pruning_status);
-            switch (pruning_status)
-            {
-                case PruningReturnStatus::NOT_PRUNED:
-                    return manifest_file_entry;
-                case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
-                    ++min_max_index_pruned_files;
-                    break;
-                }
-                case PruningReturnStatus::PARTITION_PRUNED: {
-                    ++partition_pruned_files;
-                    break;
-                }
-                return nullptr;
-            }
-        }
         current_manifest_file_content = nullptr;
         files.clear();
         current_pruner = std::nullopt;

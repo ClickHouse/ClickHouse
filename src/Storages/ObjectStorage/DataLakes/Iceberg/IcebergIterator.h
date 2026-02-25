@@ -36,6 +36,9 @@ namespace Iceberg
 class SingleThreadIcebergKeysIterator
 {
     using FilesGenerator = std::function<std::vector<ManifestFileEntryPtr>(const Iceberg::ManifestFilePtr & manifest_file)>;
+
+    friend class ManifestFilesAsyncronousIterator;
+
 public:
     SingleThreadIcebergKeysIterator(
         ObjectStoragePtr object_storage_,
@@ -62,6 +65,7 @@ private:
     FilesGenerator files_generator;
     LoggerPtr log;
     std::vector<ManifestFileEntryPtr> files;
+    std::vector<std::pair<Int64, ManifestFilePtr>> currently_pulled_manifest_files;
 
 
     // By Iceberg design it is difficult to avoid storing position deletes in memory.
@@ -72,9 +76,24 @@ private:
     std::optional<Iceberg::ManifestFilesPruner> current_pruner;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
-};
 
-}
+    struct ManifestFilesAsyncronousIterator
+    {
+        ConcurrentBoundedQueue<Iceberg::ManifestFilePtr> blocking_queue;
+        std::atomic<size_t> index;
+        const Iceberg::ManifestFileContentType manifest_file_content_type;
+        const SingleThreadIcebergKeysIterator & parent;
+
+        Iceberg::ManifestFilePtr next();
+
+        static Iceberg::ManifestFilePtr task();
+
+        ManifestFilesAsyncronousIterator(
+            Iceberg::ManifestFileContentType manifest_file_content_type_,
+            const SingleThreadIcebergKeysIterator & parent_);
+    } manifest_files_asyncronous_iterator;
+
+};
 
 class IcebergIterator : public IObjectIterator
 {

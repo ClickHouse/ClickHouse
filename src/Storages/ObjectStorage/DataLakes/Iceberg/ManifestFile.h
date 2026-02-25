@@ -56,6 +56,12 @@ struct PartitionSpecsEntry
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
+struct ManifestFileCacheableInfo
+{
+    std::shared_ptr<AvroForIcebergDeserializer> deserializer;
+    size_t file_bytes_size;
+};
+
 /// Description of Data file in manifest file
 struct ManifestFileEntry : public boost::noncopyable
 {
@@ -215,7 +221,6 @@ private:
     ManifestFileEntryPtr processRow(size_t row_index);
 
     PartitionSpecification common_partition_specification;
-    void sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files);
 
     std::optional<DB::KeyDescription> partition_key_description;
 
@@ -229,7 +234,7 @@ private:
     std::vector<ManifestFileEntryPtr> equality_deletes_files TSA_GUARDED_BY(files_mutex);
 
     // State for iterative initialization
-    std::unique_ptr<AvroForIcebergDeserializer> manifest_file_deserializer;
+    std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer;
     String path_to_manifest_file;
     size_t total_rows = 0;
     std::atomic<size_t> current_row_index = 0;

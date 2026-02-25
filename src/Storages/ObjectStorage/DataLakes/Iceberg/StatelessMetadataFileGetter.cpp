@@ -65,14 +65,13 @@ extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 
 namespace Iceberg
 {
-Iceberg::ManifestFilePtr getManifestFile(
+Iceberg::ManifestFileCacheableInfo getManifestFile(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
     const String & filename,
-    Int64 inherited_sequence_number,
-    Int64 inherited_snapshot_id)
+    size_t bytes_size)
 {
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -92,17 +91,7 @@ Iceberg::ManifestFilePtr getManifestFile(
         auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
             std::move(buffer), filename, getFormatSettings(local_context));
 
-        return std::make_shared<Iceberg::ManifestFileIterator>(
-            std::move(manifest_file_deserializer),
-            filename,
-            persistent_table_components.format_version,
-            persistent_table_components.table_path,
-            *persistent_table_components.schema_processor,
-            inherited_sequence_number,
-            inherited_snapshot_id,
-            persistent_table_components.table_location,
-            local_context,
-            filename);
+        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), bytes_size};
     };
 
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
@@ -165,6 +154,8 @@ ManifestFileCacheKeys getManifestList(
                     f_added_snapshot_id);
 
             ManifestFileContentType content_type = ManifestFileContentType::DATA;
+            size_t manifest_length
+                = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_length, TypeIndex::Int64).safeGet<Int64>();
             if (persistent_table_components.format_version > 1)
             {
                 added_sequence_number
@@ -173,7 +164,7 @@ ManifestFileCacheKeys getManifestList(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
             manifest_file_cache_keys.emplace_back(
-                manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
+                manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
 
             insertRowToLogTable(
                 local_context,
