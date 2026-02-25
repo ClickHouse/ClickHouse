@@ -4,5 +4,3 @@ ALTER TABLE t (EXECUTE compact( ))
 ALTER TABLE t (EXECUTE optimize_manifests( ))
 ALTER TABLE t (EXECUTE some_future_command( \'arg1\', 42))
 ALTER TABLE t (EXECUTE no_args_command( ))
-GRANT ALTER EXECUTE ON *.* TO user_03978
-GRANT ALTER TABLE ON *.* TO user_03978

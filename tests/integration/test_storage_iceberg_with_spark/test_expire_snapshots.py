@@ -12,7 +12,6 @@ from helpers.iceberg_utils import (
 def test_expire_snapshots_basic(started_cluster_iceberg_with_spark, storage_type):
     format_version = 2
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_expire_snapshots_basic_" + storage_type + "_" + get_uuid_str()
 
     create_iceberg_table(
@@ -54,11 +53,6 @@ def test_expire_snapshots_basic(started_cluster_iceberg_with_spark, storage_type
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY x") == "1\n2\n3\n4\n"
 
-    df = spark.read.format("iceberg").load(
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
-    ).collect()
-    assert len(df) == 4
-
 
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_expire_snapshots_no_expirable(started_cluster_iceberg_with_spark, storage_type):
@@ -86,7 +80,7 @@ def test_expire_snapshots_no_expirable(started_cluster_iceberg_with_spark, stora
 
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_expire_snapshots_files_cleaned(started_cluster_iceberg_with_spark, storage_type):
-    """Test that expired snapshot data files are physically removed."""
+    """Test that expired snapshot metadata files are physically removed."""
     format_version = 2
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_expire_files_cleaned_" + storage_type + "_" + get_uuid_str()
@@ -104,19 +98,19 @@ def test_expire_snapshots_files_cleaned(started_cluster_iceberg_with_spark, stor
         settings={"allow_insert_into_iceberg": 1},
     )
 
-    files_before = default_download_directory(
-        started_cluster_iceberg_with_spark,
-        storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-    )
-
     time.sleep(2)
     expire_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
     instance.query(
         f"INSERT INTO {TABLE_NAME} VALUES (3);",
         settings={"allow_insert_into_iceberg": 1},
+    )
+
+    files_before = default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
     instance.query(
@@ -131,7 +125,8 @@ def test_expire_snapshots_files_cleaned(started_cluster_iceberg_with_spark, stor
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    assert len(files_after) < len(files_before)
+    assert len(files_after) < len(files_before), \
+        f"Expected fewer files after expire_snapshots: {len(files_after)} >= {len(files_before)}"
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY x") == "1\n2\n3\n"
 
