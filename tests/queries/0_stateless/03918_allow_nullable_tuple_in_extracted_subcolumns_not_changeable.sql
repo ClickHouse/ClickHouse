@@ -1,4 +1,21 @@
+-- The setting `allow_nullable_tuple_in_extracted_subcolumns` can only be changed via server restart
+
+SET allow_nullable_tuple_in_extracted_subcolumns = 1;
+
 SELECT
-    changeable_without_restart
-FROM system.server_settings
-WHERE name = 'allow_nullable_tuple_in_extracted_subcolumns';
+    toTypeName(v.`Tuple(UInt64, String)`),
+    v.`Tuple(UInt64, String)`
+FROM
+(
+    SELECT 42::Variant(Tuple(UInt64, String), UInt64) AS v
+);
+
+SET allow_nullable_tuple_in_extracted_subcolumns = 0;
+
+SELECT
+    toTypeName(v.`Tuple(UInt64, String)`),
+    v.`Tuple(UInt64, String)`
+FROM
+(
+    SELECT 42::Variant(Tuple(UInt64, String), UInt64) AS v
+);
