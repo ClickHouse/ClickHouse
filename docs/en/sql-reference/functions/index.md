@@ -2,8 +2,7 @@
 description: 'Documentation for Index'
 sidebar: 'sqlreference'
 slug: /sql-reference/functions
-title: 'Functions Overview'
-doc_type: 'landing-page'
+title: 'Landing page for Functions'
 ---
 
 | Page                                                                | Description                                                                                            |

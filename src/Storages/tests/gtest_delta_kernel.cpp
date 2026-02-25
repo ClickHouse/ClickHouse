@@ -45,19 +45,18 @@ public:
 
 TEST_F(DeltaKernelTest, ExpressionVisitor)
 {
-    auto * predicate = ffi::get_testing_kernel_predicate();
-    SCOPE_EXIT(ffi::free_kernel_predicate(predicate));
+    auto * expression = ffi::get_testing_kernel_expression();
+    SCOPE_EXIT(ffi::free_kernel_expression(expression));
     try
     {
         auto dag = DeltaLake::visitExpression(
-            predicate,
-            DB::NamesAndTypesList({DB::NameAndTypePair("col", std::make_shared<DB::DataTypeString>())}),
+            expression,
             DB::NamesAndTypesList({DB::NameAndTypePair("col", std::make_shared<DB::DataTypeString>())}));
     }
     catch (DB::Exception & e)
     {
         const std::string & message = e.message();
-        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED && message == "Method IN not implemented")
+        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED && message == "Method OpaqueExpr not implemented")
         {
             /// Implementation is not full at this moment, but
             /// there is a lot of staff before we get to IN method,

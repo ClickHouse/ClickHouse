@@ -1,11 +1,7 @@
 #pragma once
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdocumentation-html"
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
-
-#include <map>
 
 namespace DB
 {
@@ -17,7 +13,6 @@ namespace ErrorCodes
 
 class SerializationObjectSharedDataPath;
 class SerializationSubObjectSharedData;
-class SerializationObjectDistinctPaths;
 
 /// Class for binary serialization/deserialization of a shared data structure inside Object type.
 class SerializationObjectSharedData final : public SimpleTextSerialization
@@ -306,7 +301,6 @@ private:
 
     friend SerializationObjectSharedDataPath;
     friend SerializationSubObjectSharedData;
-    friend SerializationObjectDistinctPaths;
 
     SerializationVersion serialization_version;
     DataTypePtr dynamic_type;
@@ -316,4 +310,3 @@ private:
 };
 
 }
-#pragma clang diagnostic pop

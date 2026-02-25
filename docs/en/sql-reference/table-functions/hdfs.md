@@ -5,7 +5,6 @@ sidebar_label: 'hdfs'
 sidebar_position: 80
 slug: /sql-reference/table-functions/hdfs
 title: 'hdfs'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
