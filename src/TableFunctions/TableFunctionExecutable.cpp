@@ -1,9 +1,8 @@
 
-#include <Common/Exception.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -11,12 +10,14 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageExecutable.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <boost/algorithm/string.hpp>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <boost/algorithm/string.hpp>
+#include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -60,7 +61,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String script_name;
-    std::vector<String> arguments;
+    VectorWithMemoryTracking<String> arguments;
     String format;
     String structure;
     std::vector<ASTPtr> input_queries;
@@ -122,7 +123,7 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
 
-    std::vector<String> script_name_with_arguments;
+    VectorWithMemoryTracking<String> script_name_with_arguments;
     boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c){ return c == ' '; });
 
     script_name = std::move(script_name_with_arguments[0]);

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <base/demangle.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>

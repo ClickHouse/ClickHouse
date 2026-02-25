@@ -35,7 +35,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
             status = line[1]
             time = None
             if len(line) >= 3 and line[2] and line[2] != "\\N":
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # it's the time spent on the test
                 try:
                     time = float(line[2])
@@ -47,7 +47,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
                 result.is_ok() or result.is_failure or result.is_error
             ), f"Unexpected status [{result.status}]"
             if len(line) == 4 and line[3]:
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
                     # Python does not support TSV, so we unescape manually

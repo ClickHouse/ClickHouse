@@ -19,7 +19,7 @@ configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_versi
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
-if (NO_SSE3_OR_HIGHER)
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)
     # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
     # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
     # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
@@ -106,6 +106,7 @@ add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 add_headers_and_sources(clickhouse_common_io Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
@@ -265,7 +266,10 @@ if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_access_ssh Access/SSH)
 endif()
 add_object_library(clickhouse_backups Backups)
+
 add_object_library(clickhouse_core Core)
+list (APPEND dbms_sources Common/ExceptionExt.cpp)
+
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
@@ -356,7 +360,9 @@ if (TARGET ch_contrib::nuraft)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
@@ -402,15 +408,6 @@ target_link_libraries (clickhouse_compression
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
 endif()
-
-# Use X86 AVX2/AVX512 instructions to accelerate filter operations
-set_source_files_properties(
-        Columns/ColumnFixedString.cpp
-        Columns/ColumnsCommon.cpp
-        Columns/ColumnVector.cpp
-        Columns/ColumnDecimal.cpp
-        Columns/ColumnString.cpp
-        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 target_link_libraries(clickhouse_common_io
         PUBLIC

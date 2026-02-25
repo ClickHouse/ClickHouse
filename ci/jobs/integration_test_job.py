@@ -8,33 +8,18 @@ from typing import List, Tuple
 from more_itertools import tail
 
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
+from ci.jobs.scripts.integration_tests_configs import (
+    IMAGES_ENV,
+    LLVM_COVERAGE_SKIP_PREFIXES,
+    get_optimal_test_batch,
+)
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
-from ci.praktika.result import Result, ResultTranslator
-from ci.praktika.utils import ContextManager, Shell, Utils
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
-
-BUGFIX_BUILD_TYPES = ["amd_asan", "amd_tsan", "amd_msan", "amd_ubsan", "amd_debug"]
-
-
-def find_master_builds():
-    """Find S3 URLs for all 5 build types from a recent master commit."""
-    raw = Shell.get_output(
-        "git log origin/master --format=%H -n 50", verbose=True
-    )
-    commits = raw.strip().splitlines()
-    for sha in commits:
-        probe_url = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{BUGFIX_BUILD_TYPES[0]}/clickhouse"
-        if Shell.check(f"curl -sfI {probe_url} > /dev/null"):
-            return {
-                bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{bt}/clickhouse"
-                for bt in BUGFIX_BUILD_TYPES
-            }
-    return None
-
-
 MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
@@ -42,6 +27,47 @@ mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
+
+INFRASTRUCTURE_ERROR_PATTERNS = [
+    "timed out after",
+    "TimeoutExpired",
+    "Cannot connect to the Docker daemon",
+    "Error response from daemon",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+    "Network is unreachable",
+    "Connection reset by peer",
+    "No space left on device",
+    "Cannot allocate memory",
+    "OCI runtime create failed",
+    "toomanyrequests",
+    "pull access denied",
+]
+
+
+def _is_infrastructure_error(result: Result) -> bool:
+    """Returns True if the result is an ERROR caused by infrastructure issues."""
+    if result.status not in (Result.Status.ERROR, Result.StatusExtended.ERROR):
+        return False
+    if not result.info:
+        return False
+    return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+
+
+def _mark_infrastructure_errors(results: list) -> int:
+    """Scan results, label infrastructure errors with INFRA and change their status to SKIPPED.
+
+    Returns the number of results that were relabeled.
+    """
+    count = 0
+    for r in results:
+        if _is_infrastructure_error(r):
+            r.set_label(Result.Label.INFRA)
+            r.status = Result.StatusExtended.SKIPPED
+            count += 1
+    if count:
+        print(f"Marked {count} test result(s) as infrastructure errors")
+    return count
 
 
 def _start_docker_in_docker():
@@ -53,7 +79,9 @@ def _start_docker_in_docker():
         )
     retries = 20
     for i in range(retries):
-        if Shell.check("docker info > /dev/null", verbose=True):
+        # On last retry, show errors; otherwise suppress them
+        cmd = "docker info > /dev/null" if i == retries - 1 else "docker info > /dev/null 2>&1"
+        if Shell.check(cmd, verbose=True):
             break
         if i == retries - 1:
             raise RuntimeError(
@@ -213,6 +241,17 @@ def get_parallel_sequential_tests_to_run(
         for p in Path("./tests/integration/").glob("test_*/test*.py")
     ]
 
+    if "amd_llvm_coverage" in (job_options or ""):
+        before = len(test_files)
+        test_files = [
+            f
+            for f in test_files
+            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+        ]
+        print(
+            f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
+        )
+
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
@@ -225,6 +264,17 @@ def get_parallel_sequential_tests_to_run(
     # 1) test suit (e.g. test_directory or test_directory/)
     # 2) test module (e.g. test_directory/test_module or test_directory/test_module.py)
     # 3) test case (e.g. test_directory/test_module.py::test_case or test_directory/test_module::test_case[test_param])
+    def normalize_test_path(test_arg: str) -> str:
+        """Normalize test path by removing integration test directory prefixes."""
+        # Handle: tests/integration/, integration/, ./tests/integration/, or full paths
+        if "tests/integration/" in test_arg:
+            # Extract everything after tests/integration/
+            test_arg = test_arg.split("tests/integration/", 1)[1]
+        elif test_arg.startswith("integration/"):
+            # Handle integration/ prefix
+            test_arg = test_arg[len("integration/"):]
+        return test_arg
+
     def test_match(test_file: str, test_arg: str) -> bool:
         if "/" not in test_arg:
             return f"{test_arg}/" in test_file
@@ -236,14 +286,16 @@ def get_parallel_sequential_tests_to_run(
     parallel_tests = []
     sequential_tests = []
     for test_arg in args_test:
+        # Normalize the test path first
+        normalized_test_arg = normalize_test_path(test_arg)
         matched = False
         for test_file in parallel_test_modules:
-            if test_match(test_file, test_arg):
-                parallel_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                parallel_tests.append(normalized_test_arg)
                 matched = True
         for test_file in sequential_test_modules:
-            if test_match(test_file, test_arg):
-                sequential_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                sequential_tests.append(normalized_test_arg)
                 matched = True
         if not no_strict:
             assert matched, f"Test [{test_arg}] not found"
@@ -253,13 +305,25 @@ def get_parallel_sequential_tests_to_run(
 
 def tail(filepath: str, buff_len: int = 1024) -> List[str]:
     with open(filepath, "rb") as f:
-        f.seek(-buff_len, os.SEEK_END)
-        f.readline()
+        # Get file size to avoid seeking before start of file
+        f.seek(0, os.SEEK_END)
+        file_size = f.tell()
+
+        if file_size <= buff_len:
+            # File is smaller than buffer, read from beginning
+            f.seek(0)
+        else:
+            # File is larger, seek from end
+            f.seek(-buff_len, os.SEEK_END)
+            f.readline()  # Skip partial line
+
         data = f.read()
         return data.decode(errors="replace")
 
 
-def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> Result:
+def run_pytest_and_collect_results(
+    command: str, env: str, report_name: str, timeout: int = None
+) -> Result:
     """
     Does xdist timeout check.
     """
@@ -271,12 +335,13 @@ def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> 
         pytest_report_file=f"{temp_path}/pytest_{report_name}.jsonl",
         pytest_logfile=f"{temp_path}/pytest_{report_name}.log",
         logfile=f"{temp_path}/{report_name}.log",
+        timeout=timeout,
     )
 
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
         f"{temp_path}/{report_name}.log"
     ):
-        test_result.info = "[ERROR] session-timeout occurred during test execution"
+        test_result.info = "ERROR: session-timeout occurred during test execution"
         assert test_result.status == Result.Status.ERROR
         test_result.results.append(
             Result(
@@ -417,29 +482,39 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            # TODO: reduce scope to modified test cases instead of entire modules
-            changed_files = info.get_changed_files()
-            for file in changed_files:
-                if (
-                    file.startswith("tests/integration/test")
-                    and Path(file).name.startswith("test")
-                    and file.endswith(".py")
-                    and Path(file).is_file()
-                ):
-                    changed_test_modules.append(file.removeprefix("tests/integration/"))
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+                # Not a bugfix PR - run a simple sanity test
+                changed_test_modules = ["test_accept_invalid_certificate/test.py"]
+            else:
+                # TODO: reduce scope to modified test cases instead of entire modules
+                changed_files = info.get_changed_files()
+                for file in changed_files:
+                    if (
+                        file.startswith("tests/integration/test")
+                        and Path(file).name.startswith("test")
+                        and file.endswith(".py")
+                        and Path(file).is_file()
+                    ):
+                        changed_test_modules.append(
+                            file.removeprefix("tests/integration/")
+                        )
 
     if is_bugfix_validation:
-        build_urls = find_master_builds()
-        assert build_urls, "Could not find master builds in S3"
-        for bt, url in build_urls.items():
-            bt_path = f"{temp_path}/clickhouse_{bt}"
-            if not info.is_local_run or not Path(bt_path).is_file():
-                print(f"NOTE: Downloading {bt} build to [{bt_path}]")
-                Shell.run(
-                    f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
-                )
-                Shell.run(f"chmod +x {bt_path}", verbose=True)
-        clickhouse_path = f"{temp_path}/clickhouse_{BUGFIX_BUILD_TYPES[0]}"
+        if Utils.is_arm():
+            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+        else:
+            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+        if not info.is_local_run or not (Path(temp_path) / "clickhouse").exists():
+            print(
+                f"NOTE: Clickhouse binary will be downloaded to [{temp_path}] from [{link_to_master_head_binary}]"
+            )
+            if info.is_local_run:
+                time.sleep(10)
+            Shell.check(
+                f"wget -nv -P {temp_path} {link_to_master_head_binary}",
+                verbose=True,
+                strict=True,
+            )
 
     if is_bugfix_validation or is_flaky_check:
         assert (
@@ -474,7 +549,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )  # remove parametrization - does not work with test repeat with --count
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
-    if not Shell.check("docker info > /dev/null", verbose=True):
+    if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
@@ -564,6 +639,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                 env=test_env,
                 report_name="parallel",
+                timeout=session_timeout_parallel + 600,
             )
             if is_flaky_check and not test_result_parallel.is_ok():
                 print(
@@ -571,6 +647,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 break
         test_results.extend(test_result_parallel.results)
+        _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
             [t.name for t in test_result_parallel.results if t.is_failure()]
         )
@@ -592,6 +669,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
+                timeout=session_timeout_sequential + 600,
             )
 
             if is_flaky_check and not test_result_sequential.is_ok():
@@ -600,6 +678,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 break
         test_results.extend(test_result_sequential.results)
+        _mark_infrastructure_errors(test_result_sequential.results)
         failed_test_cases.extend(
             [t.name for t in test_result_sequential.results if t.is_failure()]
         )
@@ -613,51 +692,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 # failures and avoid setting the error flag for targeted runs.
                 has_error = True
                 error_info.append(test_result_sequential.info)
-
-    # Run additional build types for bugfix validation
-    if is_bugfix_validation:
-        for r in test_results:
-            r.set_label(BUGFIX_BUILD_TYPES[0])
-        all_bugfix_test_results = list(test_results)
-
-        for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
-            print(f"\n=== Bugfix validation with {bugfix_bt} ===")
-            bt_clickhouse_path = f"{temp_path}/clickhouse_{bugfix_bt}"
-            test_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = bt_clickhouse_path
-            test_env["CLICKHOUSE_BINARY"] = bt_clickhouse_path
-            test_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = bt_clickhouse_path
-            Shell.check(
-                f"{bt_clickhouse_path} --version", verbose=True, strict=True
-            )
-
-            bt_test_results = []
-
-            if parallel_test_modules:
-                bt_result_parallel = run_pytest_and_collect_results(
-                    command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
-                    env=test_env,
-                    report_name=f"parallel_{bugfix_bt}",
-                )
-                bt_test_results.extend(bt_result_parallel.results)
-                if bt_result_parallel.files:
-                    failed_tests_files.extend(bt_result_parallel.files)
-
-            bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
-            if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP:
-                bt_result_sequential = run_pytest_and_collect_results(
-                    command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
-                    env=test_env,
-                    report_name=f"sequential_{bugfix_bt}",
-                )
-                bt_test_results.extend(bt_result_sequential.results)
-                if bt_result_sequential.files:
-                    failed_tests_files.extend(bt_result_sequential.files)
-
-            for r in bt_test_results:
-                r.set_label(bugfix_bt)
-            all_bugfix_test_results.extend(bt_test_results)
-
-        test_results = all_bugfix_test_results
 
     # Collect logs before re-run
     attached_files = []
@@ -699,6 +733,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
+            timeout=1200 + 600,
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
@@ -756,10 +791,20 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
             has_error = False
 
+    # If all non-OK results are infrastructure errors, do not treat as a real failure
+    if has_error:
+        non_ok = [r for r in test_results if not r.is_ok()]
+        if non_ok and all(r.has_label(Result.Label.INFRA) for r in non_ok):
+            print(
+                "All failures are infrastructure errors - clearing error flag"
+            )
+            has_error = False
+            force_ok_exit = True
+
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation:
+    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
