@@ -235,7 +235,7 @@ public:
         const std::optional<UInt64> & min_block_size_rows = std::nullopt,
         const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
-    /// overload for passing metadata from object storage
+    /// much the same as getInput but allows for passing metadata from object storage
     InputFormatPtr getInputWithMetadata(
         const String & name,
         ReadBuffer & buf,
