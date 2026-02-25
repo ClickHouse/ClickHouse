@@ -36,3 +36,5 @@ run_with_cpu qemu64,+ssse3
 run_with_cpu qemu64,+ssse3,+sse4.1
 run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2
 run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt
+run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx
+run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+bmi1,+bmi2,+fma,+f16c,+lzcnt,+movbe

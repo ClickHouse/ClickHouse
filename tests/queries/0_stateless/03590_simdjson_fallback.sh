@@ -17,7 +17,7 @@ if [ "$( ${CLICKHOUSE_LOCAL} -q "SELECT value FROM system.build_options where na
 fi
 
 command=$(command -v ${CLICKHOUSE_LOCAL})
-# Limit memory to 1 GB to fail fast if a sanitized binary is run under QEMU
+# Limit memory to 5 GB to fail fast if a sanitized binary is run under QEMU
 # (sanitized binaries try to allocate ~20 TiB of virtual memory for shadow memory)
 # Use --data instead of -m because RLIMIT_RSS does not work since Linux 2.6.x
-prlimit --data=5000000000 qemu-x86_64-static -cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt "$command" --allow_simdjson=1 "select JSONExtractRaw('{\"foo\": 1}', 'foo')"
+prlimit --data=5000000000 qemu-x86_64-static -cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+bmi1,+bmi2,+fma,+f16c,+lzcnt,+movbe "$command" --allow_simdjson=1 "select JSONExtractRaw('{\"foo\": 1}', 'foo')"
