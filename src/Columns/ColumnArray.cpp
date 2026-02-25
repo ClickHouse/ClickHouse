@@ -593,20 +593,18 @@ ColumnPtr ColumnArray::convertToFullColumnIfConst() const
     return ColumnArray::create(data->convertToFullColumnIfConst(), offsets);
 }
 
-void ColumnArray::getExtremes(Field & min, Field & max) const
+void ColumnArray::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = Array();
     max = Array();
 
-    size_t col_size = size();
-
-    if (col_size == 0)
+    if (start >= end)
         return;
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
-    for (size_t i = 1; i < col_size; ++i)
+    for (size_t i = start + 1; i < end; ++i)
     {
         if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
             min_idx = i;
@@ -1351,7 +1349,7 @@ ColumnPtr ColumnArray::compress(bool force_compression) const
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
-    if (replicate_offsets.empty())
+    if (replicate_offsets.empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
 
     if (typeid_cast<const ColumnUInt8 *>(data.get()))

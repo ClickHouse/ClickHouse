@@ -15,8 +15,8 @@ using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 class TextIndexPostingsCache;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 
-struct ITokenExtractor;
-using TokenExtractorPtr = const ITokenExtractor *;
+struct ITokenizer;
+using TokenizerPtr = const ITokenizer *;
 
 enum class TextSearchMode : uint8_t
 {
@@ -62,7 +62,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & index_sample_block,
-        TokenExtractorPtr token_extractor_,
+        TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
@@ -87,6 +87,9 @@ public:
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
+    TokenizerPtr getTokenizer() const { return tokenizer; }
+    MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
+
 private:
     /// Uses RPN like KeyCondition
     struct RPNElement
@@ -96,13 +99,11 @@ private:
             /// Atoms
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
-            FUNCTION_HAS_ALL_TOKENS_OR_EMPTY,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators
@@ -141,7 +142,7 @@ private:
     static TextSearchMode getTextSearchMode(const RPNElement & element);
 
     Block header;
-    TokenExtractorPtr token_extractor;
+    TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
 

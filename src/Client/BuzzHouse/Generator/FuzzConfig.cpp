@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BUZZHOUSE;
+extern const int NETWORK_ERROR;
 }
 }
 
@@ -18,6 +19,9 @@ namespace BuzzHouse
 
 const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
+
+const DB::Strings codecs
+    = {"None", "LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
 
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
@@ -30,7 +34,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     String warehouse = "data";
     uint32_t port = default_port;
 
-    static const SettingEntries configEntries
+    const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
@@ -73,7 +77,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::optional<Catalog> rest_catalog;
     std::optional<Catalog> unity_catalog;
 
-    static const SettingEntries configEntries
+    const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
@@ -129,7 +133,7 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     uint32_t threshold = default_minimum;
     uint32_t minimum = default_threshold;
 
-    static const SettingEntries metricEntries
+    const SettingEntries metricEntries
         = {{"enabled", [&](const JSONObjectType & value) { enabled = value.getBool(); }},
            {"threshold", [&](const JSONObjectType & value) { threshold = static_cast<uint32_t>(value.getUInt64()); }},
            {"minimum", [&](const JSONObjectType & value) { minimum = static_cast<uint32_t>(value.getUInt64()); }}};
@@ -315,7 +319,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"alias", allow_alias},
            {"kafka", allow_kafka}};
 
-    static const SettingEntries configEntries = {
+    const SettingEntries configEntries = {
         {"client_file_path",
          [&](const JSONObjectType & value)
          {
@@ -388,6 +392,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
         {"enable_memory_settings", [&](const JSONObjectType & value) { enable_memory_settings = value.getBool(); }},
+        {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
+        {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
@@ -488,7 +494,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
         fmt::print(stderr, "Error on processing query '{}'\n", query);
         if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Couldn't not reconnect to the server");
+            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Couldn't not reconnect to the server");
         }
     }
     return res;
@@ -507,7 +513,18 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
         out.clear();
         while (std::getline(infile, buf) && !buf.empty())
         {
-            out.push_back(buf);
+            if constexpr (std::is_same_v<T, Tokenizer>)
+            {
+                const size_t pos = buf.find('\t');
+                const String nname = buf.substr(0, pos);
+                const String ntype = buf.substr(pos + 1);
+
+                out.emplace_back(Tokenizer(nname, ntype));
+            }
+            else
+            {
+                out.push_back(buf);
+            }
             buf.resize(0);
             found++;
         }
@@ -526,6 +543,15 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
+    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
+    /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    loadServerSettings<String>(
+        this->failpoints,
+        "failpoints",
+        "SELECT \"name\" FROM \"system\".\"fail_points\""
+        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
+    loadServerSettings<Tokenizer>(this->tokenizers, "tokenizers", R"(SELECT "name", "type" FROM "system"."tokenizers")");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
@@ -662,6 +688,23 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
         std::getline(infile, res);
     }
     return res.empty() ? "-1" : res;
+}
+
+String FuzzConfig::getRandomFileSystemCacheValue()
+{
+    String res;
+
+    /// Can't use sampling here either
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res;
 }
 
 String FuzzConfig::tableGetRandomPartitionOrPart(

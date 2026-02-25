@@ -33,6 +33,7 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <fmt/ranges.h>
@@ -134,12 +135,25 @@ std::vector<ConnectionPoolPtr> prepareConnectionPools(const ContextPtr & context
     return pools_to_use;
 }
 
-IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter, ContextPtr context, const Tables & external_tables, const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
+IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
+                                                     const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
+                                                     const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
 {
-    std::string analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$')",
+    std::string analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$'",
         storage_id.uuid,
         filter.value_or("true"),
         fmt::join(parts, "|"));
+
+    if (vector_search_parameters)
+    {
+        std::string vector_search_args = fmt::format(", 'vector_search_index_analysis', array('{}', '{}', {}, {}, {}, {})",
+                        vector_search_parameters->column, vector_search_parameters->distance_function,
+                        vector_search_parameters->limit, vector_search_parameters->reference_vector,
+                        vector_search_parameters->additional_filters_present, vector_search_parameters->return_distances);
+        analyze_index_query += vector_search_args;
+    }
+
+    analyze_index_query += ")";
 
     IndexAnalysisPartsRanges res;
 
@@ -190,11 +204,10 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     return res;
 }
 
-ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const Names & primary_key_column_names, ContextMutablePtr & context, Tables * external_tables)
+ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const NameSet & indexes_column_names, ContextMutablePtr & context, Tables * external_tables)
 {
-    NameSet primary_key_columns_names_set(primary_key_column_names.begin(), primary_key_column_names.end());
     ASTPtr predicate = tryBuildAdditionalFilterAST(filter_actions_dag,
-        /*projection_names=*/ primary_key_columns_names_set,
+        /*projection_names=*/ indexes_column_names,
         /*execution_name_to_projection_query_tree=*/ {},
         /*external_tables=*/ external_tables,
         context);
@@ -212,8 +225,9 @@ namespace DB
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const ActionsDAG * filter_actions_dag,
-    const Names & primary_key_column_names,
+    const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
+    const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context)
 {
@@ -263,7 +277,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     std::optional<std::string> filter_query = std::nullopt;
     if (filter_actions_dag)
     {
-        auto filter_ast = getFilterAST(*filter_actions_dag, primary_key_column_names, execution_context, &external_tables);
+        auto filter_ast = getFilterAST(*filter_actions_dag, indexes_column_names, execution_context, &external_tables);
         if (filter_ast)
             filter_query = filter_ast->formatWithSecretsOneLine();
     }
@@ -287,7 +301,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
         if (i == local_replica_index)
         {
-            runner.enqueueAndKeepTrack([&, i, replica_address]()
+            /// Passing references here is fine. All of them will outlive the runner
+            runner.enqueueAndKeepTrack([i, replica_address, &logger, &replica_parts, &replicas_marks, &local_index_analysis_callback, &replicas_rows, &res]()
             {
                 LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                 auto parts_ranges = local_index_analysis_callback(replica_parts);
@@ -297,12 +312,13 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         }
         else
         {
-            runner.enqueueAndKeepTrack([&, i, replica_address, connection_pool]()
+            /// Passing references here is fine. All of them will outlive the runner
+            runner.enqueueAndKeepTrack([i, replica_address, connection_pool, &logger, &replica_parts, &replicas_marks, &replicas_rows, &storage_id, &filter_query, &vector_search_parameters, &execution_context, &external_tables, &res]()
             {
                 try
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
-                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, execution_context, external_tables, replica_parts, connection_pool);
+                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replica_parts, connection_pool);
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                     res[i].second = std::move(parts_ranges);
                 }

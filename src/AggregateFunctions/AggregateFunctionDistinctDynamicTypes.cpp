@@ -10,7 +10,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -188,7 +189,7 @@ SELECT distinctDynamicTypes(d) FROM test_dynamic;
     FunctionDocumentation::Category category_distinctDynamicTypes = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_distinctDynamicTypes = {description_distinctDynamicTypes, syntax_distinctDynamicTypes, arguments_distinctDynamicTypes, {}, returned_value_distinctDynamicTypes, examples_distinctDynamicTypes, introduced_in_distinctDynamicTypes, category_distinctDynamicTypes};
 
-    factory.registerFunction("distinctDynamicTypes", {createAggregateFunctionDistinctDynamicTypes, {}, documentation_distinctDynamicTypes});
+    factory.registerFunction("distinctDynamicTypes", {createAggregateFunctionDistinctDynamicTypes, documentation_distinctDynamicTypes});
 }
 
 }

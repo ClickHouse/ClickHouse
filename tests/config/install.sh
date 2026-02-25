@@ -161,12 +161,24 @@ ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/jemalloc_enable_global_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/allow_impersonate_user.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/wait_remaining_connections.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/kafka.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/keeper_multiread_batch_size.xml $DEST_SERVER_PATH/config.d/
 
 if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
+fi
+
+# SSH protocol support (not supported with fasttest or OpenSSL FIPS).
+function is_openssl_fips_build()
+{
+    [ "$(clickhouse local --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
+}
+if [ "$FAST_TEST" != "1" ] && ! is_openssl_fips_build; then
+    ln -sf $SRC_PATH/config.d/ssh.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/ssh_host_rsa_key $DEST_SERVER_PATH/config.d/
 fi
 
 # Not supported with fasttest.
@@ -330,7 +342,7 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
-    if [[ "$NO_AZURE" != "1" ]]; then
+    if [[ "$NO_AZURE" != "1" ]] && [[ -n "$AZURE_CONNECTION_STRING" ]]; then
         ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     fi
 
@@ -402,6 +414,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_2/</filesystem_caches_path>|" $ch_server_2_path/config.d/filesystem_caches_path.xml
     sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_1/</custom_cached_disks_base_directory>|" $ch_server_1_path/config.d/filesystem_caches_path.xml
     sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_2/</custom_cached_disks_base_directory>|" $ch_server_2_path/config.d/filesystem_caches_path.xml
+
+    # Remove SSH config from replicas to avoid port conflicts on tcp_ssh_port.
+    rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_rsa_key
+    rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_rsa_key
 fi
 
 if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then

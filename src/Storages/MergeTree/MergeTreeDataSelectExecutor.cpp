@@ -30,6 +30,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Columns/FilterDescription.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -562,8 +563,21 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
             break;
         }
     }
+
     if (!has_virtual_column_input)
+    {
+        /// If no virtual columns are referenced the the filter is a constant expression.
+        /// A constant-false filter (e.g. pushed down from a UNION ALL branch that can never
+        /// match) must still exclude all parts, so check for that before skipping.
+        const auto & output_node = *dag->getOutputs().front();
+        if (output_node.column)
+        {
+            ConstantFilterDescription filter_description(*output_node.column);
+            if (filter_description.always_false)
+                return std::unordered_set<String>{};
+        }
         return {};
+    }
 
     auto start_time = std::chrono::steady_clock::now();
 
@@ -757,9 +771,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
+    /// NOTE: we must check the size of key_condition_rpn_template (not key_condition),
+    /// because key_condition_rpn_template is the RPN used in mergePartialResultsForDisjunctions
+    /// and in the callback that writes to the partial_disjunction_result bitset.
+    /// When use_primary_key = false, key_condition has skip_analysis_ = true and its RPN
+    /// has only 1 element, but the template has the full RPN which can exceed 32 elements.
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
-                                && !use_skip_indexes_on_data_read_ &&
-                                key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+                                && !use_skip_indexes_on_data_read_
+                                && key_condition_rpn_template.has_value()
+                                && key_condition_rpn_template->getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
@@ -820,6 +840,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
+
+            if (is_final_query && use_skip_indexes_if_final_exact_mode_)
+            {
+                ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
+            }
 
             if (!skip_indexes.empty())
             {
@@ -2119,7 +2144,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
 {
     for (const auto & index_helper : indices)
     {
-        if (!part->getDataPartStorage().existsFile(index_helper->getFileName() + ".idx"))
+        /// Check for both original and hashed filenames (hashed if the index name is too long)
+        auto index_file_name = IMergeTreeDataPart::getStreamNameOrHash(
+            index_helper->getFileName(), ".idx", part->getDataPartStorage());
+        if (!index_file_name)
         {
             LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
             return ranges;

@@ -7,6 +7,7 @@
 /// it should be also added to src/Coordination/KeeperConstant.cpp
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
+    M(ASTFuzzerAccumulatedFragments, "Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.") \
     M(QueryNonInternal, "Number of executing non-internal queries (queries initiated by users, excluding internal queries from ClickHouse)") \
     M(Merge, "Number of executing background merges") \
     M(MergeParts, "Number of source parts participating in current background merges") \
@@ -123,6 +124,9 @@
     M(ObjectStorageQueueShutdownThreads, "Number of threads in object storage queue shutdown pool.") \
     M(ObjectStorageQueueShutdownThreadsActive, "Number of threads in object storage queue shutdown pool running a task.") \
     M(ObjectStorageQueueShutdownThreadsScheduled, "Number of queued or active jobs in object storage queue shutdown pool.") \
+    M(ObjectStorageQueueMetadataCacheSizeBytes, "Size in bytes of ObjectStorageQueue metadata cache.") \
+    M(ObjectStorageQueueMetadataCacheSizeElements, "Size in elements of ObjectStorageQueue metadata cache.") \
+    M(DeltaLakeSnapshotCacheSizeElements, "Size in elements of DeltaLake snapshot cache.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
     M(BackupsIOThreadsActive, "Number of threads in the BackupsIO thread pool running a task.") \
     M(BackupsIOThreadsScheduled, "Number of queued or active jobs in the BackupsIO thread pool.") \
@@ -385,6 +389,14 @@
     M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
     M(SharedMergeTreeCondemnedPartsInKeeper, "How many condemned part records stored in keeper") \
     M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
+    M(SharedMergeTreeMaxActiveReplicas, "The maximum number of active replicas registered in Keeper") \
+    M(SharedMergeTreeMaxInactiveReplicas, "The maximum number of inactive replicas registered in Keeper") \
+    M(SharedMergeTreeMaxReplicas, "The maximum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMaxActiveReplicas and SharedMergeTreeMaxInactiveReplicas") \
+    M(SharedMergeTreeMinActiveReplicas, "The minimum number of active replicas registered in Keeper") \
+    M(SharedMergeTreeMinInactiveReplicas, "The minimum number of inactive replicas registered in Keeper") \
+    M(SharedMergeTreeMinReplicas, "The minimum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMinActiveReplicas and SharedMergeTreeMinInactiveReplicas") \
+    M(SharedMergeTreeMinPartitions, "The minimum number of partitions registered in Keeper across all SharedMergeTree tables") \
+    M(SharedMergeTreeMaxPartitions, "The maximum number of partitions registered in Keeper across all SharedMergeTree tables") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \
@@ -409,6 +421,13 @@
     \
     M(DiskConnectionsStored, "Total count of sessions stored in the session pool for disks") \
     M(DiskConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for disks") \
+    \
+    M(BlobKillerThreads, "Number of threads in the thread pool of the object storage disk background removal process") \
+    M(BlobKillerThreadsActive, "Number of threads in the thread pool of the object storage disk background removal process running a task") \
+    M(BlobKillerThreadsScheduled, "Number of queued or active tasks in the thread pool of the object storage disk background removal process") \
+    M(BlobCopierThreads, "Number of threads in the thread pool of the object storage disk background replication process") \
+    M(BlobCopierThreadsActive, "Number of threads in the thread pool of the object storage disk background replication process running a task") \
+    M(BlobCopierThreadsScheduled, "Number of queued or active tasks in the thread pool of the object storage disk background replication process") \
     \
     M(HTTPConnectionsStored, "Total count of sessions stored in the session pool for http hosts") \
     M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \

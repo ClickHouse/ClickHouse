@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Formats/RowInputMissingColumnsFiller.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/NestedUtils.h>

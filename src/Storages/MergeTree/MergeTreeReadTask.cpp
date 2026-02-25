@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
-#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
@@ -83,6 +82,17 @@ MergeTreeReadTask::MergeTreeReadTask(
     , size_predictor(std::move(size_predictor_))
     , updater(std::move(updater_))
 {
+    if (updater)
+    {
+        dataflow_cache_update_cb
+            = [&](const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling) -> void
+        {
+            chassert(updater);
+            const auto & part_columns = info->data_part->getColumns();
+            const auto & column_sizes = info->data_part->getColumnSizes();
+            updater->recordInputColumns(columns, part_columns, column_sizes, read_bytes, should_continue_sampling);
+        };
+    }
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
@@ -100,7 +110,7 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     }
 
     String index_for_step;
-    String non_index_column;
+    bool has_non_index_columns = false;
 
     for (const auto & column : columns_to_read)
     {
@@ -108,7 +118,7 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
 
         if (it == column_to_index.end())
         {
-            non_index_column = column.name;
+            has_non_index_columns = true;
         }
         else if (index_for_step.empty())
         {
@@ -120,8 +130,12 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
         }
     }
 
-    if (!index_for_step.empty() && !non_index_column.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Found non-index column {} in read step for index {}", non_index_column, index_for_step);
+    /// Allow mixing index columns with regular columns when the regular columns are dependencies
+    /// for evaluating default expressions of text index virtual columns (e.g., for partially materialized text indexes).
+    /// In this case, don't return an index task - let the main reader handle all columns.
+    /// The main reader will evaluate the default expression and fill the virtual column.
+    if (!index_for_step.empty() && has_non_index_columns)
+        return nullptr;
 
     return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step);
 }
@@ -353,7 +367,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges);
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
@@ -395,9 +409,6 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
-
-    if (updater)
-        updater->recordInputColumns(block.getColumnsWithTypeAndName(), info->data_part->getColumnSizes(), num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),

@@ -5,6 +5,7 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 

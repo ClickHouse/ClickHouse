@@ -593,7 +593,7 @@ void SortingStep::serialize(Serialization & ctx) const
     writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> SortingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "SortingStep must have one input stream");

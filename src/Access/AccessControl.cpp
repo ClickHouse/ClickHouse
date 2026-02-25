@@ -300,14 +300,17 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
 
     /// Optional improvements in access control system.
-    /// The default values are false because we need to be compatible with earlier access configurations
     setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
     setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
+    setImpersonateUserAllowed(config_.getBool("access_control_improvements.allow_impersonate_user", config_.getBool("allow_impersonate_user", true)));
+
+    /// The default values of the following improvements are false because we need to be compatible with earlier access configurations
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
+    setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
 
     /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));

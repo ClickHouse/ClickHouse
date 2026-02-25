@@ -132,7 +132,7 @@ protected:
     String enqueueQueryAttempt(DDLLogEntry & entry);
 
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
-    void scheduleTasks(bool reinitialized);
+    virtual void scheduleTasks(bool reinitialized);
 
     DDLTaskBase & saveTask(DDLTaskPtr && task);
 
@@ -152,12 +152,12 @@ protected:
     /// Most of these queries can be executed on non-leader replica, but actually they still send
     /// query via RemoteQueryExecutor to leader, so to avoid such "2-phase" query execution we
     /// execute query directly on leader.
-    bool tryExecuteQueryOnLeaderReplica(
+    bool tryExecuteQueryOnSingleReplica(
         DDLTaskBase & task,
         StoragePtr storage,
         const String & node_path,
         const ZooKeeperPtr & zookeeper,
-        std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
+        std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_single_replica_lock);
 
     bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal);
 

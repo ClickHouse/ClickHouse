@@ -35,7 +35,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
             status = line[1]
             time = None
             if len(line) >= 3 and line[2] and line[2] != "\\N":
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # it's the time spent on the test
                 try:
                     time = float(line[2])
@@ -47,7 +47,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
                 result.is_ok() or result.is_failure or result.is_error
             ), f"Unexpected status [{result.status}]"
             if len(line) == 4 and line[3]:
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
                     # Python does not support TSV, so we unescape manually
@@ -59,11 +59,14 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
 
 
 def get_additional_envs(info, check_name: str) -> List[str]:
+    from ci.jobs.ci_utils import is_extended_run
+
     result = []
     if not info.is_local_run:
         azure_connection_string = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
+            strict=True,
         )
         result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
@@ -75,6 +78,10 @@ def get_additional_envs(info, check_name: str) -> List[str]:
 
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+
+    result.append(
+        f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
+    )
 
     return result
 
@@ -235,15 +242,27 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 stderr_log=stderr_log if stderr_log.exists() else "",
                 fuzzer_log="",
             )
-            name, description, files = log_parser.parse_failure()
-            failed_results.append(
-                Result.create_from(
-                    name=name,
-                    info=description,
-                    status=Result.StatusExtended.FAIL,
-                    files=files,
+            try:
+                name, description, files = log_parser.parse_failure()
+                failed_results.append(
+                    Result.create_from(
+                        name=name,
+                        info=description,
+                        status=Result.StatusExtended.FAIL,
+                        files=files,
+                    )
                 )
-            )
+            except Exception as e:
+                print(
+                    f"ERROR: Failed to parse failure logs: {e}\nServer logs should still be collected."
+                )
+                failed_results.append(
+                    Result.create_from(
+                        name="Parse failure error",
+                        info=f"Error parsing failure logs: {e}",
+                        status=Result.Status.FAILED,
+                    )
+                )
 
     if exit_code != 0:
         failed_results.append(
