@@ -73,9 +73,11 @@ def clone_submodules():
         retries=2,
         verbose=True,
     )
-    res = res and Shell.check("git submodule foreach git reset --hard", verbose=True)
-    res = res and Shell.check("git submodule foreach git checkout @ -f", verbose=True)
-    res = res and Shell.check("git submodule foreach git clean -xfd", verbose=True)
+    # NOTE: the three "git submodule foreach" cleanup commands (reset --hard,
+    # checkout @ -f, clean -xfd) that used to run here were removed because
+    # "git submodule update" already checks out the correct commit into a
+    # fresh clone.  The foreach commands added ~7s of sequential overhead
+    # iterating over every submodule for no benefit in the fast-test context.
     return res
 
 
