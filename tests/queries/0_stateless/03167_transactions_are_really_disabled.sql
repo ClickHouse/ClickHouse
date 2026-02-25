@@ -1,7 +1,5 @@
 -- Tags: no-encrypted-storage
 
-SET async_insert = 0;
-
 DROP TABLE IF EXISTS mv_table;
 DROP TABLE IF EXISTS null_table;
 

@@ -2,8 +2,6 @@
 -- no-async-insert: 1 part is inserted with async inserts
 DROP TABLE IF EXISTS t_parts_profile_events;
 
-SET async_insert = 0;
-
 CREATE TABLE t_parts_profile_events (a UInt32)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_rows_for_wide_part = 10, min_bytes_for_wide_part = 0;

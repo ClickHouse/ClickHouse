@@ -18,21 +18,14 @@ CREATE MATERIALIZED VIEW mv_table (key Int64, value String)
     ORDER BY tuple()
     AS SELECT key, value FROM partitioned_table;
 
-INSERT INTO partitioned_table SETTINGS async_insert=0 VALUES (1, 'A'), (2, 'B');
-INSERT INTO partitioned_table SETTINGS async_insert=0 VALUES (1, 'A'), (2, 'C');
-INSERT INTO partitioned_table SETTINGS async_insert=0 VALUES (1, 'D'), (2, 'B');
+INSERT INTO partitioned_table VALUES (1, 'A'), (2, 'B');
+INSERT INTO partitioned_table VALUES (1, 'A'), (2, 'C');
+INSERT INTO partitioned_table VALUES (1, 'D'), (2, 'B');
 
 SELECT 'partitioned_table is deduplicated bacause deduplication works in scope of one partiotion:';
 SELECT * FROM partitioned_table ORDER BY ALL;
 SELECT 'mv_table is not deduplicated because the inserted blocks was different:';
 SELECT * FROM mv_table ORDER BY ALL;
-
-SELECT 'but partitioned_table is not deduplicated with async insert bacause async deduplication works in scope of one insertion:';
-TRUNCATE TABLE partitioned_table;
-INSERT INTO partitioned_table SETTINGS async_insert=1 VALUES (1, 'A'), (2, 'B');
-INSERT INTO partitioned_table SETTINGS async_insert=1 VALUES (1, 'A'), (2, 'C');
-INSERT INTO partitioned_table SETTINGS async_insert=1 VALUES (1, 'D'), (2, 'B');
-SELECT * FROM partitioned_table ORDER BY ALL;
 
 DROP TABLE partitioned_table;
 DROP TABLE mv_table;

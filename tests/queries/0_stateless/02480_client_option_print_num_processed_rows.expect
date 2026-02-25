@@ -31,11 +31,11 @@ send -- "\$CLICKHOUSE_CLIENT --query 'CREATE TABLE num_processed_rows_test_0 (va
 expect "bash) "
 
 ### When requested we should get the count on exit:
-send -- "\$CLICKHOUSE_CLIENT --async_insert=0 --processed-rows --query \"INSERT INTO num_processed_rows_test_0 VALUES (\'x\');\" \r"
+send -- "\$CLICKHOUSE_CLIENT --processed-rows --query \"INSERT INTO num_processed_rows_test_0 VALUES (\'x\');\" \r"
 expect "Processed rows: 1"
 expect "bash) "
 
-send "yes | head -n7757 | \$CLICKHOUSE_CLIENT --async_insert=0 --processed-rows --query 'INSERT INTO num_processed_rows_test_0 format TSV\'\r"
+send "yes | head -n7757 | \$CLICKHOUSE_CLIENT --processed-rows --query 'INSERT INTO num_processed_rows_test_0 format TSV\'\r"
 expect "Processed rows: 7757"
 expect "bash) "
 
@@ -43,11 +43,11 @@ expect "bash) "
 
 ### By default it should not show up:
 
-send -- "\$CLICKHOUSE_CLIENT --async_insert=0 --query \"INSERT INTO num_processed_rows_test_0 VALUES (\'x\');\" && echo OK\r"
+send -- "\$CLICKHOUSE_CLIENT --query \"INSERT INTO num_processed_rows_test_0 VALUES (\'x\');\" && echo OK\r"
 expect -exact "OK\r"
 expect "bash) "
 
-send "yes | head -n7757 | \$CLICKHOUSE_CLIENT --async_insert=0 --query 'INSERT INTO num_processed_rows_test_0 format TSV\' && echo OK\r"
+send "yes | head -n7757 | \$CLICKHOUSE_CLIENT --query 'INSERT INTO num_processed_rows_test_0 format TSV\' && echo OK\r"
 expect -exact "OK\r"
 expect "bash) "
 
