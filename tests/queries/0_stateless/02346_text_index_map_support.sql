@@ -3,6 +3,7 @@
 -- Tests that text indexes can be build on and used with Map columns.
 
 SET enable_analyzer = 1;
+SET enable_full_text_index = 1;
 
 SELECT 'Function mapKeys';
 

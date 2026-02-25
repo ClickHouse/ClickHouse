@@ -321,15 +321,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::ALLOCATE_MEMORY:
-        {
-            ASTPtr ast;
-            if (!ParserUnsignedInteger().parse(pos, ast, expected))
-                return false;
-
-            res->untracked_memory_size = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
-            break;
-        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
@@ -355,15 +346,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
                 res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
 
-            break;
-        }
-        case Type::RELOAD_DELTA_KERNEL_TRACING:
-        {
-            ASTPtr ast;
-            if (ParserIdentifier{}.parse(pos, ast, expected))
-                res->delta_kernel_tracing_level = ast->as<ASTIdentifier &>().name();
-            else
-                return false;
             break;
         }
 
@@ -547,7 +529,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
-        case Type::FREE_MEMORY:
             break;
 
         case Type::TEST_VIEW:
@@ -705,7 +686,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             if (ParserKeyword{Keyword::FROM}.ignore(pos, expected) && ParserIdentifierWithOptionalParameters{}.parse(pos, ast, expected))
             {
-                ast->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
+                ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 res->backup_source = ast;
                 res->children.push_back(res->backup_source);
             }
@@ -939,11 +920,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 #endif
-        case Type::RESET_DDL_WORKER: {
-            if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            break;
-        }
+
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))

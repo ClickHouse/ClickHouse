@@ -1,4 +1,3 @@
-#include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
@@ -83,19 +82,18 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     const StorageMetadataPtr & metadata_snapshot,
     const VirtualsDescriptionPtr & virtual_columns,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+    const ColumnsStatistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
-    MergeTreeIndexGranularityPtr computed_index_granularity,
-    WrittenOffsetSubstreams * written_offset_substreams)
+    MergeTreeIndexGranularityPtr computed_index_granularity)
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
         data_part_name_, logger_name_, serializations_, data_part_storage_,
         index_granularity_info_, storage_settings_, columns_list,
-        metadata_snapshot, virtual_columns, indices_to_recalc,
+        metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
         marks_file_extension_,
-        default_codec_, writer_settings, std::move(computed_index_granularity),
-        written_offset_substreams);
+        default_codec_, writer_settings, std::move(computed_index_granularity));
 }
 
 

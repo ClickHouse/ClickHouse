@@ -99,7 +99,6 @@ on:
 env:
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
-{GH_TOKEN_PERMISSIONS}
 
 jobs:
 {JOBS}\
@@ -142,7 +141,7 @@ jobs:
       pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{{{ env.CHECKOUT_REF }}}}
 {JOB_ADDONS}
@@ -166,9 +165,11 @@ jobs:
         run: |
           . {ENV_SETUP_SCRIPT}
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee {TEMP_DIR}/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
+          else
+            python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& tee {TEMP_DIR}/job.log
+          fi
 {UPLOADS_GITHUB}\
 """
 
@@ -426,12 +427,7 @@ class PullRequestPushYamlGen:
             )
         elif self.workflow_config.event in (Workflow.Event.DISPATCH,):
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
-            format_kwargs = {
-                "DISPATCH_INPUTS": dispatch_inputs,
-                "GH_TOKEN_PERMISSIONS": (
-                    YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
-                ),
-            }
+            format_kwargs = {"DISPATCH_INPUTS": dispatch_inputs}
             ENV_CHECKOUT_REFERENCE = (
                 YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
             )

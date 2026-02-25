@@ -135,7 +135,6 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "    x @1 : UInt32;\n"
 "}"},
             },
-            .introduced_in = {23, 8},
             .category = FunctionDocumentation::Category::Other
         });
 }

@@ -19,7 +19,6 @@ namespace DB
 
 struct MySQLSettings;
 class NamedCollection;
-struct StorageID;
 
 /** Implements storage in the MySQL database.
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
@@ -78,7 +77,7 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,

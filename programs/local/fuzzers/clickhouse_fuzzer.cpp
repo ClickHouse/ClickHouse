@@ -150,13 +150,8 @@ int clickhouseMain(int argc_, char ** argv_)
 bool isMerge(int argc, const char * const * argv)
 {
     for (int i = 1; i < argc; ++i)
-    {
-        std::string_view arg{argv[i]};
-        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-ignore_remaining_args")
-            break;
-        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-merge")
+        if (std::string_view arg{argv[i]}; std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-merge")
             return true;
-    }
     return false;
 }
 

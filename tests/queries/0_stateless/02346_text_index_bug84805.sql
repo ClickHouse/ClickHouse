@@ -1,3 +1,5 @@
+SET enable_full_text_index = 1;
+
 -- Issue 84805: the no-op and ngram tokenizers crash for empty inputs
 
 SELECT 'Test no_op tokenizer';

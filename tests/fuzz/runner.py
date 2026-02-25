@@ -96,10 +96,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     active_corpus_present = True
     active_corpus_dir = f"corpus/{fuzzer}"
-    active_corpus_path = Path(active_corpus_dir)
-    if not active_corpus_path.exists() or len(list(active_corpus_path.iterdir())) == 0:
+    if not os.path.exists(active_corpus_dir):
         active_corpus_present = False
-        active_corpus_path.mkdir(parents=True, exist_ok=True)
+        os.makedirs(active_corpus_dir)
     mini_corpus_dir = f"corpus/{fuzzer}_mini"
     if not os.path.exists(mini_corpus_dir):
         os.makedirs(mini_corpus_dir)

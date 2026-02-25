@@ -24,18 +24,16 @@ namespace ErrorCodes
 namespace
 {
 
+    template <bool is_utf8>
     class FunctionSubstringIndex : public IFunction
     {
     public:
-        FunctionSubstringIndex(const char * name_, bool is_utf8_)
-            : function_name(name_), is_utf8(is_utf8_) {}
+        static constexpr auto name = is_utf8 ? "substringIndexUTF8" : "substringIndex";
 
-        static FunctionPtr create(const char * name, bool is_utf8)
-        {
-            return std::make_shared<FunctionSubstringIndex>(name, is_utf8);
-        }
 
-        String getName() const override { return function_name; }
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSubstringIndex>(); }
+
+        String getName() const override { return name; }
 
         size_t getNumberOfArguments() const override { return 3; }
 
@@ -86,7 +84,7 @@ namespace
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument to {} must be a constant String", getName());
 
             String delim = column_delim_const->getValue<String>();
-            if (!is_utf8)
+            if constexpr (!is_utf8)
             {
                 if (delim.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument to {} must be a single character", getName());
@@ -126,13 +124,13 @@ namespace
         }
 
     protected:
-        void vectorVector(
+        static void vectorVector(
             const ColumnString * str_column,
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
-            size_t input_rows_count) const
+            size_t input_rows_count)
         {
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
@@ -148,7 +146,7 @@ namespace
                 Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
-                if (!is_utf8)
+                if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -159,13 +157,13 @@ namespace
             }
         }
 
-        void vectorConstant(
+        static void vectorConstant(
             const ColumnString * str_column,
             const String & delim,
             Int64 count,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
-            size_t input_rows_count) const
+            size_t input_rows_count)
         {
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
@@ -180,7 +178,7 @@ namespace
                 std::string_view str_ref = str_column->getDataAt(i);
 
                 std::string_view res_ref;
-                if (!is_utf8)
+                if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -191,12 +189,12 @@ namespace
             }
         }
 
-        void constantVector(
+        static void constantVector(
             const String & str,
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets) const
+            ColumnString::Offsets & res_offsets)
         {
             size_t rows = count_column->size();
             res_data.reserve(str.size() * rows / 2);
@@ -213,7 +211,7 @@ namespace
                 Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
-                if (!is_utf8)
+                if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -310,10 +308,6 @@ namespace
             return {
                 d > 0 ? str_ref.data() : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data() : str_ref.data() + str_ref.size() - pos - 1)};
         }
-
-    private:
-        const char * function_name;
-        bool is_utf8;
     };
 }
 
@@ -365,8 +359,8 @@ If this assumption is violated, no exception is thrown and the result is undefin
     };
     FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
-    factory.registerFunction("substringIndex", [](ContextPtr){ return FunctionSubstringIndex::create("substringIndex", false); }, documentation);
-    factory.registerFunction("substringIndexUTF8", [](ContextPtr){ return FunctionSubstringIndex::create("substringIndexUTF8", true); }, documentation_utf8);
+    factory.registerFunction<FunctionSubstringIndex<false>>(documentation); /// substringIndex
+    factory.registerFunction<FunctionSubstringIndex<true>>(documentation_utf8); /// substringIndexUTF8
 
     factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::Case::Insensitive);
 }

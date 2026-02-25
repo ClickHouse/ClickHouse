@@ -17,8 +17,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 
-#include <IO/WriteHelpers.h>
-
 #include "delta_kernel_ffi.hpp"
 
 namespace DB

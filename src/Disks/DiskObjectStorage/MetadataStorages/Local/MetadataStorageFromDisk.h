@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Disks/DiskObjectStorage/Replication/Location.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
@@ -11,8 +10,6 @@
 
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/SharedMutex.h>
-
-#include <base/defines.h>
 
 namespace DB
 {
@@ -28,9 +25,6 @@ private:
     const DiskPtr disk;
     const std::string compatible_key_prefix;
     const ObjectStorageKeyGeneratorPtr key_generator;
-
-    std::mutex removed_objects_mutex;
-    StoredObjectSet objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 
 public:
     MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_);
@@ -85,32 +79,32 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 
     bool isReadOnly() const override { return disk->isReadOnly(); }
-
-    BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
-    int64_t recordAsRemoved(const StoredObjects & blobs) override;
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
-    MetadataStorageFromDisk & metadata_storage;
-
-    /// We collect all removed in transaction blobs here. After successful tx commit
-    /// these blobs will be scheduled for background removal (into in-memory queue of outdated blobs).
-    StoredObjects objects_to_remove;
+    const MetadataStorageFromDisk & metadata_storage;
     MetadataOperationsHolder operations;
 
 public:
-    explicit MetadataStorageFromDiskTransaction(MetadataStorageFromDisk & metadata_storage_);
+    explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
+        : metadata_storage(metadata_storage_)
+    {}
 
-    void commit(const TransactionCommitOptionsVariant & options) override;
-    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &options) override;
+    ~MetadataStorageFromDiskTransaction() override = default;
+
+    const IMetadataStorage & getStorageForNonTransactionalReads() const final;
+
+    void commit(const TransactionCommitOptionsVariant & options) final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
+
+    bool supportAddingBlobToMetadata() override { return true; }
 
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
 
@@ -122,7 +116,9 @@ public:
 
     void setReadOnly(const std::string & path) override;
 
-    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
+    void unlinkFile(const std::string & path) override;
+
+    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     void createDirectory(const std::string & path) override;
 
@@ -130,7 +126,7 @@ public:
 
     void removeDirectory(const std::string & path) override;
 
-    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
+    void removeRecursive(const std::string & path) override;
 
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
 
@@ -140,10 +136,11 @@ public:
 
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
-    void truncateFile(const std::string & src_path, size_t target_size) override;
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
+
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
-    StoredObjects getSubmittedForRemovalBlobs() override;
 };
 
 }

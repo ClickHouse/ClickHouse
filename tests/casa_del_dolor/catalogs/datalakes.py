@@ -398,7 +398,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -417,7 +417,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.glue.endpoint",
-                        f"http://localhost:{cluster.glue_catalog_port}",
+                        "http://localhost:3000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.glue.region", "us-east-1"
@@ -434,8 +434,7 @@ logger.jetty.level = warn
                 )
 
                 builder.config(
-                    f"spark.sql.catalog.{catalog_name}.uri",
-                    f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
+                    f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -444,7 +443,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -476,7 +475,7 @@ logger.jetty.level = warn
                 )
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
-                    f"http://localhost:{'8085/api/2.1/unity-catalog/iceberg' if catalog == LakeCatalogs.Unity else cluster.iceberg_rest_catalog_port}",
+                    f"http://localhost:{'8085/api/2.1/unity-catalog/iceberg' if catalog == LakeCatalogs.Unity else '8182'}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -485,7 +484,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -649,7 +648,6 @@ logger.jetty.level = warn
             builder.config(
                 "spark.databricks.delta.retentionDurationCheck.enabled", "false"
             )
-            builder.config("spark.hadoop.zlib.compress.level", "DEFAULT_COMPRESSION")
             # Set timezone to match ClickHouse
             if "TZ" in env:
                 builder.config("spark.sql.session.timeZone", env["TZ"])
@@ -706,7 +704,7 @@ logger.jetty.level = warn
         # Load catalog if needed
         if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
             params = {
-                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:9000",
                 "s3.access-key-id": cluster.minio_access_key,
                 "s3.secret-access-key": cluster.minio_secret_key,
                 "s3.signing-region": "us-east-1",
@@ -717,14 +715,14 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "rest",
-                        "uri": f"http://localhost:{cluster.iceberg_rest_catalog_port}",
+                        "uri": "http://localhost:8182",
                     }
                 )
             elif next_catalog == LakeCatalogs.Glue:
                 params.update(
                     {
                         "type": "glue",
-                        "glue.endpoint": f"http://localhost:{cluster.glue_catalog_port}",
+                        "glue.endpoint": "http://localhost:3000",
                         "glue.region": "us-east-1",
                         "glue.access-key-id": cluster.minio_access_key,
                         "glue.secret-access-key": cluster.minio_secret_key,
@@ -734,7 +732,7 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "hive",
-                        "uri": f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
+                        "uri": "thrift://0.0.0.0:9083",
                         "client.region": "us-east-1",
                     }
                 )

@@ -145,7 +145,7 @@ StorageView::StorageView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
 
-    description.inner_query = query.select->ptr();
+    description.inner_query = query.getChild(*query.select);
 
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);

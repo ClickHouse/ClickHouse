@@ -18,6 +18,7 @@ namespace DB
 class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
+
     enum class Type : UInt64
     {
         UNKNOWN,
@@ -80,7 +81,6 @@ public:
         RELOAD_CONFIG,
         RELOAD_USERS,
         RELOAD_ASYNCHRONOUS_METRICS,
-        RELOAD_DELTA_KERNEL_TRACING,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -106,8 +106,6 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
-        ALLOCATE_MEMORY,
-        FREE_MEMORY,
         WAIT_FAILPOINT,
         NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
@@ -136,7 +134,6 @@ public:
         RECONNECT_ZOOKEEPER,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
-        RESET_DDL_WORKER,
         END
     };
 
@@ -166,7 +163,6 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
-    UInt64 untracked_memory_size{};
 
     std::optional<String> query_result_cache_tag;
 
@@ -193,8 +189,6 @@ public:
         RESUME
     };
     FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
-
-    String delta_kernel_tracing_level;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 

@@ -5,8 +5,6 @@
 
 #include <base/types.h>
 
-#include <map>
-
 namespace DB
 {
 
@@ -71,6 +69,5 @@ struct ColumnStatisticsDescription
 };
 
 StatisticsType stringToStatisticsType(String type);
-String statisticsTypeToString(StatisticsType type);
 
 }

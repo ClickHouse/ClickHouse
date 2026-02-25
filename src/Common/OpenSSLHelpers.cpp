@@ -94,7 +94,7 @@ std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data)
     return signature;
 }
 
-bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
+bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
 {
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 
@@ -112,20 +112,9 @@ bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::s
         reinterpret_cast<const unsigned char*>(signature.data()),
         static_cast<int>(signature.size())
     );
-
     EVP_MD_CTX_free(ctx);
 
     return result == 1;
-}
-
-bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
-{
-    return genericSHA256Verify(pkey, data, signature);
-}
-
-bool ecdsaP256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
-{
-    return genericSHA256Verify(pkey, data, signature);
 }
 
 std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::string & data)

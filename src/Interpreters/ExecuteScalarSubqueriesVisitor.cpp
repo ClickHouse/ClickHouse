@@ -72,7 +72,7 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
         /// and assign an alias for 02367_optimize_trivial_count_with_array_join to pass. Otherwise it will fail in
         /// ArrayJoinedColumnsVisitor (`No alias for non-trivial value in ARRAY JOIN: _a`)
         /// This looks 100% as a incomplete code working on top of a bug, but this code has already been made obsolete
-        /// by the analyzer, so it's an inconvenience we can live with until we deprecate it.
+        /// by the new analyzer, so it's an inconvenience we can live with until we deprecate it.
         if (child == tables->array_join)
             return true;
         return false;
@@ -127,7 +127,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     /// subquery and ast can be the same object and ast will be moved.
     /// Save these fields to avoid use after move.
     String subquery_alias = subquery.alias;
-    bool prefer_alias_to_column_name = subquery.preferAliasToColumnName();
+    bool prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
 
     auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
@@ -295,7 +295,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     {
         auto lit = make_intrusive<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = subquery_alias;
-        lit->setPreferAliasToColumnName(prefer_alias_to_column_name);
+        lit->prefer_alias_to_column_name = prefer_alias_to_column_name;
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
 
         /// If only analyze was requested the expression is not suitable for constant folding, disable it.
@@ -304,7 +304,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             ast->as<ASTFunction>()->alias.clear();
             auto func = makeASTFunction("__scalarSubqueryResult", std::move(ast));
             func->alias = subquery_alias;
-            func->setPreferAliasToColumnName(prefer_alias_to_column_name);
+            func->prefer_alias_to_column_name = prefer_alias_to_column_name;
             ast = std::move(func);
         }
     }
@@ -312,7 +312,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     {
         auto func = makeASTFunction("__getScalar", make_intrusive<ASTLiteral>(scalar_query_hash_str));
         func->alias = subquery_alias;
-        func->setPreferAliasToColumnName(prefer_alias_to_column_name);
+        func->prefer_alias_to_column_name = prefer_alias_to_column_name;
         ast = std::move(func);
     }
 
@@ -337,23 +337,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
             else
                 for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
                     if (i != 1 || !func.arguments->children[i]->as<ASTSubquery>())
-                        out.push_back(&func.arguments->children[i]);
-        }
-    }
-    else if (func.name == "exists")
-    {
-        /// Since exists does not use parameters, and the only
-        /// argument to exists function is a subquery, out
-        /// should not have arguments. Thus, the following lines could
-        /// probably be changed with just `return`. However, we follow
-        /// the style that is provided in the first if.
-        for (auto & child : ast->children)
-        {
-            if (child != func.arguments)
-                out.push_back(&child);
-            else
-                for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
-                    if (i != 0 || !func.arguments->children[i]->as<ASTSubquery>())
                         out.push_back(&func.arguments->children[i]);
         }
     }

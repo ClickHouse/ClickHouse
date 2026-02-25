@@ -463,16 +463,6 @@ public:
             std::rethrow_exception(e);
     }
 
-    static void visit(ffi::SharedExpression * expression, ExpressionVisitorData & data)
-    {
-        auto visitor = createVisitor(data);
-        [[maybe_unused]] uintptr_t result = ffi::visit_expression(&expression, &visitor);
-        chassert(result == 0, "Unexpected result: " + DB::toString(result));
-
-        if (auto e = data.getException())
-            std::rethrow_exception(e);
-    }
-
     static void visit(ffi::SharedPredicate * predicate, ExpressionVisitorData & data)
     {
         auto visitor = createVisitor(data);
@@ -1019,7 +1009,7 @@ std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, c
 }
 
 std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
-    ffi::SharedExpression * expression,
+    const ffi::Expression * expression,
     const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema,
     bool enable_logging)
