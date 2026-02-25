@@ -58,14 +58,14 @@ def get_lcov_summary_percentages(info_file_path: str) -> tuple[float, float, flo
     )
 
 
-def add_html_report_to_ci(folder_path):
+def add_html_report_to_ci(folder_path, entry_point: str = "index.html"):
     files_to_attach = []
     assets_to_attach = []
     # Attach all HTML report files preserving directory structure
     html_report_dir = Path(TEMP_DIR) / folder_path
     if html_report_dir.exists():
-        # Add index.html first as it's the entry point (root level only)
-        index_file = html_report_dir / "index.html"
+        # Add the entry-point file first so it is easily identifiable
+        index_file = html_report_dir / entry_point
         if index_file.exists():
             files_to_attach.append(str(index_file))
 
@@ -225,8 +225,15 @@ if __name__ == "__main__":
             with_info=True,
             with_info_on_failure=True,
         )
-        print_res.set_status(diff_res.status)
+        # print_res.set_status(diff_res.status)
         results.append(print_res)
+
+        # Rename the diff report entry-point so it does not clash with the
+        # full-coverage report's index.html when both are served from the same S3 prefix.
+        _diff_index = Path(f"{TEMP_DIR}/llvm_coverage_diff_html_report/index.html")
+        _diff_index_renamed = _diff_index.with_name("diff_index.html")
+        if _diff_index.exists():
+            _diff_index.rename(_diff_index_renamed)
 
         # Compress the diff HTML report
         Utils.compress_gz(
@@ -239,7 +246,9 @@ if __name__ == "__main__":
             #   files/assets → https://<report_endpoint>/<s3_prefix>/<path_relative_to_TEMP_DIR>
             #   log files    → https://<report_endpoint>/<s3_prefix>/<normalize(result.name)>/<log_basename>
             _env = _Environment.get()
-            _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
+            _s3_base = (
+                f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
+            )
             _log_name = f"{Utils.normalize_string(print_res.name)}.log"
 
             save_date_into_ci_db(
@@ -257,10 +266,12 @@ if __name__ == "__main__":
                 c_branch_cov,
                 delta,
                 diff_res.status,
-                coverage_report_url=f"{_s3_base}/llvm_coverage_html_report/index.html",
-                diff_coverage_report_url=f"{_s3_base}/llvm_coverage_diff_html_report/index.html",
-                uncovered_code_url=f"{_s3_base}/{Utils.normalize_string(print_res.name)}/{_log_name}",
+                coverage_report_url=f"{_s3_base}/llvm_coverage/index.html",
+                diff_coverage_report_url=f"{_s3_base}/llvm_coverage/diff_index.html",
+                uncovered_code_url=f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}",
             )
+        else:
+            print("Local run, skipping CI DB update with coverage results")
     else:
         print("On master branch, skipping diff coverage generation")
 
@@ -277,7 +288,7 @@ if __name__ == "__main__":
         # Attach merged HTML report for diff coverage
         files_to_attach.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
         merged_files, merged_assets = add_html_report_to_ci(
-            "llvm_coverage_diff_html_report"
+            "llvm_coverage_diff_html_report", entry_point="diff_index.html"
         )
         files_to_attach.extend(merged_files)
         assets_to_attach.extend(merged_assets)
