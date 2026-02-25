@@ -80,8 +80,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"jemalloc_profile_text_symbolize_with_inline", true, true, "New setting to control whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included at the cost of slower symbolization; when disabled, they are skipped for faster output"},
             {"jemalloc_profile_text_collapsed_use_count", false, false, "New setting to aggregate by allocation count instead of bytes in the collapsed jemalloc heap profile format"},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
-            {"opentelemetry_start_keeper_trace_probability", 0.0, 0.0, "New setting"},
-            {"select_star_skip_non_preserved_side_for_semi_anti_join", false, false, "New setting to skip non-preserved side columns in SELECT * for SEMI and ANTI JOINs"},
+            {"select_star_skip_non_preserved_side_for_semi_join", false, false, "New setting to skip non-preserved side columns in SELECT * for SEMI JOINs"},
+            {"select_star_skip_non_preserved_side_for_anti_join", false, false, "New setting to skip non-preserved side columns in SELECT * for ANTI JOINs"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

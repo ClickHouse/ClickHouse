@@ -67,7 +67,8 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
-    extern const SettingsBool select_star_skip_non_preserved_side_for_semi_anti_join;
+    extern const SettingsBool select_star_skip_non_preserved_side_for_semi_join;
+    extern const SettingsBool select_star_skip_non_preserved_side_for_anti_join;
     extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
@@ -1969,12 +1970,15 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             /** For SEMI/ANTI JOIN, SELECT * should only return columns from one side per SQL standard:
               * - LEFT SEMI/ANTI JOIN: only left table columns
               * - RIGHT SEMI/ANTI JOIN: only right table columns
-              * Controlled by `select_star_skip_non_preserved_side_for_semi_anti_join` setting.
+              * Controlled by `select_star_skip_non_preserved_side_for_semi_join`
+              * and `select_star_skip_non_preserved_side_for_anti_join` settings.
               */
-            bool is_semi_or_anti = join_node->getStrictness() == JoinStrictness::Semi
-                || join_node->getStrictness() == JoinStrictness::Anti;
-            bool skip_non_preserved_side = is_semi_or_anti
-                && scope.context->getSettingsRef()[Setting::select_star_skip_non_preserved_side_for_semi_anti_join];
+            bool is_semi = join_node->getStrictness() == JoinStrictness::Semi;
+            bool is_anti = join_node->getStrictness() == JoinStrictness::Anti;
+            const auto & settings = scope.context->getSettingsRef();
+            bool skip_non_preserved_side =
+                (is_semi && settings[Setting::select_star_skip_non_preserved_side_for_semi_join])
+                || (is_anti && settings[Setting::select_star_skip_non_preserved_side_for_anti_join]);
             bool skip_left = skip_non_preserved_side && isRight(join_node->getKind());
             bool skip_right = skip_non_preserved_side && isLeft(join_node->getKind());
 
