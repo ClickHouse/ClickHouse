@@ -15,3 +15,6 @@ ENV CLASSPATH=.:/mysql-connector-j-${ver}.jar
 WORKDIR /jdbc
 COPY MySQLJavaClientTest.java MySQLJavaClientTest.java
 RUN javac MySQLJavaClientTest.java
+
+# Run as non-root to satisfy CIS Docker Benchmark and Docker Scout policy
+USER nobody
