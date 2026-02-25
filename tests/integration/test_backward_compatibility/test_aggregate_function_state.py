@@ -78,7 +78,8 @@ def start_cluster():
 def cleanup():
     yield
     for node in (node1, pre_nullable_tuple_node_1):
-        node.restart_with_original_version(clear_data_dir=True)
+        if node.file_exists_in_container("/usr/share/clickhouse_original"):
+            node.restart_with_original_version(clear_data_dir=True)
 
 
 # We will test that serialization of internal state of "avg" function is compatible between different versions.
