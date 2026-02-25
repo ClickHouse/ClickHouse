@@ -9,10 +9,6 @@ if (TARGET ch_contrib::llvm)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${XRAY_FLAGS}")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${XRAY_FLAGS}")
 
-    # Add the XRay headers globally so that all targets (not just those linking ch_contrib::llvm)
-    # can include <xray/xray_interface.h> when USE_XRAY is enabled.
-    include_directories (SYSTEM "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
-
     message (STATUS "Using LLVM XRay")
 else()
     message (STATUS "Not using LLVM XRay because LLVM is not built along")

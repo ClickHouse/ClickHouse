@@ -88,7 +88,6 @@ FROM
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<CramersVBiasCorrectedData>>(argument_types);
         },
-        {},
         documentation
     });
 }

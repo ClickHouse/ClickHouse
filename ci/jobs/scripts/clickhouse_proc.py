@@ -136,14 +136,12 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        for _ in range(60):
-            res = Shell.check(
-                "/mc ls clickminio/test | grep -q .",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
+        if Shell.check(
+            "/mc ls clickminio/test | grep -q .",
+            verbose=False,
+            retries=6,
+        ):
+            return True
         print("Failed to start minio")
         return False
 
@@ -172,7 +170,7 @@ class ClickHouseProc:
 
         for _ in range(60):
             res = Shell.check(
-                "kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list",
+                "rpk topic list --brokers 127.0.0.1:9092",
                 verbose=True,
             )
             if res:
@@ -536,14 +534,45 @@ profiles:
             verbose=True,
             strict=True,
         )
-        status = (
-            "failed"
-            if not res
-            else Shell.get_output(
+        if not res:
+            return False
+
+        # Restart minio with a timeout to avoid hanging forever (see #97647).
+        # If the restart hangs, kill minio and start it again.
+        restart_timeout = 60
+        try:
+            print(f"Restarting clickminio (timeout {restart_timeout}s)")
+            result = subprocess.run(
                 "/mc admin service restart clickminio --wait --json 2>&1 | jq -r .status",
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=restart_timeout,
+                executable="/bin/bash",
+            )
+            status = result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            print(
+                f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
+            )
+            Shell.check("pkill -9 -f 'minio server'", verbose=True)
+            time.sleep(2)
+            Shell.check(
+                f"nohup minio server --address :11111 {temp_dir}/minio_data &",
                 verbose=True,
             )
-        )
+            # Wait for minio to be ready
+            for _ in range(30):
+                if Shell.check(
+                    "/mc ls clickminio/test", verbose=False
+                ):
+                    status = "success"
+                    break
+                time.sleep(1)
+            else:
+                status = "failed"
+
         res = "success" in status
         if not res:
             print(f"ERROR: Failed to restart clickminio, status: {status}")
@@ -702,8 +731,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
 
         if self.kafka_proc:
-            print("Stopping Kafka broker")
-            Shell.check("kafka-server-stop.sh", verbose=True)
+            print("Stopping Redpanda broker")
+            Shell.check("pkill -f redpanda", verbose=True)
             try:
                 self.kafka_proc.wait(timeout=30)
             except subprocess.TimeoutExpired:
@@ -723,7 +752,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ):
             if proc and pid:
                 if not Shell.check(
-                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill",
+                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
                     print(
@@ -1019,9 +1048,7 @@ disassemble /s
 p \"done\"
 detach
 quit
-""".format(
-            RTMIN=rtmin
-        )
+""".format(RTMIN=rtmin)
         with open(f"{temp_dir}/script.gdb", "w") as file:
             file.write(script)
         return f"{temp_dir}/script.gdb"
