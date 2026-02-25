@@ -1445,19 +1445,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <mlock_executable>false</mlock_executable>
     ```
     )", 0) \
-    DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
-    Controls whether extracted `Tuple(...)` subcolumns can be typed as `Nullable(Tuple(...))`.
-    - `false`: Return `Tuple(...)` and use default tuple values for rows where the subcolumn is missing.
-    - `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
-
-    This setting is server-wide and can only be changed via server restart.
-
-    **Example**
-
-    ```xml
-    <allow_nullable_tuple_in_extracted_subcolumns>false</allow_nullable_tuple_in_extracted_subcolumns>
-    ```
-    )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
     DECLARE(UInt32, listen_backlog, 4096, R"(
     Backlog (queue size of pending connections) of the listen socket. The default value of `<4096>` is the same as that of linux 5.4+).

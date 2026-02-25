@@ -7492,6 +7492,15 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     DECLARE(Bool, allow_experimental_nullable_tuple_type, false, R"(
 Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
+Controls whether extracted `Tuple(...)` subcolumns can be typed as `Nullable(Tuple(...))`.
+
+- `false`: Return `Tuple(...)` and use default tuple values for rows where the subcolumn is missing.
+- `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
+
+The effective value for extracted subcolumns is read from the global context.
+To apply config changes in the global context, restart the server.
+)", 0) \
     \
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(

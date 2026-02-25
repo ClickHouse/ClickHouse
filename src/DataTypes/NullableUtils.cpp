@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
@@ -12,21 +12,21 @@
 namespace DB
 {
 
-namespace ServerSetting
+namespace Setting
 {
-extern const ServerSettingsBool allow_nullable_tuple_in_extracted_subcolumns;
+extern const SettingsBool allow_nullable_tuple_in_extracted_subcolumns;
 }
 
-static bool isNullableTupleInExtractedSubcolumnsEnabledByServerSetting()
+static bool isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting()
 {
     auto context = Context::getGlobalContextInstance();
-    return context && context->getServerSettings()[ServerSetting::allow_nullable_tuple_in_extracted_subcolumns];
+    return context && context->getSettingsRef()[Setting::allow_nullable_tuple_in_extracted_subcolumns];
 }
 
 static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
 {
     if (checkAndGetColumn<ColumnTuple>(column.get()))
-        return isNullableTupleInExtractedSubcolumnsEnabledByServerSetting();
+        return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
 
     return column->canBeInsideNullable();
 }
@@ -34,7 +34,7 @@ static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
 bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type)
 {
     if (isTuple(type))
-        return isNullableTupleInExtractedSubcolumnsEnabledByServerSetting();
+        return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
 
     return type->canBeInsideNullable();
 }
