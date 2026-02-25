@@ -26,10 +26,11 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
-    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
-    extern const SettingsBool parallel_replicas_allow_materialized_views;
-    extern const SettingsBool serialize_query_plan;
+extern const SettingsUInt64 automatic_parallel_replicas_mode;
+extern const SettingsBool parallel_replicas_allow_in_with_subquery;
+extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+extern const SettingsBool parallel_replicas_allow_materialized_views;
+extern const SettingsBool serialize_query_plan;
 }
 
 namespace ErrorCodes
@@ -337,6 +338,10 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
+    const auto & settings_ref = context->getSettingsRef();
+    if (settings_ref[Setting::automatic_parallel_replicas_mode] != 0)
+        return nullptr;
+
     auto stack = getSupportingParallelReplicasQueries(query_tree_node.get(), context);
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
@@ -492,6 +497,10 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto context = query_node ? query_node->getContext() : union_node->getContext();
 
     if (!context->getSettingsRef()[Setting::serialize_query_plan] && !context->canUseParallelReplicasOnFollower())
+        return nullptr;
+
+    const auto & settings_ref = context->getSettingsRef();
+    if (settings_ref[Setting::automatic_parallel_replicas_mode] != 0)
         return nullptr;
 
     return findTableForParallelReplicas(query_tree_node.get(), context);

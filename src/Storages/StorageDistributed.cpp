@@ -176,7 +176,9 @@ namespace Setting
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
 }
 
@@ -209,6 +211,7 @@ namespace ErrorCodes
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
 namespace ActionLocks
@@ -349,8 +352,10 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    UInt64 max_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas]
-        ? settings[Setting::max_parallel_replicas] : 1;
+    UInt64 max_parallel_replicas
+        = settings[Setting::allow_experimental_parallel_reading_from_replicas] && settings[Setting::automatic_parallel_replicas_mode] == 0
+        ? settings[Setting::max_parallel_replicas]
+        : 1;
 
     return (num_remote_shards + num_local_shards) * max_parallel_replicas;
 }
@@ -471,11 +476,13 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ClusterPtr cluster = getCluster();
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
+    LOG_DEBUG(&Poco::Logger::get("debug"), "cluster->getName()={}, nodes={}", cluster->getName(), nodes);
 
     query_info.cluster = cluster;
 
     if (!local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         if (nodes > 1 && settings[Setting::optimize_skip_unused_shards])
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
@@ -1167,6 +1174,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     query_context->increaseDistributedDepth();
     query_context->setSetting("enable_parallel_replicas", Field{0}); // TODO: allow parallel inserts with PR for distributed tables
 
+    size_t available_shards = 0;
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
@@ -1180,14 +1188,19 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
                 /* no_destination */ false,
                 /* async_isnert */ false);
             pipeline.addCompletedPipeline(interpreter.execute().pipeline);
+            ++available_shards;
         }
         else
         {
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
             auto connections = shard_info.pool->getMany(timeouts, settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
+            {
+                if (settings[Setting::skip_unavailable_shards])
+                    continue;
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
                     shard_info.shard_num);
+            }
 
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
@@ -1197,8 +1210,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
+            ++available_shards;
         }
     }
+
+    if (available_shards == 0)
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to write to");
 
     return pipeline;
 }
@@ -1683,6 +1700,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     const SelectQueryInfo & query_info,
     const TreeRewriterResultPtr & syntax_analyzer_result) const
 {
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
 
@@ -1690,6 +1708,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     if (has_sharding_key && sharding_key_is_usable)
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         ClusterPtr optimized = skipUnusedShards(cluster, query_info, syntax_analyzer_result, storage_snapshot, local_context);
         if (optimized)
             return optimized;
@@ -1698,6 +1717,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     UInt64 force = settings[Setting::force_optimize_skip_unused_shards];
     if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS || (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && has_sharding_key))
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         if (!has_sharding_key)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
         if (!sharding_key_is_usable)
