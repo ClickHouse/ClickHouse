@@ -129,7 +129,7 @@ private:
         while (db_it != databases.end())
         {
             if (!table_it)
-                table_it = db_it->second->getLightweightTablesIterator(context_copy, {}, true);
+                table_it = db_it->second->getTablesIterator(context_copy, {}, true);
 
             while (table_it->isValid())
             {
