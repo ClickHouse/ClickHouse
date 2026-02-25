@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-fasttest
+# no-fasttest: Too slow for fast test (~10s), covered by regular stateless runs.
 # no-parallel-replicas: unrelated error
 
 # INSERT buffer_02572 -> data_02572 -> copy_02572
