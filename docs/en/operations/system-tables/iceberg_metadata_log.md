@@ -33,6 +33,7 @@ This table is primarily intended for debugging purposes.
 | `file_path`    | [String](../../sql-reference/data-types/string.md)    | Path to the root metadata JSON file, Avro manifest list, or manifest file.                   |
 | `content`      | [String](../../sql-reference/data-types/string.md)    | Content in JSON format (raw metadata from .json, Avro metadata, or Avro entry).              |
 | `row_in_file`  | [Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md)) | Row number in the file, if applicable. Present for `ManifestListEntry` and `ManifestFileEntry` content types. |
+| `pruning_status`  | [Nullable](../../sql-reference/data-types/nullable.md)([Enum8](../../sql-reference/data-types/enum.md)) | Pruning status for the entry. 'NotPruned', 'PartitionPruned', 'MinMaxIndexPruned'. Pay attention that partition pruning is done before minmax pruning so 'PartitionPruned' means that the entry was pruned by partition filter and minmax pruning was not even attempted. Present for `ManifestFileEntry` content type. |
 
 ## `content_type` values {#content-type-values}
 
@@ -78,9 +79,10 @@ See more information in the description of the [`iceberg_metadata_log_level`](..
 ### Good To Know {#good-to-know}
 
 - Use `iceberg_metadata_log_level` at the query level only when you need to investigate your Iceberg table in detail. Otherwise, you may populate the log table with excessive metadata and experience performance degradation.
-- The table may contain duplicate entries, as it is intended primarily for debugging and does not guarantee uniqueness per entity.
+- The table contains duplicate entries, as it is intended primarily for debugging and does not guarantee uniqueness per entity. Separate rows store content and pruning status because they are collected at different moments in a program. Content is collected when the metadata is read, pruning status is collected when the metadata is checked for pruning. **Never rely on the table itself for deduplication.**
 - If you use a `content_type` more verbose than `ManifestListMetadata`, the Iceberg metadata cache is disabled for manifest lists.
 - Similarly, if you use a `content_type` more verbose than `ManifestFileMetadata`, the Iceberg metadata cache is disabled for manifest files.
+- If the SELECT query was cancelled or failed, the log table may still contain entries for metadata processed before the failure but will not contain information about metadata entities that were not processed.
 
 ## See also {#see-also}
 - [Iceberg Table Engine](../../engines/table-engines/integrations/iceberg.md)

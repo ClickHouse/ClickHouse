@@ -3,6 +3,7 @@
 #if defined(OS_LINUX)
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -39,14 +40,14 @@ PollingQueue::~PollingQueue()
     chassert(!err || errno == EINTR);
 }
 
-void PollingQueue::addTask(size_t thread_number, void * data, int fd)
+void PollingQueue::addTask(size_t thread_number, void * data, int fd, uint32_t events)
 {
     std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
     if (tasks.contains(key))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};
-    epoll.add(fd, data);
+    epoll.add(fd, data, events);
 }
 
 static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)

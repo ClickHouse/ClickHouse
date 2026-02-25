@@ -77,16 +77,14 @@ INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_parquet', format=Parquet, par
 INSERT INTO FUNCTION s3(s3_conn, filename='half_baked', format=Parquet, partition_strategy='hive') PARTITION BY year SELECT 1 AS key, 2020 AS year;
 
 -- Should fail because contains only partition columns in schema and `use_hive_partitioning=1`
-CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=1; -- {serverError INCORRECT_DATA}
+CREATE TABLE s3_table_half_schema_with_format (year UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=1; -- {serverError INCORRECT_DATA}
 
--- Should succeed because hive is off
-CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=0;
+-- Shouldn't succeed because hive is off and schema contains non existing parquet columns
+CREATE TABLE s3_table_half_schema_with_format (year UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=0;  -- {serverError BAD_ARGUMENTS}
 
--- Should succeed and not return hive columns. Distinct because maybe MinIO isn't cleaned up
-SELECT DISTINCT * FROM s3_table_half_schema_with_format;
+CREATE TABLE s3_table_half_schema_with_format_2 (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=0;
 
--- Should fail because the column year does not exist
-SELECT year, * FROM s3_table_half_schema_with_format; -- {serverError UNKNOWN_IDENTIFIER}
+SELECT DISTINCT * FROM s3_table_half_schema_with_format_2;
 
 -- hive with partition id placeholder
 CREATE TABLE t_03363_s3_sink (year UInt16, country String, counter UInt8)

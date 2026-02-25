@@ -7,13 +7,6 @@
 
 namespace DB
 {
-std::vector<String> listFiles(
-    const IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
-    const String & prefix, const String & suffix)
-{
-    return listFiles(object_storage, configuration.getPathForRead().path, prefix, suffix);
-}
 
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
@@ -45,13 +38,5 @@ std::vector<String> listFiles(
     }
     LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
     return res;
-}
-std::vector<String> listFiles(
-    const IObjectStorage & object_storage,
-    const StorageObjectStorageConfiguration & configuration,
-    const String & prefix,
-    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
-{
-    return listFiles(object_storage, configuration.getPathForRead().path, prefix, check_need);
 }
 }

@@ -338,12 +338,19 @@ $$)
 
 Values of a `Variant` type can be compared only with values with the same `Variant` type.
 
+By default, comparison operators use [default implementation for Variant](#functions-with-variant-arguments),
+applying comparison to each variant type separately. This can be disabled using setting `use_variant_default_implementation_for_comparisons = 0`
+to use native Variant comparison rules described below. **Note** that `ORDER BY` always uses native comparison.
+
+**Native Variant comparison rules:**
+
 The result of operator `<` for values `v1` with underlying type `T1` and `v2` with underlying type `T2`  of a type `Variant(..., T1, ... T2, ...)` is defined as follows:
 - If `T1 = T2 = T`, the result will be `v1.T < v2.T` (underlying values will be compared).
 - If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
 
 Examples:
 ```sql
+SET allow_suspicious_types_in_order_by = 1;
 CREATE TABLE test (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE=Memory;
 INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, []), (42, NULL);
 ```
@@ -486,3 +493,68 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 │ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
+
+## Functions with Variant arguments {#functions-with-variant-arguments}
+
+Most functions in ClickHouse automatically support `Variant` type arguments through a **default implementation for Variant**. 
+Starting from version `26.1` onwards, when a function that doesn't explicitly handle Variant types receives a Variant column, ClickHouse:
+
+1. Extracts each variant type from the Variant column
+2. Executes the function separately for each variant type
+3. Combines results appropriately based on result types
+
+This allows you to use regular functions with Variant columns without special handling.
+
+**Example:**
+
+```sql
+CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
+INSERT INTO test VALUES (42), ('hello'), (NULL);
+SELECT *, toTypeName(v) FROM test WHERE v = 42;
+```
+
+```text
+   ┌─v──┬─toTypeName(v)───────────┐
+1. │ 42 │ Variant(String, UInt32) │
+   └────┴─────────────────────────┘
+```
+
+The comparison operator is automatically applied to each variant type separately, allowing filtering on Variant columns.
+
+**Result type behavior:**
+
+The result type depends on what the function returns for each variant:
+
+- **Different result types**: `Variant(T1, T2, ...)`
+  ```sql
+  CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
+  INSERT INTO test2 VALUES (42::UInt64), (42.42);
+  SELECT v + 1 AS result, toTypeName(result) FROM test2;
+  ```
+
+  ```text
+  ┌─result─┬─toTypeName(plus(v, 1))──┐
+  │     43 │ Variant(Float64, UInt64) │
+  │  43.42 │ Variant(Float64, UInt64) │
+  └────────┴─────────────────────────┘
+  ```
+
+- **Type incompatibility**: `NULL` for incompatible variants
+  ```sql
+  CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
+  INSERT INTO test3 VALUES ([1,2,3]), (42);
+  SELECT v + 10 AS result, toTypeName(result) FROM test3;
+  ```
+
+  ```text
+  ┌─result─┬─toTypeName(plus(v, 10))─┐
+  │   ᴺᵁᴸᴸ │ Nullable(UInt64)        │
+  │     52 │ Nullable(UInt64)        │
+  └────────┴─────────────────────────┘
+  ```
+
+:::note
+**Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT, 
+TYPE_MISMATCH, CANNOT_CONVERT_TYPE, NO_COMMON_TYPE) are caught and result in NULL for those rows. Other errors like 
+division by zero or out of memory are raised normally to prevent silently hiding real problems.
+:::

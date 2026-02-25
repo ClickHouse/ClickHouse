@@ -55,9 +55,9 @@ public:
         ++s;
     }
 
-    std::string_view serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
@@ -94,6 +94,8 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override;
 
+    void filter(const Filter & filt) override;
+
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
@@ -117,7 +119,7 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field &, Field &) const override
+    void getExtremes(Field &, Field &, size_t, size_t) const override
     {
     }
 

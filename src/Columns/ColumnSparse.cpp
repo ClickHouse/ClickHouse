@@ -159,34 +159,24 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
-std::string_view ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
 
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
+    return values->getSerializedValueSize(getValueIndex(n), settings);
 }
 
-std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
+void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return values->getSerializedValueSize(getValueIndex(n));
-}
-
-void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in); });
-}
-
-void ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertAggregationStateValueFromArena(in); });
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
 }
 
 void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
@@ -310,7 +300,8 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n < _size);
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -367,7 +358,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
-    values_filter.push_back(1);
+    values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
     size_t res_offset = 0;
@@ -381,13 +372,13 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
             if (filt[i])
             {
                 res_offsets_data.push_back(res_offset);
-                values_filter.push_back(1);
+                values_filter.push_back(static_cast<UInt8>(1));
                 ++res_offset;
                 ++values_result_size_hint;
             }
             else
             {
-                values_filter.push_back(0);
+                values_filter.push_back(static_cast<UInt8>(0));
             }
             offset_it.increaseCurrentOffset();
         }
@@ -399,6 +390,56 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
     return create(res_values, std::move(res_offsets), res_offset);
+}
+
+void ColumnSparse::filter(const Filter & filt)
+{
+    if (_size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
+
+    if (offsets->empty())
+    {
+        _size = countBytesInFilter(filt);
+        return;
+    }
+
+    auto & res_offsets_data = getOffsetsData();
+    size_t res_offsets_pos = 0;
+
+    Filter values_filter;
+    values_filter.reserve_exact(values->size());
+    values_filter.push_back(static_cast<UInt8>(1));
+
+    size_t res_offset = 0;
+    auto offset_it = begin();
+    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
+    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
+    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    {
+        if (!offset_it.isDefault())
+        {
+            if (filt[i])
+            {
+                res_offsets_data[res_offsets_pos] = res_offset;
+                values_filter.push_back(static_cast<UInt8>(1));
+                ++res_offsets_pos;
+                ++res_offset;
+            }
+            else
+            {
+                values_filter.push_back(static_cast<UInt8>(0));
+            }
+            offset_it.increaseCurrentOffset();
+        }
+        else
+        {
+            res_offset += filt[i] != 0;
+        }
+    }
+
+    values->filter(values_filter);
+    res_offsets_data.resize_assume_reserved(res_offsets_pos);
+    _size = res_offset;
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)
@@ -689,7 +730,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     if (_size != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (_size == 0)
+    if (_size == 0 || replicate_offsets.back() == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
     auto res_offsets = offsets->cloneEmpty();
@@ -759,12 +800,21 @@ void ColumnSparse::updateHashFast(SipHash & hash) const
     hash.update(_size);
 }
 
-void ColumnSparse::getExtremes(Field & min, Field & max) const
+void ColumnSparse::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (_size == 0)
+    if (start >= end)
     {
         values->get(0, min);
         values->get(0, max);
+        return;
+    }
+
+    /// For ColumnSparse, range-based extremes are not trivially supported
+    /// due to the sparse representation. Fall back to cut + getExtremes.
+    if (start != 0 || end != _size)
+    {
+        auto sub_column = cut(start, end - start);
+        sub_column->getExtremes(min, max, 0, end - start);
         return;
     }
 
@@ -786,7 +836,7 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
         return;
     }
 
-    values->getExtremes(min, max);
+    values->getExtremes(min, max, 0, values->size());
 }
 
 void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const
@@ -800,7 +850,7 @@ void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t
 
 double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return static_cast<double>(getNumberOfDefaultRows()) / _size;
+    return static_cast<double>(getNumberOfDefaultRows()) / static_cast<double>(_size);
 }
 
 UInt64 ColumnSparse::getNumberOfDefaultRows() const

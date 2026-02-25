@@ -85,6 +85,12 @@ SETTINGS
     after_processing_move_container = 'dst-container';
 ```
 
+## SELECT from AzureQueue table engine {#select}
+
+SELECT queries are forbidden by default on AzureQueue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
+However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
+The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
+
 ## Description {#description}
 
 `SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
@@ -125,7 +131,7 @@ Enable logging for the table via the table setting `enable_logging_to_queue_log=
 
 Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
-1. Use the `system.azure_queue` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue` (it would contain information for `azure` tables as well).
+1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
 2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
   ```xml
@@ -135,7 +141,7 @@ Introspection capabilities are the same as the [S3Queue table engine](/engines/t
   </azure_queue_log>
   ```
 
-This persistent table has the same information as `system.s3queue`, but for processed and failed files.
+This persistent table has the same information as `system.s3queue_metadata_cache`, but for processed and failed files.
 
 The table has the following structure:
 
@@ -159,7 +165,6 @@ CREATE TABLE system.azure_queue_log
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
 ORDER BY (event_date, event_time)
-SETTINGS index_granularity = 8192
 COMMENT 'Contains logging entries with the information files processes by S3Queue engine.'
 
 ```

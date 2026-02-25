@@ -125,16 +125,28 @@ struct ZkNodeCache
 
 class ZooKeeperSink : public SinkToStorage
 {
-    zkutil::ZooKeeperPtr zookeeper;
-
-    ZkNodeCache cache;
+    ContextPtr context;
+    std::unordered_map<String, zkutil::ZooKeeperPtr> zookeepers;
+    std::unordered_map<String, ZkNodeCache> caches;
 
 public:
-    ZooKeeperSink(SharedHeader header, ContextPtr context)
-        : SinkToStorage(header), zookeeper(context->getZooKeeper())
+    ZooKeeperSink(SharedHeader header, ContextPtr context_)
+        : SinkToStorage(header), context(context_)
     {}
 
     String getName() const override { return "ZooKeeperSink"; }
+
+    zkutil::ZooKeeperPtr getZooKeeper(const String & zookeeper_name)
+    {
+        auto it = zookeepers.find(zookeeper_name);
+        if (it == zookeepers.end() || it->second->expired())
+        {
+            auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+            zookeepers[zookeeper_name] = zookeeper;
+            return zookeeper;
+        }
+        return it->second;
+    }
 
     void consume(Chunk & chunk) override
     {
@@ -143,6 +155,7 @@ public:
         ColumnPtr name_column = block.getByName("name").column;
         ColumnPtr value_column = block.getByName("value").column;
         ColumnPtr path_column = block.getByName("path").column;
+        ColumnPtr zookeeper_name_column = block.getByName("zookeeperName").column;
 
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; i++)
@@ -150,6 +163,7 @@ public:
             String name{name_column->getDataAt(i)};
             String value{value_column->getDataAt(i)};
             String path{path_column->getDataAt(i)};
+            String zookeeper_name{zookeeper_name_column->getDataAt(i)};
 
             /// We don't expect a "name" contains a path.
             if (name.contains('/'))
@@ -172,18 +186,27 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sum of `name` length and `path` length should not exceed PATH_MAX");
             }
 
+            if (zookeeper_name.empty())
+                zookeeper_name = zkutil::DEFAULT_ZOOKEEPER_NAME;
+
             std::vector<String> path_vec;
             boost::split(path_vec, path, boost::is_any_of("/"));
             path_vec.push_back(name);
+            auto zookeeper = getZooKeeper(zookeeper_name);
+            auto & cache = caches[zookeeper_name];
             cache.insert(path_vec, zookeeper, value, 0);
         }
     }
 
     void onFinish() override
     {
-        Coordination::Requests requests;
-        cache.generateRequests(requests);
-        zookeeper->multi(requests);
+        for (auto & [zookeeper_name, cache] : caches)
+        {
+            Coordination::Requests requests;
+            auto zookeeper = getZooKeeper(zookeeper_name);
+            cache.generateRequests(requests);
+            zookeeper->multi(requests);
+        }
     }
 };
 
@@ -319,7 +342,10 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
         description.modify(name, [&](ColumnDescription & column)
         {
             /// We only allow column `name`, `path`, `value` to insert.
-            if (column.name != "name" && column.name != "path" && column.name != "value")
+            if (column.name != "name"
+                && column.name != "path"
+                && column.name != "value"
+                && column.name != "zookeeperName")
                 column.default_desc.kind = ColumnDefaultKind::Materialized;
         });
     }
@@ -359,11 +385,6 @@ static bool isPathNode(const ActionsDAG::Node * node)
 
 static void extractNameImpl(const ActionsDAG::Node & node, String & res, ContextPtr context)
 {
-    /// Only one name is allowed
-    if (!res.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
-
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return;
 
@@ -398,7 +419,12 @@ static void extractNameImpl(const ActionsDAG::Node & node, String & res, Context
             return;
 
         /// Only inserted if the key doesn't exists already
-        res = value->column->getDataAt(0);
+        auto candidate = value->column->getDataAt(0);
+        /// Only one name is allowed
+        if (!res.empty() && res != candidate)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
+        res = candidate;
     }
 }
 

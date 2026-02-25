@@ -1,21 +1,21 @@
-#include <memory>
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
+#include <memory>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/Exception.h>
-#include <Common/AlignedBuffer.h>
-#include <Common/Arena.h>
-#include <Common/FieldVisitorSum.h>
-#include <Common/StringUtils.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorSum.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CORRUPTED_DATA;
 }
 
@@ -322,10 +323,17 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         {
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
 
-            /// There are special const columns for example after prewhere sections.
+            /// There are special const columns for example after prewhere sections
+            /// or when skip index expressions produce constants.
+            if (isColumnConst(*column.column))
+            {
+                def.column_numbers_not_to_aggregate.push_back(i);
+                continue;
+            }
+
             if (!aggregate_all_columns)
             {
-                if ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column))
+                if (!column.type->isSummable() && !is_agg_func && !simple)
                 {
                     def.column_numbers_not_to_aggregate.push_back(i);
                     continue;
@@ -415,7 +423,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         {
             const ColumnWithTypeAndName & key_col = header.safeGetByPosition(*column_num_it);
             const String & name = key_col.name;
-            const IDataType & nested_type = *assert_cast<const DataTypeArray &>(*key_col.type).getNestedType();
+            const IDataType & nested_type = *recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*key_col.type).getNestedType());
 
             if (column_num_it == map.second.begin()
                 || endsWith(name, "ID")
@@ -500,19 +508,12 @@ static void postprocessChunk(
         auto column = std::move(columns[next_column]);
         ++next_column;
 
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
+        if (!desc.aggregate_all_columns && !desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
-            if (desc.aggregate_all_columns)
-            {
-                res_columns[desc.column_numbers[0]] = column;
-            }
-            else
-            {
-                /// Unpack tuple into block.
-                size_t tuple_size = desc.column_numbers.size();
-                for (size_t i = 0; i < tuple_size; ++i)
-                   res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
-            }
+            /// Unpack tuple into block.
+            const size_t tuple_size = desc.column_numbers.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+               res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
         }
         else if (desc.nested_type)
         {
@@ -538,6 +539,18 @@ static void postprocessChunk(
 static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
 {
     size_t num_columns = row.size();
+    const auto handle_exception = [&](const char * logger_name, const char * reason, const size_t column_index)
+    {
+        tryLogCurrentException(logger_name);
+
+        String column_name;
+        if (column_index < column_names.size())
+            column_name = column_names[column_index];
+
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "SummingSortedAlgorithm failed to read row {} of column {}{}, reason: {}",
+                        row_num, column_index, column_name.empty() ? "" : fmt::format(" ({})", column_name), reason);
+    };
+
     for (size_t i = 0; i < num_columns; ++i)
     {
         try
@@ -556,18 +569,20 @@ static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const Column
                 raw_columns[i]->get(row_num, row[i]);
             }
         }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                throw;
+
+            handle_exception(__PRETTY_FUNCTION__, e.what(), i);
+        }
+        catch (std::exception & e)
+        {
+            handle_exception(__PRETTY_FUNCTION__, e.what(), i);
+        }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-
-            /// Find out the name of the column and throw more informative exception.
-
-            String column_name;
-            if (i < column_names.size())
-                column_name = column_names[i];
-
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "SummingSortedAlgorithm failed to read row {} of column {})",
-                            toString(row_num), toString(i) + (column_name.empty() ? "" : " (" + column_name));
+            handle_exception(__PRETTY_FUNCTION__, "unknown exception", i);
         }
     }
 }
@@ -590,31 +605,23 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
     for (const auto & desc : def.columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
+        if (!desc.aggregate_all_columns && !desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
-            if (desc.aggregate_all_columns)
-            {
-                auto column = desc.real_type->createColumn();
-                size_t tuple_size = static_cast<const ColumnTuple &>(*column).tupleSize();
-                MutableColumns tuple_columns(tuple_size);
-                for (size_t i = 0; i < tuple_size; ++i)
-                    tuple_columns[i] = static_cast<const ColumnTuple &>(*column).getColumnPtr(i)->cloneEmpty();
-                new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
-            }
-            else
-            {
-                size_t tuple_size = desc.column_numbers.size();
-                MutableColumns tuple_columns(tuple_size);
-                for (size_t i = 0; i < tuple_size; ++i)
-                    tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
+            const size_t tuple_size = desc.column_numbers.size();
+            MutableColumns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
 
-                new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
-            }
+            new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
         }
         else
         {
-            const auto & type = desc.nested_type ? desc.nested_type : desc.real_type;
-            new_columns.emplace_back(type->createColumn());
+            /// Remove LowCardinality from columns if needed. It's important to use columns initialized in
+            /// MergedData::initialize to keep correct dynamic structure of some columns (like JSON/Dynamic).
+            if (desc.nested_type)
+                new_columns.emplace_back(recursiveRemoveLowCardinality(std::move(columns[desc.column_numbers[0]]))->assumeMutable());
+            else
+                new_columns.emplace_back(std::move(columns[desc.column_numbers[0]]));
         }
     }
 

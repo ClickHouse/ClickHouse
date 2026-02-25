@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -32,6 +33,7 @@ class MetaClasses:
 
     @dataclasses.dataclass
     class Serializable(ABC):
+        # TODO: make it non-static to do self.to_dict()
         @classmethod
         def to_dict(cls, obj):
             if dataclasses.is_dataclass(obj):
@@ -53,13 +55,20 @@ class MetaClasses:
 
         @classmethod
         def from_fs(cls: Type[T], name) -> T:
-            with open(cls.file_name_static(name), "r", encoding="utf8") as f:
+            return cls.from_file(cls.file_name_static(name))
+
+        @classmethod
+        def from_file(cls: Type[T], path) -> T:
+            """
+            For non-default result file locations
+            """
+            with open(path, "r", encoding="utf8") as f:
                 try:
                     return cls.from_dict(json.load(f))
                 except json.decoder.JSONDecodeError as ex:
                     print(f"ERROR: failed to parse json, ex [{ex}]")
-                    print(f"JSON content [{cls.file_name_static(name)}]")
-                    Shell.check(f"cat {cls.file_name_static(name)}")
+                    print(f"JSON content [{path}]")
+                    Shell.check(f"cat {path}")
                     raise ex
 
         @classmethod
@@ -300,7 +309,7 @@ class Shell:
         command,
         log_file=None,
         strict=False,
-        verbose=False,
+        verbose=True,
         dry_run=False,
         stdin_str=None,
         timeout=None,
@@ -319,12 +328,22 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            print(f"Run command: [{command}]")
+            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
+            print(wrapped)
 
         log_file = log_file or "/dev/null"
         proc = None
         err_output = []
+        delay = 1
+
         for retry in range(retries):
+
+            if retry > 0:
+                delay = min(2 * delay, 60)
+                if verbose:
+                    print(f"Retrying in {delay}s...")
+                time.sleep(delay)
+
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -355,7 +374,8 @@ class Shell:
                     # Process both stdout and stderr in real-time
                     def stream_output(stream, output_fp, output=None):
                         for line in iter(stream.readline, ""):
-                            sys.stdout.write(line)
+                            if verbose:
+                                sys.stdout.write(line)
                             output_fp.write(line)
                             if output is not None:
                                 output.append(line)
@@ -376,44 +396,64 @@ class Shell:
 
                     proc.wait()  # Wait for the process to finish
 
-                    if proc.returncode == 0:
-                        break  # Exit retry loop if success
-                    else:
-                        if verbose:
-                            print(
-                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
-                            )
-                        if retry_errors:
-                            should_retry = False
-                            for err in retry_errors:
-                                if any(err in err_line for err_line in err_output):
-                                    print(
-                                        f"Retryable error occurred: [{err}], [{retry+1}/{retries}]"
-                                    )
-                                    should_retry = True
-                                    break
-                            if not should_retry:
-                                print(
-                                    f"No retryable errors found, stopping retry attempts"
-                                )
-                                break
+                if proc.returncode == 0:
+                    return 0
+
+                if verbose and retries > 1:
+                    print(
+                        f"Retry {retry+1}/{retries}: command failed, exit code: {proc.returncode}"
+                    )
+
+                if not retry_errors:
+                    continue  # No retry errors specified, just retry on any failure
+
+                if not any(
+                    err in err_line for err_line in err_output for err in retry_errors
+                ):
+                    if verbose:
+                        print(f"No retryable errors found, stopping retries")
+                    break
+
+                if verbose:
+                    matched = next(
+                        (
+                            err
+                            for err in retry_errors
+                            if any(err in line for line in err_output)
+                        ),
+                        "",
+                    )
+                    print(
+                        f"Retryable error [{matched}] found, retry {retry+1}/{retries}"
+                    )
             except Exception as e:
                 if verbose:
-                    print(
-                        f"ERROR: command failed, exception: {e}, retry: {retry}/{retries}"
-                    )
+                    if retries == 1:
+                        print(f"ERROR: exception {e}")
+                    else:
+                        print(f"Retry {retry+1}/{retries}: exception {e}")
+                        if retry == retries - 1:
+                            print(f"ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
-                if strict and retry == retries - 1:
-                    raise e
+                if retry == retries - 1:
+                    if strict:
+                        raise
+                    else:
+                        return 1  # Return non-zero for failure
 
-        if strict and (not proc or proc.returncode != 0):
+        if verbose:
+            print(
+                f"ERROR: command failed after {retry+1}/{retries} attempt(s), exit code: {proc.returncode}"
+            )
+
+        if strict:
             err = "\n   ".join(err_output).strip()
             raise RuntimeError(
                 f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
             )
 
-        return proc.returncode if proc else 1  # Return 1 if the process never started
+        return proc.returncode
 
     @classmethod
     def run_async(
@@ -463,6 +503,10 @@ class Utils:
         if "x86" in arch.lower() or "amd" in arch.lower():
             return True
         return False
+
+    @staticmethod
+    def is_mac():
+        return platform.system() == "Darwin"
 
     @staticmethod
     def terminate_process_group(pid, force=False):
@@ -529,6 +573,11 @@ class Utils:
     @staticmethod
     def cpu_count():
         return multiprocessing.cpu_count()
+
+    @staticmethod
+    def exit_with_error(error_message: str) -> None:
+        print(f"ERROR: {error_message}")
+        sys.exit(1)
 
     # deprecated: unnecessary lines in traceback + ide linting issues
     # switch to regular raise Ex() inplace
@@ -668,7 +717,24 @@ class Utils:
         return res
 
     @classmethod
-    def compress_zst(cls, path):
+    def compress_zst(cls, path, dest_path=None):
+        """
+        Compresses a file or directory using zstd.
+
+        Args:
+            path: Path to the file or directory to compress.
+            dest_path: Optional destination for the compressed archive.
+                      - If None: archive is created in the same directory as the source.
+                      - If a directory: archive is created in that directory with default name.
+                      - If a file path: used as the exact output path for the archive.
+                      Note: For directories, the archive will be .tar.zst; for files, .zst
+
+        Returns:
+            str: Path to the created compressed archive.
+
+        Raises:
+            RuntimeError: If zstd is not installed.
+        """
         path = str(path).rstrip("/")
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
@@ -679,16 +745,40 @@ class Utils:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                path_out = f"{parent}/{name}.tar.zst"
+                archive_name = f"{name}.tar.zst"
+
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{parent}/{archive_name}"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / archive_name)
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"cd {parent} && rm -f {name}.tar.zst && tar -cf - {name} | zstd -c > {name}.tar.zst",
+                    f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                path_out = f"{path}.zst"
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{path}.zst"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / f"{path_obj.name}.zst")
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
+                    f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -713,7 +803,24 @@ class Utils:
         return archive_name
 
     @classmethod
-    def compress_gz(cls, path):
+    def compress_gz(cls, path, dest_path=None):
+        """
+        Compresses a file or directory using gzip.
+
+        Args:
+            path: Path to the file or directory to compress.
+            dest_path: Optional destination for the compressed archive.
+                      - If None: archive is created in the same directory as the source.
+                      - If a directory: archive is created in that directory with default name.
+                      - If a file path: used as the exact output path for the archive.
+                      Note: For directories, the archive will be .tar.gz; for files, .gz
+
+        Returns:
+            str: Path to the created compressed archive.
+
+        Raises:
+            RuntimeError: If gzip is not installed or if the path doesn't exist.
+        """
         path = str(path).rstrip("/")
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
@@ -724,19 +831,51 @@ class Utils:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                path_out = f"{parent}/{name}.tar.gz"
+                archive_name = f"{name}.tar.gz"
+
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{parent}/{archive_name}"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / archive_name)
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"cd {parent} && rm -f {name}.tar.gz && tar -cf - {name} | gzip > {name}.tar.gz",
+                    f"cd {quote(parent)} && tar -cf - {quote(name)} | gzip > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                path_out = f"{path}.gz"
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{path}.gz"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory
+                        path_out = str(dest_path_obj / f"{path_obj.name}.gz")
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"rm -f {path_out} && gzip -c '{path}' > '{path_out}'",
+                    f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
+            elif not path_obj.exists():
+                raise RuntimeError(
+                    f"Failed to compress file [{path}]: path does not exist"
+                )
+            else:
+                raise RuntimeError(f"Failed to compress file [{path}]")
+        else:
+            raise RuntimeError(f"Failed to compress file [{path}]: no gzip installed")
         return path_out
 
     @classmethod
@@ -963,12 +1102,7 @@ class TeePopen:
         # Search backwards for "Traceback"
         for i in range(len(buffer) - 1, -1, -1):
             if "Traceback" in buffer[i]:
-                return "\n".join(buffer[i:])
+                return "".join(buffer[i:])
 
         # Fallback: return last max_lines
-        return "\n".join(buffer[-max_lines:])
-
-
-if __name__ == "__main__":
-
-    Utils.compress_gz("/tmp/test/")
+        return "".join(buffer[-max_lines:])

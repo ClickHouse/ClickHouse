@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 
@@ -118,7 +119,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         // so the best we can now it to
         // 1) repeat last commit in sync mode (async could be still in queue, we need to be sure is is properly committed before rebalance)
         // 2) stop / brake the current reading:
-        //     * clean buffered non-commited messages
+        //     * clean buffered non-committed messages
         //     * set flag / flush
 
         cleanUnprocessed();

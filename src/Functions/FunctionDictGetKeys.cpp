@@ -194,7 +194,7 @@ private:
         Names column_names = structure.getKeysNames();
         column_names.push_back(attr_name);
 
-        auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
+        auto pipe = dict->read(column_names, helper.context->getSettingsRef()[Setting::max_block_size], 1);
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
@@ -297,7 +297,7 @@ private:
         }
 
         /// Step 2
-        auto & cache = helper.getContext()->getQueryContext()->getReverseLookupCache();
+        auto & cache = helper.context->getQueryContext()->getReverseLookupCache();
         std::vector<SerializedKeysPtr> bucket_cached_bytes(num_buckets);
         std::vector<size_t> missing_bucket_ids;
         missing_bucket_ids.reserve(num_buckets);
@@ -404,7 +404,7 @@ private:
             while (!in.eof())
             {
                 for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                    result_cols[key_pos]->deserializeAndInsertFromArena(in);
+                    result_cols[key_pos]->deserializeAndInsertFromArena(in, /*settings=*/nullptr);
 
                 ++out_offset;
             }
@@ -448,7 +448,7 @@ private:
         chassert(column_names.size() == num_keys);
         column_names.push_back(attr_name);
 
-        auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
+        auto pipe = dict->read(column_names, helper.context->getSettingsRef()[Setting::max_block_size], 1);
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
@@ -495,7 +495,7 @@ private:
                 {
                     const auto & key_col = key_columns[key_pos];
                     const char * begin = nullptr;
-                    auto ref = key_col->serializeValueIntoArena(row_id, arena, begin);
+                    std::string_view ref = key_col->serializeValueIntoArena(row_id, arena, begin, nullptr);
 
                     chassert(begin != nullptr);
                     chassert(ref.data() >= begin);
@@ -553,13 +553,13 @@ This is most effective with large dictionaries when the input has low cardinalit
 SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
     )",
             R"(
-┌─-ids──┐
+┌─ids───┐
 │ [4,2] │
 └───────┘
     )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Dictionary;
-    FunctionDocumentation docs{description, syntax, arguments, returned_value, {}, introduced_in, category};
+    FunctionDocumentation docs{description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDictGetKeys>(docs);
 }

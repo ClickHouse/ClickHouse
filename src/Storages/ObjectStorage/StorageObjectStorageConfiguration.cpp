@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Storages/ObjectStorage/Common.h>
 
 namespace DB
 {
@@ -71,7 +72,8 @@ void StorageObjectStorageConfiguration::initialize(
     StorageObjectStorageConfiguration & configuration_to_initialize,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure)
+    bool with_table_structure,
+    const StorageID * table_id)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -83,7 +85,7 @@ void StorageObjectStorageConfiguration::initialize(
     }
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
-    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
@@ -233,7 +235,18 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     ObjectInfoPtr,
     QueryPipelineBuilder &,
     const std::optional<FormatSettings> &,
+    FormatParserSharedResourcesPtr,
     ContextPtr) const
 {
+}
+
+void StorageObjectStorageConfiguration::initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments)
+{
+    format = parsed_arguments.format;
+    compression_method = parsed_arguments.compression_method;
+    structure = parsed_arguments.structure;
+    partition_strategy_type = parsed_arguments.partition_strategy_type;
+    partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
+    partition_strategy = parsed_arguments.partition_strategy;
 }
 }

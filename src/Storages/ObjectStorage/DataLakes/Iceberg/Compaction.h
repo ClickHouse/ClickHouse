@@ -15,11 +15,11 @@ void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
     DB::ObjectStoragePtr object_storage_,
-    DB::StorageObjectStorageConfigurationPtr configuration_,
+    const DataLakeStorageSettings & data_lake_settings,
     const std::optional<DB::FormatSettings> & format_settings_,
     DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
-    DB::CompressionMethod compression_method_);
+    const String & write_format);
 
 #endif
 }

@@ -21,7 +21,7 @@ class Context;
 class IDataType;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class ASTFunction;
 
@@ -35,8 +35,8 @@ using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String
 struct AggregateFunctionWithProperties
 {
     AggregateFunctionCreator creator;
+    FunctionDocumentation documentation;
     AggregateFunctionProperties properties;
-    FunctionDocumentation documentation = {}; /// TODO remove default initialization ... all aggregate functions should have documentation
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -44,8 +44,8 @@ struct AggregateFunctionWithProperties
 
     template <typename Creator>
     requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}, FunctionDocumentation documentation_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_)), documentation(std::move(documentation_))
+    AggregateFunctionWithProperties(Creator creator_, FunctionDocumentation documentation_, AggregateFunctionProperties properties_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
     {
     }
 };
@@ -95,8 +95,8 @@ private:
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments) const;
 
-    using AggregateFunctions = std::unordered_map<String, Value>;
-    using ActionMap = std::unordered_map<String, String>;
+    using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using ActionMap = std::unordered_map<String, String>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     AggregateFunctions aggregate_functions;
     /// Mapping from functions with `RESPECT NULLS` modifier to actual aggregate function names

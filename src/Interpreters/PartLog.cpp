@@ -118,7 +118,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "The reason for the event with type MERGE_PARTS. Can have one of the following values: "
             "NotAMerge — The current event has the type other than MERGE_PARTS, "
             "RegularMerge — Some regular merge, "
-            "TTLDeleteMerge — Cleaning up expired data. "
+            "TTLDeleteMerge, TTLDropMerge — Cleaning up expired data. "
             "TTLRecompressMerge — Recompressing data part with the. "},
         {"merge_algorithm", std::move(merge_algorithm_datatype), "Merge algorithm for the event with type MERGE_PARTS. Can have one of the following values: Undecided, Horizontal, Vertical"},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date."},
@@ -134,6 +134,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`."},
         {"partition", std::make_shared<DataTypeString>(), "The partition name."},
         {"part_type", std::make_shared<DataTypeString>(), "The type of the part. Possible values: Wide and Compact."},
+        {"part_storage_type", std::make_shared<DataTypeString>(), "The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file."},
         {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
@@ -151,6 +152,9 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         /// Is there an error during the execution or commit
         {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
+
+        /// Mutation IDs
+        {"mutation_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of mutation IDs applied to the source part (merged_from) for the event with type MUTATE_PART_START and MUTATE_PART."},
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
@@ -186,7 +190,8 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
     columns[i++]->insert(partition);
-    columns[i++]->insert(part_type.toString());
+    columns[i++]->insert(part_format.part_type.toString());
+    columns[i++]->insert(part_format.storage_type.toString());
     columns[i++]->insert(disk_name);
     columns[i++]->insert(path_on_disk);
 
@@ -214,6 +219,12 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
 
+    Array mutation_ids_array;
+    mutation_ids_array.reserve(mutation_ids.size());
+    for (const auto & id : mutation_ids)
+        mutation_ids_array.push_back(id);
+    columns[i++]->insert(mutation_ids_array);
+
     if (profile_counters)
     {
         auto * column = columns[i++].get();
@@ -236,7 +247,7 @@ bool PartLog::addNewPartsImpl(
     try
     {
         auto table_id = parts.front().part->storage.getStorageID();
-        part_log = current_context->getPartLog(table_id.database_name); // assume parts belong to the same table
+        part_log = current_context->getPartLog(); // assume parts belong to the same table
         if (!part_log)
             return false;
 
@@ -269,8 +280,8 @@ bool PartLog::addNewPartsImpl(
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();
-            elem.part_type = part->getType();
             elem.deduplication_block_ids = deduplication_block_ids.empty() ? Strings() : std::move(deduplication_block_ids[i]);
+            elem.part_format = part->getFormat();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();

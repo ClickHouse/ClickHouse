@@ -2,20 +2,47 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <Columns/IColumn.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Common/escapeForFileName.h>
+#include <Common/SipHash.h>
 
 #include <numeric>
 
 namespace DB
 {
 
+constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+bool indexFileExistsInChecksums(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const std::string & extension)
+{
+    if (checksums.files.contains(path_prefix + extension))
+        return true;
+
+    /// Also check for hashed version of the filename
+    auto hash = sipHash128String(path_prefix);
+    return checksums.files.contains(hash + extension);
+}
+
+String getIndexFileName(const String & index_name, bool escape_filename)
+{
+    if (escape_filename)
+        return escapeForFileName(INDEX_FILE_PREFIX + index_name);
+    return INDEX_FILE_PREFIX + index_name;
+}
+
+String IMergeTreeIndex::getFileName() const
+{
+    return getIndexFileName(index.name, index.escape_filenames);
 }
 
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
@@ -25,7 +52,7 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 
 MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (checksums.files.contains(relative_path_prefix + ".idx"))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx"))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /*unknown*/, {}};

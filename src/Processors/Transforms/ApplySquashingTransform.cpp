@@ -30,7 +30,7 @@ ExceptionKeepingTransform::GenerateResult DB::ApplySquashingTransform::onGenerat
 
 void ApplySquashingTransform::onConsume(Chunk chunk)
 {
-    cur_chunk = Squashing::squash(std::move(chunk));
+    cur_chunk = Squashing::squash(std::move(chunk), getInputPort().getSharedHeader());
 }
 
 }

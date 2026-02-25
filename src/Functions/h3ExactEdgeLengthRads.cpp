@@ -7,10 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
 
-#include <constants.h>
 #include <h3api.h>
 
 
@@ -115,7 +112,7 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ExactEdgeLengthRads>(documentation);
 }
 

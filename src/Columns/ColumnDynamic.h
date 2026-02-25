@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Common/WeakHash.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 
 namespace DB
@@ -62,9 +63,6 @@ public:
     using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
-private:
-    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
-
     struct VariantInfo
     {
         DataTypePtr variant_type;
@@ -76,6 +74,9 @@ private:
         /// It's used during variant extension.
         std::unordered_map<String, UInt8> variant_name_to_discriminator;
     };
+
+private:
+    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
 
     explicit ColumnDynamic(size_t max_dynamic_types_);
     ColumnDynamic(MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {});
@@ -193,10 +194,10 @@ public:
         variant_column_ptr->popBack(n);
     }
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
-    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
+    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -215,6 +216,12 @@ public:
         return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types);
     }
 
+    void filter(const Filter & filt) override
+    {
+        variant_column_ptr->filter(filt);
+        statistics.reset();
+    }
+
     void expand(const Filter & mask, bool inverted) override
     {
         variant_column_ptr->expand(mask, inverted);
@@ -222,7 +229,7 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
@@ -257,9 +264,9 @@ public:
         return variant_column_ptr->hasEqualValues();
     }
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        variant_column_ptr->getExtremes(min, max);
+        variant_column_ptr->getExtremes(min, max, start, end);
     }
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -281,6 +288,11 @@ public:
     void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     /// Prepare only variants but not discriminators and offsets.
     void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
+
+    void shrinkToFit() override
+    {
+        variant_column_ptr->shrinkToFit();
+    }
 
     void ensureOwnership() override
     {
@@ -387,6 +399,7 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
@@ -452,7 +465,7 @@ public:
 
     String getTypeNameAt(size_t row_num) const;
     DataTypePtr getTypeAt(size_t row_num) const;
-    void getAllTypeNamesInto(std::unordered_set<String> & names) const;
+    void getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> & names) const;
 
 private:
     void createVariantInfo(const DataTypePtr & variant_type);

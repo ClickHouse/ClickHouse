@@ -37,6 +37,7 @@ struct SetAndKey
 {
     String key;
     SetPtr set;
+    StoragePtr external_table;
 };
 
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
@@ -57,8 +58,6 @@ public:
     virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
-    /// When the data in the Set comes from a subquery or the table is considered non-deterministic.
-    virtual bool isDeterministic() const { return true; }
 
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
@@ -78,7 +77,6 @@ public:
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
-    bool isDeterministic() const override { return false; }
     Hash getHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
 
@@ -134,7 +132,7 @@ public:
         Hash hash_,
         ASTPtr ast_,
         std::unique_ptr<QueryPlan> source_,
-        StoragePtr external_table_,
+        StoragePtr external_table,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
         bool transform_null_in,
         SizeLimits size_limits,
@@ -150,12 +148,17 @@ public:
 
     ~FutureSetFromSubquery() override;
 
+    /// The following two methods are used to transfer ownership of `SetAndKey` from one
+    /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
+    /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
+    void replaceSetAndKey(SetAndKeyPtr set);
+    SetAndKeyPtr detachSetAndKey();
+
     SetPtr get() const override;
     DataTypes getTypes() const override;
     Hash getHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
-    bool isDeterministic() const override { return false; }
 
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,
@@ -165,6 +168,8 @@ public:
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
+
+    void buildExternalTableFromInplaceSet(StoragePtr external_table_);
     void setExternalTable(StoragePtr external_table_);
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
@@ -174,7 +179,6 @@ private:
     Hash hash;
     ASTPtr ast;
     SetAndKeyPtr set_and_key;
-    StoragePtr external_table;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
     std::unique_ptr<QueryPlan> source;

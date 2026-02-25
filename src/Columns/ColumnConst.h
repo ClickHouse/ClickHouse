@@ -34,7 +34,7 @@ public:
         return convertToFullColumn();
     }
 
-    ColumnPtr removeLowCardinality() const;
+    ColumnPtr convertToFullColumnIfLowCardinality() const override;
 
     std::string getName() const override
     {
@@ -122,11 +122,12 @@ public:
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void insertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #else
-    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
+        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
@@ -169,31 +170,22 @@ public:
         ++s;
     }
 
-    void popBack(size_t n) override
+    void popBack(size_t n) override;
+
+    std::string_view
+    serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        s -= n;
+        return data->serializeValueIntoArena(0, arena, begin, settings);
     }
 
-    std::string_view serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override
     {
-        return data->serializeValueIntoArena(0, arena, begin);
+        return data->serializeValueIntoMemory(0, memory, settings);
     }
 
-    char * serializeValueIntoMemory(size_t, char * memory) const override
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
     {
-        return data->serializeValueIntoMemory(0, memory);
-    }
-
-    void deserializeAndInsertFromArena(ReadBuffer & in) override
-    {
-        data->deserializeAndInsertFromArena(in);
-        data->popBack(1);
-        ++s;
-    }
-
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override
-    {
-        data->deserializeAndInsertAggregationStateValueFromArena(in);
+        data->deserializeAndInsertFromArena(in, settings);
         data->popBack(1);
         ++s;
     }
@@ -216,6 +208,7 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
@@ -260,9 +253,9 @@ public:
 
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        data->getExtremes(min, max);
+        data->getExtremes(min, max, start, end);
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override

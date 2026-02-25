@@ -10,7 +10,7 @@ namespace DB
 
 namespace
 {
-    bool parsePublicSSHKey(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTPublicSSHKey> & ast)
+    bool parsePublicSSHKey(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTPublicSSHKey> & ast)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -22,7 +22,7 @@ namespace
             if (!ParserKeyword{Keyword::TYPE}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, type))
                 return false;
 
-            ast = std::make_shared<ASTPublicSSHKey>();
+            ast = make_intrusive<ASTPublicSSHKey>();
             ast->key_base64 = std::move(key_base64);
             ast->type = std::move(type);
             return true;
@@ -33,7 +33,7 @@ namespace
 
 bool ParserPublicSSHKey::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::shared_ptr<ASTPublicSSHKey> res;
+    boost::intrusive_ptr<ASTPublicSSHKey> res;
     if (!parsePublicSSHKey(pos, expected, res))
         return false;
 

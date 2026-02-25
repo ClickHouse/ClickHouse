@@ -93,6 +93,7 @@ possible_properties = {
         "select_from_system_db_requires_grant": true_false_lambda,
         "settings_constraints_replace_previous": true_false_lambda,
         "table_engines_require_grant": true_false_lambda,
+        "throw_on_unmatched_row_policies": true_false_lambda,
         "users_without_row_policies_can_read_rows": true_false_lambda,
     },
     "aggregate_function_group_array_action_when_limit_is_reached": lambda: random.choice(
@@ -108,6 +109,7 @@ possible_properties = {
     "async_load_system_database": true_false_lambda,
     "asynchronous_heavy_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 60),
     "asynchronous_metrics_enable_heavy_metrics": true_false_lambda,
+    "asynchronous_metrics_keeper_metrics_only": true_false_lambda,
     "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 30),
     "background_buffer_flush_schedule_pool_size": threads_lambda,
     "background_common_pool_size": no_zero_threads_lambda,
@@ -131,10 +133,11 @@ possible_properties = {
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
     "concurrent_threads_scheduler": lambda: random.choice(
-        ["round_robin", "fair_round_robin"]
+        ["round_robin", "fair_round_robin", "max_min_fair"]
     ),
     "concurrent_threads_soft_limit_num": threads_lambda,
     "concurrent_threads_soft_limit_ratio_to_cores": threads_lambda,
+    "cpu_slot_preemption": true_false_lambda,
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
@@ -146,6 +149,7 @@ possible_properties = {
         0.2, 0.2, 0.0, 1.0
     ),
     "enable_azure_sdk_logging": true_false_lambda,
+    "enable_system_unfreeze": true_false_lambda,
     "format_alter_operations_with_parentheses": true_false_lambda,
     "iceberg_catalog_threadpool_pool_size": threads_lambda,
     "iceberg_catalog_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -160,6 +164,9 @@ possible_properties = {
     "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "index_uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "insert_deduplication_version": lambda: random.choice(
+        ["old_separate_hashes", "compatible_double_hashes", "new_unified_hashes"]
+    ),
     "io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "keeper_multiread_batch_size": threshold_generator(0.2, 0.2, 1, 1000),
     "load_marks_threadpool_pool_size": threads_lambda,
@@ -360,6 +367,12 @@ object_storages_properties = {
     "web": {},
 }
 
+s3_with_keeper_properties = {
+    "metadata_cache_cleanup_interval": threshold_generator(0.2, 0.2, 1, 60),
+    "metadata_cache_enabled": true_false_lambda,
+    "metadata_cache_full_directory_lists": true_false_lambda,
+}
+
 metadata_cleanup_properties = {
     "enabled": lambda: 1 if random.randint(0, 9) < 9 else 0,
     "deleted_objects_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
@@ -377,6 +390,7 @@ cache_storage_properties = {
     "background_download_threads": threads_lambda,
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
     "cache_on_write_operations": true_false_lambda,
+    "check_cache_probability": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "enable_bypass_cache_with_threshold": true_false_lambda,
     "enable_filesystem_query_cache_limit": true_false_lambda,
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -551,7 +565,7 @@ def add_single_disk(
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
     is_private_binary: bool,
-) -> tuple[int, str]:
+) -> tuple[int, str, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
         iter_prev_disk = prev_disk = random.choice(range(0, i))
@@ -578,6 +592,7 @@ def add_single_disk(
     allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
     allowed_disk_xml.text = f"disk{i}"
     final_type = disk_type
+    final_super_type = disk_type
 
     if disk_type == "object_storage":
         object_storages = ["local"]
@@ -659,6 +674,20 @@ def add_single_disk(
         ):
             metadata_xml = ET.SubElement(next_disk, "metadata_background_cleanup")
             apply_properties_recursively(metadata_xml, metadata_cleanup_properties)
+    elif disk_type == "s3_with_keeper":
+        endpoint_xml = ET.SubElement(next_disk, "endpoint")
+        endpoint_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data{i}"
+        access_key_id_xml = ET.SubElement(next_disk, "access_key_id")
+        access_key_id_xml.text = "minio"
+        secret_access_key_xml = ET.SubElement(next_disk, "secret_access_key")
+        secret_access_key_xml.text = cluster.minio_secret_key
+
+        # Add storage settings
+        if random.randint(1, 100) <= 70:
+            apply_properties_recursively(next_disk, s3_with_keeper_properties)
+        if random.randint(1, 100) <= 70:
+            metadata_xml = ET.SubElement(next_disk, "metadata_background_cleanup")
+            apply_properties_recursively(metadata_xml, metadata_cleanup_properties)
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
@@ -694,7 +723,7 @@ def add_single_disk(
 
     if disk_type != "cache" and random.randint(1, 100) <= 50:
         apply_properties_recursively(next_disk, all_disks_properties)
-    return (prev_disk, final_type)
+    return (prev_disk, final_type, final_super_type)
 
 
 class DiskPropertiesGroup(PropertiesGroup):
@@ -718,6 +747,7 @@ class DiskPropertiesGroup(PropertiesGroup):
         allowed_disk_xml.text = "default"
         created_disks_types = []
         created_cache_disks = []
+        created_keeper_disks = []
 
         for i in range(0, number_disks):
             possible_types = (
@@ -725,6 +755,11 @@ class DiskPropertiesGroup(PropertiesGroup):
                 if i == 0
                 else ["object_storage", "object_storage", "cache", "encrypted"]
             )
+            if args.with_minio and is_private_binary:
+                # Increase probability
+                possible_types.extend(
+                    ["s3_with_keeper", "s3_with_keeper", "s3_with_keeper"]
+                )
             next_created_disk_pair = add_single_disk(
                 i,
                 args,
@@ -738,6 +773,13 @@ class DiskPropertiesGroup(PropertiesGroup):
             created_disks_types.append(next_created_disk_pair)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
+            elif (
+                is_private_binary
+                and args.set_shared_mergetree_disk
+                and next_created_disk_pair[2] == "s3_with_keeper"
+            ):
+                created_keeper_disks.append(i)
+
         # Allow any disk in any table engine
         disks_table_engines.text = ",".join(
             ["default"] + [f"disk{i}" for i in range(0, number_disks)]
@@ -806,6 +848,16 @@ class DiskPropertiesGroup(PropertiesGroup):
             else:
                 tmp_path_xml = ET.SubElement(top_root, "tmp_path")
                 tmp_path_xml.text = "/var/lib/clickhouse/tmp/"
+        # Set disk for SMTs
+        if len(created_keeper_disks) > 0:
+            smt_element = ET.SubElement(top_root, "shared_merge_tree")
+            disk_element = ET.SubElement(smt_element, "disk")
+            disk_element.text = f"disk{random.choice(created_keeper_disks)}"
+        # Optionally set database disk
+        if number_disks > 0 and random.randint(1, 100) <= 30:
+            dbd_element = ET.SubElement(top_root, "database_disk")
+            disk_element = ET.SubElement(dbd_element, "disk")
+            disk_element.text = f"disk{random.randint(0, number_disks - 1)}"
 
 
 def add_single_cache(i: int, next_cache: ET.Element):
@@ -966,8 +1018,9 @@ class LogTablePropertiesGroup(PropertiesGroup):
         log_table_properties = {
             "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
             "flush_on_crash": true_false_lambda,
-            "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
-            "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            # Setting these may crash the server
+            #"max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            #"reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         # Can't use this without the engine parameter?
         # number_policies = 0
@@ -1261,7 +1314,9 @@ def modify_server_settings(
         ET.indent(tree, space="    ", level=0)  # indent tree
         temp_path = None
         # Create a temporary file
-        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            dir=args.tmp_files_dir, suffix=".xml", delete=False
+        ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
             tree.write(temp_path, encoding="utf-8", xml_declaration=True)
@@ -1270,7 +1325,7 @@ def modify_server_settings(
 
 
 def modify_user_settings(
-    input_config_path: str, number_clusters: int
+    args, input_config_path: str, number_clusters: int
 ) -> tuple[bool, str]:
     modified = False
 
@@ -1303,7 +1358,9 @@ def modify_user_settings(
         ET.indent(tree, space="    ", level=0)  # indent tree
         temp_path = None
         # Create a temporary file
-        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            dir=args.tmp_files_dir, suffix=".xml", delete=False
+        ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
             tree.write(temp_path, encoding="utf-8", xml_declaration=True)
@@ -1402,10 +1459,14 @@ keeper_settings = {
     "enable_reconfiguration": true_false_lambda,
     "feature_flags": {
         "check_not_exists": true_false_lambda,
+        "check_stat": true_false_lambda,
         "create_if_not_exists": true_false_lambda,
         "filtered_list": true_false_lambda,
+        "list_with_stat_and_data": true_false_lambda,
         "multi_read": true_false_lambda,
         "multi_watches": true_false_lambda,
+        "persistent_watches": true_false_lambda,
+        "try_remove": true_false_lambda,
         "remove_recursive": true_false_lambda,
     },
     "force_recovery": true_false_lambda,
@@ -1478,7 +1539,9 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
             multi_read_xml.text = "1"
 
         ET.indent(tree, space="    ", level=0)
-        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            dir=args.tmp_files_dir, suffix=".xml", delete=False
+        ) as temp_file:
             result_configs.append(temp_file.name)
             tree.write(temp_file.name, encoding="utf-8", xml_declaration=True)
     return result_configs

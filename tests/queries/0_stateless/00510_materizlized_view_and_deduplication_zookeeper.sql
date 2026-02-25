@@ -11,7 +11,7 @@ SET database_replicated_allow_replicated_engine_arguments=3;
 CREATE TABLE with_deduplication(x UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00510/with_deduplication', 'r1') ORDER BY x;
 CREATE TABLE without_deduplication(x UInt32)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00510/without_deduplication', 'r1') ORDER BY x SETTINGS replicated_deduplication_window = 0;
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00510/without_deduplication', 'r1') ORDER BY x SETTINGS replicated_deduplication_window = 0, replicated_deduplication_window_for_async_inserts = 0;
 
 CREATE MATERIALIZED VIEW with_deduplication_mv UUID '00000510-1000-4000-8000-000000000001'
     ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{database}/test_00510/with_deduplication_mv', 'r1') ORDER BY dummy
@@ -19,6 +19,8 @@ CREATE MATERIALIZED VIEW with_deduplication_mv UUID '00000510-1000-4000-8000-000
 CREATE MATERIALIZED VIEW without_deduplication_mv UUID '00000510-1000-4000-8000-000000000002'
     ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{database}/test_00510/without_deduplication_mv', 'r1') ORDER BY dummy
     AS SELECT 0 AS dummy, countState(x) AS cnt FROM without_deduplication;
+
+SET deduplicate_blocks_in_dependent_materialized_views = 0;
 
 INSERT INTO with_deduplication VALUES (42);
 INSERT INTO with_deduplication VALUES (42);
@@ -31,12 +33,12 @@ INSERT INTO without_deduplication VALUES (43);
 SELECT count() FROM with_deduplication;
 SELECT count() FROM without_deduplication;
 
--- Implicit insert isn't deduplicated, because deduplicate_blocks_in_dependent_materialized_views = 0 by default
+-- Implicit insert isn't deduplicated, because deduplicate_blocks_in_dependent_materialized_views = 0
 SELECT '';
 SELECT countMerge(cnt) FROM with_deduplication_mv;
 SELECT countMerge(cnt) FROM without_deduplication_mv;
 
--- Explicit insert is deduplicated
+-- Explicit insert is not deduplicated because insert has selectpart and select is not stable
 ALTER TABLE `.inner_id.00000510-1000-4000-8000-000000000001` DROP PARTITION ID 'all';
 ALTER TABLE `.inner_id.00000510-1000-4000-8000-000000000002` DROP PARTITION ID 'all';
 INSERT INTO `.inner_id.00000510-1000-4000-8000-000000000001` SELECT 0 AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;

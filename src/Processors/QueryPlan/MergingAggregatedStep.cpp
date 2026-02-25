@@ -24,6 +24,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool distributed_aggregation_memory_efficient;
+    extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
 namespace Setting
@@ -239,7 +240,7 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "MergingAggregatedStep must have one input stream");
@@ -309,7 +310,8 @@ std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserializati
         overflow_row,
         settings[Setting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
-        ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization]);
+        ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]);
 
     auto merging_aggregated_step = std::make_unique<MergingAggregatedStep>(
         ctx.input_headers.front(),

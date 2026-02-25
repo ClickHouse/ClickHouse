@@ -10,7 +10,11 @@ class CHAggregate
 {
 public:
     const bool support_nulls_clause;
-    const uint32_t fnum, min_params, max_params, min_args, max_args;
+    const uint32_t fnum;
+    const uint32_t min_params;
+    const uint32_t max_params;
+    const uint32_t min_args;
+    const uint32_t max_args;
 
     CHAggregate(const uint32_t f, const uint32_t min_p, const uint32_t max_p, const uint32_t min_a, const uint32_t m_args, const bool snc)
         : support_nulls_clause(snc)
@@ -26,7 +30,11 @@ public:
 class CHFunction
 {
 public:
-    const uint32_t fnum, min_lambda_param, max_lambda_param, min_args, max_args;
+    const uint32_t fnum;
+    const uint32_t min_lambda_param;
+    const uint32_t max_lambda_param;
+    const uint32_t min_args;
+    const uint32_t max_args;
 
     CHFunction(const uint32_t f, const uint32_t min_lambda, const uint32_t max_lambda, const uint32_t min_a, const uint32_t m_args)
         : fnum(f)
@@ -201,7 +209,9 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCgroupArraySample, 1, 2, 1, 1, false)};
 
 const std::vector<CHFunction> CommonCHFuncs
-    = {CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1),
+    = {CHFunction(SQLFunc::FUNCarrayJoin, 0, 0, 1, 1),
+       CHFunction(SQLFunc::FUNCif, 0, 0, 3, 3),
+       CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1),
        CHFunction(SQLFunc::FUNCtoNullable, 0, 0, 1, 1),
        CHFunction(SQLFunc::FUNCtoLowCardinality, 0, 0, 1, 1)};
 
@@ -285,7 +295,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCarrayPartialReverseSort, 0, 1, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCarrayReverseSort, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCarrayUniq, 0, 0, 1, ulimited_params),
-    CHFunction(SQLFunc::FUNCarrayJoin, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCarrayDifference, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCarrayDistinct, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCarrayEnumerateDense, 0, 0, 1, 1),
@@ -384,7 +393,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNClessOrEquals, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCgreaterOrEquals, 0, 0, 2, 2),
     /// Conditional functions
-    CHFunction(SQLFunc::FUNCif, 0, 0, 3, 3),
     CHFunction(SQLFunc::FUNCmultiIf, 0, 0, 3, ulimited_params),
     CHFunction(SQLFunc::FUNCgreatest, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCleast, 0, 0, 2, ulimited_params),
@@ -516,6 +524,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCLinfNormalize, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCLpNormalize, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCcosineDistance, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCcosineDistanceTransposed, 0, 0, 3, 3),
     /// Encoding
     CHFunction(SQLFunc::FUNCchar, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNChex, 0, 0, 1, 1),
@@ -567,6 +576,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmurmurHash3_64, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCmurmurHash3_128, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCxxh3, 0, 0, 1, ulimited_params),
+    CHFunction(SQLFunc::FUNCxxh3_128, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCxxHash32, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCxxHash64, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCngramSimHash, 0, 0, 1, 2),
@@ -823,16 +833,17 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNChasAnyTokens, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCcompareSubstrings, 0, 0, 5, 5),
     /// Split strings
-    CHFunction(SQLFunc::FUNCsplitByChar, 0, 0, 2, ulimited_params),
-    CHFunction(SQLFunc::FUNCsplitByString, 0, 0, 2, ulimited_params),
-    CHFunction(SQLFunc::FUNCsplitByRegexp, 0, 0, 2, ulimited_params),
-    CHFunction(SQLFunc::FUNCsplitByWhitespace, 0, 0, 1, ulimited_params),
-    CHFunction(SQLFunc::FUNCsplitByNonAlpha, 0, 0, 1, ulimited_params),
+    CHFunction(SQLFunc::FUNCsplitByChar, 0, 0, 2, 3),
+    CHFunction(SQLFunc::FUNCsplitByString, 0, 0, 2, 3),
+    CHFunction(SQLFunc::FUNCsplitByRegexp, 0, 0, 2, 3),
+    CHFunction(SQLFunc::FUNCsplitByWhitespace, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCsplitByNonAlpha, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCarrayStringConcat, 0, 0, 1, 2),
-    CHFunction(SQLFunc::FUNCalphaTokens, 0, 0, 1, ulimited_params),
+    CHFunction(SQLFunc::FUNCalphaTokens, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCextractAllGroups, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCngrams, 0, 0, 2, 2),
-    CHFunction(SQLFunc::FUNCtokens, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtokens, 0, 0, 1, 4),
+    CHFunction(SQLFunc::FUNCreverseBySeparator, 0, 0, 1, 2),
     /// Strings
     CHFunction(SQLFunc::FUNClengthUTF8, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCleft, 0, 0, 2, 2),
@@ -938,6 +949,16 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNChop, 0, 0, 3, 4),
     CHFunction(SQLFunc::FUNChopStart, 0, 0, 3, 4),
     CHFunction(SQLFunc::FUNChopEnd, 0, 0, 3, 4),
+    ///Time series
+    CHFunction(SQLFunc::FUNCtimeSeriesRange, 0, 0, 3, 3),
+    CHFunction(SQLFunc::FUNCtimeSeriesFromGrid, 0, 0, 4, 4),
+    CHFunction(SQLFunc::FUNCseriesDecomposeSTL, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCseriesOutliersDetectTukey, 0, 0, 1, 4),
+    CHFunction(SQLFunc::FUNCseriesPeriodDetectFFT, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtimeSeriesIdToTags, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtimeSeriesIdToTagsGroup, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtimeSeriesStoreTags, 0, 0, 2, ulimited_params),
+    CHFunction(SQLFunc::FUNCtimeSeriesTagsGroupToTags, 0, 0, 1, 1),
     /// Tuples
     CHFunction(SQLFunc::FUNCtuple, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCtupleElement, 0, 0, 2, 3),
@@ -1169,14 +1190,23 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCisIPv6String, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCisIPAddressInRange, 0, 0, 2, 2),
     /// Geo
+    CHFunction(SQLFunc::FUNCflipCoordinates, 0, 0, 1, 1),
+    /// Geo coordinates
     CHFunction(SQLFunc::FUNCgreatCircleDistance, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCgeoDistance, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCgreatCircleAngle, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCpointInEllipses, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCpointInPolygon, 0, 0, 2, ulimited_params),
+    /// Geohash
     CHFunction(SQLFunc::FUNCgeohashEncode, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCgeohashDecode, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCgeohashesInBox, 0, 0, 5, 5),
+    /// Geometry functions
+    CHFunction(SQLFunc::FUNCperimeterCartesian, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCareaCartesian, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCperimeterSpherical, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCareaSpherical, 0, 0, 1, 1),
+    /// H3 Index
     CHFunction(SQLFunc::FUNCh3IsValid, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCh3GetResolution, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCh3EdgeAngle, 0, 0, 1, 1),
@@ -1220,6 +1250,40 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCh3GetIndexesFromUnidirectionalEdge, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCh3GetUnidirectionalEdgesFromHexagon, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCh3GetUnidirectionalEdgeBoundary, 0, 0, 1, 1),
+    /// Polygons functions
+    CHFunction(SQLFunc::FUNCWKT, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKT, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKTMultiPolygon, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKTPolygon, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKTPoint, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKTLineString, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKTMultiLineString, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKTRing, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpolygonsWithinSpherical, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKB, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKBMultiPolygon, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKBPolygon, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKBPoint, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKBLineString, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKBMultiLineString, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpolygonsDistanceSpherical, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonsDistanceCartesian, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonsEqualsCartesian, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonsSymDifferenceSpherical, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonsSymDifferenceCartesian, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonsIntersectionSpherical, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonsWithinCartesian, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonsIntersectCartesian, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonsIntersectSpherical, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonConvexHullCartesian, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpolygonAreaSpherical, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpolygonsUnionSpherical, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonPerimeterSpherical, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpolygonsIntersectionCartesian, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCpolygonAreaCartesian, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpolygonPerimeterCartesian, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpolygonsUnionCartesian, 0, 0, 2, 2),
+    /// S2 index
     CHFunction(SQLFunc::FUNCgeoToS2, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCs2ToGeo, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCs2GetNeighbors, 0, 0, 1, 1),
@@ -1230,7 +1294,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCs2RectContains, 0, 0, 3, 3),
     CHFunction(SQLFunc::FUNCs2RectUnion, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCs2RectIntersection, 0, 0, 4, 4),
-    CHFunction(SQLFunc::FUNCsvg, 0, 0, 1, 2),
+    /// SVG
+    CHFunction(SQLFunc::FUNCSVG, 0, 0, 1, 2),
     /// Financial
     CHFunction(SQLFunc::FUNCfinancialInternalRateOfReturn, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCfinancialInternalRateOfReturnExtended, 0, 0, 2, 4),
@@ -1367,29 +1432,80 @@ const std::vector<CHFunction> CHFuncs = {
 
 const std::vector<CHFunction> CHTableFuncs = {
     /// Table Functions
+    CHFunction(SQLTableFunc::TFarrowFlight, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFazureBlobStorage, 0, 0, 3, 8),
     CHFunction(SQLTableFunc::TFazureBlobStorageCluster, 0, 0, 4, 9),
     CHFunction(SQLTableFunc::TFcluster, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFclusterAllReplicas, 0, 0, 2, 4),
+    CHFunction(SQLTableFunc::TFdeltaLake, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFdeltaLakeAzure, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFdeltaLakeAzureCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFdeltaLakeCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFdeltaLakeLocal, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFdeltaLakeLocalCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFdeltaLakeS3, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFdeltaLakeS3Cluster, 0, 0, 2, 7),
     CHFunction(SQLTableFunc::TFdictionary, 0, 0, 1, 1),
+    CHFunction(SQLTableFunc::TFexecutable, 0, 0, 3, 4),
     CHFunction(SQLTableFunc::TFfile, 0, 0, 1, 5),
     CHFunction(SQLTableFunc::TFfileCluster, 0, 0, 2, 5),
     CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
+    CHFunction(SQLTableFunc::TFfuzzJSON, 0, 0, 1, 14),
+    CHFunction(SQLTableFunc::TFfuzzQuery, 0, 0, 1, 3),
     CHFunction(SQLTableFunc::TFgcs, 0, 0, 1, 8),
     CHFunction(SQLTableFunc::TFgenerateSeries, 0, 0, 2, 3),
-    CHFunction(SQLTableFunc::TFgenerateRandom, 0, 0, 1, 4),
+    CHFunction(SQLTableFunc::TFhdfs, 0, 0, 1, 3),
+    CHFunction(SQLTableFunc::TFhdfsCluster, 0, 0, 2, 4),
+    CHFunction(SQLTableFunc::TFhudi, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFhudiCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFiceberg, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFicebergAzure, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFicebergAzureCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFicebergCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFicebergLocal, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFicebergLocalCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFicebergS3, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFicebergS3Cluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFinput, 0, 0, 1, 1),
+    CHFunction(SQLTableFunc::TFjdbc, 0, 0, 1, 3),
     CHFunction(SQLTableFunc::TFmerge, 0, 0, 1, 2),
+    CHFunction(SQLTableFunc::TFmergeTreeAnalyzeIndexes, 0, 0, 2, 3),
+    CHFunction(SQLTableFunc::TFmergeTreeAnalyzeIndexesUUID, 0, 0, 1, 2),
     CHFunction(SQLTableFunc::TFmergeTreeIndex, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFmergeTreeProjection, 0, 0, 3, 3),
+    CHFunction(SQLTableFunc::TFmongodb, 0, 0, 6, 8),
     CHFunction(SQLTableFunc::TFmysql, 0, 0, 5, 7),
+    CHFunction(SQLTableFunc::TFnull, 0, 0, 1, 1),
+    CHFunction(SQLTableFunc::TFnumbers, 0, 0, 1, 3),
+    CHFunction(SQLTableFunc::TFodbc, 0, 0, 1, 3),
+    CHFunction(SQLTableFunc::TFpaimon, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFpaimonAzure, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFpaimonAzureCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFpaimonCluster, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFpaimonLocal, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFpaimonS3, 0, 0, 2, 7),
+    CHFunction(SQLTableFunc::TFpaimonS3Cluster, 0, 0, 2, 7),
     CHFunction(SQLTableFunc::TFpostgresql, 0, 0, 5, 7),
+    CHFunction(SQLTableFunc::TFprimes, 0, 0, 1, 3),
+    CHFunction(SQLTableFunc::TFprometheusQuery, 0, 0, 3, 4),
+    CHFunction(SQLTableFunc::TFprometheusQueryRange, 0, 0, 5, 6),
+    CHFunction(SQLTableFunc::TFredis, 0, 0, 3, 6),
     CHFunction(SQLTableFunc::TFremote, 0, 0, 1, 6),
     CHFunction(SQLTableFunc::TFremoteSecure, 0, 0, 1, 6),
-    CHFunction(SQLTableFunc::TFS3, 0, 0, 1, 8),
-    CHFunction(SQLTableFunc::TFS3Cluster, 0, 0, 2, 9),
+    CHFunction(SQLTableFunc::TFs3, 0, 0, 1, 8),
+    CHFunction(SQLTableFunc::TFs3Cluster, 0, 0, 2, 9),
     CHFunction(SQLTableFunc::TFsqlite, 0, 0, 2, 2),
+    CHFunction(SQLTableFunc::TFtimeSeriesData, 0, 0, 1, 2),
+    CHFunction(SQLTableFunc::TFtimeSeriesMetrics, 0, 0, 1, 2),
+    CHFunction(SQLTableFunc::TFtimeSeriesSelector, 0, 0, 4, 5),
+    CHFunction(SQLTableFunc::TFtimeSeriesTags, 0, 0, 1, 2),
     CHFunction(SQLTableFunc::TFurl, 0, 0, 1, 4),
     CHFunction(SQLTableFunc::TFurlCluster, 0, 0, 4, 4),
-    CHFunction(SQLTableFunc::TFvalues, 0, 0, 1, ulimited_params)};
+    CHFunction(SQLTableFunc::TFvalues, 0, 0, 1, ulimited_params),
+    CHFunction(SQLTableFunc::TFview, 0, 0, 1, 1),
+    CHFunction(SQLTableFunc::TFytsaurus, 0, 0, 4, 4)};
+/// These are infinite loops
+/// CHFunction(SQLTableFunc::TFgenerateRandom, 0, 0, 1, 4),
+/// CHFunction(SQLTableFunc::TFloop, 0, 0, 1, 2),
 
 }

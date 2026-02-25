@@ -165,8 +165,10 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
 
 void SessionLogElement::appendToBlock(MutableColumns & columns) const
 {
-    assert(type >= SESSION_LOGIN_FAILURE && type <= SESSION_LOGOUT);
-    assert(user_identified_with >= AuthenticationType::NO_PASSWORD && user_identified_with <= AuthenticationType::MAX);
+    chassert(type >= SESSION_LOGIN_FAILURE && type <= SESSION_LOGOUT);
+    chassert(
+        !user_identified_with
+        || (*user_identified_with >= AuthenticationType::NO_PASSWORD && *user_identified_with < AuthenticationType::MAX));
 
     size_t i = 0;
 
@@ -174,11 +176,11 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);
-    columns[i++]->insert(static_cast<DayNum>(DateLUT::instance().toDayNum(event_time).toUnderType()));
+    columns[i++]->insert(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 
-    assert((user && user_identified_with) || client_info.interface == ClientInfo::Interface::TCP_INTERSERVER);
+    chassert((user && user_identified_with) || client_info.interface == ClientInfo::Interface::TCP_INTERSERVER);
     columns[i++]->insert(user ? Field(*user) : Field());
     columns[i++]->insert(user_identified_with ? Field(*user_identified_with) : Field());
 

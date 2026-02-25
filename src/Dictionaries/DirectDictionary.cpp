@@ -90,15 +90,15 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     BlockIO io = loadKeys(requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
-    PullingPipelineExecutor executor(pipeline);
-
     Stopwatch watch;
     size_t block_num = 0;
     size_t rows_num = 0;
 
     io.executeWithCallbacks([&]()
     {
+        QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
+        PullingPipelineExecutor executor(pipeline);
+
         Block block;
         while (executor.pull(block))
         {
@@ -262,13 +262,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
 
     BlockIO io = loadKeys(requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
-    PullingPipelineExecutor executor(pipeline);
-
     size_t keys_found = 0;
 
     io.executeWithCallbacks([&]()
     {
+        QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
+        PullingPipelineExecutor executor(pipeline);
+
         Block block;
         while (executor.pull(block))
         {
@@ -415,11 +415,11 @@ BlockIO DirectDictionary<dictionary_key_type>::loadKeys(const PaddedPODArray<Key
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        std::vector<UInt64> ids(requested_keys.begin(), requested_keys.end());
+        VectorWithMemoryTracking<UInt64> ids(requested_keys.begin(), requested_keys.end());
         return source_ptr->loadIds(ids);
     }
 
-    std::vector<size_t> requested_rows(requested_keys.size());
+    VectorWithMemoryTracking<size_t> requested_rows(requested_keys.size());
     iota(requested_rows.data(), requested_keys.size(), size_t(0));
 
     return source_ptr->loadKeys(key_columns, requested_rows);

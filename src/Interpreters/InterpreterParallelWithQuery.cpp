@@ -106,7 +106,7 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
             };
 
             if (runner)
-                (*runner)(callback);
+                runner->enqueueAndKeepTrack(callback);
             else
                 callback();
         }

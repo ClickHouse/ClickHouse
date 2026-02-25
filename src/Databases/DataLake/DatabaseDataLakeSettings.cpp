@@ -18,20 +18,32 @@ namespace ErrorCodes
 
 #define DATABASE_ICEBERG_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(DatabaseDataLakeCatalogType, catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
-    DECLARE(String, catalog_credential, "", "", 0)             \
-    DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
-    DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
-    DECLARE(String, oauth_server_uri, "", "OAuth server uri", 0)             \
-    DECLARE(Bool, oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
-    DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0)             \
-    DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
-    DECLARE(String, aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
-    DECLARE(String, aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
-    DECLARE(String, region, "", "Region for Glue catalog", 0)           \
+    DECLARE(String, catalog_credential, "", "", 0) \
+    DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0) \
+    DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0) \
+    DECLARE(String, oauth_server_uri, "", "OAuth server uri", 0) \
+    DECLARE(Bool, oauth_server_use_request_body, true, "Put parameters into request body or query params", 0) \
+    DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0) \
+    DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0) \
+    DECLARE(String, aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0) \
+    DECLARE(String, aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0) \
+    DECLARE(String, region, "", "Region for Glue catalog", 0) \
+    DECLARE(String, aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
+    DECLARE(String, aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \
     DECLARE(String, onelake_client_id, "", "Client id from azure", 0) \
     DECLARE(String, onelake_client_secret, "", "Client secret from azure", 0) \
+    DECLARE(String, google_project_id, "", "Google Cloud project ID for BigLake. Required for BigLake catalog. Used in x-goog-user-project header. If not set and google_adc_quota_project_id is provided, it latter will be used", 0) \
+    DECLARE(String, google_service_account, "", "Google Cloud service account email for metadata service authentication. Default: 'default'. Only used when ADC credentials are not provided", 0) \
+    DECLARE(String, google_metadata_service, "", "Google Cloud metadata service endpoint for token retrieval. Default: 'metadata.google.internal'. Only used when ADC credentials are not provided", 0) \
+    DECLARE(String, google_adc_client_id, "", "Google Application Default Credentials client_id for BigLake. Required if using ADC authentication instead of metadata service", 0) \
+    DECLARE(String, google_adc_client_secret, "", "Google Application Default Credentials client_secret for BigLake. Required if using ADC authentication instead of metadata service", 0) \
+    DECLARE(String, google_adc_refresh_token, "", "Google Application Default Credentials refresh_token for BigLake. Required if using ADC authentication instead of metadata service", 0) \
+    DECLARE(String, google_adc_quota_project_id, "", "Google Application Default Credentials quota_project_id for BigLake. Optional, used if google_project_id is not set", 0) \
+    DECLARE(String, google_adc_credentials_file, "", "Path to JSON file containing Google Application Default Credentials. If set, credentials will be loaded from this file. File should contain: type, client_id, client_secret, refresh_token, and optionally quota_project_id", 0) \
+    DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
+    DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \

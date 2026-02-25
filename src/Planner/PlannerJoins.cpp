@@ -13,6 +13,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -1226,7 +1228,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     max_threads = settings[Setting::max_threads];
 
     initial_query_id = context.getInitialQueryId();
-    lock_acquire_timeout = settings[Setting::lock_acquire_timeout];
+    lock_acquire_timeout = std::chrono::milliseconds(settings[Setting::lock_acquire_timeout].totalMilliseconds());
 }
 
 JoinAlgorithmParams::JoinAlgorithmParams(

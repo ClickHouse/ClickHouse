@@ -43,14 +43,17 @@ enum class Component
 
 }
 
-template <typename Traits>
 class FunctionChangeDate : public IFunction
 {
 public:
-    static constexpr auto name = Traits::name;
+    FunctionChangeDate(const char * name_, Component component_) : function_name(name_), component(component_) {}
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionChangeDate>(); }
-    String getName() const override { return Traits::name; }
+    static FunctionPtr create(const char * name, Component component)
+    {
+        return std::make_shared<FunctionChangeDate>(name, component);
+    }
+
+    String getName() const override { return function_name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -64,7 +67,7 @@ public:
 
         const auto & input_type = arguments[0].type;
 
-        if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
+        if (component == Component::Hour || component == Component::Minute || component == Component::Second)
         {
             if (isDate(input_type))
                 return std::make_shared<DataTypeDateTime>();
@@ -80,13 +83,13 @@ public:
         const auto & input_type = arguments[0].type;
         if (isDate(input_type))
         {
-            if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
+            if (component == Component::Hour || component == Component::Minute || component == Component::Second)
                 return execute<DataTypeDate, DataTypeDateTime>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate, DataTypeDate>(arguments, input_type, result_type, input_rows_count);
         }
         if (isDate32(input_type))
         {
-            if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
+            if (component == Component::Hour || component == Component::Minute || component == Component::Second)
                 return execute<DataTypeDate32, DataTypeDateTime64>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate32, DataTypeDate32>(arguments, input_type, result_type, input_rows_count);
         }
@@ -106,7 +109,7 @@ public:
         {
             auto scale = DataTypeDateTime64::default_scale;
             if constexpr (std::is_same_v<InputDataType, DateTime64>)
-                scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
+                scale = static_cast<UInt8>(typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale());
             result_col = ResultDataType::ColumnType::create(input_rows_count, scale);
         }
         else
@@ -172,14 +175,14 @@ public:
             {
                 Int64 time;
                 if (isDate(input_type))
-                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(date_time_col_data[i]))) * 1'000'000;
+                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(static_cast<UInt16>(date_time_col_data[i])))) * 1'000'000;
                 else
                     time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(date_time_col_data[i]))) * 1'000'000;
 
                 if (isDate(result_type))
                     result_col_data[i] = static_cast<UInt16>(getChangedDate(time, value_col_data[i], result_type, date_lut));
                 else
-                    result_col_data[i] = static_cast<Int32>(getChangedDate(time, value_col_data[i], result_type, date_lut));
+                    result_col_data[i] = static_cast<ResultDataType::FieldType>(getChangedDate(time, value_col_data[i], result_type, date_lut));
             }
         }
 
@@ -188,17 +191,17 @@ public:
 
     Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 scale = 0, Int64 fraction = 0) const
     {
-        auto year = time / 10'000'000'000;
-        auto month = (time % 10'000'000'000) / 100'000'000;
-        auto day = (time % 100'000'000) / 1'000'000;
-        auto hours = (time % 1'000'000) / 10'000;
-        auto minutes = (time % 10'000) / 100;
-        auto seconds = time % 100;
+        auto year = static_cast<UInt16>(time / 10'000'000'000);
+        auto month = static_cast<UInt8>((time % 10'000'000'000) / 100'000'000);
+        auto day = static_cast<UInt8>((time % 100'000'000) / 1'000'000);
+        auto hours = static_cast<UInt8>((time % 1'000'000) / 10'000);
+        auto minutes = static_cast<UInt8>((time % 10'000) / 100);
+        auto seconds = static_cast<UInt8>(time % 100);
 
         Int64 min_date = 0;
         Int64 max_date = 0;
-        Int16 min_year;
-        Int16 max_year;
+        Int16 min_year = 0;
+        Int16 max_year = 0;
         if (isDate(result_type))
         {
             min_date = date_lut.makeDayNum(1970, 1, 1);
@@ -237,7 +240,7 @@ public:
             max_year = 2299;
         }
 
-        switch (Traits::component)
+        switch (component)
         {
             case Component::Year:
                 if (new_value < min_year)
@@ -302,43 +305,9 @@ public:
 
         return result;
     }
-};
 
-
-struct ChangeYearTraits
-{
-    static constexpr auto name = "changeYear";
-    static constexpr auto component = Component::Year;
-};
-
-struct ChangeMonthTraits
-{
-    static constexpr auto name = "changeMonth";
-    static constexpr auto component = Component::Month;
-};
-
-struct ChangeDayTraits
-{
-    static constexpr auto name = "changeDay";
-    static constexpr auto component = Component::Day;
-};
-
-struct ChangeHourTraits
-{
-    static constexpr auto name = "changeHour";
-    static constexpr auto component = Component::Hour;
-};
-
-struct ChangeMinuteTraits
-{
-    static constexpr auto name = "changeMinute";
-    static constexpr auto component = Component::Minute;
-};
-
-struct ChangeSecondTraits
-{
-    static constexpr auto name = "changeSecond";
-    static constexpr auto component = Component::Second;
+    const char * function_name;
+    Component component;
 };
 
 REGISTER_FUNCTION(ChangeDate)
@@ -356,8 +325,8 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+        factory.registerFunction("changeYear", [](ContextPtr){ return FunctionChangeDate::create("changeYear", Component::Year); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the month component of a date or date time.";
@@ -372,8 +341,8 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(function_documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+        factory.registerFunction("changeMonth", [](ContextPtr){ return FunctionChangeDate::create("changeMonth", Component::Month); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the day component of a date or date time.";
@@ -388,8 +357,8 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(function_documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+        factory.registerFunction("changeDay", [](ContextPtr){ return FunctionChangeDate::create("changeDay", Component::Day); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the hour component of a date or date time.";
@@ -404,8 +373,8 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(function_documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+        factory.registerFunction("changeHour", [](ContextPtr){ return FunctionChangeDate::create("changeHour", Component::Hour); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the minute component of a `date or date time`.";
@@ -420,8 +389,8 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(function_documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+        factory.registerFunction("changeMinute", [](ContextPtr){ return FunctionChangeDate::create("changeMinute", Component::Minute); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the second component of a date or date time.";
@@ -436,8 +405,8 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(function_documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+        factory.registerFunction("changeSecond", [](ContextPtr){ return FunctionChangeDate::create("changeSecond", Component::Second); }, function_documentation);
     }
 }
 

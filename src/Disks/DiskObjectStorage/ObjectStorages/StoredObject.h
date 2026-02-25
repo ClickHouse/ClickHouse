@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-
 #include <Core/Types.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
@@ -29,12 +28,23 @@ struct StoredObject
         , local_path(local_path_)
         , bytes_size(bytes_size_)
     {}
+
+    auto operator<=>(const StoredObject & other) const noexcept = default;
 };
 
 using StoredObjects = std::vector<StoredObject>;
+using StoredObjectSet = std::unordered_set<StoredObject>;
 
 size_t getTotalSize(const StoredObjects & objects);
-
 Strings collectRemotePaths(const StoredObjects & objects);
 
 }
+
+template <>
+struct std::hash<DB::StoredObject>
+{
+    size_t operator()(const DB::StoredObject & blob) const
+    {
+        return std::hash<std::string>{}(blob.remote_path);
+    }
+};

@@ -29,7 +29,7 @@ public:
 
     PaimonMetadata(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const DB::ContextPtr & context_,
         const Poco::JSON::Object::Ptr & schema_json_object_,
         PaimonTableClientPtr table_client_ptr_);
@@ -84,10 +84,10 @@ private:
     std::vector<PaimonManifest> base_manifest TSA_GUARDED_BY(mutex);
     std::vector<PaimonManifest> delta_manifest TSA_GUARDED_BY(mutex);
     const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
     PaimonTableClientPtr table_client_ptr;
     Poco::JSON::Object::Ptr last_metadata_object TSA_GUARDED_BY(mutex);
+    String table_path;
 
 
     constexpr static String PARTITION_DEFAULT_VALUE = "__DEFAULT_PARTITION__";

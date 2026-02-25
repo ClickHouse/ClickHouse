@@ -17,9 +17,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <base/getThreadId.h>
 #include <base/types.h>
 #include <Poco/Dynamic/Var.h>
@@ -51,6 +54,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
+
 using namespace DB;
 
 
@@ -61,6 +65,8 @@ namespace DB::ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int PATH_ACCESS_DENIED;
+extern const int LOGICAL_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -109,7 +115,10 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
 
 static bool isTemporaryMetadataFile(const String & file_name)
 {
-    String substring = String(file_name.begin(), file_name.begin() + file_name.find_first_of('.'));
+    auto string_position = file_name.find_first_of('.');
+    if (string_position == String::npos)
+        return true;
+    String substring = String(file_name.begin(), file_name.begin() + string_position);
     return Poco::UUID{}.tryParse(substring);
 }
 
@@ -386,7 +395,7 @@ std::string normalizeUuid(const std::string & uuid)
     {
         if (std::isalnum(c))
         {
-            result.push_back(std::tolower(c));
+            result.push_back(static_cast<char>(std::tolower(c)));
         }
     }
     return result;
@@ -395,11 +404,11 @@ std::string normalizeUuid(const std::string & uuid)
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     LoggerPtr log,
-    CompressionMethod compression_method)
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid)
 {
     auto create_fn = [&]()
     {
@@ -407,7 +416,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
-        if (cache_ptr)
+        if (metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
         auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
@@ -424,8 +433,9 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     };
 
     String metadata_json_str;
-    if (cache_ptr)
-        metadata_json_str = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
+    if (metadata_cache && table_uuid.has_value())
+        metadata_json_str = metadata_cache->getOrSetTableMetadata(
+            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
     else
         metadata_json_str = create_fn();
 
@@ -692,58 +702,161 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     return {result, partition_iter};
 }
 
-std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
+static String parseColumnArgument(const ASTPtr & arg_ast, const String & clickhouse_name, const String & error_suffix)
 {
-    if (auto * identifier = object->as<ASTIdentifier>(); identifier)
-        return {"identity", identifier->name()};
+    const auto * identifier = arg_ast ? arg_ast->as<ASTIdentifier>() : nullptr;
+    if (!identifier)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid iceberg sort order function {}: {}",
+            clickhouse_name, error_suffix);
+    return identifier->name();
+}
 
-    static const std::unordered_map<String, String> clickhouse_name_to_iceberg = {
-        {"identity", "identity"},
-        {"icebergBucket", "bucket"},
-        {"icebergTruncate", "truncate"},
-        {"toYearNumSinceEpoch", "year"},
-        {"toMonthNumSinceEpoch", "month"},
-        {"toRelativeDayNum", "day"},
-        {"toRelativeHourNum", "hour"}
-    };
+static std::pair<String, String> parseFunction(const ASTPtr & func_object)
+{
+    const static std::unordered_map<String, String> clickhouse_name_to_iceberg = {
+            {"identity", "identity"},
+            {"icebergBucket", "bucket"},
+            {"icebergTruncate", "truncate"},
+            {"toYearNumSinceEpoch", "year"},
+            {"toMonthNumSinceEpoch", "month"},
+            {"toRelativeDayNum", "day"},
+            {"toRelativeHourNum", "hour"}
+        };
 
-    auto parse_function = [] (ASTPtr func_object) -> std::pair<String, String> {
-        auto * func = func_object->as<ASTFunction>();
-        String clickhouse_name = func->name;
-        auto args = func->children[0]->children;
-        std::optional<size_t> arg;
-        String column_name;
-        if (args.size() == 2)
-        {
-            arg = args[0]->as<ASTLiteral>()->value.safeGet<UInt64>();
-            column_name = args[1]->as<ASTIdentifier>()->name();
-        }
-        else
-        {
-            column_name = args[0]->as<ASTIdentifier>()->name();
-        }
+    const auto * func = func_object ? func_object->as<ASTFunction>() : nullptr;
+    if (!func)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression, expected a function");
 
-        if (!clickhouse_name_to_iceberg.contains(clickhouse_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
-        const auto & transform_base = clickhouse_name_to_iceberg.at(clickhouse_name);
+    const String & clickhouse_name = func->name;
+    const auto it = clickhouse_name_to_iceberg.find(clickhouse_name);
+    if (it == clickhouse_name_to_iceberg.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
 
-        String transform = transform_base;
-        if (arg.has_value())
-            transform += "[" + std::to_string(arg.value()) + "]";
+    const auto * args_list = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+    if (!args_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order function {}: arguments are missing", clickhouse_name);
+    const auto & args = args_list->children;
 
-        return {transform, column_name};
-    };
+    std::optional<size_t> arg;
+    String column_name;
 
-    if (auto * func = object->as<ASTFunction>(); func->name != "tuple")
+    if (args.size() == 1)
     {
-        return parse_function(object);
+        column_name = parseColumnArgument(args[0], clickhouse_name, "expected a column identifier as an argument");
+    }
+    else if (args.size() == 2)
+    {
+        const auto * literal = args[0] ? args[0]->as<ASTLiteral>() : nullptr;
+        if (!literal)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid iceberg sort order function {}: expected (integer_literal, column_identifier), but there is no integer_literal",
+                clickhouse_name);
+
+        column_name = parseColumnArgument(args[1], clickhouse_name, "expected (integer_literal, column_identifier), but there is no column_identifier");
+
+        UInt64 u_param = 0;
+        Int64 i_param = 0;
+        if (literal->value.tryGet(u_param))
+            arg = static_cast<size_t>(u_param);
+        else if (literal->value.tryGet(i_param) && i_param >= 0)
+            arg = static_cast<size_t>(i_param);
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid iceberg sort order function {}: expected a non-negative integer literal as first argument",
+                clickhouse_name);
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid iceberg sort order function {}: expected 1 or 2 arguments, but got {}",
+            clickhouse_name, args.size());
     }
 
-    auto function_desc = object->children[0]->children[i]->children[0];
-    if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
+    String transform = it->second;
+    if (arg.has_value())
+        transform += "[" + std::to_string(arg.value()) + "]";
+
+    return {transform, column_name};
+}
+
+static ASTPtr unwrapOrderByElement(ASTPtr ast)
+{
+    if (!ast)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression");
+    if (const auto * elem = ast->as<ASTStorageOrderByElement>())
+    {
+        if (elem->children.size() != 1 || !elem->children.front())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression");
+        return elem->children.front();
+    }
+    return ast;
+}
+
+
+/// Parse transform and argument from input parameter
+/// "x" -> {"identity", "x"}
+/// "identity(x)" -> {"identity", "x"}
+/// "bucket(16, x)" -> {"bucket[16]", "x"}
+static std::pair<String, String> parseTransformAndColumnElement(ASTPtr element)
+{
+    element = unwrapOrderByElement(element);
+
+    if (const auto * identifier = element->as<ASTIdentifier>())
         return {"identity", identifier->name()};
 
-    return parse_function(function_desc);
+    if (const auto * func = element->as<ASTFunction>(); func && func->name != "tuple")
+        return parseFunction(element);
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Invalid iceberg sort order expression '{}', expected a column identifier or a supported function",
+        element->getColumnName());
+}
+
+static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPtr object)
+{
+    if (!object)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid iceberg sort order expression");
+
+    std::vector<std::pair<String, String>> result;
+
+    if (const auto * expression_list = object->as<ASTExpressionList>())
+    {
+        result.reserve(expression_list->children.size());
+        for (const auto & child : expression_list->children)
+        {
+            result.push_back(parseTransformAndColumnElement(child));
+        }
+        return result;
+    }
+
+    if (const auto * identifier = object->as<ASTIdentifier>())
+    {
+        result.push_back({"identity", identifier->name()});
+        return result;
+    }
+
+    if (const auto * func = object->as<ASTFunction>(); func && func->name == "tuple")
+    {
+        const auto * args_list = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+        if (!args_list)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order tuple expression");
+
+        result.reserve(args_list->children.size());
+        for (const auto & child : args_list->children)
+        {
+            result.push_back(parseTransformAndColumnElement(child));
+        }
+        return result;
+    }
+
+    result.push_back(parseTransformAndColumnElement(object));
+    return result;
 }
 
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
@@ -828,11 +941,18 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         Names sort_columns = sort_columns_key_description.column_names;
         std::vector<bool> reverse_flags = sort_columns_key_description.reverse_flags;
 
+        auto transform_and_column_pairs = parseTransformAndColumnPairs(order_by);
+        if (transform_and_column_pairs.size() != sort_columns.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid iceberg sort order: expected {} elements, but got {}",
+                sort_columns.size(), transform_and_column_pairs.size());
+
         Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
-        for (size_t i = 0; i < sort_columns.size(); ++i)
+        for (size_t i = 0; i < transform_and_column_pairs.size(); ++i)
         {
+            const auto & [transform_name, column_name] = transform_and_column_pairs[i];
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
-            auto [transform_name, column_name] = parseTransformAndColumn(sort_columns_key_description.definition_ast, i);
             sorting_field->set(f_source_id, column_name_to_source_id[column_name]);
             sorting_field->set(f_transform, transform_name);
             if (reverse_flags.empty() || !reverse_flags[i])
@@ -858,31 +978,36 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
 }
 
+
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
+
+We use table_uuid both for metadata cache queries and selection of the latest metadata file.
+For legacy reasons, we keep the option to not use table_uuid for metadata file selection.
  */
-MetadataFileWithInfo getLatestMetadataFileAndVersion(
+static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    const String & table_path,
+    const DataLakeStorageSettings & data_lake_settings,
+    IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
-    const std::optional<String> & table_uuid)
+    std::optional<String> table_uuid,
+    bool use_table_uuid_for_metadata_file_selection)
 {
     auto log = getLogger("IcebergMetadataFileResolver");
     MostRecentMetadataFileSelectionWay selection_way
-        = configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
+        = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
         ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
         : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
-    bool need_all_metadata_files_parsing
-        = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD) || table_uuid.has_value();
-    const auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
+    bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+        || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
+    const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
-        throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration_ptr->getPathForRead().path);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
@@ -895,8 +1020,9 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         if (need_all_metadata_files_parsing)
         {
-            auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
-            if (table_uuid.has_value())
+            auto metadata_file_object = getMetadataJSONObject(
+                metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+            if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
             {
                 if (metadata_file_object->has(Iceberg::f_table_uuid))
                 {
@@ -927,6 +1053,22 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
     }
 
+    if (metadata_files_with_versions.empty())
+    {
+        if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+        {
+            throw Exception(
+                ErrorCodes::FILE_DOESNT_EXIST,
+                "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                table_path,
+                table_uuid.value());
+        }
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The metadata file for Iceberg table with path {} doesn't exist",
+            table_path);
+    }
+
     /// Get the latest version of metadata file: v<V>.metadata.json
     const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
     {
@@ -948,46 +1090,73 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     return {latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
 }
 
+static String resolveContained(const std::filesystem::path & base, const std::filesystem::path & relative)
+{
+    auto norm_base = base.lexically_normal();
+    auto combined = (norm_base / relative).lexically_normal();
+
+    auto rel = combined.lexically_relative(norm_base);
+
+    if (rel.empty() || rel.begin()->string() == "..")
+    {
+        throw Exception(
+            ErrorCodes::PATH_ACCESS_DENIED,
+            "Explicit metadata file path `{}` should be in the table path directory : `{}`",
+            relative.string(),
+            base.string());
+    }
+
+    return combined.string();
+}
+
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    const String & table_path,
+    const DataLakeStorageSettings & data_lake_settings,
+    IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
-    Poco::Logger * log)
+    Poco::Logger * log,
+    const std::optional<String> & table_uuid)
 {
-    const auto & data_lake_settings = configuration_ptr->getDataLakeSettings();
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-        try
+        LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
+        std::filesystem::path p(explicit_metadata_path);
+        auto it = p.begin();
+        if (it != p.end())
         {
-            LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
-            std::filesystem::path p(explicit_metadata_path);
-            auto it = p.begin();
-            if (it != p.end())
-            {
-                if (*it == "." || *it == "..")
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
-            }
-            auto prefix_storage_path = configuration_ptr->getPathForRead().path;
-            if (!explicit_metadata_path.starts_with(prefix_storage_path))
-                explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
-            return getMetadataFileAndVersion(explicit_metadata_path);
+            if (*it == "." || *it == "..")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
         }
-        catch (const std::exception & ex)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid path {} specified for iceberg_metadata_file_path: '{}'", explicit_metadata_path, ex.what());
-        }
+        String resolved_path = resolveContained(table_path, explicit_metadata_path);
+        return getMetadataFileAndVersion(resolved_path);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)
     {
-        std::optional<String> table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
-        return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, table_uuid);
+        String explicit_table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
+        if (table_uuid.has_value())
+        {
+            if (normalizeUuid(explicit_table_uuid) != table_uuid.value())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Explicit table UUID '{}' doesn't match the one from table properties '{}'",
+                    normalizeUuid(explicit_table_uuid),
+                    table_uuid.value());
+            }
+        }
+        LOG_TEST(
+            log,
+            "Explicit table UUID is specified {}, will read the latest metadata file for Iceberg table at path {}",
+            explicit_table_uuid,
+            table_path);
+        return getLatestMetadataFileAndVersion(
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
-        auto prefix_storage_path = configuration_ptr->getPathForRead().path;
-        auto version_hint_path = std::filesystem::path(prefix_storage_path) / "metadata" / "version-hint.text";
+        auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
         StoredObject version_hint(version_hint_path);
         auto buf = object_storage->readObject(version_hint, ReadSettings{});
@@ -1002,11 +1171,12 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
 
-        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / fs::path(metadata_file).filename());
+        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(metadata_file).filename());
     }
     else
     {
-        return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, std::nullopt);
+        return getLatestMetadataFileAndVersion(
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false);
     }
 }
 
@@ -1047,10 +1217,13 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
+    /// we have two ways to get current schema id
+    /// 1. check field schema, which is required in V1 format, and there is schema-id in schema
+    /// 2. check "schemas" and "current-schema-id", which is required in V2 format, but can also exist in V1.
     if (!metadata_object->has(f_schema))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
     Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
-    if (!metadata_object->has(f_schema_id))
+    if (!schema->has(f_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
     auto current_schema_id = schema->getValue<int>(f_schema_id);
     return {schema, current_schema_id};

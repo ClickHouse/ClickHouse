@@ -1,3 +1,4 @@
+-- add_minmax_index_for_numeric_columns=0: Would use the index and not the projection that we want to test (id2 = 3)
 set log_queries=1;
 set log_queries_min_type='QUERY_FINISH';
 set optimize_use_implicit_projections=1;
@@ -29,7 +30,7 @@ CREATE TABLE t
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8;
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns=0;
 
 insert into t SELECT number, -number, number FROM numbers(10000);
 

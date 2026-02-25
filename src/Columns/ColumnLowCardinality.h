@@ -11,10 +11,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+[[noreturn]] void throwUnexpectedLowCardinalityIndexType(size_t size);
 
 /**
  * How data is stored (in a nutshell):
@@ -102,14 +99,14 @@ public:
 
     void popBack(size_t n) override { idx.popBack(n); }
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
@@ -126,6 +123,11 @@ public:
     {
         return ColumnLowCardinality::create(
             dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
+    }
+
+    void filter(const Filter & filt) override
+    {
+        idx.getIndexesPtr()->filter(filt);
     }
 
     void expand(const Filter & mask, bool inverted) override
@@ -174,9 +176,11 @@ public:
 
     std::vector<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        /// TODO: optimize to avoid materializing the full indexed column
+        auto indexed = dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0);
+        indexed->getExtremes(min, max, start, end);
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
@@ -304,7 +308,7 @@ public:
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
-            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+            default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
         }
     }
 
@@ -351,8 +355,11 @@ private:
 
         /// Create new dictionary with only keys that are mentioned in indexes.
         void compact(MutableColumnPtr & indexes);
+        /// Create nullable dictionary with only keys that are mentioned in indexes.
+        void compactToNullable(MutableColumnPtr & indexes);
 
         static MutableColumnPtr compact(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
+        static MutableColumnPtr compactToNullable(const IColumnUnique & column_unique, MutableColumnPtr & indexes);
 
     private:
         WrappedPtr column_unique;
@@ -363,6 +370,7 @@ private:
     ColumnIndex idx;
 
     void compactInplace();
+    void compactInplaceToNullable();
     void compactIfSharedDictionary();
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;

@@ -6,6 +6,7 @@
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -31,14 +32,13 @@
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/DeadLetterQueue.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
 #include <Common/ThreadPool.h>
 
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 
 namespace DB

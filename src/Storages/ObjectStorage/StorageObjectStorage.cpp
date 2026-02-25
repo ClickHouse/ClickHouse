@@ -1,25 +1,20 @@
-#include <thread>
-#include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 
-#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/ExtractColumnsTransform.h>
 
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -29,21 +24,16 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Common/parseGlobs.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-
-#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -53,6 +43,7 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -189,8 +180,6 @@ StorageObjectStorage::StorageObjectStorage(
     ColumnsDescription columns{columns_in_table_or_function_definition};
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
-    else
-        validateSupportedColumns(columns, *configuration);
 
     configuration->check(context);
 
@@ -219,6 +208,25 @@ StorageObjectStorage::StorageObjectStorage(
         columns_in_table_or_function_definition.empty(),
         format_settings,
         context);
+
+    bool validate_schema_with_remote = !need_resolve_columns_or_format
+        && !configuration->isDataLakeConfiguration()
+        && !columns_in_table_or_function_definition.empty()
+        && !is_table_function
+        && mode == LoadingStrictnessLevel::CREATE
+        && !do_lazy_init;
+
+    validateColumns(
+        columns,
+        configuration_,
+        validate_schema_with_remote,
+        object_storage_,
+        &format_settings,
+        &sample_path,
+        context,
+        &hive_partition_columns_to_read_from_file_path,
+        &columns_in_table_or_function_definition,
+        log);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -251,7 +259,7 @@ StorageObjectStorage::StorageObjectStorage(
     ///    There's probably no reason for this, and it should just copy those fields like the others.
     ///  * If the table contains files in different formats, with only some of them supporting
     ///    prewhere, things break.
-    supports_prewhere = !configuration->isDataLakeConfiguration() && format_supports_prewhere;
+    supports_prewhere = configuration->supportsPrewhere() && format_supports_prewhere;
     supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
@@ -282,6 +290,7 @@ StorageObjectStorage::StorageObjectStorage(
         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context);
         setInMemoryMetadata(metadata_snapshot);
     }
+
 }
 
 String StorageObjectStorage::getName() const
@@ -350,6 +359,15 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
+    if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
+        return std::nullopt;
+
+    /// Trivial count optimization can be applied only on initiator replica.
+    /// (distributed_processing=true on non-initiator replicas).
+    /// This is needed only for old analyzer.
+    if (distributed_processing)
+        return std::nullopt;
+
     configuration->update(
         object_storage,
         query_context,
@@ -359,6 +377,12 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
+    if (!configuration->supportsTotalBytes(query_context, object_storage->getType()))
+        return std::nullopt;
+
+    if (distributed_processing)
+        return std::nullopt;
+
     configuration->update(
         object_storage,
         query_context,
@@ -376,6 +400,9 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
     if (update_configuration_on_read_write)
@@ -533,10 +560,11 @@ SinkToStoragePtr StorageObjectStorage::write(
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
         object_storage,
-        configuration,
         format_settings,
         sample_block,
-        local_context);
+        local_context,
+        configuration->format,
+        configuration->compression_method);
 }
 
 bool StorageObjectStorage::optimize(
@@ -565,6 +593,12 @@ void StorageObjectStorage::truncate(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
                         path.path);
+    }
+
+    if (configuration->isDataLakeConfiguration())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Truncate is not supported for data lake engine");
     }
 
     if (path.hasGlobs())

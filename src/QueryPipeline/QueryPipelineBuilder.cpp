@@ -93,30 +93,6 @@ void QueryPipelineBuilder::init(Pipe pipe_)
     pipe = std::move(pipe_);
 }
 
-void QueryPipelineBuilder::init(QueryPipeline & pipeline)
-{
-    if (initialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline has already been initialized");
-
-    if (pipeline.pushing())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't initialize pushing pipeline");
-
-    if (pipeline.output)
-    {
-        pipe.output_ports = {pipeline.output};
-        pipe.header = pipeline.output->getSharedHeader();
-    }
-    else
-    {
-        pipe.output_ports.clear();
-        pipe.header = std::make_shared<const Block>(Block{});
-    }
-
-    pipe.totals_port = pipeline.totals;
-    pipe.extremes_port = pipeline.extremes;
-    pipe.max_parallel_streams = pipeline.num_threads;
-}
-
 void QueryPipelineBuilder::reset()
 {
     Pipe pipe_to_destroy(std::move(pipe));
@@ -487,14 +463,26 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
             Processors processors;
-            for (auto & outport : outports)
+            if (min_block_size_rows > 0 || min_block_size_bytes > 0)
             {
-                auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
-                connect(*outport, squashing->getInputs().front());
-                processors.emplace_back(squashing);
-                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
-                connect(squashing->getOutputPort(), adding_joined->getInputs().front());
-                processors.emplace_back(std::move(adding_joined));
+                for (auto & outport : outports)
+                {
+                    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
+                    connect(*outport, squashing->getInputs().front());
+                    processors.emplace_back(squashing);
+                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    connect(squashing->getOutputPort(), adding_joined->getInputs().front());
+                    processors.emplace_back(std::move(adding_joined));
+                }
+            }
+            else
+            {
+                for (auto & outport : outports)
+                {
+                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    connect(*outport, adding_joined->getInputs().front());
+                    processors.emplace_back(std::move(adding_joined));
+                }
             }
             return processors;
         };
@@ -516,9 +504,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     size_t num_streams_including_totals = num_streams + (left->hasTotals() ? 1 : 0);
     right->resize(num_streams_including_totals);
-
-    /// This counter is needed for every Joining except totals, to decide which Joining will generate non joined rows.
-    auto joining_finish_counter = std::make_shared<FinishCounter>(num_streams);
 
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
@@ -544,17 +529,31 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             delayed_root_output_ports.emplace_back(&outport);
     }
 
+    /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel
+    /// when false, the last JoiningTransform to finish emits them (via finish_counter)
+    bool use_parallel_non_joined = !delayed_root && join->supportParallelNonJoinedBlocksProcessing();
+
+    /// nullptr disables non-joined emission inside JoiningTransform (parallel path handles it)
+    auto joining_finish_counter = use_parallel_non_joined
+        ? nullptr
+        : std::make_shared<FinishCounter>(num_streams);
 
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
-        connect(**lit, squashing->getInputs().front());
+        OutputPort * left_port = *lit;
+        if (min_block_size_rows > 0 || min_block_size_bytes > 0)
+        {
+            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
+            connect(*left_port, squashing->getInputs().front());
+            left_port = &squashing->getOutputPort();
+            left->pipe.processors->emplace_back(std::move(squashing));
+        }
 
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter);
 
-        connect(squashing->getOutputPort(), joining->getInputs().front());
+        connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
         {
@@ -575,6 +574,19 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                 collected_processors->emplace_back(delayed);
             left->pipe.processors->emplace_back(std::move(delayed));
         }
+        else if (use_parallel_non_joined)
+        {
+            /// Parallel non-joined source, activated by DelayedPortsProcessor after all probing finishes
+            auto non_joined = std::make_shared<NonJoinedBlocksTransform>(
+                output_header, join, *left_header, max_block_size, i, num_streams);
+
+            joined_output_ports.push_back(&joining->getOutputs().front());
+            joined_output_ports.push_back(&non_joined->getPort());
+
+            if (collected_processors)
+                collected_processors->emplace_back(non_joined);
+            left->pipe.processors->emplace_back(std::move(non_joined));
+        }
         else
         {
             *lit = &joining->getOutputs().front();
@@ -586,11 +598,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
-        left->pipe.processors->emplace_back(std::move(squashing));
         left->pipe.processors->emplace_back(std::move(joining));
     }
 
-    if (delayed_root)
+    if (delayed_root || use_parallel_non_joined)
     {
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
         DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
@@ -681,7 +692,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     size_t num_streams = left->getNumStreams();
     if (right->getNumStreams() != num_streams)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Join by layers expect the same number of ports for the left and the right pipeline. Actual: {} and {}.",
+            "Join by layers expects the same number of ports for the left and the right pipeline. Actual: {} and {}.",
             num_streams, right->getNumStreams());
 
     SharedHeader left_header = left->getSharedHeader();
@@ -731,7 +742,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
-    StoragePtr external_table,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
@@ -742,7 +752,6 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             getSharedHeader(),
             res_header,
             std::move(set_and_key),
-            std::move(external_table),
             limits,
             std::move(prepared_sets_cache));
 

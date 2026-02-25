@@ -6,6 +6,7 @@
 #include <vector>
 #include <base/types.h>
 
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
@@ -16,6 +17,7 @@
     M(CrashLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
+    M(BackgroundSchedulePoolLogElement) \
     M(QueryLogElement) \
     M(QueryThreadLogElement) \
     M(QueryViewsLogElement) \

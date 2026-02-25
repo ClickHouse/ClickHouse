@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Columns/ColumnObject.h>
-#include <DataTypes/DataTypeObject.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
+#include <Common/re2.h>
+
 #include <list>
 
 namespace DB
@@ -10,6 +12,7 @@ namespace DB
 
 class SerializationObjectDynamicPath;
 class SerializationSubObject;
+class SerializationObjectDistinctPaths;
 
 /// Class for binary serialization/deserialization of an Object type (currently only JSON).
 class SerializationObject : public ISerialization
@@ -116,6 +119,7 @@ public:
 private:
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
+    friend SerializationObjectDistinctPaths;
 
     /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
@@ -160,6 +164,8 @@ private:
 
 protected:
     bool shouldSkipPath(const String & path) const;
+
+    void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<std::string_view, SerializationPtr> typed_paths_serializations;

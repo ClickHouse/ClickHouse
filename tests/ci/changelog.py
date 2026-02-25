@@ -53,11 +53,13 @@ class Description:
         self.number = number
         self.html_url = html_url
         user_login = user._rawData["login"]
-        if user_login == 'Copilot':
+        if user_login == "Copilot":
+
             class CopilotUser:
                 name = "Copilot"
                 login = "Copilot"
                 html_url = ""
+
             self.user = CopilotUser()
         else:
             self.user = gh.get_user_cached(user_login)  # type: ignore
@@ -91,7 +93,9 @@ class Description:
                 break
             except RateLimitExceededException:
                 gh.sleep_on_rate_limit()
-        user_display = f"[{user_name}]({self.user.html_url})" if self.user.html_url else user_name
+        user_display = (
+            f"[{user_name}]({self.user.html_url})" if self.user.html_url else user_name
+        )
         return f"* {entry} [#{self.number}]({self.html_url}) ({user_display})."
 
     # Sort PR descriptions by numbers

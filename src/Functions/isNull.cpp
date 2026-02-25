@@ -29,6 +29,11 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
     if (!use_analyzer)
         return nullptr;
 
+    /// SELECT arrayFilter(x -> (x IS NULL), []) can trigger `defaultImplementationForNothing()`
+    /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
+    if (isNothing(result_type))
+        return nullptr;
+
     const ColumnWithTypeAndName & elem = arguments[0];
     if (elem.type->onlyNull())
         return result_type->createColumnConst(1, UInt8(1));
@@ -38,6 +43,7 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
 
     return result_type->createColumnConst(1, UInt8(0));
 }
+
 
 ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
@@ -78,6 +84,21 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
     return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
 }
 
+#if USE_EMBEDDED_COMPILER
+llvm::Value *
+FunctionIsNull::compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const
+{
+    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+    if (arguments[0].type->isNullable())
+    {
+        auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+        return b.CreateSelect(is_null, b.getInt8(1), b.getInt8(0));
+    }
+    else
+        return b.getInt8(0);
+}
+#endif
+
 REGISTER_FUNCTION(IsNull)
 {
     FunctionDocumentation::Description description = R"(
@@ -115,9 +136,8 @@ SELECT x FROM t_null WHERE isNull(y);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNull>(documentation, FunctionFactory::Case::Insensitive);
 }
-
-}
+};
