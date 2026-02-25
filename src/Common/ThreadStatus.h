@@ -3,14 +3,14 @@
 #include <Core/LogsLevel.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/MemorySpillScheduler.h>
-#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/Stopwatch.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -18,14 +18,6 @@
 #include <functional>
 #include <mutex>
 #include <unordered_set>
-
-// namespace detail
-// {
-// template <typename T>
-// struct UnitWeight;
-// }
-// template <class T, class WeightFunction = detail::UnitWeight<T>>
-// class ConcurrentBoundedQueue;
 
 namespace DB
 {
