@@ -14,6 +14,7 @@ namespace DB
 {
 #define LIST_OF_DATABASE_METADATA_DISK_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, disk, "", R"(Name of disk storing table metadata files in the database.)", 0) \
+    DECLARE(Bool, lazy_load_tables, false, R"(If enabled, tables are not loaded during database startup. Instead, a lightweight proxy is created and the real table is loaded on first access.)", 0) \
 
 DECLARE_SETTINGS_TRAITS(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS)
@@ -41,7 +42,10 @@ void DatabaseMetadataDiskSettingsImpl::loadFromQuery(ASTStorage & storage_def, C
     auto changes = storage_def.settings->changes;
     auto * value = changes.tryGet("disk");
     if (!value)
+    {
+        applyChanges(changes);
         return;
+    }
 
     ASTPtr value_as_custom_ast = nullptr;
     CustomType custom;

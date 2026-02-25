@@ -2973,24 +2973,6 @@ CONV_FN(IndexParam, ip)
     }
 }
 
-CONV_FN(CodecParam, cp)
-{
-    ret += CompressionCodec_Name(cp.codec()).substr(5);
-    if (cp.params_size())
-    {
-        ret += "(";
-        for (int i = 0; i < cp.params_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            IndexParamToString(ret, cp.params(i));
-        }
-        ret += ")";
-    }
-}
-
 CONV_FN(DatabaseEngineParam, dep)
 {
     using DatabaseEngineParamType = DatabaseEngineParam::DatabaseEngineParamOneofCase;
@@ -3110,18 +3092,6 @@ CONV_FN(DefaultModifier, def_mod)
     }
 }
 
-CONV_FN(CodecList, cl)
-{
-    ret += "CODEC(";
-    CodecParamToString(ret, cl.codec());
-    for (int i = 0; i < cl.other_codecs_size(); i++)
-    {
-        ret += ", ";
-        CodecParamToString(ret, cl.other_codecs(i));
-    }
-    ret += ")";
-}
-
 CONV_FN(ColumnDef, cdf)
 {
     ColumnPathToString(ret, 0, cdf.col());
@@ -3144,8 +3114,9 @@ CONV_FN(ColumnDef, cdf)
     }
     if (cdf.has_codecs())
     {
-        ret += " ";
-        CodecListToString(ret, cdf.codecs());
+        ret += " CODEC(";
+        ret += cdf.codecs();
+        ret += ")";
     }
     if (cdf.has_stats())
     {
@@ -3397,8 +3368,9 @@ CONV_FN(TTLUpdate, upt)
             TTLDeleteToString(ret, upt.del());
             break;
         case TTLUpdateType::kCodecs:
-            ret += "RECOMPRESS ";
-            CodecListToString(ret, upt.codecs());
+            ret += "RECOMPRESS CODEC(";
+            ret += upt.codecs();
+            ret += ")";
             break;
         case TTLUpdateType::kStorage:
             ret += "TO ";
@@ -3951,6 +3923,22 @@ CONV_FN(OptimizeTable, ot)
         ret += " ";
         SinglePartitionExprToString(ret, ot.single_partition());
     }
+    if (ot.has_dry_run())
+    {
+        ret += " DRY RUN";
+        if (ot.dry_run().parts_size() > 0)
+        {
+            ret += " PARTS ";
+            for (int i = 0; i < ot.dry_run().parts_size(); i++)
+            {
+                if (i != 0)
+                {
+                    ret += ", ";
+                }
+                PartitionExprToString(ret, ot.dry_run().parts(i));
+            }
+        }
+    }
     if (ot.final())
     {
         ret += " ";
@@ -4318,15 +4306,15 @@ CONV_FN(CreateDictionary, create_dictionary)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_dictionary.est());
-    if (create_dictionary.has_cluster())
-    {
-        ClusterToString(ret, true, create_dictionary.cluster());
-    }
     if (create_dictionary.has_uuid())
     {
         ret += " UUID '";
         ret += create_dictionary.uuid();
         ret += "'";
+    }
+    if (create_dictionary.has_cluster())
+    {
+        ClusterToString(ret, true, create_dictionary.cluster());
     }
     ret += " (";
     DictionaryColumnToString(ret, create_dictionary.col());
@@ -5147,6 +5135,10 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kNotifyFailpoint:
             ret += "NOTIFY FAILPOINT ";
             ret += cmd.notify_failpoint();
+            break;
+        case CmdType::kReloadDeltaKernelTracing:
+            ret += "RELOAD DELTA KERNEL TRACING ";
+            ret += DeltaKernelTraceLevel_Name(cmd.reload_delta_kernel_tracing());
             break;
         default:
             ret += "FLUSH LOGS";

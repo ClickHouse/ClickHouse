@@ -3275,23 +3275,13 @@ message IndexParam {
     }
 }
 
-message CodecParam {
-    required CompressionCodec codec = 1;
-    repeated IndexParam params = 2;
-}
-
-message CodecList {
-    required CodecParam codec = 1;
-    repeated CodecParam other_codecs = 2;
-}
-
 message ColumnDef {
     required ColumnPath col = 1;
     required TypeName type = 2;
     optional bool nullable = 3;
     optional DefaultModifier defaultv = 4;
     optional string comment = 5;
-    optional CodecList codecs = 6;
+    optional string codecs = 6;
     optional ColumnStatistics stats = 7;
     optional Expr ttl_expr = 8;
     optional bool is_pkey = 9;
@@ -3459,7 +3449,7 @@ message TTLDelete {
 message TTLUpdate {
     oneof ttlupdate_oneof {
         TTLDelete del = 1;
-        CodecList codecs = 2;
+        string codecs = 2;
         Storage storage = 3;
     }
     optional WhereStatement where = 4;
@@ -3688,16 +3678,21 @@ message DeduplicateExpr {
     }
 }
 
+message OptimizeDryRun {
+    repeated PartitionExpr parts = 1;
+}
+
 message OptimizeTable {
     required ExprSchemaTable est = 1;
     optional Cluster cluster = 2;
     optional SinglePartitionExpr single_partition = 3;
     optional bool use_force = 4;
-    optional bool final = 5;
-    optional DeduplicateExpr dedup = 6;
-    optional bool cleanup = 7;
-    optional SettingValues setting_values = 8;
-    optional OutFormat format = 9;
+    optional OptimizeDryRun dry_run = 5;
+    optional bool final = 6;
+    optional DeduplicateExpr dedup = 7;
+    optional bool cleanup = 8;
+    optional SettingValues setting_values = 9;
+    optional OutFormat format = 10;
 }
 
 message Exchange {
@@ -4062,6 +4057,14 @@ message SyncReplica {
 }
 
 
+enum DeltaKernelTraceLevel {
+    ERROR = 1;
+    WARN = 2;
+    INFO = 3;
+    DEBUG = 4;
+    TRACE = 5;
+}
+
 message SystemCommand {
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
@@ -4145,6 +4148,7 @@ message SystemCommand {
         bool drop_parquet_metadata_cache = 78;
         string wait_failpoint = 79;
         string notify_failpoint = 80;
+        DeltaKernelTraceLevel reload_delta_kernel_tracing = 81;
     }
 }
 
