@@ -36,20 +36,20 @@ void Group::setOptimizedFor(const ExpressionProperties & required_properties)
     optimized_properties.insert(required_properties.dump());
 }
 
-void Group::updateBestImplementation(GroupExpressionPtr expression)
+void Group::updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config)
 {
     /// Remove all known best expressions with higher cost and properties satisfied by the new expression
     for (auto best_it = best_implementations.begin(); best_it != best_implementations.end();)
     {
         if (expression->properties.isSatisfiedBy((*best_it)->properties) &&
-            (*best_it)->cost->subtree_cost.total() <= expression->cost->subtree_cost.total())
+            (*best_it)->cost->subtree_cost.weighted_total(cost_config) <= expression->cost->subtree_cost.weighted_total(cost_config))
         {
             /// There is already a cheaper implementation that satisfies the same properties
             return;
         }
 
         if ((*best_it)->properties.isSatisfiedBy(expression->properties) &&
-            (*best_it)->cost->subtree_cost.total() > expression->cost->subtree_cost.total())
+            (*best_it)->cost->subtree_cost.weighted_total(cost_config) > expression->cost->subtree_cost.weighted_total(cost_config))
         {
             best_it = best_implementations.erase(best_it);
         }
@@ -62,13 +62,13 @@ void Group::updateBestImplementation(GroupExpressionPtr expression)
     best_implementations.insert(expression);
 }
 
-ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & required_properties) const
+ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const
 {
     GroupExpressionPtr found_best;
     for (const auto & expression : best_implementations)
     {
         if (required_properties.isSatisfiedBy(expression->properties) &&
-            (!found_best || found_best->cost->subtree_cost.total() > expression->cost->subtree_cost.total()))
+            (!found_best || found_best->cost->subtree_cost.weighted_total(cost_config) > expression->cost->subtree_cost.weighted_total(cost_config)))
         {
             found_best = expression;
         }

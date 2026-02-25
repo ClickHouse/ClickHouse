@@ -17,9 +17,45 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/types.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
+
+CostConfig parseCostConfig(const String & json_str)
+{
+    CostConfig config;
+    Poco::JSON::Parser parser;
+    auto result = parser.parse(json_str);
+    const auto & object = result.extract<Poco::JSON::Object::Ptr>();
+    if (!object)
+        return config;
+    if (object->has("cpu_weight"))
+        config.cpu_weight = object->getValue<Float64>("cpu_weight");
+    if (object->has("memory_weight"))
+        config.memory_weight = object->getValue<Float64>("memory_weight");
+    if (object->has("network_weight"))
+        config.network_weight = object->getValue<Float64>("network_weight");
+    if (object->has("io_weight"))
+        config.io_weight = object->getValue<Float64>("io_weight");
+    if (object->has("exchange_fixed_overhead"))
+        config.exchange_fixed_overhead = object->getValue<Float64>("exchange_fixed_overhead");
+    return config;
+}
+
+String CostConfig::dump() const
+{
+    Poco::JSON::Object obj;
+    obj.set("cpu_weight", cpu_weight);
+    obj.set("memory_weight", memory_weight);
+    obj.set("network_weight", network_weight);
+    obj.set("io_weight", io_weight);
+    obj.set("exchange_fixed_overhead", exchange_fixed_overhead);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    obj.stringify(oss);
+    return oss.str();
+}
 
 namespace ErrorCodes
 {
@@ -92,19 +128,20 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     {
         auto result_count = static_cast<Float64>(broadcast->getResultBucketCount());
         /// Broadcast replicates all rows to every destination node.
-        total_cost.cost.network += group->statistics->estimated_row_count * result_count;
+        total_cost.cost.network += memo.getCostConfig().exchange_fixed_overhead + group->statistics->estimated_row_count * result_count;
         /// Each destination materializes the full dataset in memory.
         total_cost.cost.memory += group->statistics->estimated_row_count * result_count;
     }
     else if (dynamic_cast<LogicalExchangeStep *>(expression_plan_step))
     {
         /// Gather, Shuffle, Scatter: each row is sent exactly once.
-        total_cost.cost.network += group->statistics->estimated_row_count;
+        total_cost.cost.network += memo.getCostConfig().exchange_fixed_overhead + group->statistics->estimated_row_count;
     }
     else if (typeid_cast<SortingStep *>(expression_plan_step))
     {
-        /// Sorting: CPU proportional to rows.
-        total_cost.cost.cpu += group->statistics->estimated_row_count;
+        /// Sorting: N log N CPU cost.
+        Float64 rows = group->statistics->estimated_row_count;
+        total_cost.cost.cpu += rows * std::max(1.0, std::log2(rows));
     }
     else
     {
@@ -121,7 +158,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     /// Add costs of all inputs
     for (const auto & input : expression->inputs)
     {
-        const auto & input_group_cost = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties).cost;
+        const auto & input_group_cost = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getCostConfig()).cost;
         total_cost.subtree_cost += input_group_cost.subtree_cost;
     }
 
@@ -160,9 +197,7 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
             left_statistics.estimated_row_count +           /// Scan of left table
             2.0 * right_statistics.estimated_row_count;     /// Right table contributes more because we build hash table from it
 
-        /// HACK: Simulate spilling to disk if right table is too big
-        if (right_statistics.estimated_row_count > 1)
-            join_cost.cost.memory += 30 * right_statistics.estimated_row_count;
+        join_cost.cost.memory += right_statistics.estimated_row_count;
     }
 
     return join_cost;

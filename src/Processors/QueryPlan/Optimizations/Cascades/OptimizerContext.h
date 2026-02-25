@@ -22,7 +22,7 @@ class OptimizerContext
     friend class CascadesOptimizer;
 
 public:
-    explicit OptimizerContext(IOptimizerStatistics & statistics, size_t cluster_node_count = 1);
+    explicit OptimizerContext(IOptimizerStatistics & statistics, size_t cluster_node_count = 1, CostConfig cost_config = {});
 
     std::pair<GroupId, ExpressionProperties> addGroup(QueryPlan::Node & node);
     void pushTask(OptimizationTaskPtr task);

@@ -29,7 +29,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
         group->setOptimizedFor(required_properties);
     }
-    else if (!group->getBestImplementation(required_properties).expression)
+    else if (!group->getBestImplementation(required_properties, optimizer_context.getMemo().getCostConfig()).expression)
     {
         /// Stage 3: Apply enforcers to physical expressions that don't satisfy the
         /// required properties.  Enforcers produce self-referential expressions whose

@@ -9,6 +9,19 @@
 namespace DB
 {
 
+struct CostConfig
+{
+    Float64 cpu_weight = 1.0;
+    Float64 memory_weight = 1.0;
+    Float64 network_weight = 1.0;
+    Float64 io_weight = 1.0;
+    Float64 exchange_fixed_overhead = 100.0;
+
+    String dump() const;
+};
+
+CostConfig parseCostConfig(const String & json_str);
+
 struct Cost
 {
     Float64 cpu = 0;
@@ -18,6 +31,12 @@ struct Cost
     Float64 wallclock_time = 0;
 
     Float64 total() const { return cpu + memory + network + io; }
+
+    Float64 weighted_total(const CostConfig & config) const
+    {
+        return cpu * config.cpu_weight + memory * config.memory_weight
+             + network * config.network_weight + io * config.io_weight;
+    }
 
     static Cost infinity()
     {

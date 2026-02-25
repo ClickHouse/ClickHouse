@@ -29,11 +29,12 @@ OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDistributionEnforcer();
 OptimizationRulePtr createSortingEnforcer();
 
-OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, size_t cluster_node_count)
+OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, size_t cluster_node_count, CostConfig cost_config)
     : cost_estimator(memo)
     , statistics_derivation(memo, statistics)
 {
     memo.setClusterNodeCount(cluster_node_count);
+    memo.setCostConfig(cost_config);
 
     addRule(createJoinCommutativity());
     addRule(createHashJoinImplementation());
@@ -115,7 +116,7 @@ void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
     expression->cost = cost;
     LOG_TEST(log, "group #{} expression '{}' cost {}",
         group_id, expression->getDescription(), cost.subtree_cost.total());
-    group->updateBestImplementation(expression);
+    group->updateBestImplementation(expression, memo.getCostConfig());
 }
 
 void OptimizerContext::deriveStatistics(GroupId group_id)

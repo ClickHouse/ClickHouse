@@ -21,6 +21,9 @@ public:
     size_t getClusterNodeCount() const { return cluster_node_count; }
     void setClusterNodeCount(size_t count) { cluster_node_count = count; }
 
+    const CostConfig & getCostConfig() const { return cost_config; }
+    void setCostConfig(CostConfig config) { cost_config = config; }
+
     void dump(WriteBuffer & out) const;
     String dump() const;
 
@@ -28,6 +31,7 @@ private:
     LoggerPtr log;
     std::vector<GroupPtr> groups_by_id;
     size_t cluster_node_count = 1;
+    CostConfig cost_config;
 };
 
 }

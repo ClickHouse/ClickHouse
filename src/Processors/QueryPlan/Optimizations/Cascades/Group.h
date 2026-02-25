@@ -40,8 +40,8 @@ public:
     void setExplored() { is_explored = true; }
     bool isOptimizedFor(const ExpressionProperties & required_properties) const;
     void setOptimizedFor(const ExpressionProperties & required_properties);
-    void updateBestImplementation(GroupExpressionPtr expression);
-    ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties) const;
+    void updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config);
+    ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
     void dump(WriteBuffer & out, String indent = {}) const;
     String dump() const;

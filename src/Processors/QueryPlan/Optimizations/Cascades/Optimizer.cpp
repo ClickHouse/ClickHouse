@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <fmt/format.h>
+#include <exception>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -54,8 +55,24 @@ void CascadesOptimizer::optimize()
     if (query_context->getQueryParameters().contains(cluster_node_count_param_name))
         cluster_node_count = std::stoull(query_context->getQueryParameters().at(cluster_node_count_param_name));
 
-    OptimizerContext optimizer_context(*statistics, cluster_node_count);
+    CostConfig cost_config;
+    constexpr auto cost_config_param_name = "_internal_cascades_cost_config";
+    if (query_context->getQueryParameters().contains(cost_config_param_name))
+    {
+        try
+        {
+            cost_config = parseCostConfig(query_context->getQueryParameters().at(cost_config_param_name));
+        }
+        catch (const std::exception & e)
+        {
+            LOG_WARNING(&Poco::Logger::get("CascadesOptimizer"), "Failed to parse cost config: {} from parameter '{}'",
+                e.what(), query_context->getQueryParameters().at(cost_config_param_name));
+        }
+    }
 
+    OptimizerContext optimizer_context(*statistics, cluster_node_count, cost_config);
+
+    LOG_TRACE(optimizer_context.log, "Cost config: {}", cost_config.dump());
     LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
 
     auto [root_group_id, root_required_properties] = optimizer_context.addGroup(*query_plan.getRootNode());
@@ -109,7 +126,8 @@ void addConvertingExpression(QueryPlan & plan, const SharedHeader & expected_hea
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties, const Memo & memo)
 {
     auto group = memo.getGroup(subtree_root_group_id);
-    auto group_best_expression = group->getBestImplementation(required_properties).expression;
+    const auto & cost_config = memo.getCostConfig();
+    auto group_best_expression = group->getBestImplementation(required_properties, cost_config).expression;
     if (!group_best_expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cascades optimizer: no implementation found for group #{} satisfying required properties {}.\n"
@@ -151,7 +169,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
 
     plan_for_group->getRootNode()->cost_estimation = CostEstimationInfo
         {
-            .cost = group_best_expression->cost->subtree_cost.total(),
+            .cost = group_best_expression->cost->subtree_cost.weighted_total(cost_config),
             .rows = group->statistics->estimated_row_count
         };
 
