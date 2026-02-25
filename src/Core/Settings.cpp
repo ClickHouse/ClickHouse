@@ -7378,6 +7378,9 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(Bool, enable_auto_spilling_hash_join, false, R"(
+If enabled and `join_algorithm` is `hash` (or `default`/`auto`), the hash join will automatically spill to disk using the grace hash join algorithm when `max_bytes_in_join` is exceeded, instead of throwing an exception. Requires temporary storage to be configured (`tmp_path` or similar).
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7418,9 +7421,6 @@ Initial number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
-)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_auto_spilling_hash_join, false, R"(
-If enabled and `join_algorithm` is `hash` (or `default`/`auto`), the hash join will automatically spill to disk using the grace hash join algorithm when `max_bytes_in_join` is exceeded, instead of throwing an exception. Requires temporary storage to be configured (`tmp_path` or similar).
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
