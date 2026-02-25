@@ -533,7 +533,7 @@ Iceberg tables accumulate snapshots with each INSERT, DELETE, or UPDATE operatio
 ALTER TABLE iceberg_table EXECUTE expire_snapshots('timestamp');
 ```
 
-Where `timestamp` is a datetime string (e.g., `'2024-06-01 00:00:00'`). All snapshots older than this timestamp will be expired, except for the current snapshot and any snapshots referenced by branches or tags.
+Where `timestamp` is a datetime string (e.g., `'2024-06-01 00:00:00'`). The timestamp is interpreted in the **server's timezone** (the `timezone` configuration setting, or the system timezone if not set). All snapshots older than this timestamp will be expired, except for the current snapshot and any snapshots referenced by branches or tags.
 
 **Example:**
 
