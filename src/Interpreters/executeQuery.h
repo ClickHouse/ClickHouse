@@ -140,5 +140,5 @@ void logExceptionBeforeStart(
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();
 
 /// Add to audit log if enabled
-void auditLog(const QueryLogElement & elem, const ContextPtr context);
+void auditLog(const QueryLogElement & elem, ContextPtr context);
 }

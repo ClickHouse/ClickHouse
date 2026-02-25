@@ -989,7 +989,7 @@ void logExceptionBeforeStart(
     auditLog(elem, context);
 }
 
-void auditLog(const QueryLogElement & elem, const ContextPtr context)
+void auditLog(const QueryLogElement & elem, ContextPtr context)
 {
     auto audit_log = getAuditLogger();
     if (!audit_log)
