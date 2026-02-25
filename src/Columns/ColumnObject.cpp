@@ -427,7 +427,7 @@ void ColumnObject::setMaxDynamicPaths(size_t max_dynamic_paths_)
     max_dynamic_paths = max_dynamic_paths_;
 }
 
-void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
+void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<String> & paths)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific max_dynamic_paths parameter is allowed only for empty object column");
@@ -452,7 +452,7 @@ void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
     }
 }
 
-void ColumnObject::setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths)
+void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<std::pair<String, ColumnPtr>> & paths)
 {
     if (paths.size() > max_dynamic_paths)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set dynamic paths to Object column, the number of paths ({}) exceeds the limit ({})", paths.size(), max_dynamic_paths);

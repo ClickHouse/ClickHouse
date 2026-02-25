@@ -269,8 +269,16 @@ public:
     void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
     bool canAddNewDynamicPath() const { return dynamic_paths.size() < max_dynamic_paths; }
 
-    void setDynamicPaths(const std::vector<String> & paths);
-    void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths);
+    void setDynamicPaths(const VectorWithMemoryTracking<String> & paths);
+    void setDynamicPaths(const VectorWithMemoryTracking<std::pair<String, ColumnPtr>> & paths);
+    void setDynamicPaths(const std::vector<String> & paths)
+    {
+        setDynamicPaths(VectorWithMemoryTracking<String>(paths.begin(), paths.end()));
+    }
+    void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths)
+    {
+        setDynamicPaths(VectorWithMemoryTracking<std::pair<String, ColumnPtr>>(paths.begin(), paths.end()));
+    }
     void setMaxDynamicPaths(size_t max_dynamic_paths_);
     void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
