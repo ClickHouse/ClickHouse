@@ -22,6 +22,8 @@ struct MaterializedCTE
 
     /// Owns the temporary table used for materialization.
     TemporaryTableHolder holder;
+    /// If true, query plan is built for the CTE (i.e. the table is being populated, but is not ready for reads yet).
+    std::atomic_bool is_planned{false};
     /// If true, the CTE has been materialized (i.e. the table has been populated and is ready for reads).
     std::atomic_bool is_built{false};
 };

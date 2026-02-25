@@ -30,7 +30,8 @@ Chunk MaterializingCTETransform::generate()
     executor.reset();
     table_out.reset();
 
-    materialized_cte->is_built = true;
+    if (materialized_cte->is_built.exchange(true))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CTE is already built");
 
     return {};
 }

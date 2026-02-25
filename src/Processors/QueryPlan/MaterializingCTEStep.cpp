@@ -115,7 +115,7 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansF
     std::vector<std::unique_ptr<QueryPlan>> plans;
     for (auto & [materialized_cte, plan] : step.cte_plans)
     {
-        if (materialized_cte->is_built)
+        if (materialized_cte->is_planned.exchange(true))
             continue;
 
         plan->optimize(optimization_settings);
