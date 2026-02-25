@@ -494,11 +494,18 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     if job.provides:
                         # for cases when artifact report is used instead of real artifacts
                         affected_artifacts.append(job.name)
-                    # Only add artifact names to all_required_artifacts
-                    # Job names in requirements indicate ordering-only dependencies
+                    # Only add artifact names to all_required_artifacts.
+                    # Job names in requirements are ordering-only dependencies unless
+                    # needs_jobs_from_requires is set, in which case the required job
+                    # must run (cannot be skipped as unaffected).
                     for req in job.requires:
                         if req not in job_names:
                             # Not a job name, must be an artifact name
+                            all_required_artifacts.add(req)
+                        elif job.needs_jobs_from_requires:
+                            print(
+                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as hard dependency"
+                            )
                             all_required_artifacts.add(req)
                         else:
                             print(
