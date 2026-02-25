@@ -1,16 +1,14 @@
 /// This translation unit should be compiled multiple times
 /// with different values of NAMESPACE and machine flags (sse2, avx2).
 
-/// See also <libdivide-config.h>
-#if defined(__AVX2__)
-    #define REG_SIZE 32
-    #define LIBDIVIDE_AVX2
-#elif defined(__SSE2__)
-    #define REG_SIZE 16
-    #define LIBDIVIDE_SSE2
-#endif
-
+#include <libdivide-config.h>
 #include <libdivide.h>
+
+#if defined(LIBDIVIDE_AVX2)
+    #define REG_SIZE 32
+#elif defined(LIBDIVIDE_SSE2)
+    #define REG_SIZE 16
+#endif
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wbit-int-extension"
