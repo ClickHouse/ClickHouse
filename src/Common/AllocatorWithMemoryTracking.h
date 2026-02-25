@@ -43,7 +43,18 @@ struct AllocatorWithMemoryTracking
         size_t bytes = n * sizeof(T);
         auto trace = CurrentMemoryTracker::alloc(bytes);
 
-        T * p = static_cast<T *>(__real_malloc(bytes));
+        T * p = nullptr;
+        if constexpr (alignof(T) > alignof(std::max_align_t))
+        {
+            const int res = __real_posix_memalign(reinterpret_cast<void **>(&p), alignof(T), bytes);
+            if (res != 0)
+                // We don't have to, but to be sure
+                p = nullptr;
+        }
+        else
+        {
+            p = static_cast<T *>(__real_malloc(bytes));
+        }
         if (!p)
             throw std::bad_alloc();
 
