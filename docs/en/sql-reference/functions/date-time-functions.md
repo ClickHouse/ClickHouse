@@ -27,7 +27,7 @@ SELECT
 ```
 
 :::note
-For SQL standard compatibility the following functions, `NOW`, `CURRENT_TIMESTAMP`, `TODAY`, and `CURRENT_DATE` can be used without parentheses.
+For SQL standard compatibility, `NOW`, `CURRENT_TIMESTAMP`, `TODAY`, and `CURRENT_DATE` can be used without parentheses.
 :::
 
 <!-- 
