@@ -1,3 +1,7 @@
 <clickhouse>
-    <allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>
+    <profiles>
+        <default>
+            <allow_nullable_tuple_in_extracted_subcolumns>0</allow_nullable_tuple_in_extracted_subcolumns>
+        </default>
+    </profiles>
 </clickhouse>

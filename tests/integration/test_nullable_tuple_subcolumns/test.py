@@ -46,11 +46,11 @@ SPECIAL_ON_ONLY_CASES = [
 cluster = ClickHouseCluster(__file__)
 node_off = cluster.add_instance(
     "node_off",
-    main_configs=["configs/allow_nullable_tuple_subcolumns_off.xml"],
+    user_configs=["configs/allow_nullable_tuple_subcolumns_off.xml"],
 )
 node_on = cluster.add_instance(
     "node_on",
-    main_configs=["configs/allow_nullable_tuple_subcolumns_on.xml"],
+    user_configs=["configs/allow_nullable_tuple_subcolumns_on.xml"],
 )
 
 
