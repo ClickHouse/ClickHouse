@@ -1382,8 +1382,10 @@ static BlockIO executeQueryImpl(
     {
         if (auto txn = context->getCurrentTransaction())
         {
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            if (txn->getState() == MergeTreeTransaction::COMMITTING)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} is in a committing state", txn->tid);
+            if (txn->getState() == MergeTreeTransaction::COMMITTED)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has been already committed", txn->tid);
             bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
@@ -2020,6 +2022,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
         try
         {
+            /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
+            context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
+            context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
             auto fuzz_context = Context::createCopy(context);
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
