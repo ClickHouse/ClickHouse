@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <unordered_set>
 #include <ranges>
 #include <set>
 
@@ -117,6 +118,45 @@ StoragePolicy::StoragePolicy(
                         move_factor, backQuote(name));
 
     buildVolumeIndices();
+
+    /// Validate move_on_shutdown_to settings
+    for (const auto & volume : volumes)
+    {
+        const auto & target = volume->move_on_shutdown_to;
+        if (target.empty())
+            continue;
+
+        if (target == volume->getName())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Volume '{}' cannot have move_on_shutdown_to pointing to itself",
+                volume->getName());
+
+        if (volume_index_by_volume_name.find(target) == volume_index_by_volume_name.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Volume '{}' has move_on_shutdown_to='{}' but target volume does not exist in policy '{}'",
+                volume->getName(), target, name);
+
+        /// Check for circular references (A -> B -> A)
+        String current = target;
+        std::unordered_set<String> visited{volume->getName()};
+        while (!current.empty())
+        {
+            if (visited.contains(current))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Circular reference detected in move_on_shutdown_to: volume '{}' leads back to '{}'",
+                    volume->getName(), current);
+
+            visited.insert(current);
+            auto it = volume_index_by_volume_name.find(current);
+            if (it == volume_index_by_volume_name.end())
+                break;
+            current = volumes[it->second]->move_on_shutdown_to;
+        }
+    }
+
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 

@@ -5947,6 +5947,49 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     }
 }
 
+void StorageReplicatedMergeTree::filterPartsCoveredByFutureMerge(
+    std::vector<std::pair<DataPartPtr, VolumePtr>> & parts_to_move,
+    size_t & skipped_count) const
+{
+    if (parts_to_move.empty())
+        return;
+
+    auto lock_start_time = std::chrono::steady_clock::now();
+    constexpr auto max_wait_time = std::chrono::milliseconds(100);
+
+    /// Try to acquire lock with timeout to avoid blocking shutdown.
+    /// NOTE: We access queue.state_mutex directly because this is a shutdown-time
+    /// optimization that needs minimal latency. The ReplicatedMergeTreeQueue is
+    /// a member of this class and the mutex access pattern is consistent with
+    /// ReplicatedMergeTreeMergePredicate which also accesses it directly.
+    std::unique_lock lock(queue.state_mutex, std::defer_lock);
+    while (!lock.try_lock())
+    {
+        if (std::chrono::steady_clock::now() - lock_start_time > max_wait_time)
+        {
+            LOG_DEBUG(log, "filterPartsCoveredByFutureMerge: skipping filter (lock timeout after 100ms), parts_count={}",
+                parts_to_move.size());
+            return;  /// Skip filtering if we can't acquire lock quickly
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    /// Filter out parts that are covered by future merges.
+    /// Use erase-remove idiom for O(n) instead of O(n²) with individual erases.
+    auto to_remove = std::remove_if(parts_to_move.begin(), parts_to_move.end(),
+        [&](const auto & item)
+        {
+            const auto & part = item.first;
+            String covering_part = queue.virtual_parts.getContainingPart(part->info);
+            if (!covering_part.empty() && covering_part != part->name)
+            {
+                ++skipped_count;
+                return true;
+            }
+            return false;
+        });
+    parts_to_move.erase(to_remove, parts_to_move.end());
+}
 
 PartitionIdToMaxBlock StorageReplicatedMergeTree::getMaxAddedBlocks() const
 {

@@ -1432,6 +1432,18 @@ public:
     void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
 
+    /// Move parts from volatile volumes to target volumes on shutdown
+    /// Returns number of successfully moved parts
+    size_t movePartsOnShutdown(std::chrono::seconds timeout, LoggerPtr shutdown_log);
+
+    /// Filter out parts that are covered by future merges in the replication queue.
+    /// These parts will be replaced by merged results that can be fetched from other replicas.
+    /// Modifies parts_to_move in place, removing covered parts and incrementing skipped_count.
+    /// Base implementation does nothing (non-replicated tables have no replication queue).
+    virtual void filterPartsCoveredByFutureMerge(
+        std::vector<std::pair<DataPartPtr, VolumePtr>> & parts_to_move,
+        size_t & skipped_count) const;
+
 protected:
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;

@@ -47,6 +47,8 @@ IVolume::IVolume(
 
     if (disks.empty())
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Volume {} must contain at least one disk", name);
+
+    move_on_shutdown_to = config.getString(config_prefix + ".move_on_shutdown_to", "");
 }
 
 std::optional<UInt64> IVolume::getMaxUnreservedFreeSpace() const

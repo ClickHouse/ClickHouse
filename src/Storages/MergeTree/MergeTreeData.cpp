@@ -9757,6 +9757,135 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
     return result;
 }
 
+size_t MergeTreeData::movePartsOnShutdown(std::chrono::seconds timeout, LoggerPtr shutdown_log)
+{
+    auto start_time = std::chrono::steady_clock::now();
+    size_t moved_count = 0;
+    size_t total_count = 0;
+    size_t total_bytes = 0;
+
+    const auto policy = getStoragePolicy();
+    const auto & volumes = policy->getVolumes();
+
+    /// Build disk name -> target volume map for O(1) lookup
+    std::unordered_map<String, VolumePtr> disk_to_target_volume;
+    for (const auto & volume : volumes)
+    {
+        const auto & target_volume_name = volume->move_on_shutdown_to;
+        if (target_volume_name.empty())
+            continue;
+
+        auto target_volume = policy->tryGetVolumeByName(target_volume_name);
+        if (!target_volume)
+            continue;
+
+        for (const auto & disk : volume->getDisks())
+            disk_to_target_volume[disk->getName()] = target_volume;
+    }
+
+    if (disk_to_target_volume.empty())
+        return 0;
+
+    std::vector<std::pair<DataPartPtr, VolumePtr>> parts_to_move;
+    auto all_parts = getDataPartsVectorForInternalUsage();
+
+    for (const auto & part : all_parts)
+    {
+        auto it = disk_to_target_volume.find(part->getDataPartStorage().getDiskName());
+        if (it != disk_to_target_volume.end())
+        {
+            parts_to_move.emplace_back(part, it->second);
+            total_bytes += part->getBytesOnDisk();
+        }
+    }
+
+    /// Filter out parts covered by future merges (batch operation with single lock acquisition)
+    size_t skipped_future_parts = 0;
+    filterPartsCoveredByFutureMerge(parts_to_move, skipped_future_parts);
+
+    /// Recalculate total_bytes after filtering
+    if (skipped_future_parts > 0)
+    {
+        total_bytes = 0;
+        for (const auto & [part, _] : parts_to_move)
+            total_bytes += part->getBytesOnDisk();
+    }
+
+    total_count = parts_to_move.size();
+    if (total_count == 0)
+    {
+        if (skipped_future_parts > 0)
+            LOG_DEBUG(shutdown_log, "Shutdown: all {} parts on volatile volumes are covered by future merges, skipping move",
+                skipped_future_parts);
+        return 0;
+    }
+
+    /// Sort by level ascending (level 0 = freshly inserted, likely not yet replicated),
+    /// then by size ascending (smaller parts first to maximize count of preserved parts)
+    std::sort(parts_to_move.begin(), parts_to_move.end(),
+        [](const auto & a, const auto & b) {
+            if (a.first->info.level != b.first->info.level)
+                return a.first->info.level < b.first->info.level;
+            return a.first->getBytesOnDisk() < b.first->getBytesOnDisk();
+        });
+
+    LOG_INFO(shutdown_log, "Shutdown: starting parts move for table {}, parts_count={}, total_size={}",
+        getStorageID().getFullTableName(), total_count, formatReadableSizeWithBinarySuffix(total_bytes));
+
+    auto read_settings = getContext()->getReadSettings();
+    auto write_settings = getContext()->getWriteSettings();
+
+    for (const auto & [part, target_volume] : parts_to_move)
+    {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed >= timeout)
+        {
+            LOG_WARNING(shutdown_log, "Shutdown: parts move timeout after {}s, moved={}/{}, remaining {} parts will be recovered from replicas",
+                std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(),
+                moved_count, total_count, total_count - moved_count);
+            break;
+        }
+
+        try
+        {
+            auto reservation = target_volume->reserve(part->getBytesOnDisk());
+            if (!reservation)
+            {
+                LOG_WARNING(shutdown_log, "Shutdown: not enough space on target volume for part {}, skipping",
+                    part->name);
+                continue;
+            }
+
+            MergeTreeMoveEntry entry{part, std::move(reservation)};
+            auto cloned = parts_mover.clonePart(entry, read_settings, write_settings);
+            parts_mover.swapClonedPart(cloned);
+
+            ++moved_count;
+            LOG_DEBUG(shutdown_log, "Shutdown: moved part {} to volume {}",
+                part->name, target_volume->getName());
+        }
+        catch (const Exception & e)
+        {
+            LOG_WARNING(shutdown_log, "Shutdown: failed to move part {}: {}", part->name, e.message());
+        }
+    }
+
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start_time).count();
+
+    LOG_INFO(shutdown_log, "Shutdown: parts move completed for table {}, moved={}/{}, elapsed={}ms",
+        getStorageID().getFullTableName(), moved_count, total_count, elapsed_ms);
+
+    return moved_count;
+}
+
+void MergeTreeData::filterPartsCoveredByFutureMerge(
+    std::vector<std::pair<DataPartPtr, VolumePtr>> & /* parts_to_move */,
+    size_t & /* skipped_count */) const
+{
+    /// Base implementation: non-replicated tables don't have replication queue, nothing to filter
+}
+
 bool MergeTreeData::canUsePolymorphicParts() const
 {
     String unused;

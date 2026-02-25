@@ -1,0 +1,28 @@
+<clickhouse>
+    <shutdown_move_parts_timeout>30</shutdown_move_parts_timeout>
+
+    <storage_configuration>
+        <disks>
+            <volatile>
+                <path>/test_volatile/</path>
+            </volatile>
+            <persistent>
+                <path>/test_persistent/</path>
+            </persistent>
+        </disks>
+
+        <policies>
+            <move_on_shutdown_policy>
+                <volumes>
+                    <volatile>
+                        <disk>volatile</disk>
+                        <move_on_shutdown_to>persistent</move_on_shutdown_to>
+                    </volatile>
+                    <persistent>
+                        <disk>persistent</disk>
+                    </persistent>
+                </volumes>
+            </move_on_shutdown_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

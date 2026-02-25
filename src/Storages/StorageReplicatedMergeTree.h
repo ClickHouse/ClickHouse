@@ -147,6 +147,11 @@ public:
     /// wait until other replicas will download some parts from our replica.
     void shutdown(bool is_drop) override;
 
+    /// Filter out parts covered by future merges in the replication queue (batch operation)
+    void filterPartsCoveredByFutureMerge(
+        std::vector<std::pair<DataPartPtr, VolumePtr>> & parts_to_move,
+        size_t & skipped_count) const override;
+
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
