@@ -251,7 +251,7 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 class ColumnsDescription;
 /// Callback for inferring schema from input stream for function input()
-using InputSchemaInferenceCallback = std::function<ColumnsDescription(const String & format, ContextPtr)>;
+using InputSchemaInferenceCallback = std::function<ColumnsDescription(ContextPtr)>;
 
 /// Used in distributed task processing
 struct ClusterFunctionReadTaskResponse;
@@ -883,7 +883,7 @@ public:
     /// Schema inference callback for input() table function
     void setInputSchemaInferenceCallback(InputSchemaInferenceCallback && callback);
     bool hasInputSchemaInferenceCallback() const;
-    ColumnsDescription inferInputSchema(const String & format) const;
+    ColumnsDescription inferInputSchema() const;
 
     /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }

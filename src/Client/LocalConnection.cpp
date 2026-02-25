@@ -314,13 +314,8 @@ void LocalConnection::sendQuery(
 
     if (in)
     {
-        query_context->setInputSchemaInferenceCallback([this](const String & format, ContextPtr context) -> ColumnsDescription
+        query_context->setInputSchemaInferenceCallback([this](ContextPtr context) -> ColumnsDescription
         {
-            if (format != "Native")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Schema inference for input() in clickhouse-local "
-                    "is only supported for Native format, got {}", format);
-
             auto format_settings = getFormatSettings(context);
             NativeReader reader(*in, 0, format_settings);
             inferred_first_block = reader.read();

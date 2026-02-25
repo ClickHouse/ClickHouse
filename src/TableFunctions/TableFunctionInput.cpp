@@ -85,7 +85,7 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
             /// Infer schema from the input stream when format is explicitly specified,
             /// e.g. CREATE TABLE ... AS SELECT * FROM input('auto', 'Native').
             if (!format.empty() && context->hasInputSchemaInferenceCallback())
-                return context->inferInputSchema(format);
+                return context->inferInputSchema();
 
             throw Exception(
                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,

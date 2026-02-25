@@ -6493,12 +6493,12 @@ bool Context::hasInputSchemaInferenceCallback() const
     return static_cast<bool>(input_schema_inference_callback);
 }
 
-ColumnsDescription Context::inferInputSchema(const String & format) const
+ColumnsDescription Context::inferInputSchema() const
 {
     if (!input_schema_inference_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input schema inference callback is not set");
 
-    return input_schema_inference_callback(format, shared_from_this());
+    return input_schema_inference_callback(shared_from_this());
 }
 
 

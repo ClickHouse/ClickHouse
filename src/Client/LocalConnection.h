@@ -197,8 +197,7 @@ private:
 
     ReadBuffer * in;
 
-    /// First block deserialized during schema inference (Native format).
-    /// Returned by the block reader callback before the pipeline reads subsequent blocks.
+    /// First block read during schema inference in the input table function.
     std::optional<Block> inferred_first_block;
 };
 
