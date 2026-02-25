@@ -15,6 +15,14 @@ if [ "$( ${CLICKHOUSE_LOCAL} -q "SELECT value FROM system.build_options where na
     exit 0
 fi
 
+# x86-64-v3 binaries use AVX2 instructions in startup code before the instruction checker
+# installs its SIGILL handler, so the graceful error messages cannot be produced. Also,
+# emulating AVX2 under QEMU TCG is too slow for a practical test.
+if ${CLICKHOUSE_LOCAL} --query "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" 2>/dev/null | grep -qP 'x86-64-v[3-9]'; then
+    echo "@@SKIP@@: x86-64-v3+ build (instruction check test requires x86-64-v2)"
+    exit 0
+fi
+
 if ! hash qemu-x86_64-static 2>/dev/null; then
     echo "@@SKIP@@: No qemu-x86_64-static"
     exit 0
@@ -36,5 +44,3 @@ run_with_cpu qemu64,+ssse3
 run_with_cpu qemu64,+ssse3,+sse4.1
 run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2
 run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt
-run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx
-run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+bmi1,+bmi2,+fma,+f16c,+lzcnt,+movbe
