@@ -469,6 +469,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     std::vector<OutputPort *> joined_output_ports;
     std::vector<OutputPort *> delayed_root_output_ports;
+    std::vector<OutputPort *> non_joined_output_ports;
 
     std::shared_ptr<DelayedJoinedBlocksTransform> delayed_root = nullptr;
     if (join->hasDelayedBlocks())
@@ -489,9 +490,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     }
 
     /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel.
-    /// Can be combined with delayed_root: in that case two DelayedPortsProcessors are created —
-    /// the first delays the delayed-block workers until all JoiningTransforms finish,
-    /// the second delays the NonJoinedBlocksTransforms until all delayed-block workers finish.
+    /// Can be combined with delayed_root: in that case two DelayedPorts are created:
+    ///  - the first for the DelayedJoinedBlocksWorkerTransforms until all JoiningTransforms finish
+    ///  - the second for the NonJoinedBlocksTransforms until the first DelayedPorts finishes
     bool use_parallel_non_joined = join->supportParallelNonJoinedBlocksProcessing();
 
     /// When delayed blocks exist, JoiningTransform still needs a finish_counter so it can emit
@@ -501,8 +502,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     auto joining_finish_counter = (use_parallel_non_joined && !delayed_root)
         ? nullptr
         : std::make_shared<FinishCounter>(num_streams);
-
-    std::vector<OutputPort *> non_joined_output_ports;
 
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)

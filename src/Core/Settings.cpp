@@ -7383,7 +7383,7 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(Bool, enable_auto_spilling_hash_join, false, R"(
-If enabled and `join_algorithm` is `hash` (or `default`/`auto`), the hash join will automatically spill to disk using the grace hash join algorithm when `max_bytes_in_join` is exceeded, instead of throwing an exception. Requires temporary storage to be configured (`tmp_path` or similar).
+If enabled and `join_algorithm` is `hash` (or `default`/`auto`), the hash join will automatically spill to disk using the grace hash join algorithm when `max_bytes_in_join` is exceeded, instead of throwing an exception.
 )", 0) \
     \
     /* ####################################################### */ \
