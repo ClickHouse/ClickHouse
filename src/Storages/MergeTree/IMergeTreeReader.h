@@ -42,10 +42,6 @@ public:
 
     virtual bool canReadIncompleteGranules() const = 0;
 
-    /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
-    /// So we must always apply filter into the RangeReader.
-    virtual bool mustApplyFilter() const { return false; }
-
     virtual size_t getResultColumnCount() const { return getColumns().size(); }
 
     virtual bool producesFilterOnly() const { return false; }
@@ -135,11 +131,6 @@ protected:
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
 
-    /// Returns true if the column at position @pos in columns_to_read was dropped
-    /// by a pending mutation that hasn't been applied to this part yet.
-    /// Such columns should not be read from the part; defaults should be used instead.
-    bool isColumnDroppedByPendingMutation(size_t pos) const;
-
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
@@ -183,6 +174,6 @@ struct MergeTreeIndexWithCondition;
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
+    const NamesAndTypesList & columns_to_read);
+
 }

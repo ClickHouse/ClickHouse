@@ -139,14 +139,12 @@ public:
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
-
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
     SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to serialization kind stack.
-    SerializationPtr getSerialization(
-        ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default = {}) const;
+    SerializationPtr getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
@@ -171,12 +169,6 @@ public:
     /** Create empty column for corresponding type and default serialization.
       */
     virtual MutableColumnPtr createColumn() const = 0;
-
-    /** Creates a column with specified size, without initializing values.
-      * This is useful when you need to create a large column to fill later (e.g. the result of a function)
-      * Default implementation uses createColumn and cloneResized.
-      */
-    virtual MutableColumnPtr createUninitializedColumnWithSize(size_t size) const;
 
     /** Create empty column for corresponding type and serialization.
      */
@@ -367,13 +359,11 @@ protected:
     static std::unique_ptr<SubstreamData> getSubcolumnData(
         std::string_view subcolumn_name,
         const SubstreamData & data,
-        size_t initial_array_level,
         bool throw_if_null);
 
     virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
         std::string_view /*subcolumn_name*/,
         const SubstreamData & /*data*/,
-        size_t /*initial_array_level*/,
         bool throw_if_null) const
     {
         if (throw_if_null)
@@ -506,7 +496,6 @@ bool isInteger(TYPE data_type); \
 bool isNativeInteger(TYPE data_type); \
 \
 bool isDecimal(TYPE data_type); \
-bool isDecimal64(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
 \

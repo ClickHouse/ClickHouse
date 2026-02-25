@@ -15,7 +15,7 @@ constexpr T abs(T value) noexcept
     {
         if (value >= 0 || value == std::numeric_limits<T>::min())
             return value;
-        return static_cast<T>(-value);
+        return -value;
     }
     else
         return value;
@@ -78,7 +78,7 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT lcm(6, 8)", "24"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, categories};
 
     factory.registerFunction<FunctionLCM>(documentation);
 }

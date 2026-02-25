@@ -193,7 +193,7 @@ namespace
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)
-            x = static_cast<Int16>(rng() % (2 * max_value + 3 - num_values) - max_value - 1);
+            x = rng() % (2 * max_value + 3 - num_values) - max_value - 1;
         /// Make all numbers unique.
         std::sort(values.begin(), values.end());
         for (size_t i = 0; i < num_values; ++i)
@@ -475,7 +475,7 @@ c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCar
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGenerateRandomStructure>(documentation);
 }

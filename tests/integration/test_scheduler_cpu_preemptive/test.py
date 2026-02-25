@@ -139,17 +139,7 @@ def test_create_workload():
     do_checks()
 
 
-@pytest.mark.parametrize(
-    "with_custom_config",
-    [
-        pytest.param(
-            {'node': {"cpu_slot_preemption_timeout_ms": "60000"}},
-            id="cpu-slot-preemption-timeout-60s",
-        )
-    ],
-    indirect=True,
-)
-def test_independent_pools(with_custom_config):
+def test_independent_pools():
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
@@ -188,7 +178,7 @@ def test_independent_pools(with_custom_config):
             "ConcurrencyControlSlotsAcquired",
             lambda x: x <= slots,
         )
-        # Short preemptions may happen due to lags in the scheduler thread, but dowscales should not. To enforce that we set high preemption timeout.
+        # Short preemptions may happen due to lags in the scheduler thread, but dowscales should not
         assert_profile_event(
             node,
             query_id,
@@ -272,31 +262,6 @@ class QueryPool:
                     mylog(f"Query in workload {self.workload} failed with exception: {e}")
                     with self._errors_lock:
                         self.errors += 1
-
-        for _ in range(self.num_queries):
-            self.threads.append(threading.Thread(target=query_thread, args=()))
-        for thread in self.threads:
-            thread.start()
-
-    def start_short_ignore_expected(self, count: int, max_threads: int, expected_errors: list[str]) -> None:
-        """Start running short queries, ignoring specified expected errors."""
-        assert self.stopped, "Pool is already running"
-        self.stopped = False
-
-        def query_thread() -> None:
-            while not self.stop_event.is_set():
-                mylog(f"Running query in workload {self.workload}")
-                try:
-                    node.query(
-                        f"SELECT sum(number) FROM numbers({count}) SETTINGS "
-                        f"workload='{self.workload}', max_threads={max_threads}"
-                    )
-                except QueryRuntimeException as e:
-                    error_str = str(e)
-                    if not any(expected in error_str for expected in expected_errors):
-                        mylog(f"Query in workload {self.workload} failed with unexpected exception: {e}")
-                        with self._errors_lock:
-                            self.errors += 1
 
         for _ in range(self.num_queries):
             self.threads.append(threading.Thread(target=query_thread, args=()))
@@ -469,13 +434,13 @@ class DynamicQueryPool:
     indirect=True,
 )
 def test_downscaling(with_custom_config):
-    if node.is_built_with_address_sanitizer() or node.is_built_with_thread_sanitizer() or node.is_built_with_llvm_coverage():
+    if node.is_built_with_address_sanitizer():
         pytest.skip("doesn't fit in timeouts due to heavy workload")
 
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
-        create workload all settings max_concurrent_threads=2;
+        create workload all settings max_concurrent_threads=8;
         create workload development in all;
     """
     )
@@ -485,9 +450,9 @@ def test_downscaling(with_custom_config):
     active_ids: list[int] = []
     try:
         for _ in range(2):
-            # Gradually increase concurrency to 4
-            for _ in range(4):
-                tid = development.start(billions=1, max_threads=2)
+            # Gradually increase concurrency to 16
+            for _ in range(16):
+                tid = development.start(billions=1, max_threads=8)
                 active_ids.append(tid)
                 time.sleep(0.05)
             # Gradually decrease back to 0
@@ -498,52 +463,6 @@ def test_downscaling(with_custom_config):
     finally:
         for tid in active_ids:
             development.stop(tid)
-
-
-def test_drop_workload_during_query():
-    """Test for race condition when a workload is dropped while queries are still running.
-    Uses short queries to maximize the chance of hitting the race condition with query finish.
-    """
-    node.query(
-        f"""
-        create resource cpu (master thread, worker thread);
-        create workload all;
-        create workload production in all;
-    """
-    )
-
-    # Start query pool with short queries, ignoring expected errors when workload is dropped
-    production = QueryPool(4, "production")
-    production.start_short_ignore_expected(
-        100000,
-        1,
-        ["RESOURCE_ACCESS_DENIED", "INVALID_SCHEDULER_NODE"]
-    )
-
-    stop_event = threading.Event()
-
-    def drop_create_thread():
-        while not stop_event.is_set():
-            try:
-                node.query("DROP WORKLOAD IF EXISTS production")
-                node.query("CREATE WORKLOAD IF NOT EXISTS production IN all")
-            except QueryRuntimeException:
-                pass  # Ignore errors during drop/create
-
-    # Start drop/create thread
-    drop_create_t = threading.Thread(target=drop_create_thread)
-    drop_create_t.start()
-
-    # Run for 5 seconds
-    time.sleep(5)
-
-    # Stop all threads
-    stop_event.set()
-    drop_create_t.join()
-    production.stop()
-
-    # Check for unexpected errors
-    assert production.get_errors() == 0, "Unexpected errors occurred"
 
 
 def test_create_workload_under_load():

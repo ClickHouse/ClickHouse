@@ -3,7 +3,6 @@
 
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
@@ -11,6 +10,8 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
@@ -161,8 +162,7 @@ public:
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
-    using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
-    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
+    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 
     using FilteredGranules = std::vector<size_t>;
     virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
@@ -233,8 +233,6 @@ public:
          */
         return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
-
-    virtual std::string getDescription() const = 0;
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
@@ -274,8 +272,8 @@ struct IMergeTreeIndex
 
     virtual ~IMergeTreeIndex() = default;
 
-    /// Returns the filename without extension. If escape_filenames is set (default since 26.1), the name is escaped.
-    String getFileName() const;
+    /// Returns filename without extension.
+    String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
     size_t getGranularity() const { return index.granularity; }
 
     virtual bool isMergeable() const { return false; }
@@ -296,6 +294,7 @@ struct IMergeTreeIndex
 
     /// A more optimal filtering method
     virtual bool supportsBulkFiltering() const { return false; }
+    virtual bool supportsReadingOnParallelReplicas() const { return false; }
 
     virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
     {
@@ -317,7 +316,6 @@ struct IMergeTreeIndex
     }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
-    virtual bool isTextIndex() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
@@ -356,7 +354,6 @@ public:
 
     using Validator = std::function<void(const IndexDescription & index, bool attach)>;
 
-    static void implicitValidation(const IndexDescription & index);
     void validate(const IndexDescription & index, bool attach) const;
 
     MergeTreeIndexPtr get(const IndexDescription & index) const;
@@ -402,5 +399,4 @@ void ginIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
 void textIndexValidator(const IndexDescription & index, bool attach);
 
-String getIndexFileName(const String & index_name, bool escape_filename);
 }

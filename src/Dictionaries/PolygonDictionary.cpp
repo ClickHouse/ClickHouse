@@ -155,14 +155,14 @@ ColumnPtr IPolygonDictionary::getColumn(
                         default_value_provider.value());
                 }
             }
-            else if constexpr (std::is_same_v<ValueType, std::string_view>)
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
             {
                 if (is_short_circuit)
                 {
                     getItemsShortCircuitImpl<ValueType>(
                         requested_key_points,
                         [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                        [&](std::string_view value) { result_column_typed.insertData(value.data(), value.size()); },
+                        [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
                         default_mask.value());
                 }
                 else
@@ -170,7 +170,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                     getItemsImpl<ValueType>(
                         requested_key_points,
                         [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                        [&](std::string_view value) { result_column_typed.insertData(value.data(), value.size()); },
+                        [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
                         default_value_provider.value());
                 }
             }
@@ -305,7 +305,7 @@ void IPolygonDictionary::loadData()
     PaddedPODArray<double> areas;
     areas.resize_fill(polygons.size());
 
-    VectorWithMemoryTracking<std::pair<Polygon, size_t>> polygon_ids;
+    std::vector<std::pair<Polygon, size_t>> polygon_ids;
     polygon_ids.reserve(polygons.size());
 
     for (size_t i = 0; i < polygons.size(); ++i)
@@ -322,7 +322,7 @@ void IPolygonDictionary::loadData()
         return areas[lhs.second] < areas[rhs.second];
     });
 
-    VectorWithMemoryTracking<size_t> correct_ids;
+    std::vector<size_t> correct_ids;
     correct_ids.reserve(polygon_ids.size());
 
     for (size_t i = 0; i < polygon_ids.size(); ++i)
@@ -349,7 +349,7 @@ void IPolygonDictionary::calculateBytesAllocated()
         bytes_allocated += bg::num_points(polygon) * sizeof(Point);
 }
 
-VectorWithMemoryTracking<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
+std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
 {
     if (key_columns.size() != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two columns of coordinates with type Float64");
@@ -362,7 +362,7 @@ VectorWithMemoryTracking<IPolygonDictionary::Point> IPolygonDictionary::extractP
 
     const auto rows = key_columns.front()->size();
 
-    VectorWithMemoryTracking<Point> result;
+    std::vector<Point> result;
     result.reserve(rows);
 
     for (size_t row = 0; row < rows; ++row)
@@ -386,7 +386,7 @@ VectorWithMemoryTracking<IPolygonDictionary::Point> IPolygonDictionary::extractP
 
 ColumnUInt8::Ptr IPolygonDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
-    VectorWithMemoryTracking<IPolygonDictionary::Point> points = extractPoints(key_columns);
+    std::vector<IPolygonDictionary::Point> points = extractPoints(key_columns);
 
     auto result = ColumnUInt8::create(points.size());
     auto & out = result->getData();
@@ -409,7 +409,7 @@ ColumnUInt8::Ptr IPolygonDictionary::hasKeys(const Columns & key_columns, const 
 
 template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
 void IPolygonDictionary::getItemsImpl(
-    const VectorWithMemoryTracking<IPolygonDictionary::Point> & requested_key_points,
+    const std::vector<IPolygonDictionary::Point> & requested_key_points,
     ValueGetter && get_value,
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
@@ -440,7 +440,7 @@ void IPolygonDictionary::getItemsImpl(
             {
                 set_value(default_value.safeGet<Array>());
             }
-            else if constexpr (std::is_same_v<AttributeType, std::string_view>)
+            else if constexpr (std::is_same_v<AttributeType, StringRef>)
             {
                 auto default_value_string = default_value.safeGet<String>();
                 set_value(default_value_string);
@@ -458,7 +458,7 @@ void IPolygonDictionary::getItemsImpl(
 
 template <typename AttributeType, typename ValueGetter, typename ValueSetter>
 void IPolygonDictionary::getItemsShortCircuitImpl(
-    const VectorWithMemoryTracking<IPolygonDictionary::Point> & requested_key_points,
+    const std::vector<IPolygonDictionary::Point> & requested_key_points,
     ValueGetter && get_value,
     ValueSetter && set_value,
     IColumn::Filter & default_mask) const
@@ -545,8 +545,8 @@ struct Offset
 
 struct Data
 {
-    VectorWithMemoryTracking<IPolygonDictionary::Polygon> & dest;
-    VectorWithMemoryTracking<size_t> & ids;
+    std::vector<IPolygonDictionary::Polygon> & dest;
+    std::vector<size_t> & ids;
 
     void addPolygon(bool new_multi_polygon = false)
     {

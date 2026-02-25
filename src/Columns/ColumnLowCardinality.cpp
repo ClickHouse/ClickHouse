@@ -276,7 +276,7 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertIndex(getDictionary().uniqueInsertData(pos, length));
 }
 
-std::string_view ColumnLowCardinality::serializeValueIntoArena(
+StringRef ColumnLowCardinality::serializeValueIntoArena(
     size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin, settings);
@@ -339,11 +339,13 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 {
-    if (nestedIsNullable())
-        return cloneFinalized();
-
     auto res = cloneFinalized();
-    assert_cast<ColumnLowCardinality &>(*res).compactInplaceToNullable();
+    /* Compact required not to share dictionary.
+     * If `shared` flag is not set `cloneFinalized` will return shallow copy
+     * and `nestedToNullable` will mutate source column.
+     */
+    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
+    assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
     return res;
 }
 
@@ -597,13 +599,6 @@ void ColumnLowCardinality::compactInplace()
     idx.attachIndexes(std::move(indexes));
 }
 
-void ColumnLowCardinality::compactInplaceToNullable()
-{
-    auto indexes = idx.detachIndexes();
-    dictionary.compactToNullable(indexes);
-    idx.attachIndexes(std::move(indexes));
-}
-
 void ColumnLowCardinality::compactIfSharedDictionary()
 {
     if (dictionary.isShared())
@@ -661,28 +656,9 @@ void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & indexes)
     shared = false;
 }
 
-void ColumnLowCardinality::Dictionary::compactToNullable(MutableColumnPtr & indexes)
-{
-    column_unique = compactToNullable(getColumnUnique(), indexes);
-    shared = false;
-}
-
 MutableColumnPtr ColumnLowCardinality::Dictionary::compact(const IColumnUnique & unique, MutableColumnPtr & indexes)
 {
     auto new_column_unique = unique.cloneEmpty();
-    auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
-
-    auto unique_indexes = mapUniqueIndex(*indexes);
-    auto sub_keys = unique.getNestedColumn()->index(*unique_indexes, 0);
-    auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
-
-    indexes = IColumn::mutate(new_indexes->index(*indexes, 0));
-    return new_column_unique;
-}
-
-MutableColumnPtr ColumnLowCardinality::Dictionary::compactToNullable(const IColumnUnique & unique, MutableColumnPtr & indexes)
-{
-    auto new_column_unique = unique.cloneEmptyNullable();
     auto & new_unique = static_cast<IColumnUnique &>(*new_column_unique);
 
     auto unique_indexes = mapUniqueIndex(*indexes);

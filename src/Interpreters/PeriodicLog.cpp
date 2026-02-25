@@ -39,13 +39,6 @@ void PeriodicLog<LogElement>::shutdown()
 }
 
 template <typename LogElement>
-void PeriodicLog<LogElement>::stepFunctionSafe(TimePoint current_time)
-{
-    std::lock_guard lock(step_mutex);
-    stepFunction(current_time);
-}
-
-template <typename LogElement>
 void PeriodicLog<LogElement>::threadFunction()
 {
     auto desired_timepoint = std::chrono::system_clock::now();
@@ -55,7 +48,7 @@ void PeriodicLog<LogElement>::threadFunction()
         {
             const auto current_time = std::chrono::system_clock::now();
 
-            stepFunctionSafe(current_time);
+            stepFunction(current_time);
 
             /// We will record current time into table but align it to regular time intervals to avoid time drift.
             /// We may drop some time points if the server is overloaded and recording took too much time.
@@ -74,7 +67,7 @@ void PeriodicLog<LogElement>::threadFunction()
 template <typename LogElement>
 void PeriodicLog<LogElement>::flushBufferToLog(TimePoint current_time)
 {
-    stepFunctionSafe(current_time);
+    stepFunction(current_time);
 }
 
 #define INSTANTIATE_PERIODIC_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;

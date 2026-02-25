@@ -109,7 +109,6 @@ namespace Setting
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -1768,9 +1767,6 @@ void StorageFile::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
-
     if (use_table_fd)
     {
         paths = {""};   /// when use fd, paths are empty
@@ -2309,7 +2305,7 @@ void StorageFile::truncate(
 void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
-        args[0] = make_intrusive<ASTLiteral>(format_name);
+        args[0] = std::make_shared<ASTLiteral>(format_name);
 }
 
 void registerStorageFile(StorageFactory & factory)

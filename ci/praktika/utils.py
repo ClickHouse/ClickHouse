@@ -10,7 +10,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -33,7 +32,6 @@ class MetaClasses:
 
     @dataclasses.dataclass
     class Serializable(ABC):
-        # TODO: make it non-static to do self.to_dict()
         @classmethod
         def to_dict(cls, obj):
             if dataclasses.is_dataclass(obj):
@@ -55,20 +53,13 @@ class MetaClasses:
 
         @classmethod
         def from_fs(cls: Type[T], name) -> T:
-            return cls.from_file(cls.file_name_static(name))
-
-        @classmethod
-        def from_file(cls: Type[T], path) -> T:
-            """
-            For non-default result file locations
-            """
-            with open(path, "r", encoding="utf8") as f:
+            with open(cls.file_name_static(name), "r", encoding="utf8") as f:
                 try:
                     return cls.from_dict(json.load(f))
                 except json.decoder.JSONDecodeError as ex:
                     print(f"ERROR: failed to parse json, ex [{ex}]")
-                    print(f"JSON content [{path}]")
-                    Shell.check(f"cat {path}")
+                    print(f"JSON content [{cls.file_name_static(name)}]")
+                    Shell.check(f"cat {cls.file_name_static(name)}")
                     raise ex
 
         @classmethod
@@ -309,7 +300,7 @@ class Shell:
         command,
         log_file=None,
         strict=False,
-        verbose=True,
+        verbose=False,
         dry_run=False,
         stdin_str=None,
         timeout=None,
@@ -328,8 +319,7 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
-            print(wrapped)
+            print(f"Run command: [{command}]")
 
         log_file = log_file or "/dev/null"
         proc = None
@@ -393,8 +383,8 @@ class Shell:
                             print(
                                 f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
                             )
-                        should_retry = not retry_errors
                         if retry_errors:
+                            should_retry = False
                             for err in retry_errors:
                                 if any(err in err_line for err_line in err_output):
                                     print(
@@ -407,10 +397,6 @@ class Shell:
                                     f"No retryable errors found, stopping retry attempts"
                                 )
                                 break
-                        if should_retry and retry < retries - 1:
-                            delay = min(2 ** (retry + 1), 60)
-                            print(f"Retrying in {delay}s...")
-                            time.sleep(delay)
             except Exception as e:
                 if verbose:
                     print(
@@ -479,10 +465,6 @@ class Utils:
         return False
 
     @staticmethod
-    def is_mac():
-        return platform.system() == "Darwin"
-
-    @staticmethod
     def terminate_process_group(pid, force=False):
         try:
             if not force:
@@ -547,11 +529,6 @@ class Utils:
     @staticmethod
     def cpu_count():
         return multiprocessing.cpu_count()
-
-    @staticmethod
-    def exit_with_error(error_message: str) -> None:
-        print(f"ERROR: {error_message}")
-        sys.exit(1)
 
     # deprecated: unnecessary lines in traceback + ide linting issues
     # switch to regular raise Ex() inplace
@@ -691,24 +668,7 @@ class Utils:
         return res
 
     @classmethod
-    def compress_zst(cls, path, dest_path=None):
-        """
-        Compresses a file or directory using zstd.
-
-        Args:
-            path: Path to the file or directory to compress.
-            dest_path: Optional destination for the compressed archive.
-                      - If None: archive is created in the same directory as the source.
-                      - If a directory: archive is created in that directory with default name.
-                      - If a file path: used as the exact output path for the archive.
-                      Note: For directories, the archive will be .tar.zst; for files, .zst
-
-        Returns:
-            str: Path to the created compressed archive.
-
-        Raises:
-            RuntimeError: If zstd is not installed.
-        """
+    def compress_zst(cls, path):
         path = str(path).rstrip("/")
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
@@ -719,40 +679,16 @@ class Utils:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                archive_name = f"{name}.tar.zst"
-
-                # Determine output path based on dest_path
-                if dest_path is None:
-                    path_out = f"{parent}/{archive_name}"
-                else:
-                    dest_path_obj = Path(dest_path)
-                    if dest_path_obj.is_dir():
-                        # dest_path is a directory (symlinks are followed)
-                        path_out = str(dest_path_obj / archive_name)
-                    else:
-                        # dest_path is a file path
-                        path_out = str(dest_path)
-
+                path_out = f"{parent}/{name}.tar.zst"
                 Shell.check(
-                    f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
+                    f"cd {parent} && rm -f {name}.tar.zst && tar -cf - {name} | zstd -c > {name}.tar.zst",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                # Determine output path based on dest_path
-                if dest_path is None:
-                    path_out = f"{path}.zst"
-                else:
-                    dest_path_obj = Path(dest_path)
-                    if dest_path_obj.is_dir():
-                        # dest_path is a directory (symlinks are followed)
-                        path_out = str(dest_path_obj / f"{path_obj.name}.zst")
-                    else:
-                        # dest_path is a file path
-                        path_out = str(dest_path)
-
+                path_out = f"{path}.zst"
                 Shell.check(
-                    f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
+                    f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
                     verbose=True,
                     strict=True,
                 )
@@ -777,24 +713,7 @@ class Utils:
         return archive_name
 
     @classmethod
-    def compress_gz(cls, path, dest_path=None):
-        """
-        Compresses a file or directory using gzip.
-
-        Args:
-            path: Path to the file or directory to compress.
-            dest_path: Optional destination for the compressed archive.
-                      - If None: archive is created in the same directory as the source.
-                      - If a directory: archive is created in that directory with default name.
-                      - If a file path: used as the exact output path for the archive.
-                      Note: For directories, the archive will be .tar.gz; for files, .gz
-
-        Returns:
-            str: Path to the created compressed archive.
-
-        Raises:
-            RuntimeError: If gzip is not installed or if the path doesn't exist.
-        """
+    def compress_gz(cls, path):
         path = str(path).rstrip("/")
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
@@ -805,51 +724,19 @@ class Utils:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                archive_name = f"{name}.tar.gz"
-
-                # Determine output path based on dest_path
-                if dest_path is None:
-                    path_out = f"{parent}/{archive_name}"
-                else:
-                    dest_path_obj = Path(dest_path)
-                    if dest_path_obj.is_dir():
-                        # dest_path is a directory (symlinks are followed)
-                        path_out = str(dest_path_obj / archive_name)
-                    else:
-                        # dest_path is a file path
-                        path_out = str(dest_path)
-
+                path_out = f"{parent}/{name}.tar.gz"
                 Shell.check(
-                    f"cd {quote(parent)} && tar -cf - {quote(name)} | gzip > {quote(path_out)}",
+                    f"cd {parent} && rm -f {name}.tar.gz && tar -cf - {name} | gzip > {name}.tar.gz",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                # Determine output path based on dest_path
-                if dest_path is None:
-                    path_out = f"{path}.gz"
-                else:
-                    dest_path_obj = Path(dest_path)
-                    if dest_path_obj.is_dir():
-                        # dest_path is a directory
-                        path_out = str(dest_path_obj / f"{path_obj.name}.gz")
-                    else:
-                        # dest_path is a file path
-                        path_out = str(dest_path)
-
+                path_out = f"{path}.gz"
                 Shell.check(
-                    f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
+                    f"rm -f {path_out} && gzip -c '{path}' > '{path_out}'",
                     verbose=True,
                     strict=True,
                 )
-            elif not path_obj.exists():
-                raise RuntimeError(
-                    f"Failed to compress file [{path}]: path does not exist"
-                )
-            else:
-                raise RuntimeError(f"Failed to compress file [{path}]")
-        else:
-            raise RuntimeError(f"Failed to compress file [{path}]: no gzip installed")
         return path_out
 
     @classmethod
@@ -1076,7 +963,12 @@ class TeePopen:
         # Search backwards for "Traceback"
         for i in range(len(buffer) - 1, -1, -1):
             if "Traceback" in buffer[i]:
-                return "".join(buffer[i:])
+                return "\n".join(buffer[i:])
 
         # Fallback: return last max_lines
-        return "".join(buffer[-max_lines:])
+        return "\n".join(buffer[-max_lines:])
+
+
+if __name__ == "__main__":
+
+    Utils.compress_gz("/tmp/test/")

@@ -289,8 +289,6 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
         return createInterserverHTTPHandlerFactory(server, name, config);
     if (name == "PrometheusHandler-factory")
         return createPrometheusHandlerFactory(server, config, async_metrics, name);
-    if (name == "KeeperPrometheusHandler-factory")
-        return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
 }
@@ -360,12 +358,6 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
-
-    auto clickstack_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ClickStackUIRequestHandler>>(server);
-    clickstack_handler->attachNonStrictPath("/clickstack");
-    clickstack_handler->allowGetAndHeadRequest();
-    factory.addPathToHints("/clickstack");
-    factory.addHandler(clickstack_handler);
 
 #if USE_SSL
     if (server.config().has("acme"))
