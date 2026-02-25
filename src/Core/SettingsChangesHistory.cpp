@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.3",
+        {
+            {"enable_auto_spilling_hash_join", false, false, "New setting to enable automatic spilling of hash joins to disk."},
+        });
         addSettingsChanges(settings_changes_history, "26.2",
         {
             {"allow_fuzz_query_functions", false, false, "New setting to enable the fuzzQuery function."},
@@ -54,7 +58,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
             {"enable_full_text_index", false, true, "The text index is now GA"},
-            {"enable_auto_spilling_hash_join", false, false, "New setting to enable automatic spilling of hash joins to disk."},
             {"allow_experimental_full_text_index", false, true, "The text index is now GA"},
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
