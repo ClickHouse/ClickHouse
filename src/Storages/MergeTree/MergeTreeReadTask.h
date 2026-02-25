@@ -212,6 +212,9 @@ public:
         const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
+    using DataflowCacheUpdateCallback
+        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+
     UInt64 estimateNumRows() const;
 
     /// Shared information required for reading.
@@ -239,6 +242,7 @@ private:
     MergeTreeBlockSizePredictorPtr size_predictor;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    DataflowCacheUpdateCallback dataflow_cache_update_cb;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

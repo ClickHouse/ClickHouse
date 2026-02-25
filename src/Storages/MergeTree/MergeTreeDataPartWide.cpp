@@ -98,6 +98,19 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         written_offset_substreams);
 }
 
+void MergeTreeDataPartWide::addStreamToColumnSize(const String & stream_name, ColumnSize & size) const
+{
+    auto bin_checksum = checksums.files.find(stream_name + ".bin");
+    if (bin_checksum != checksums.files.end())
+    {
+        size.data_compressed += bin_checksum->second.file_size;
+        size.data_uncompressed += bin_checksum->second.uncompressed_size;
+    }
+
+    auto mrk_checksum = checksums.files.find(stream_name + getMarksFileExtension());
+    if (mrk_checksum != checksums.files.end())
+        size.marks += mrk_checksum->second.file_size;
+}
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
@@ -107,20 +120,6 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     ColumnSize size;
     if (checksums.empty())
         return size;
-
-    auto add_stream_size = [&](const String & stream_name)
-    {
-        auto bin_checksum = checksums.files.find(stream_name + ".bin");
-        if (bin_checksum != checksums.files.end())
-        {
-            size.data_compressed += bin_checksum->second.file_size;
-            size.data_uncompressed += bin_checksum->second.uncompressed_size;
-        }
-
-        auto mrk_checksum = checksums.files.find(stream_name + getMarksFileExtension());
-        if (mrk_checksum != checksums.files.end())
-            size.marks += mrk_checksum->second.file_size;
-    };
 
     if (column.type->hasDynamicSubcolumns() && !columns_substreams.empty())
     {
@@ -132,7 +131,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         for (const auto & substream : substreams)
         {
             if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, DATA_FILE_EXTENSION, checksums))
-                add_stream_size(*stream_name);
+                addStreamToColumnSize(*stream_name, size);
         }
     }
     else
@@ -147,9 +146,22 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
             if (processed_substreams && !processed_substreams->insert(*stream_name).second)
                 return;
 
-            add_stream_size(*stream_name);
+            addStreamToColumnSize(*stream_name, size);
         }, column.type, getColumnSample(column));
     }
+
+    return size;
+}
+
+
+ColumnSize MergeTreeDataPartWide::calculateSubcolumnSize(const String & subcolumn_name) const
+{
+    ColumnSize size;
+    if (checksums.empty())
+        return size;
+
+    for (const auto & stream : getListOfStreamsForColumn(getColumn(subcolumn_name)))
+        addStreamToColumnSize(stream, size);
 
     return size;
 }
@@ -292,7 +304,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
                 return;
 
             auto mark_path = index_granularity_info.getMarksFilePath(*stream_name);
-            auto key = MarkCache::hash(fs::path(getRelativePathOfActivePart()) / mark_path);
+            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
             mark_cache->remove(key);
         });
     }
@@ -485,6 +497,41 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         }
 #endif
     }
+}
+
+std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameAndTypePair & column) const
+{
+    NamesAndTypesList cols;
+    cols.emplace_back(column);
+
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+
+    /// We need to read only prefixes, so no data will be read.
+    /// Use read settings without prefetches/filesystem cache/etc.
+    MergeTreeReaderSettings settings = MergeTreeReaderSettings::createFromSettings(getReadSettingsForMetadata());
+    settings.can_read_part_without_marks = true;
+    settings.read_only_column_sample = true;
+
+    auto alter_conversions = std::make_shared<AlterConversions>();
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+
+    MergeTreeReaderPtr reader = createMergeTreeReaderWide(
+        part_info,
+        cols,
+        storage_snapshot_ptr,
+        storage.getSettings(),
+        MarkRanges{MarkRange(0, getMarksCount())},
+        /*virtual_fields=*/{},
+        /*uncompressed_cache=*/{},
+        storage.getContext()->getMarkCache().get(),
+        nullptr,
+        settings,
+        ValueSizeMap{},
+        ReadBufferFromFileBase::ProfileCallback{});
+
+    auto & reader_wide = assert_cast<MergeTreeReaderWide &>(*reader);
+    return reader_wide.getAllColumnsSubstreams()[column.name];
 }
 
 }

@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
 
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/NaNUtils.h>
@@ -91,6 +92,7 @@ public:
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     void skipSerializedInArena(ReadBuffer & in) const override;
@@ -102,7 +104,7 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
-    void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { column_holder->getExtremes(min, max, start, end); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return column_holder->isFixedAndContiguous(); }
     size_t sizeOfValueIfFixed() const override { return column_holder->sizeOfValueIfFixed(); }
@@ -464,6 +466,22 @@ void ColumnUnique<ColumnType>::collectSerializedValueSizes(PaddedPODArray<UInt64
         column_holder->collectSerializedValueSizes(sizes, assert_cast<const ColumnUInt8 &>(*nested_null_mask).getData().data(), settings);
     else
         column_holder->collectSerializedValueSizes(sizes, nullptr, settings);
+}
+
+template <typename ColumnType>
+std::optional<size_t> ColumnUnique<ColumnType>::getSerializedValueSize(
+    size_t n, const IColumn::SerializationSettings * settings) const
+{
+    if (is_nullable)
+    {
+        if (n == getNullValueIndex())
+            return 1;
+        auto nested_size = column_holder->getSerializedValueSize(n, settings);
+        if (!nested_size)
+            return std::nullopt;
+        return 1 + *nested_size;
+    }
+    return column_holder->getSerializedValueSize(n, settings);
 }
 
 template <typename ColumnType>
