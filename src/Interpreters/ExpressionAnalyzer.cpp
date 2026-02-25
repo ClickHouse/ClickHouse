@@ -1035,9 +1035,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         const auto & settings = context->getSettingsRef();
 
-        if (settings[Setting::enable_auto_spilling_hash_join]
-            && GraceHashJoin::isSupported(analyzed_join)
-            && context->getTempDataOnDisk())
+        if (settings[Setting::enable_auto_spilling_hash_join] && GraceHashJoin::isSupported(analyzed_join))
         {
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
@@ -1090,9 +1088,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         const auto & settings = context->getSettingsRef();
 
-        if (settings[Setting::enable_auto_spilling_hash_join]
-            && GraceHashJoin::isSupported(analyzed_join)
-            && context->getTempDataOnDisk())
+        if (settings[Setting::enable_auto_spilling_hash_join] && GraceHashJoin::isSupported(analyzed_join))
         {
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
