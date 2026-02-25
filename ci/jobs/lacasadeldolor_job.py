@@ -396,7 +396,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
     fuzzer_exit_code = 0
     try:
         pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
-        pattern2 = re.compile(r"The server node\d+ is not running")
+        pattern2 = re.compile(r"(Logical error|Crash|Sanitizer error) in instance")
 
         with open(dolor_log, "r", encoding="utf-8") as logf:
             for line in logf:
