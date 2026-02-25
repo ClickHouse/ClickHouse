@@ -63,7 +63,7 @@ std::optional<std::string> tryGetClusterName(const IAST & node)
 std::string getClusterNameAndMakeLiteral(ASTPtr & node)
 {
     String cluster_name = getClusterName(*node);
-    node = make_intrusive<ASTLiteral>(cluster_name);
+    node = std::make_shared<ASTLiteral>(cluster_name);
     return cluster_name;
 }
 

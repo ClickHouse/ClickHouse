@@ -14,21 +14,21 @@ namespace DB
 
 ASTPtr ASTPreparedStatement::clone() const
 {
-    auto res = make_intrusive<ASTPreparedStatement>(*this);
+    auto res = std::make_shared<ASTPreparedStatement>(*this);
     res->children.clear();
     return res;
 }
 
 ASTPtr ASTExecute::clone() const
 {
-    auto res = make_intrusive<ASTExecute>(*this);
+    auto res = std::make_shared<ASTExecute>(*this);
     res->children.clear();
     return res;
 }
 
 ASTPtr ASTDeallocate::clone() const
 {
-    auto res = make_intrusive<ASTDeallocate>(*this);
+    auto res = std::make_shared<ASTDeallocate>(*this);
     res->children.clear();
     return res;
 }
@@ -39,7 +39,7 @@ bool ParserPrepare::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_as(Keyword::AS);
     ParserIdentifier s_ident;
 
-    auto result = make_intrusive<ASTPreparedStatement>();
+    auto result = std::make_shared<ASTPreparedStatement>();
     node = result;
 
     if (!s_prepare.ignore(pos, expected))
@@ -69,7 +69,7 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_execute(Keyword::EXECUTE);
     ParserIdentifier s_ident;
 
-    auto result = make_intrusive<ASTExecute>();
+    auto result = std::make_shared<ASTExecute>();
     node = result;
 
     if (!s_execute.ignore(pos, expected))
@@ -103,7 +103,7 @@ bool ParserDeallocate::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_execute(Keyword::DEALLOCATE);
     ParserIdentifier s_ident;
 
-    auto result = make_intrusive<ASTDeallocate>();
+    auto result = std::make_shared<ASTDeallocate>();
     node = result;
 
     if (!s_execute.ignore(pos, expected))

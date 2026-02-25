@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/ArrowBlockInputFormat.h>
-#include <Processors/Port.h>
 #include <optional>
 
 #if USE_ARROW

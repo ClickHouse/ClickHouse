@@ -5,19 +5,11 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Columns/ColumnNullable.h>
 
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool use_variant_as_common_type;
-}
-
 namespace
 {
 
@@ -29,14 +21,11 @@ class FunctionIfNull : public IFunction
 public:
     static constexpr auto name = "ifNull";
 
-    explicit FunctionIfNull(ContextPtr context_, bool use_variant_as_common_type_)
-        : context(context_)
-        , use_variant_as_common_type(use_variant_as_common_type_)
-    {}
+    explicit FunctionIfNull(ContextPtr context_) : context(context_) {}
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIfNull>(context, context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionIfNull>(context);
     }
 
     std::string getName() const override
@@ -50,35 +39,15 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
-    {
-        /// ifNull() is identity when its first argument cannot be NULL, so it preserves ordering and thus monotonic.
-        /// For Nullable types, ifNull() substitutes NULLs with the second argument and is not
-        /// monotonic in general. We treat it as monotonic only when the analyzed range is guaranteed to not contain
-        /// NULLs. NULLs always represented as POSITIVE_INFINITY and they will always be at the end of ordering.
-        /// So, we do not need to check left.isNull().
-        bool can_contain_null = canContainNull(type);
-        if (can_contain_null && right.isNull())
-            return {};
-
-        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments[0]->onlyNull())
             return arguments[1];
 
-        if (!canContainNull(*arguments[0]))
+        if (!arguments[0]->isNullable())
             return arguments[0];
 
-        auto args = DataTypes{removeNullable(arguments[0]), arguments[1]};
-        bool has_variant = std::any_of(args.begin(), args.end(), [](const auto & t) { return isVariant(t); });
-        if (use_variant_as_common_type || has_variant)
-            return getLeastSupertypeOrVariant(args);
-        return getLeastSupertype(args);
+        return getLeastSupertype(DataTypes{removeNullable(arguments[0]), arguments[1]});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -116,7 +85,6 @@ public:
 
 private:
     ContextPtr context;
-    bool use_variant_as_common_type = false;
 };
 
 }

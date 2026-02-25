@@ -114,11 +114,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    /// Sharding requires both pipelines to have the same number of streams.
-    /// When stream counts don't match, fall back to the
-    /// regular join pipeline which handles different stream counts
-    bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
-    if (!use_sharding)
+    if (primary_key_sharding.empty())
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
@@ -275,7 +271,7 @@ void JoinStep::updateOutputHeader()
     if (!use_new_analyzer)
     {
         if (swap_streams)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without the analyzer");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without new analyzer");
         output_header = join_algorithm_header;
         return;
     }

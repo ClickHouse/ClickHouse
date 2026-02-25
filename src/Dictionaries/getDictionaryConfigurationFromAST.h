@@ -1,22 +1,12 @@
 #pragma once
 
-#include <Core/QualifiedTableName.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/Context_fwd.h>
-
-#include <Poco/AutoPtr.h>
-
-namespace Poco
-{
-namespace Util
-{
-class AbstractConfiguration;
-}
-}
 
 namespace DB
 {
 
-class ASTCreateQuery;
 using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 /// Convert dictionary AST to Poco::AbstractConfiguration
