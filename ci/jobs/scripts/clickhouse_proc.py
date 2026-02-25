@@ -56,6 +56,7 @@ class ClickHouseProc:
     def __init__(
         self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
     ):
+        self.fast_test = fast_test
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
         self.ch_config_dir = f"/etc/clickhouse-server"
@@ -751,7 +752,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                if not Shell.check(
+                if self.fast_test:
+                    # Use --force (SIGKILL) for fast test to avoid waiting for
+                    # graceful shutdown, which can take over a minute.
+                    # Graceful shutdown is not needed here because we already
+                    # flushed system logs above and don't need to preserve data.
+                    Shell.check(
+                        f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --force >/dev/null",
+                        verbose=True,
+                    )
+                elif not Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
