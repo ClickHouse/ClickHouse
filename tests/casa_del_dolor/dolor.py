@@ -603,6 +603,7 @@ if args.with_kafka:
 
 # This is the main loop, run while client and server are running
 all_running = True
+good_exit = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 # Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -631,11 +632,14 @@ while all_running and (not reached_limit):
     while all_running and (not reached_limit) and start < finish:
         if client.process.poll() is not None:
             all_running = False
+            good_exit = good_exit and generator.validate_exit_code(
+                client.process.returncode
+            )
         for server in servers:
             pid = server.get_process_pid("clickhouse")
             if pid is None:
                 logger.info(f"The server {server.name} is not running")
-                all_running = False
+                all_running = good_exit = False
         reached_limit = test_limit is not None and time.time() >= test_limit
         if reached_limit:
             logger.info("Test timeout reached, stopping the load generator and exiting")

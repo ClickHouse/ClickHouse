@@ -336,11 +336,7 @@ class ClickHouseTypeMapper:
 
         # Handle Variant(T1, T2, ...) → Spark VariantType / Iceberg Struct with nullable fields
         if ch_type.startswith("Variant("):
-            if (
-                HAS_VARIANT_TYPE
-                and val != "Enum"
-                and mapping == ClickHouseMapping.Spark
-            ):
+            if HAS_VARIANT_TYPE and mapping == ClickHouseMapping.Spark:
                 return ("VARIANT", inside_nullable, sp.VariantType())
 
             # Iceberg has no Variant type; expand into a Struct with nullable fields
@@ -378,7 +374,11 @@ class ClickHouseTypeMapper:
         # Handle JSON, Dynamic → Spark 4.0 VariantType (untyped semi-structured)
         for val in ["JSON", "Dynamic", "Enum"]:
             if ch_type.startswith(val):
-                if HAS_VARIANT_TYPE and mapping == ClickHouseMapping.Spark:
+                if (
+                    HAS_VARIANT_TYPE
+                    and val != "Enum"
+                    and mapping == ClickHouseMapping.Spark
+                ):
                     return ("VARIANT", inside_nullable, sp.VariantType())
                 else:
                     is_text = random.randint(1, 2) == 1

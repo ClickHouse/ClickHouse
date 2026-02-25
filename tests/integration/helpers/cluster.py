@@ -1990,7 +1990,6 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
-        with_dolor=False,
         extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
@@ -2123,7 +2122,6 @@ class ClickHouseCluster:
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
-            with_dolor=with_dolor,
             extra_parameters=extra_parameters,
         )
 
@@ -4311,7 +4309,6 @@ class ClickHouseInstance:
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
-        with_dolor=False,
         extra_parameters=None,
     ):
         self.name = name

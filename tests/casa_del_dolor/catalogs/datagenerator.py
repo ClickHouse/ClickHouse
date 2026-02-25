@@ -36,7 +36,6 @@ try:
 except ImportError:
     HAS_VARIANT_TYPE = False
 
-
 from .tablegenerator import LakeTableGenerator
 from .clickhousetospark import ClickHouseTypeMapper
 
