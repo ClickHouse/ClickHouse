@@ -1,4 +1,3 @@
-#include <Core/Block_fwd.h>
 #include <Planner/Planner.h>
 
 #include <Core/Names.h>
@@ -9,12 +8,8 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
-#include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
@@ -1515,10 +1510,42 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
     if (materialized_ctes.empty())
         return;
 
+    // The main idea of the algorithm is to unite plans for Materialized CTEs of the same level
+    // with the main query plan by MaterializingCTEsStep.
+    //
+    // This allows to ensure following properties:
+    // 1) All CTEs are executed before the main query.
+    // 2) If CTE A depends on CTE B, then A will be executed after B, because A will be on the next level after B.
+    // 3) CTEs on the same level are independent.
+    // 3) CTEs of the same level will be executed in the same MaterializingCTEsStep, so they will be executed in parallel.
+    // 4) Materialized CTEs are executed only once.
+    //
+    // Example of query plan structure for query with 2 levels of CTEs:
+    //
+    //                                  ┌───────────────────────┐
+    //                                  │                       │
+    //                             ┌────│ MaterializingCTEsStep │────────────────────────────┐
+    //                             │    │                       │         │                  │
+    //                             │    └───────────────────────┘         │                  │
+    //                             │                                      │                  │
+    //                             │                                      │                  │
+    //                 ┌───────────▼───────────┐                 ┌────────▼───────┐ ┌────────▼───────┐
+    //                 │                       │                 │                │ │                │
+    //        ┌────────│ MaterializingCTEsStep │─────────┐       │ CTE (level: 0) │ │ CTE (level: 0) │
+    //        │        │                       │         │       │                │ │                │
+    //        │        └───────────────────────┘         │       └────────────────┘ └────────────────┘
+    //        │                                          │
+    //        │                                          │
+    // ┌──────▼─────┐                           ┌────────▼───────┐
+    // │            │                           │                │
+    // │ Query Plan │                           │ CTE (level: 1) │
+    // │            │                           │                │
+    // └────────────┘                           └────────────────┘
+    //
     // The CTEs are added as DelayedMaterializingCTEsStep nodes — one per level — so that
     // resolveMaterializingCTEs can skip already-materialized CTEs. This is important when
     // buildOrderedSetInplace runs a subquery plan that contains CTEs: by the time the main
-    // plan's resolveMaterializingCTEs fires, is_materialized is already true for those CTEs
+    // plan's resolveMaterializingCTEs fires, is_planned is already true for those CTEs
     // so they won't be materialized a second time.
     //
     // The level structure is preserved: for each level we push one DelayedMaterializingCTEsStep

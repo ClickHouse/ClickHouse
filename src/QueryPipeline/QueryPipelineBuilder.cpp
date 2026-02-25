@@ -1,6 +1,3 @@
-#include <Core/Block_fwd.h>
-#include <Interpreters/MaterializedCTE.h>
-#include <Processors/Transforms/MaterializingCTETransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/SortDescription.h>
@@ -8,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/DelayedPortsProcessor.h>
@@ -24,6 +22,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MaterializingCTETransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>

@@ -53,7 +53,7 @@ private:
 /// `MaterializingCTEsStep` during the `addStepsToBuildSets` optimization pass.
 ///
 /// Using a delayed step (rather than eagerly inserting `MaterializingCTEsStep`)
-/// lets `addPlansForMaterializingCTEs` skip CTEs whose `is_materialized` flag is
+/// lets `addPlansForMaterializingCTEs` skip CTEs whose `is_planned` flag is
 /// already set — which happens when `buildOrderedSetInplace` already executed the
 /// CTE as part of primary-key index analysis before the main plan runs.
 class DelayedMaterializingCTEsStep final : public IQueryPlanStep

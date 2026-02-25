@@ -1,9 +1,17 @@
 #include <Processors/Transforms/MaterializingCTETransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
+
+#include <Processors/Port.h>
 #include <Storages/IStorage.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
 
 MaterializingCTETransform::MaterializingCTETransform(
     const SharedHeader & input_header_,

@@ -1,6 +1,6 @@
-#include <memory>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
+
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 

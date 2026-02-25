@@ -1,8 +1,7 @@
-#include <memory>
+#include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
 {

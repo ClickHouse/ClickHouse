@@ -1,28 +1,29 @@
-#include <Analyzer/Utils.h>
-#include <Analyzer/SetUtils.h>
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
-#include <Analyzer/ValidationUtils.h>
-#include <Analyzer/HashUtils.h>
-#include <Analyzer/IdentifierNode.h>
-#include <Analyzer/MatcherNode.h>
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortNode.h>
+#include <Analyzer/HashUtils.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 #include <Analyzer/InterpolateNode.h>
-#include <Analyzer/WindowNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/UnionNode.h>
+#include <Analyzer/LambdaNode.h>
+#include <Analyzer/MatcherNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/RecursiveCTE.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/RecursiveCTE.h>
+#include <Analyzer/SetUtils.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
+#include <Analyzer/ValidationUtils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/WindowNode.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -35,7 +36,6 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
-#include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
