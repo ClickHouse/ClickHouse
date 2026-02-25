@@ -121,20 +121,25 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     }
 
     /// Single-thread HashJoin path.
-    hash_join->addBlockToJoin(block, /*check_limits=*/ false);
+    hash_join->addBlockToJoin(block, /*check_limits=*/false);
 
     if (!limits.softCheck(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
-    {
-        LOG_DEBUG(log, "Memory limit exceeded ({} bytes, {} rows), switching to GraceHashJoin",
-            hash_join->getTotalByteCount(), hash_join->getTotalRowCount());
         switchToGraceHashJoin();
-    }
 
     return true;
 }
 
 void SpillingHashJoin::switchToGraceHashJoin()
 {
+    const auto print_limit_exceeded_log = [this](const JoinPtr & join, std::string_view join_name)
+    {
+        LOG_DEBUG(
+            log,
+            "Memory limit exceeded with {} ({} bytes, {} rows), switching to GraceHashJoin",
+            join_name,
+            join->getTotalByteCount(),
+            join->getTotalRowCount());
+    };
     if (concurrent_join)
     {
         {
@@ -148,12 +153,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
 
             ProfileEvents::increment(ProfileEvents::JoinSpilledToDisk);
 
-            LOG_DEBUG(
-                log,
-                "Memory limit exceeded ({} bytes, {} rows), "
-                "switching ConcurrentHashJoin to GraceHashJoin",
-                concurrent_join->getTotalByteCount(),
-                concurrent_join->getTotalRowCount());
+            print_limit_exceeded_log(concurrent_join, "ConcurrentHashJoin");
 
             /// Create GraceHashJoin.
             grace_join = std::make_shared<GraceHashJoin>(
@@ -176,9 +176,10 @@ void SpillingHashJoin::switchToGraceHashJoin()
         return;
     }
 
+    print_limit_exceeded_log(hash_join, "HashJoin");
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpilledToDisk);
-    BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/ false);
+    BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
 
     chosen_join = std::make_shared<GraceHashJoin>(
         initial_num_buckets, max_num_buckets, table_join, left_sample_block, std::make_shared<const Block>(right_sample_block), tmp_data);
@@ -315,21 +316,15 @@ bool SpillingHashJoin::canProcessNonJoinedBlocksInParallel() const
         && chosen_join->supportParallelNonJoinedBlocksProcessing();
 }
 
-IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
-    const Block & left_sample_block_,
-    const Block & result_sample_block,
-    UInt64 max_block_size) const
+IBlocksStreamPtr
+SpillingHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block, UInt64 max_block_size) const
 {
     chassert(chosen_join);
     return chosen_join->getNonJoinedBlocks(left_sample_block_, result_sample_block, max_block_size);
 }
 
 IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
-    const Block & left_sample_block_,
-    const Block & result_sample_block,
-    UInt64 max_block_size,
-    size_t stream_idx,
-    size_t num_streams) const
+    const Block & left_sample_block_, const Block & result_sample_block, UInt64 max_block_size, size_t stream_idx, size_t num_streams) const
 {
     chassert(chosen_join);
     return chosen_join->getNonJoinedBlocks(left_sample_block_, result_sample_block, max_block_size, stream_idx, num_streams);
