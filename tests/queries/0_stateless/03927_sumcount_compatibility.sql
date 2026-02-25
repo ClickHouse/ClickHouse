@@ -32,6 +32,8 @@ SELECT finalizeAggregation(CAST(unhex('000000000000000000'), 'AggregateFunction(
 
 SELECT finalizeAggregation(CAST(unhex('000000008639E64709'), 'AggregateFunction(sumCount, Nullable(Float32))'));
 SELECT finalizeAggregation(CAST(unhex('000000008639E64709'), 'AggregateFunction(sumCount, LowCardinality(Nullable(Float32)))'));
+SELECT finalizeAggregation(CAST(unhex('0000000064789'), 'AggregateFunction(sumCount, Nullable(Float32))')); -- { serverError CANNOT_READ_ALL_DATA }
+SELECT finalizeAggregation(CAST(unhex('000000008639E64789'), 'AggregateFunction(sumCount, Nullable(Float32))')); -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
 
 SELECT sumCount(x), hex(sumCountState(x))
 FROM
