@@ -72,6 +72,32 @@
             gap: 1rem;
             align-items: center;
         }
+        .connection-params {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .connection-params input {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--card-background);
+            color: var(--color);
+            font-size: 0.85rem;
+            font-family: inherit;
+            box-shadow: 1px 1px 0 var(--shadow-color);
+            transition: border-color 0.2s;
+        }
+        .connection-params input:focus {
+            outline: none;
+            border-color: var(--btn-primary-bg);
+        }
+        #url {
+            width: 350px;
+        }
+        #user, #password {
+            width: 120px;
+        }
         .btn {
             padding: 0.5rem 1rem;
             border: none;
@@ -421,6 +447,11 @@
     <div class="header">
         <h1>ClickHouse Jemalloc Statistics</h1>
         <div class="controls">
+            <div class="connection-params">
+                <input spellcheck="false" id="url" type="text" value="" placeholder="URL" />
+                <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
+                <input spellcheck="false" id="password" type="password" placeholder="password" />
+            </div>
             <span class="timestamp" id="timestamp"></span>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
                 <label for="refresh-interval" style="font-size: 0.9rem;" title="Set to 0 to disable auto-refresh">Auto-refresh (s):</label>
@@ -513,6 +544,31 @@
         if (password_from_url) {
             password = password_from_url;
         }
+
+        /// Read connection parameters from the input fields
+        function readConnectionParams() {
+            host = document.getElementById('url').value || host;
+            user = document.getElementById('user').value || user;
+            password = document.getElementById('password').value || password;
+        }
+
+        /// Build a query URL with authentication and CORS parameters
+        function buildUrl(query, format = 'TabSeparated') {
+            let url = `${host}?default_format=${format}&enable_http_compression=1&query=${encodeURIComponent(query)}`;
+            if (add_http_cors_header) {
+                url += '&add_http_cors_header=1';
+            }
+            if (user) {
+                url += `&user=${encodeURIComponent(user)}`;
+            }
+            if (password) {
+                url += `&password=${encodeURIComponent(password)}`;
+            }
+            return url;
+        }
+
+        const fetchOptions = { method: 'POST', headers: { 'Authorization': 'never' } };
+
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
@@ -2019,16 +2075,10 @@
             container.innerHTML = backgroundInfo + mutexTable;
         }
         async function checkProfilingEnabled() {
+            readConnectionParams();
             try {
-                const query = "SELECT value FROM system.asynchronous_metrics WHERE name = 'jemalloc.prof.thread_active_init'";
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-                const response = await fetch(url, { method: 'POST' });
+                const query = "SELECT value FROM system.server_settings WHERE name = 'jemalloc_enable_global_profiler'";
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     return null;
                 }
@@ -2054,6 +2104,7 @@
         let profileAbortController = null;
 
         async function getProfile() {
+            readConnectionParams();
             const button = document.getElementById('get-profile-btn');
             const resultDiv = document.getElementById('profile-result');
 
@@ -2088,15 +2139,8 @@
                     settings += `, jemalloc_profile_text_collapsed_use_count = ${useCount ? 1 : 0}`;
                 }
                 const query = `SELECT * FROM system.jemalloc_profile_text SETTINGS ${settings}`;
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-                const response = await fetch(url, {
-                    method: 'POST',
+                const response = await fetch(buildUrl(query), {
+                    ...fetchOptions,
                     signal: profileAbortController.signal
                 });
                 if (!response.ok) {
@@ -2313,6 +2357,7 @@ SETTINGS jemalloc_enable_profiler = 1,
             `;
         }
         async function getQueryProfile() {
+            readConnectionParams();
             const button = document.getElementById('query-profile-btn');
             const resultDiv = document.getElementById('query-profile-result');
             const queryIdInput = document.getElementById('query-profile-id');
@@ -2330,15 +2375,7 @@ SETTINGS jemalloc_enable_profiler = 1,
             try {
                 // First, flush the logs to ensure all data is written
                 const flushQuery = 'SYSTEM FLUSH LOGS';
-                let flushUrl = `${host}?query=${encodeURIComponent(flushQuery)}`;
-                if (user) {
-                    flushUrl += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    flushUrl += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const flushResponse = await fetch(flushUrl, { method: 'POST' });
+                const flushResponse = await fetch(buildUrl(flushQuery), fetchOptions);
                 if (!flushResponse.ok) {
                     throw new Error(`Failed to flush logs: HTTP ${flushResponse.status}: ${flushResponse.statusText}`);
                 }
@@ -2346,15 +2383,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 // Query to get min and max event_time_microseconds for JemallocSample events
                 const query = `SELECT toUnixTimestamp64Micro(min(event_time_microseconds)) AS min_time, toUnixTimestamp64Micro(max(event_time_microseconds)) AS max_time FROM system.trace_log WHERE query_id = '${queryId}' AND trace_type = 'JemallocSample'`;
 
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const response = await fetch(url, { method: 'POST' });
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -2377,15 +2406,7 @@ SETTINGS jemalloc_enable_profiler = 1,
 
                 const cumulativeQuery = `WITH per_bucket AS (SELECT intDiv(toUnixTimestamp64Micro(event_time_microseconds) - ${minTime}, ${bucketSize}) * ${bucketSize} + ${minTime} AS bucket_time, sum(size) AS bucket_sum FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' GROUP BY bucket_time) SELECT bucket_time, sum(bucket_sum) OVER (ORDER BY bucket_time ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_size FROM per_bucket ORDER BY bucket_time`;
 
-                let cumulativeUrl = `${host}?default_format=TabSeparated&query=${encodeURIComponent(cumulativeQuery)}`;
-                if (user) {
-                    cumulativeUrl += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    cumulativeUrl += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const cumulativeResponse = await fetch(cumulativeUrl, { method: 'POST' });
+                const cumulativeResponse = await fetch(buildUrl(cumulativeQuery), fetchOptions);
                 if (!cumulativeResponse.ok) {
                     throw new Error(`HTTP ${cumulativeResponse.status}: ${cumulativeResponse.statusText}`);
                 }
@@ -2402,15 +2423,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 // Get max memory usage and its timepoint
                 const maxMemQuery = `SELECT argMax(bucket_time, cumulative_size), max(cumulative_size) FROM (WITH per_bucket AS (SELECT event_time_microseconds AS bucket_time, sum(size) AS bucket_sum FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' GROUP BY bucket_time) SELECT bucket_time, sum(bucket_sum) OVER (ORDER BY bucket_time ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_size, formatReadableSize(cumulative_size) AS cumulative_size_readable FROM per_bucket ORDER BY bucket_time)`;
 
-                let maxMemUrl = `${host}?default_format=TabSeparated&query=${encodeURIComponent(maxMemQuery)}`;
-                if (user) {
-                    maxMemUrl += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    maxMemUrl += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const maxMemResponse = await fetch(maxMemUrl, { method: 'POST' });
+                const maxMemResponse = await fetch(buildUrl(maxMemQuery), fetchOptions);
                 if (!maxMemResponse.ok) {
                     throw new Error(`HTTP ${maxMemResponse.status}: ${maxMemResponse.statusText}`);
                 }
@@ -2534,6 +2547,7 @@ SETTINGS jemalloc_enable_profiler = 1,
         }
 
         async function generateQueryFlameGraph() {
+            readConnectionParams();
             const button = document.getElementById('generate-query-flamegraph-btn');
             const queryIdInput = document.getElementById('query-profile-id');
             const timeInput = document.getElementById('flamegraph-time');
@@ -2557,15 +2571,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 // Query to get collapsed flame graph data
                 const query = `SELECT arrayJoin(flameGraph(arrayReverse(trace), size, ptr)) FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' AND event_time_microseconds <= '${time}'`;
 
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const response = await fetch(url, { method: 'POST' });
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -2601,6 +2607,7 @@ SETTINGS jemalloc_enable_profiler = 1,
         }
 
         async function loadStats(isManualRefresh = false) {
+            readConnectionParams();
             const loading = document.getElementById('loading');
             const content = document.getElementById('content');
             const errorDiv = document.getElementById('error');
@@ -2613,17 +2620,7 @@ SETTINGS jemalloc_enable_profiler = 1,
             errorDiv.style.display = 'none';
             try {
                 const query = 'SELECT * FROM system.jemalloc_stats';
-                // Build URL with parameters
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-                const response = await fetch(url, {
-                    method: 'POST'
-                });
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -3319,10 +3316,16 @@ SETTINGS jemalloc_enable_profiler = 1,
 ]]><\/script>\n`;
         }
 
-        // Load stats on page load
-        loadStats();
-        // Start auto-refresh with default interval
-        updateRefreshInterval();
-    </script>
+function start() {
+    document.getElementById('url').value = host;
+    document.getElementById('user').value = user;
+    document.getElementById('password').value = password;
+    loadStats();
+    updateRefreshInterval();
+}
+
+start();
+
+</script>
 </body>
 </html>
