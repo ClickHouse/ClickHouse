@@ -1,6 +1,6 @@
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE (a = \'x\') OR (a = \'y\')
+WHERE a IN (\'x\', \'y\')
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)

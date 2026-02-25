@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Dictionaries/IDictionary.h>
+#include "IDictionary.h"
 
 
 namespace Poco
@@ -62,7 +62,7 @@ private:
         bool has_layout_complex;
     };
 
-    using LayoutRegistry = UnorderedMapWithMemoryTracking<std::string, RegisteredLayout>;
+    using LayoutRegistry = std::unordered_map<std::string, RegisteredLayout>;
     LayoutRegistry registered_layouts;
 
 };

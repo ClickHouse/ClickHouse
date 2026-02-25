@@ -1,15 +1,16 @@
-#include <Core/NamesAndTypes.h>
-#include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/PolygonDictionaryImplementations.h>
+#include "PolygonDictionaryImplementations.h"
+#include "DictionaryFactory.h"
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <Interpreters/Context.h>
+
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+
+#include <numeric>
 
 namespace DB
 {
@@ -74,7 +75,7 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
     buckets.reserve(polygons.size());
     for (const auto & polygon : polygons)
     {
-        VectorWithMemoryTracking<Polygon> single;
+        std::vector<Polygon> single;
         single.emplace_back(polygon);
         buckets.emplace_back(single);
     }
@@ -162,7 +163,7 @@ bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_inde
 }
 
 template <class PolygonDictionary>
-DictionaryPtr createLayout(const std::string & /*name*/,
+DictionaryPtr createLayout(const std::string & ,
                            const DictionaryStructure & dict_struct,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
@@ -181,10 +182,9 @@ DictionaryPtr createLayout(const std::string & /*name*/,
     const auto key_type = (*dict_struct.key)[0].type;
     const auto f64 = std::make_shared<DataTypeFloat64>();
     const auto multi_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(f64))));
-    const auto multi_polygon_tuple = DataTypeArray(
-        std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{f64, f64}))));
+    const auto multi_polygon_tuple = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}))));
     const auto simple_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(f64));
-    const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(DataTypes{f64, f64}));
+    const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}));
 
     IPolygonDictionary::InputType input_type;
     IPolygonDictionary::PointType point_type;

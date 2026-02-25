@@ -6,6 +6,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,10 +14,12 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <base/scope_guard.h>
 
 #if USE_SSL
-    #include <Poco/Net/SSLManager.h>
-    #include <Common/Crypto/X509Certificate.h>
+    #include <openssl/x509v3.h>
+    #include "Poco/Net/SSLManager.h"
+    #include "Poco/Crypto/X509Certificate.h"
 #endif
 
 namespace DB
@@ -71,41 +74,108 @@ public:
         if (input_rows_count)
         {
 #if USE_SSL
-            std::unique_ptr<X509Certificate> x509_cert;
+            std::unique_ptr<Poco::Crypto::X509Certificate> x509_cert;
             if (!certificate.empty())
-                x509_cert = std::make_unique<X509Certificate>(certificate);
+                x509_cert = std::make_unique<Poco::Crypto::X509Certificate>(certificate);
 
-            if (!x509_cert)
-            {
-                const auto * server_context_cert = SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
-                x509_cert = std::make_unique<X509Certificate>(X509_dup(server_context_cert));
-            }
+            const X509 * cert = x509_cert ?
+                x509_cert->certificate() :
+                SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
 
-            if (x509_cert)
+            if (cert)
             {
+                BIO * b = BIO_new(BIO_s_mem());
+                SCOPE_EXIT(
+                {
+                    BIO_free(b);
+                });
+
                 keys->insert("version");
-                values->insert(std::to_string(x509_cert->version()));
+                values->insert(std::to_string(X509_get_version(cert) + 1));
 
-                keys->insert("serial_number");
-                values->insert(x509_cert->serialNumber());
+                {
+                    char buf[1024] = {0};
+                    const ASN1_INTEGER * sn = X509_get0_serialNumber(cert);
+                    BIGNUM * bnsn = ASN1_INTEGER_to_BN(sn, nullptr);
+                    SCOPE_EXIT(
+                    {
+                        BN_free(bnsn);
+                    });
+                    if (BN_print(b, bnsn) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
+                    {
+                        keys->insert("serial_number");
+                        values->insert(buf);
+                    }
 
-                keys->insert("signature_algo");
-                values->insert(x509_cert->signatureAlgorithm());
+                }
 
-                keys->insert("issuer");
-                values->insert(x509_cert->issuerName());
+                {
+                    const ASN1_BIT_STRING *sig = nullptr;
+                    const X509_ALGOR *al = nullptr;
+                    char buf[1024] = {0};
+                    X509_get0_signature(&sig, &al, cert);
+                    if (al)
+                    {
+                        OBJ_obj2txt(buf, sizeof(buf), al->algorithm, 0);
+                        keys->insert("signature_algo");
+                        values->insert(buf);
+                    }
+                }
 
-                keys->insert("not_before");
-                values->insert(x509_cert->validFrom());
+                char * issuer = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
+                if (issuer)
+                {
+                    SCOPE_EXIT(
+                    {
+                        OPENSSL_free(issuer);
+                    });
+                    keys->insert("issuer");
+                    values->insert(issuer);
+                }
 
-                keys->insert("not_after");
-                values->insert(x509_cert->expiresOn());
+                {
+                    char buf[1024] = {0};
+                    if (ASN1_TIME_print(b, X509_get_notBefore(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
+                    {
+                        keys->insert("not_before");
+                        values->insert(buf);
+                    }
+                }
 
-                keys->insert("subject");
-                values->insert(x509_cert->subjectName());
+                {
+                    char buf[1024] = {0};
+                    if (ASN1_TIME_print(b, X509_get_notAfter(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
+                    {
+                        keys->insert("not_after");
+                        values->insert(buf);
+                    }
+                }
 
-                keys->insert("pkey_algo");
-                values->insert(x509_cert->publicKeyAlgorithm());
+                char * subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+                if (subject)
+                {
+                    SCOPE_EXIT(
+                    {
+                        OPENSSL_free(subject);
+                    });
+                    keys->insert("subject");
+                    values->insert(subject);
+                }
+
+                if (X509_PUBKEY * pkey = X509_get_X509_PUBKEY(cert))
+                {
+                    char buf[1024] = {0};
+                    ASN1_OBJECT *ppkalg = nullptr;
+                    const unsigned char *pk = nullptr;
+                    int ppklen = 0;
+                    X509_ALGOR *pa = nullptr;
+                    if (X509_PUBKEY_get0_param(&ppkalg, &pk, &ppklen, &pa, pkey) &&
+                        i2a_ASN1_OBJECT(b, ppkalg) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
+                    {
+                        keys->insert("pkey_algo");
+                        values->insert(buf);
+                    }
+                }
             }
             offsets->insert(keys->size());
 #endif
@@ -141,27 +211,7 @@ public:
 
 REGISTER_FUNCTION(ShowCertificate)
 {
-    FunctionDocumentation::Description description = R"(
-Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
-See [Configuring TLS](/guides/sre/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
-    )";
-    FunctionDocumentation::Syntax syntax = "showCertificate()";
-    FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns map of key-value pairs relating to the configured SSL certificate.", {"Map(String, String)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example",
-        R"(
-SELECT showCertificate() FORMAT LineAsString;
-        )",
-        R"(
-{'version':'1','serial_number':'2D9071D64530052D48308473922C7ADAFA85D6C5','signature_algo':'sha256WithRSAEncryption','issuer':'/CN=marsnet.local CA','not_before':'May  7 17:01:21 2024 GMT','not_after':'May  7 17:01:21 2025 GMT','subject':'/CN=chnode1','pkey_algo':'rsaEncryption'}
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionShowCertificate>(documentation);
+    factory.registerFunction<FunctionShowCertificate>();
 }
 
 }

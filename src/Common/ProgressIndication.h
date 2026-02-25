@@ -1,15 +1,17 @@
 #pragma once
 
 #include <IO/Progress.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
 #include <iostream>
 #include <mutex>
+#include <queue>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -70,7 +72,7 @@ public:
     void setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message, std::mutex & message_mutex);
 
     /// How much seconds passed since query execution start.
-    double elapsedSeconds() const { return static_cast<double>(getElapsedNanoseconds()) / 1e9; }
+    double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }
 
     struct MemoryUsage
     {

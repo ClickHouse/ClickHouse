@@ -15,12 +15,12 @@
   (open! [this test node]
     (assoc
      (assoc this
-            :conn (zk-connect node 9181 30000 (:with-auth test)))
+            :conn (zk-connect node 9181 30000))
      :nodename node))
 
   (setup! [this test]
     (chu/exec-with-retries 30 (fn []
-                            (zk-create-if-not-exists conn k "#{}" :with-acl (:with-auth test)))))
+                            (zk-create-if-not-exists conn k "#{}"))))
 
   (invoke! [this test op]
     (case (:f op)

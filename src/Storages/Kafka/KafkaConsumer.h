@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <IO/ReadBuffer.h>
-#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
-#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <boost/circular_buffer.hpp>
+
+#include <Core/Names.h>
+#include <base/types.h>
+#include <IO/ReadBuffer.h>
+
 #include <cppkafka/cppkafka.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
+#include <Common/CurrentMetrics.h>
 
 namespace CurrentMetrics
 {
@@ -22,13 +23,45 @@ namespace Poco
 namespace DB
 {
 
+class StorageSystemKafkaConsumers;
+
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
-class KafkaConsumer : public IKafkaExceptionInfoSink
+class KafkaConsumer
 {
 public:
-    using Stat = StorageKafkaUtils::ConsumerStatistics;
+    struct ExceptionInfo
+    {
+        String text;
+        UInt64 timestamp;
+    };
+    using ExceptionsBuffer = boost::circular_buffer<ExceptionInfo>;
+
+    struct Stat // system.kafka_consumers data
+    {
+        struct Assignment
+        {
+            String topic_str;
+            Int32 partition_id;
+            Int64 current_offset;
+        };
+        using Assignments = std::vector<Assignment>;
+
+        String consumer_id;
+        Assignments assignments;
+        UInt64 last_poll_time;
+        UInt64 num_messages_read;
+        UInt64 last_commit_timestamp;
+        UInt64 last_rebalance_timestamp;
+        UInt64 num_commits;
+        UInt64 num_rebalance_assignments;
+        UInt64 num_rebalance_revocations;
+        KafkaConsumer::ExceptionsBuffer exceptions_buffer;
+        bool in_use;
+        UInt64 last_used_usec;
+        std::string rdkafka_stat;
+    };
 
     KafkaConsumer(
         LoggerPtr log_,
@@ -36,11 +69,10 @@ public:
         size_t poll_timeout_,
         bool intermediate_commit_,
         const std::atomic<bool> & stopped_,
-        const Names & _topics,
-        size_t skip_bytes_ = 0
+        const Names & _topics
     );
 
-    ~KafkaConsumer() override;
+    ~KafkaConsumer();
 
     void createConsumer(cppkafka::Configuration consumer_config);
     bool hasConsumer() const { return consumer.get() != nullptr; }
@@ -83,7 +115,8 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
-    void setExceptionInfo(const std::string & text, bool with_stacktrace) override;
+    void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
+    void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
     void setRDKafkaStat(const std::string & stat_json_string)
     {
         std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
@@ -106,7 +139,6 @@ public:
 
 private:
     using Messages = std::vector<cppkafka::Message>;
-    using ExceptionsBuffer = StorageKafkaUtils::ConsumerStatistics::ExceptionsBuffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
 
     enum StalledStatus
@@ -127,7 +159,6 @@ private:
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
-    const size_t skip_bytes = 0;
     size_t offsets_stored = 0;
     bool current_subscription_valid = false;
 

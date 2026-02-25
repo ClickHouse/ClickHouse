@@ -9,6 +9,7 @@ from urllib.parse import quote
 from unidiff import PatchSet  # type: ignore
 
 from build_download_helper import get_gh_api
+from ci_config import Labels
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_REPOSITORY,
@@ -18,36 +19,8 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
-from synchronizer_utils import SYNC_PR_PREFIX
 
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
-
-
-class Labels:
-    PR_BUGFIX = "pr-bugfix"
-    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
-    CAN_BE_TESTED = "can be tested"
-    DO_NOT_TEST = "do not test"
-    MUST_BACKPORT = "pr-must-backport"
-    MUST_BACKPORT_SYNCED = "pr-must-backport-synced"
-    JEPSEN_TEST = "jepsen-test"
-    SKIP_MERGEABLE_CHECK = "skip mergeable check"
-    PR_BACKPORT = "pr-backport"
-    PR_BACKPORTS_CREATED = "pr-backports-created"
-    PR_BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
-    PR_CHERRYPICK = "pr-cherrypick"
-    PR_CI = "pr-ci"
-    PR_FEATURE = "pr-feature"
-    PR_PERFORMANCE = "pr-performance"
-    PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
-    PR_SYNC_UPSTREAM = "pr-sync-upstream"
-    RELEASE = "release"
-    RELEASE_LTS = "release-lts"
-    SUBMODULE_CHANGED = "submodule changed"
-
-    # automatic backport for critical bug fixes
-    AUTO_BACKPORT = {"pr-critical-bugfix"}
-
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -172,7 +145,6 @@ class PRInfo:
         self.head_ref = ""  # type: str
         self.head_name = ""  # type: str
         self.number = 0  # type: int
-        self.updated_at = github_event.get("repository", {}).get("updated_at", None)
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
@@ -221,7 +193,6 @@ class PRInfo:
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
             }
-            self.updated_at = github_event["pull_request"]["updated_at"]
 
             self.user_login = github_event["pull_request"]["user"]["login"]  # type: str
             self.user_orgs = set()  # type: Set[str]
@@ -494,7 +465,7 @@ class PRInfo:
 
     def get_latest_sync_commit(self):
         gh = GitHub(get_best_robot_token(), per_page=100)
-        assert self.head_ref.startswith(SYNC_PR_PREFIX)
+        assert self.head_ref.startswith("sync-upstream/pr/")
         assert self.repo_full_name != GITHUB_UPSTREAM_REPOSITORY
         upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
         upstream_pr_number = int(self.head_ref.split("/pr/", maxsplit=1)[1])

@@ -12,37 +12,37 @@ namespace mysqlxx
 class ResultBase;
 
 
-/** Result row.
-  * Unlike mysql++,
-  *  this is a wrapper over MYSQL_ROW (char**), references ResultBase, does not own any data itself.
-  * This means that if the result object or connection is destroyed,
-  *  or the next query is executed, then Row becomes invalid.
-  * When using UseQueryResult, only one result row is stored in memory,
-  *  this means that after reading the next row, the previous one becomes invalid.
+/** Строка результата.
+  * В отличие от mysql++,
+  *  представляет собой обёртку над MYSQL_ROW (char**), ссылается на ResultBase, не владеет сам никакими данными.
+  * Это значит, что если будет уничтожен объект результата или соединение,
+  *  или будет задан следующий запрос, то Row станет некорректным.
+  * При использовании UseQueryResult, в памяти хранится только одна строка результата,
+  *  это значит, что после чтения следующей строки, предыдущая становится некорректной.
   */
 class Row
 {
 private:
     /** @brief Pointer to bool data member, for use by safe bool conversion operator.
       * @see http://www.artima.com/cppsource/safebool.html
-      * Taken from mysql++.
+      * Взято из mysql++.
       */
     typedef MYSQL_ROW Row::*private_bool_type; /// NOLINT
 
 public:
-    /** For delayed initialization capability. */
+    /** Для возможности отложенной инициализации. */
     Row() /// NOLINT
     {
     }
 
-    /** To create a Row, use the corresponding methods of UseQueryResult. */
+    /** Для того, чтобы создать Row, используйте соответствующие методы UseQueryResult. */
     Row(MYSQL_ROW row_, ResultBase * res_, MYSQL_LENGTHS lengths_)
         : row(row_), res(res_), lengths(lengths_)
     {
     }
 
-    /** Get value by index.
-      * Here int is used instead of unsigned to avoid ambiguity with the same method that takes const char *.
+    /** Получить значение по индексу.
+      * Здесь используется int, а не unsigned, чтобы не было неоднозначности с тем же методом, принимающим const char *.
       */
     Value operator[] (size_t n) const
     {
@@ -59,23 +59,23 @@ public:
         return operator[](name.c_str());
     }
 
-    /** Get value by index. */
+    /** Получить значение по индексу. */
     Value at(size_t n) const
     {
         return operator[](n);
     }
 
-    /** Number of columns. */
+    /** Количество столбцов. */
     size_t size() const { return res->getNumFields(); }
 
-    /** Is it empty? Such an object is used to indicate the end of the result
-      * when using UseQueryResult. Or it means that the object is not initialized.
-      * You can use bool conversion instead.
+    /** Является ли пустым? Такой объект используется, чтобы обозначить конец результата
+      * при использовании UseQueryResult. Или это значит, что объект не инициализирован.
+      * Вы можете использовать вместо этого преобразование в bool.
       */
     bool empty() const { return row == nullptr; }
 
-    /** Conversion to bool.
-      * (More precisely - to a type that converts to bool, and with which you can do almost nothing else.)
+    /** Преобразование в bool.
+      * (Точнее - в тип, который преобразуется в bool, и с которым больше почти ничего нельзя сделать.)
       */
     operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; } /// NOLINT
 

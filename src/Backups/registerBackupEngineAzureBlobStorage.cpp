@@ -1,20 +1,19 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Backups/BackupIO_AzureBlobStorage.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Backups/BackupImpl.h>
-#include <Backups/BackupInfo.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #endif
 
@@ -27,11 +26,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -56,30 +50,27 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
     auto creator_fn = []([[maybe_unused]] BackupFactory::CreateParams params) -> std::unique_ptr<IBackup>
     {
 #if USE_AZURE_BLOB_STORAGE
+        const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
         String blob_path;
         AzureBlobStorage::ConnectionParams connection_params;
+        auto request_settings = AzureBlobStorage::getRequestSettings(params.context->getSettingsRef());
 
-        if (auto collection = params.backup_info.getNamedCollection(params.context))
+        if (!id_arg.empty())
         {
-            String connection_url = collection->getAnyOrDefault<String>({"connection_string", "storage_account_url"}, "");
-            String container_name = collection->get<String>("container");
-            blob_path = collection->getOrDefault<String>("blob_path", "");
+            const auto & config = params.context->getConfigRef();
+            auto config_prefix = "named_collections." + id_arg;
 
-            auto get_optional = [&](const char * key) -> std::optional<String>
+            if (!config.has(config_prefix))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", id_arg);
+
+            connection_params =
             {
-                return collection->has(key) ? std::optional<String>(collection->get<String>(key)) : std::nullopt;
+                .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+                .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+                .client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ true),
             };
-
-            connection_params = getAzureConnectionParams(
-                connection_url,
-                container_name,
-                get_optional("account_name"),
-                get_optional("account_key"),
-                get_optional("client_id"),
-                get_optional("tenant_id"),
-                params.context);
 
             if (args.size() > 1)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -96,19 +87,20 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 auto container_name = args[1].safeGet<String>();
                 blob_path = args[2].safeGet<String>();
 
-                connection_params = getAzureConnectionParams(
-                    connection_url, container_name, std::nullopt, std::nullopt, std::nullopt, std::nullopt, params.context);
+                AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
+                connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ true);
             }
             else if (args.size() == 5)
             {
-                auto connection_url = args[0].safeGet<String>();
-                auto container_name = args[1].safeGet<String>();
+                connection_params.endpoint.storage_account_url = args[0].safeGet<String>();
+                connection_params.endpoint.container_name = args[1].safeGet<String>();
                 blob_path = args[2].safeGet<String>();
+
                 auto account_name = args[3].safeGet<String>();
                 auto account_key = args[4].safeGet<String>();
 
-                connection_params = getAzureConnectionParams(
-                    connection_url, container_name, account_name, account_key, std::nullopt, std::nullopt, params.context);
+                connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(account_name, account_key);
+                connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ true);
             }
             else
             {
@@ -127,7 +119,6 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {
@@ -135,31 +126,6 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
         }
 
-        if (params.open_mode == IBackup::OpenMode::UNLOCK)
-        {
-            auto reader = std::make_shared<BackupReaderAzureBlobStorage>(
-                connection_params,
-                blob_path,
-                params.allow_azure_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context);
-
-            auto lightweight_snapshot_writer = std::make_shared<BackupWriterAzureBlobStorage>(
-                connection_params,
-                "",
-                params.allow_azure_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.azure_attempt_to_create_container);
-
-            return std::make_unique<BackupImpl>(
-                params.backup_info,
-                archive_params,
-                reader,
-                lightweight_snapshot_writer);
-        }
 
         params.use_same_s3_credentials_for_base_backup = false;
 
@@ -173,20 +139,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            auto snapshot_reader_creator = [&](const String & endpoint, const String & container_name)
-            {
-                connection_params.endpoint.storage_account_url = endpoint;
-                connection_params.endpoint.container_name = container_name;
-                return std::make_shared<BackupReaderAzureBlobStorage>(
-                    connection_params,
-                    "",
-                    params.allow_azure_native_copy,
-                    params.read_settings,
-                    params.write_settings,
-                    params.context);
-            };
-
-            return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
+            return std::make_unique<BackupImpl>(params, archive_params, reader);
         }
 
         auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
