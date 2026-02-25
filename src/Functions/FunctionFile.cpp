@@ -10,6 +10,8 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
+#include <Functions/FunctionHelpers.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 
 namespace fs = std::filesystem;
@@ -21,8 +23,24 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int DATABASE_ACCESS_DENIED;
+}
+
+namespace
+{
+
+bool isStringOrFixedStringOrNull(const IDataType & type)
+{
+    return isStringOrFixedString(type) || type.onlyNull();
+}
+
+DataTypePtr makeNullableIfNeeded(const ColumnWithTypeAndName & arg)
+{
+    if (arg.type->onlyNull())
+        return makeNullable(arg.type);
+    return arg.type;
+}
+
 }
 
 /// A function to read file as a string.
@@ -41,25 +59,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"path", &isStringOrFixedString, nullptr, "String"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"default", &isStringOrFixedStringOrNull, nullptr, "String or Null"}
+        };
 
-        if (!isString(arguments[0].type))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for type String", getName());
-
-        if (arguments.size() == 2)
-        {
-            if (arguments[1].type->onlyNull())
-                return makeNullable(std::make_shared<DataTypeString>());
-
-            if (!isString(arguments[1].type))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} only accepts String or Null as second argument", getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        return arguments.size() == 2 ?  makeNullableIfNeeded(arguments[1]) : std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
