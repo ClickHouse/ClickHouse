@@ -12,6 +12,11 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/TableNode.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -296,12 +301,18 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
-    auto storage_snapshot = storage->getStorageSnapshotWithoutData(storage->getInMemoryMetadataPtr(), mut_context);
-    TableWithColumnNamesAndTypes table_with_columns(
-        DatabaseAndTableWithAlias(), storage_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
-    auto syntax_result = TreeRewriter(mut_context)
-                             .analyzeSelect(result.query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, {table_with_columns});
-    bool is_aggregate = query.groupBy() || !syntax_result->aggregates.empty();
+    bool is_aggregate = [&]
+    {
+        auto query_tree = buildQueryTree(result.query_ast, mut_context);
+        auto & query_node = query_tree->as<QueryNode &>();
+        query_node.getJoinTree() = std::make_shared<TableNode>(storage, mut_context);
+
+        QueryTreePassManager query_tree_pass_manager(mut_context);
+        addQueryTreePasses(query_tree_pass_manager);
+        query_tree_pass_manager.runOnlyResolve(query_tree);
+
+        return query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
+    }();
 
     InterpreterSelectQuery select(
         result.query_ast,
