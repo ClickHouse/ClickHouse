@@ -8,6 +8,9 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <base/demangle.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/typeid_cast.h>
 
 #include <memory>
 #include <set>
@@ -277,10 +280,7 @@ public:
         mutable bool visited = false;
 
         Substream() = default;
-        Substream(Type type_)
-            : type(type_)
-        {
-        } /// NOLINT
+        Substream(Type type_) : type(type_) {} /// NOLINT
         String toString() const;
     };
 
@@ -613,7 +613,8 @@ public:
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings);
-    static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
+    static String
+    getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false, size_t initial_array_level = 0);
@@ -655,7 +656,8 @@ public:
     /// In old versions we could escape file names for some specific substreams differently and it can lead
     /// to not found stream file names in new versions. To keep compatibility, if we can't find stream file name
     /// we are trying to change escaping (via StreamFileNameSettings) and try to find stream file name again.
-    static bool tryToChangeStreamFileNameSettingsForNotFoundStream(const SubstreamPath & substream_path, StreamFileNameSettings & stream_file_name_settings);
+    static bool tryToChangeStreamFileNameSettingsForNotFoundStream(
+        const SubstreamPath & substream_path, StreamFileNameSettings & stream_file_name_settings);
 
     /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
     static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams = false);
@@ -665,7 +667,13 @@ public:
     static bool
     insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
     /// Perform insertion from column found in substreams cache.
-    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
+    static void insertDataFromCachedColumn(
+        const DeserializeBinaryBulkSettings & settings,
+        ColumnPtr & result_column,
+        const ColumnPtr & cached_column,
+        size_t num_read_rows,
+        SubstreamsCache * cache,
+        bool update_cache_after_insert = false);
 
 protected:
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
