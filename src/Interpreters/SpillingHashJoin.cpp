@@ -55,6 +55,7 @@ SpillingHashJoin::SpillingHashJoin(
     , limits(table_join->sizeLimits())
 {
     concurrent_join = std::make_shared<ConcurrentHashJoin>(table_join, concurrent_slots_, right_sample_block_, stats_collecting_params_);
+    supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();
@@ -180,12 +181,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/ false);
 
     inner_join = std::make_shared<GraceHashJoin>(
-        initial_num_buckets,
-        max_num_buckets,
-        table_join,
-        left_sample_block,
-        std::make_shared<const Block>(right_sample_block),
-        tmp_data);
+        initial_num_buckets, max_num_buckets, table_join, left_sample_block, std::make_shared<const Block>(right_sample_block), tmp_data);
 
     inner_join->initialize(*left_sample_block);
 
@@ -193,7 +189,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
     /// freeing each after insertion to limit peak memory.
     while (!right_blocks.empty())
     {
-        inner_join->addBlockToJoin(right_blocks.front(), /*check_limits=*/ false);
+        inner_join->addBlockToJoin(right_blocks.front(), /*check_limits=*/false);
         right_blocks.pop_front();
     }
 
@@ -310,7 +306,13 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
 
 bool SpillingHashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
-    return concurrent_join && concurrent_join->supportParallelNonJoinedBlocksProcessing();
+    return supports_parallel_non_joined_blocks_processing;
+}
+
+bool SpillingHashJoin::canProcessNonJoinedBlocksInParallel() const
+{
+    return state == SpillingState::IN_MEMORY_JOIN && supports_parallel_non_joined_blocks_processing
+        && inner_join->supportParallelNonJoinedBlocksProcessing();
 }
 
 IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
@@ -319,12 +321,6 @@ IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
     UInt64 max_block_size) const
 {
     chassert(inner_join);
-    /// When parallel non-joined processing is active and we stayed in memory,
-    /// non-joined blocks are emitted by `NonJoinedBlocksTransform` (partitioned version),
-    /// not by `JoiningTransform` or `DelayedJoinedBlocksWorkerTransform`.
-    if (state.load(std::memory_order_acquire) == SpillingState::IN_MEMORY_JOIN
-        && supportParallelNonJoinedBlocksProcessing())
-        return {};
     return inner_join->getNonJoinedBlocks(left_sample_block_, result_sample_block, max_block_size);
 }
 
@@ -336,10 +332,6 @@ IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
     size_t num_streams) const
 {
     chassert(inner_join);
-    /// When spilled to `GraceHashJoin`, non-joined blocks are emitted per-bucket
-    /// by `JoiningTransform` and `DelayedJoinedBlocksWorkerTransform` (basic version).
-    if (state.load(std::memory_order_acquire) == SpillingState::GRACE_HASH_JOIN)
-        return {};
     return inner_join->getNonJoinedBlocks(left_sample_block_, result_sample_block, max_block_size, stream_idx, num_streams);
 }
 

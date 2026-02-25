@@ -82,6 +82,7 @@ public:
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
     bool supportTotals() const override { return false; }
     bool supportParallelNonJoinedBlocksProcessing() const override;
+    bool canProcessNonJoinedBlocksInParallel() const override;
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
@@ -141,6 +142,8 @@ private:
     std::atomic<size_t> next_slot_to_convert{0};
 
     std::mutex totals_mutex;
+
+    bool supports_parallel_non_joined_blocks_processing{false};
 };
 
 }
