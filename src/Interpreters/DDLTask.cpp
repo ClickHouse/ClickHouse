@@ -664,6 +664,20 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+
+        /// Make sure that we did not disable replicated DDL queries
+        const auto & macros = from_context->getMacros();
+        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
+        if (should_check_stop_flag)
+        {
+            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
+            stop_flag_path = macros->expand(stop_flag_path);
+
+            zookeeper->createAncestors(stop_flag_path);
+
+            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
+            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
+        }
     }
 
     txn->addOp(getOpToUpdateLogPointer());

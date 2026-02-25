@@ -96,7 +96,11 @@ bool injectRequiredColumnsRecursively(
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
-        if (column_in_part)
+        if (column_in_part
+            /// If the column was dropped by a pending mutation that hasn't been applied yet,
+            /// the data in this part is stale. Treat it as missing so that the default value is used.
+            /// This can happen if the column was dropped and then re-added with the same name.
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part)))
         {
             if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {
@@ -174,10 +178,21 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        /// Use part's own columns to find the minimum size column.
-        /// This ensures we find a column that actually exists in this part,
-        /// even if the table metadata has changed (e.g., all columns were dropped and new ones added).
-        const auto & available_columns = data_part_info_for_reader.getColumns();
+        /// Use the intersection of part columns and metadata columns to find the minimum size column.
+        /// The column must exist both physically in the part (to be readable) and in the current metadata
+        /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
+        /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
+        const auto & part_columns = data_part_info_for_reader.getColumns();
+        NamesAndTypesList available_columns;
+        for (const auto & column : part_columns)
+        {
+            if (storage_snapshot->tryGetColumn(options, column.name))
+                available_columns.push_back(column);
+        }
+
+        if (available_columns.empty())
+            available_columns = part_columns;
+
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
@@ -188,8 +203,8 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
-    : data_part(data_part_)
+    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
+    : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
     number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
@@ -219,7 +234,8 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         if (typeid_cast<const ColumnConst *>(column_data.get()))
             continue;
 
-        if (column_data->valuesHaveFixedSize())
+        auto column_from_part = data_part->tryGetColumn(column_name);
+        if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
@@ -230,7 +246,11 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
             ColumnInfo info;
             info.name = column_name;
             /// If column isn't fixed and doesn't have checksum, than take first
-            ColumnSize column_size = data_part->getColumnSize(column_name);
+            ColumnSize column_size;
+            if (column_from_part && column_from_part->isSubcolumn() && allow_subcolumns_sizes_calculation)
+                column_size = data_part->getSubcolumnSize(column_name);
+            else
+                column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
 
             info.bytes_per_row_global = column_size.data_uncompressed
                 ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)

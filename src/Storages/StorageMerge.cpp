@@ -721,7 +721,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 database_name,
                 table_name,
                 RowPolicyFilterType::SELECT_FILTER);
-            if (row_policy_filter_ptr && !row_policy_filter_ptr->empty())
+            if (row_policy_filter_ptr && !row_policy_filter_ptr->isAlwaysTrue())
             {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
@@ -859,7 +859,18 @@ public:
                 node = std::move(column_expression);
             }
             else
+            {
+                /// Do not replace column source for lambda arguments.
+                /// Lambda argument columns reference the LambdaNode as their source,
+                /// and replacing it with the table expression would cause toAST()
+                /// to qualify them with the table alias (e.g. `__table1.x` instead of `x`),
+                /// which is invalid for lambda argument identifiers.
+                auto column_source = column->getColumnSourceOrNull();
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    return;
+
                 column->setColumnSource(replacement_table_expression);
+            }
         }
     }
 private:

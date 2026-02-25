@@ -676,11 +676,11 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     }
 }
 
-StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id)
 {
     StorageFuzzJSON::Configuration configuration{};
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
     {
         /// Perform strict validation of ASTs in addition to name collection extraction.
         for (auto args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
@@ -726,7 +726,7 @@ void registerStorageFuzzJSON(StorageFactory & factory)
             if (engine_args.empty())
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage FuzzJSON must have arguments.");
 
-            StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext());
+            StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
 
             for (const auto& col : args.columns)
                 if (col.type->getTypeId() != TypeIndex::String)

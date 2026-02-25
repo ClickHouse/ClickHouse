@@ -85,6 +85,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace MergeTreeSetting
@@ -386,6 +387,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
+    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -404,7 +406,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        else
+        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
+        else if (!analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -1037,7 +1040,13 @@ StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr l
 DatabaseAndTable DatabaseCatalog::getTableWithDatabase(const StorageID & table_id, ContextPtr local_context, const GetDatabasesOptions & options) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, local_context, options, &exc);
+    auto res = local_context->hasQueryContext() ?
+        local_context->getQueryContext()->getOrCacheStorage(
+            table_id,
+            options,
+            [&](){ return getTableImpl(table_id, local_context, options, &exc); },
+            &exc) :
+        getTableImpl(table_id, local_context, options, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -1045,7 +1054,13 @@ DatabaseAndTable DatabaseCatalog::getTableWithDatabase(const StorageID & table_i
 
 DatabaseAndTable DatabaseCatalog::tryGetTableWithDatabase(const StorageID & table_id, ContextPtr local_context, const GetDatabasesOptions & options) const
 {
-    return getTableImpl(table_id, local_context, options, nullptr);
+    return local_context->hasQueryContext() ?
+        local_context->getQueryContext()->getOrCacheStorage(
+            table_id,
+            options,
+            [&](){ return getTableImpl(table_id, local_context, options, nullptr); },
+            nullptr) :
+        getTableImpl(table_id, local_context, options, nullptr);
 }
 
 DatabaseAndTable DatabaseCatalog::tryGetTableWithDatabase(const UUID & uuid, ContextPtr context_, const GetDatabasesOptions & options) const
@@ -1700,6 +1715,7 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
             old_view_dependencies.push_back(the_table_from);
         }
     }
+
     return {
         referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),

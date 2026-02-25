@@ -41,6 +41,15 @@ struct ActionsDAGWithInversionPushDown
     explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
 };
 
+
+struct DeterministicKeyTransformDag
+{
+    ExpressionActionsPtr actions;
+    String output_name;
+    DataTypePtr input_type;
+    String input_name;
+};
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -198,6 +207,35 @@ public:
     ///     3. no where
     /// TODO handle the cases when generate RPN.
     bool extractPlainRanges(Ranges & ranges) const;
+
+    /// Extract a conservative union of ranges implied by this condition for the only key column.
+    ///
+    /// This method tries to extract plain ranges from each top-level conjunct (AND component) independently
+    /// and intersects all successfully extracted conjunct ranges, ignoring the rest.
+    ///
+    /// Return value semantics:
+    ///  - empty vector means the condition is always false;
+    ///  - a single universe range `(-Inf, +Inf)` means no bounds could be inferred;
+    ///  - otherwise, the result may contain 1+ (possibly disjoint) ranges.
+    ///
+    /// If the key condition is not 1-dimensional (key_columns.size() != 1), the result is always `(-Inf, +Inf)`.
+    ///
+    /// Examples (single key column `x`):
+    ///  - `x % 2 = 0 AND x < 100`                    -> { "(-Inf, 99]" }  (the `%` conjunct is ignored)
+    ///  - `x > 10 AND x < 20 AND x % 2 = 0`          -> { "[11, 19]" }
+    ///  - `(x BETWEEN 0 AND 3) OR (x BETWEEN 10 AND 13)` -> { "[0, 3]", "[10, 13]" }
+    ///  - `x IN (8, 0, 6)`                           -> { "[0, 0]", "[6, 6]", "[8, 8]" }
+    ///  - `x NOT IN (2, 4)`                          -> { "(-Inf, 1]", "[3, 3]", "[5, +Inf)" }
+    ///  - `NOT (x BETWEEN 2 AND 6) AND x < 10`       -> { "(-Inf, 1]", "[7, 9]" }
+    ///  - `isNull(x)`                                -> {}               (for non-nullable keys)
+    ///  - `x < 5 AND x > 10`                         -> {}               (always false / contradictory)
+    ///  - `x % 2 = 0`                                -> { "(-Inf, +Inf)" } (no bounds inferred)
+    ///
+    /// Non-examples (currently NOT extracted; result is `{ "(-Inf, +Inf)" }` unless another conjunct provides bounds):
+    ///  - `x + 1 < 100`                               -> { "(-Inf, +Inf)" } (simple arithmetic on the key is not inverted to avoid potential overflow)
+    ///  - `intDiv(x, 3) < 10`                         -> { "(-Inf, +Inf)" } (functions on the key are not analyzed here)
+    ///  - `(x < 10 AND x % 2 = 0) OR (x < 20 AND x % 3 = 0)` -> { "(-Inf, +Inf)" } (no partial extraction across OR branches)
+    Ranges extractBounds() const;
 
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -386,6 +424,14 @@ private:
         MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
+
+    bool extractDeterministicFunctionsDagFromKey(
+        const String & expr_name,
+        const BuildInfo & info,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        DeterministicKeyTransformDag & out_functions_chain) const;
+
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
@@ -394,25 +440,27 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
-    bool canConstantBeWrappedByFunctions(
+    bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
+        DataTypePtr & out_type,
+        bool & out_is_injective);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
     /// specifies key column position / type. Besides that it produces the
-    /// chain of functions which should be executed on set, to transform it
-    /// into key column values.
-    bool canSetValuesBeWrappedByFunctions(
+    /// transformation DAG which should be executed on set elements, to
+    /// transform them into key column values.
+    bool canSetValuesBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
-        MonotonicFunctionsChain & out_functions_chain);
+        DeterministicKeyTransformDag & out_transform,
+        bool & out_is_injective) const;
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
@@ -420,21 +468,19 @@ private:
     bool tryPrepareSetIndexForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
-        bool allow_constant_transformation);
+        RPNElement & out);
     bool tryPrepareSetIndexForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
-        bool allow_constant_transformation);
+        RPNElement & out);
 
     void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
-        std::vector<MonotonicFunctionsChain> &set_transforming_chains,
+        std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
         DataTypes & data_types,
         size_t & args_count,
         const BuildInfo & info,
-        bool allow_constant_transformation);
+        bool & out_relaxed);
 
     /// Checks that the index can not be used.
     ///

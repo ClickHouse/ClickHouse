@@ -26,18 +26,6 @@
     Bad get: has Decimal32, requested Decimal128
 00502_sum_map
 
-    https://github.com/ClickHouse/ClickHouse/issues/74337
-    Duplicates on JOIN + CROSS JOIN
-01852_multiple_joins_with_union_join
-
-    https://github.com/ClickHouse/ClickHouse/issues/74341
-    Duplicates on RIGHT JOIN with Values table
-03006_join_on_inequal_expression_3.gen
-
-    https://github.com/ClickHouse/ClickHouse/issues/74343
-    Cannot find column `tuple(col_a, type)` in source stream, there are only columns: [__table1.id, tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type), tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type)]. (THERE_IS_NO_COLUMN) (in query: SELECT id, tuple(replaceAll(data, 'a', 'e') AS col_a, type) AS a, tuple(replaceAll(data, 'a', 'e') AS col_b, type) AS b FROM src;)
-03240_insert_select_named_tuple
-
     https://github.com/ClickHouse/ClickHouse/issues/74367
     Cannot find column in source stream
 01358_mutation_delete_null_rows
@@ -46,12 +34,6 @@
     https://github.com/ClickHouse/ClickHouse/issues/74362
     Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
 01594_storage_join_uuid
-
-    https://github.com/ClickHouse/ClickHouse/issues/74360
-    LOGICAL ERROR https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=84536&sha=516c114f38828a2853efa3f0935f19d11b7c0d23&name_0=PR&name_1=Stateless+tests+%28amd_binary%2C+ParallelReplicas%2C+s3+storage%2C+parallel%29
-    https://github.com/ClickHouse/ClickHouse/issues/81144
-    Cannot parse string
-    03208_multiple_joins_with_storage_join
 
     GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
 01231_operator_null_in

@@ -71,6 +71,11 @@ public:
     ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
     size_t numColumnsInResult() const { return getColumns().size(); }
 
+    /// Returns column names and types as they are stored on disk (may differ from requested types
+    /// when there are pending type-changing mutations). Used to build correct `ColumnsWithTypeAndName`
+    /// before `performRequiredConversions` is applied.
+    const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
+
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -134,6 +139,11 @@ protected:
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
+
+    /// Returns true if the column at position @pos in columns_to_read was dropped
+    /// by a pending mutation that hasn't been applied to this part yet.
+    /// Such columns should not be read from the part; defaults should be used instead.
+    bool isColumnDroppedByPendingMutation(size_t pos) const;
 
 private:
     friend class MergeTreeReaderIndex;

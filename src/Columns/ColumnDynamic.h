@@ -229,7 +229,7 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
@@ -264,9 +264,9 @@ public:
         return variant_column_ptr->hasEqualValues();
     }
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {
-        variant_column_ptr->getExtremes(min, max);
+        variant_column_ptr->getExtremes(min, max, start, end);
     }
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,

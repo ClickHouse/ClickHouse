@@ -12,10 +12,40 @@ doc_type: 'reference'
 Creates a new database.
 
 ```sql
-CREATE [TEMPORARY] DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
+CREATE DATABASE [TEMPORARY] [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 ```
 
 ## Clauses {#clauses}
+
+### TEMPORARY {#temporary}
+
+Creates a temporary database that will be asynchronously deleted when the current session ends.
+
+Temporary databases are available to access only in the current session but may be visible to others in the system tables depending
+on the [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables) setting.
+
+:::note
+You probably want to specify `session_id` if the [HTTP interface](/interfaces/http) is used.
+:::
+
+#### Unsupported features {#unsupported-clauses-and-engines}
+
+- [DETACH](/sql-reference/statements/detach) statement on database or tables inside
+- [ATTACH](/sql-reference/statements/attach) statement on database or and tables inside
+- [ON CLUSTER](#on-cluster) clause
+- [Replicated](/engines/database-engines/replicated) and [Backup](/engines/database-engines/backup) database engines
+- Cannot be backed up with [BACKUP](/sql-reference/statements/backup) statement
+
+:::note
+Please note that the database name will be reserved, and you will not be able to create a new database with the same name, as with regular databases.
+:::
+
+**See Also**
+
+- [allow_experimental_temporary_databases](/operations/settings/settings.md#allow_experimental_temporary_databases)
+- [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables)
+- [temporary_databases_cleanup_interval_sec](/operations/server-configuration-parameters/settings.md/#temporary_databases_cleanup_interval_sec)
+- [Using ClickHouse sessions in the HTTP protocol](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)
 
 ### IF NOT EXISTS {#if-not-exists}
 
@@ -61,30 +91,34 @@ Result:
 └────────────┴────────────────────────┘
 ```
 
-### TEMPORARY {#temporary}
-Creates a temporary database that will be asynchronously deleted when the current session ends.
+### SETTINGS {#settings}
 
-Temporary databases are available to access only in the current session but may be visible to others in the system tables depending
-on the [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables) setting.
+#### lazy_load_tables {#lazy-load-tables}
 
-:::note
-You probably want to specify `session_id` if the [HTTP interface](/interfaces/http) is used.
-:::
+When enabled, tables are not fully loaded during database startup. Instead, a lightweight proxy is created for each table and the real table engine is materialized on first access. This reduces startup time and memory usage for databases with many tables where only a subset is actively queried.
 
-#### Unsupported features {#unsupported-clauses-and-engines}
-- [DETACH](/sql-reference/statements/detach) statement on database or tables inside
-- [ATTACH](/sql-reference/statements/attach) statement on database or and tables inside
-- [ON CLUSTER](#on-cluster) clause
-- [Replicated](/engines/database-engines/replicated) and [Backup](/engines/database-engines/backup) database engines
-- Cannot be backed up with [BACKUP](/sql-reference/statements/backup) statement
+```sql
+CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+```
 
-:::note
-Please note that the database name will be reserved, and you will not be able to create a new database with the same name, as with regular databases.
-:::
+Applies to database engines that store table metadata on disk (e.g. `Atomic`, `Ordinary`). Views, materialized views, dictionaries, and tables backed by table functions are always loaded eagerly regardless of this setting.
 
-**See Also**
+**When to use:** This setting is useful for databases with a large number of tables (hundreds or thousands) where only a subset is actively queried. It reduces server startup time and memory usage by deferring the creation of table engine objects, scanning of data parts, and initialization of background threads until first access.
 
-- [allow_experimental_temporary_databases](/operations/settings/settings.md#allow_experimental_temporary_databases)
-- [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables)
-- [temporary_databases_cleanup_interval_sec](/operations/server-configuration-parameters/settings.md/#temporary_databases_cleanup_interval_sec)
-- [Using ClickHouse sessions in the HTTP protocol](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)
+**Impact on `system.tables`:**
+
+- Before a table is accessed, `system.tables` shows its engine as `TableProxy`. After first access, it shows the real engine name (e.g. `MergeTree`).
+- Columns like `total_rows` and `total_bytes` return `NULL` for unloaded tables because the real storage has not been created yet.
+
+**Interaction with DDL operations:**
+
+- `SELECT`, `INSERT`, `ALTER`, `DROP` transparently trigger loading of the real table engine on first use.
+- `RENAME TABLE` works without triggering a load.
+- Once a table is loaded, it stays loaded for the lifetime of the server process.
+
+**Limitations:**
+
+- Monitoring tools that rely on `system.tables` metadata (e.g. `total_rows`, `engine`) may see incomplete information for unloaded tables.
+- The first query to an unloaded table incurs a one-time loading cost (parsing the stored `CREATE TABLE` statement and initializing the engine).
+
+Default value: `0` (disabled).

@@ -14,6 +14,9 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <Poco/SAX/InputSource.h>
+#include <Poco/Util/XMLConfiguration.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
@@ -23,6 +26,15 @@
 using namespace DB;
 namespace fs = std::filesystem;
 
+
+static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
+{
+    std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::XML::InputSource input_source{ss};
+    return {new Poco::Util::XMLConfiguration{&input_source}};
+}
+
+const char * config_xml = "<clickhouse></clickhouse>";
 
 ContextMutablePtr context;
 
@@ -34,6 +46,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     static SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
+    context->setConfig(getConfigurationFromXMLString(config_xml));
 
     /// Initialize temporary storage for processing queries
     context->setTemporaryStoragePath((fs::temp_directory_path() / "clickhouse_fuzzer_tmp" / "").string(), 0);
