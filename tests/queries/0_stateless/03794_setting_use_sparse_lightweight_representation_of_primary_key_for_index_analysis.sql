@@ -1,0 +1,41 @@
+-- { echo }
+
+DROP TABLE IF EXISTS tab_sparse_pk_setting;
+
+CREATE TABLE tab_sparse_pk_setting
+(
+    k Nullable(Int32),
+    x UInt32
+)
+ENGINE = MergeTree
+ORDER BY (k, x)
+SETTINGS allow_nullable_key = 1, index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO tab_sparse_pk_setting VALUES
+    (NULL, 1),
+    (1, 2),
+    (2, 3),
+    (3, 4),
+    (NULL, 5);
+
+SET use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+SELECT getSetting('use_sparse_lightweight_representation_of_primary_key_for_index_analysis');
+
+SET use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;
+SELECT getSetting('use_sparse_lightweight_representation_of_primary_key_for_index_analysis');
+
+SELECT count() FROM tab_sparse_pk_setting
+WHERE isNull(k)
+SETTINGS force_primary_key = 1, use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+
+SELECT count() FROM tab_sparse_pk_setting
+WHERE isNull(k)
+SETTINGS force_primary_key = 1, use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;
+
+SELECT count() FROM tab_sparse_pk_setting
+WHERE k NOT IN (1, 2)
+SETTINGS force_primary_key = 1, use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+
+SELECT count() FROM tab_sparse_pk_setting
+WHERE k NOT IN (1, 2)
+SETTINGS force_primary_key = 1, use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;

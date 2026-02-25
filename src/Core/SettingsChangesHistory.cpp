@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"use_sparse_lightweight_representation_of_primary_key_for_index_analysis", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
