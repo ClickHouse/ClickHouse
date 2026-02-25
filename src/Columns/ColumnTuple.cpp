@@ -553,7 +553,7 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
     return ColumnTuple::create(new_columns);
 }
 
-MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
 {
     if (columns.empty())
     {
@@ -564,7 +564,7 @@ MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selecto
         for (auto idx : selector)
             ++counts[idx];
 
-        MutableColumns res(num_columns);
+        VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
             res[i] = cloneResized(counts[i]);
 
@@ -572,12 +572,12 @@ MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selecto
     }
 
     const size_t tuple_size = columns.size();
-    std::vector<MutableColumns> scattered_tuple_elements(tuple_size);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> scattered_tuple_elements(tuple_size);
 
     for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
         scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
 
-    MutableColumns res(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
 
     for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
     {

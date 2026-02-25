@@ -249,7 +249,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
-std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
+VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
                                                       const IColumn::Selector & selector) const
 {
     if (elements_size != selector.size())
@@ -269,7 +269,7 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
             captures[part][capture].column = std::move(parts[part]);
     }
 
-    std::vector<MutableColumnPtr> columns;
+    VectorWithMemoryTracking<MutableColumnPtr> columns;
     columns.reserve(num_columns);
     for (size_t part = 0; part < num_columns; ++part)
     {

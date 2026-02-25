@@ -1265,7 +1265,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     return ColumnVariant::create(new_local_discriminators, new_variants, local_to_global_discriminators);
 }
 
-MutableColumns ColumnVariant::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::scatter(size_t num_columns, const Selector & selector) const
 {
     const size_t num_variants = variants.size();
 
@@ -1273,7 +1273,7 @@ MutableColumns ColumnVariant::scatter(size_t num_columns, const Selector & selec
     if (hasOnlyNulls())
     {
         auto scattered_local_discriminators = local_discriminators->scatter(num_columns, selector);
-        MutableColumns result;
+        VectorWithMemoryTracking<MutableColumnPtr> result;
         result.reserve(num_columns);
         for (size_t i = 0; i != num_columns; ++i)
         {
@@ -1294,7 +1294,7 @@ MutableColumns ColumnVariant::scatter(size_t num_columns, const Selector & selec
     {
         auto scattered_local_discriminators = local_discriminators->scatter(num_columns, selector);
         auto scattered_non_empty_variant = variants[*non_empty_local_discr]->scatter(num_columns, selector);
-        MutableColumns result;
+        VectorWithMemoryTracking<MutableColumnPtr> result;
         result.reserve(num_columns);
         for (size_t i = 0; i != num_columns; ++i)
         {
@@ -1327,12 +1327,12 @@ MutableColumns ColumnVariant::scatter(size_t num_columns, const Selector & selec
     }
 
     auto scattered_local_discriminators = local_discriminators->scatter(num_columns, selector);
-    std::vector<MutableColumns> nested_scattered_variants;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> nested_scattered_variants;
     nested_scattered_variants.reserve(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
         nested_scattered_variants.emplace_back(variants[i]->scatter(num_columns, nested_selectors[i]));
 
-    MutableColumns result;
+    VectorWithMemoryTracking<MutableColumnPtr> result;
     result.reserve(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
     {

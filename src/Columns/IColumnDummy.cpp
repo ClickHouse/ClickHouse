@@ -107,7 +107,7 @@ ColumnPtr IColumnDummy::replicate(const Offsets & offsets) const
     return cloneDummy(offsets.back());
 }
 
-MutableColumns IColumnDummy::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> IColumnDummy::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");
@@ -116,7 +116,7 @@ MutableColumns IColumnDummy::scatter(size_t num_columns, const Selector & select
     for (auto idx : selector)
         ++counts[idx];
 
-    MutableColumns res(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         res[i] = cloneResized(counts[i]);
 

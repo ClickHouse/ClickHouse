@@ -128,7 +128,7 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
                         size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
     ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }
-    MutableColumns scatter(size_t, const Selector &) const override { throwMustBeDecompressed(); }
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const Selector &) const override { throwMustBeDecompressed(); }
     void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
     void getExtremes(Field &, Field &, size_t, size_t) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }

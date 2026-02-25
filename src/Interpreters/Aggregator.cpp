@@ -3983,7 +3983,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     for (size_t column_idx = 0; column_idx < columns; ++column_idx)
     {
         const ColumnWithTypeAndName & src_col = source.getByPosition(column_idx);
-        MutableColumns scattered_columns = src_col.column->scatter(num_buckets, selector);
+        auto scattered_columns = src_col.column->scatter(num_buckets, selector);
 
         for (UInt32 bucket = 0, size = num_buckets; bucket < size; ++bucket)
         {

@@ -242,10 +242,10 @@ public:
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types);
     }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
     {
-        MutableColumns scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
-        MutableColumns scattered_columns;
+        VectorWithMemoryTracking<MutableColumnPtr> scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
+        VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
         for (auto & scattered_variant_column : scattered_variant_columns)
             scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types));

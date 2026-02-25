@@ -254,10 +254,10 @@ ColumnPtr ColumnMap::replicate(const Offsets & offsets) const
     return ColumnMap::create(std::move(replicated));
 }
 
-MutableColumns ColumnMap::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnMap::scatter(size_t num_columns, const Selector & selector) const
 {
     auto scattered_columns = nested->scatter(num_columns, selector);
-    MutableColumns res;
+    VectorWithMemoryTracking<MutableColumnPtr> res;
     res.reserve(num_columns);
     for (auto && scattered : scattered_columns)
         res.push_back(ColumnMap::create(std::move(scattered)));
