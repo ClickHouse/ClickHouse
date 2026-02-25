@@ -102,7 +102,7 @@ ColumnVariant::ColumnVariant(MutableColumns && variants_) : ColumnVariant(std::m
 {
 }
 
-ColumnVariant::ColumnVariant(MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_)
+ColumnVariant::ColumnVariant(MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_)
 {
     /// Empty local_to_global_discriminators mapping means that variants are already in the global order.
     if (!local_to_global_discriminators_.empty() && local_to_global_discriminators_.size() != variants_.size())
@@ -142,7 +142,7 @@ ColumnVariant::ColumnVariant(MutableColumnPtr local_discriminators_, MutableColu
 {
 }
 
-ColumnVariant::ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_) : ColumnVariant(std::move(local_discriminators_), nullptr, std::move(variants_), local_to_global_discriminators_)
+ColumnVariant::ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_) : ColumnVariant(std::move(local_discriminators_), nullptr, std::move(variants_), std::move(local_to_global_discriminators_))
 {
 }
 
@@ -150,7 +150,7 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
 {
 }
 
-ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::MutableColumnPtr offsets_, DB::MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_)
+ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::MutableColumnPtr offsets_, DB::MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_)
 {
     if (variants_.size() > MAX_NESTED_COLUMNS)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
@@ -204,7 +204,7 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
                 local_to_global_discriminators_.size(),
                 variants.size());
 
-        local_to_global_discriminators = local_to_global_discriminators_;
+        local_to_global_discriminators = std::move(local_to_global_discriminators_);
         global_to_local_discriminators.resize(local_to_global_discriminators.size());
         /// Create mapping global discriminator -> local discriminator
         for (Discriminator i = 0; i != local_to_global_discriminators.size(); ++i)
@@ -243,15 +243,33 @@ ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const std::ve
     return ColumnVariant::create(getVariantsAssumeMutable(variants), local_to_global_discriminators);
 }
 
+ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
+{
+    return ColumnVariant::create(getVariantsAssumeMutable(variants), local_to_global_discriminators);
+}
+
+
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
 {
     return ColumnVariant::create(local_discriminators->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
 }
 
+ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
+{
+    return ColumnVariant::create(local_discriminators->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
+}
+
+
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::ColumnPtr & offsets, const DB::Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
 {
     return ColumnVariant::create(local_discriminators->assumeMutable(), offsets->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
 }
+
+ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::ColumnPtr & offsets, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
+{
+    return ColumnVariant::create(local_discriminators->assumeMutable(), offsets->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
+}
+
 
 MutableColumnPtr ColumnVariant::cloneEmpty() const
 {
