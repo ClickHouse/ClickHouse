@@ -62,23 +62,55 @@ SpillingHashJoin::SpillingHashJoin(
 
 SpillingHashJoin::~SpillingHashJoin() = default;
 
+void SpillingHashJoin::tryConvertSlots()
+{
+    chassert(concurrent_join);
+    chassert(grace_join);
+
+    const auto total_slots = concurrent_join->getNumSlots();
+
+    /// Fast path: all slots already converted.
+    if (next_slot_to_convert.load(std::memory_order_acquire) >= total_slots)
+        return;
+
+    while (true)
+    {
+        size_t slot = next_slot_to_convert.fetch_add(1);
+        if (slot >= total_slots)
+            break;
+
+        auto blocks = concurrent_join->releaseSlotBlocks(slot);
+        while (!blocks.empty())
+        {
+            grace_join->addBlockToJoin(blocks.front(), /*check_limits=*/false);
+            blocks.pop_front();
+        }
+    }
+}
+
 bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 {
     /// Fast path: already switched to GraceHashJoin (no lock needed).
     if (state.load(std::memory_order_acquire) != SpillingState::COLLECTING)
+    {
+        /// Help convert one ConcurrentHashJoin slot while in GRACE_HASH_JOIN state.
+        if (concurrent_join)
+            tryConvertSlots();
         return inner_join->addBlockToJoin(block, check_limits);
+    }
 
     if (concurrent_join)
     {
-        /// Shared lock: multiple threads add to ConcurrentHashJoin concurrently.
-        std::shared_lock lock(switch_mutex);
+        {
+            /// Shared lock: multiple threads add to ConcurrentHashJoin concurrently.
+            std::shared_lock lock(switch_mutex);
 
-        /// Re-check: another thread may have switched while we waited for the lock.
-        if (state.load(std::memory_order_acquire) != SpillingState::COLLECTING)
-            return inner_join->addBlockToJoin(block, check_limits);
+            /// Re-check: another thread may have switched while we waited for the lock.
+            if (state.load(std::memory_order_acquire) != SpillingState::COLLECTING)
+                return inner_join->addBlockToJoin(block, check_limits);
 
-        concurrent_join->addBlockToJoin(block, /*check_limits=*/false);
-        lock.unlock();
+            concurrent_join->addBlockToJoin(block, /*check_limits=*/false);
+        }
 
         /// Check memory limit outside the shared lock.
         if (!limits.softCheck(concurrent_join->getTotalRowCount(), concurrent_join->getTotalByteCount()))
@@ -104,62 +136,42 @@ void SpillingHashJoin::switchToGraceHashJoin()
 {
     if (concurrent_join)
     {
-        /// Exclusive lock: waits for all in-flight `addBlockToJoin` (shared lock holders)
-        /// to complete. After this, no thread is inside `ConcurrentHashJoin::addBlockToJoin`.
-        std::unique_lock lock(switch_mutex);
-
-        /// Re-check: another thread may have already switched.
-        if (state.load(std::memory_order_relaxed) != SpillingState::COLLECTING)
-            return;
-
-        ProfileEvents::increment(ProfileEvents::JoinSpilledToDisk);
-
-        LOG_DEBUG(
-            log,
-            "Memory limit exceeded ({} bytes, {} rows), "
-            "switching ConcurrentHashJoin to GraceHashJoin",
-            concurrent_join->getTotalByteCount(),
-            concurrent_join->getTotalRowCount());
-
-        /// Create GraceHashJoin.
-        grace_join = std::make_shared<GraceHashJoin>(
-            initial_num_buckets,
-            max_num_buckets,
-            table_join,
-            left_sample_block,
-            std::make_shared<const Block>(right_sample_block),
-            tmp_data);
-        grace_join->initialize(*left_sample_block);
-        inner_join = grace_join;
-
-        /// Set state BEFORE releasing the lock so new `addBlockToJoin` calls
-        /// see GRACE_HASH_JOIN and go directly to `grace_join`.
-        state.store(SpillingState::GRACE_HASH_JOIN, std::memory_order_release);
-        lock.unlock();
-
-        /// Now safe to extract slots (no concurrent `addBlockToJoin` on ConcurrentHashJoin).
-        /// Extract one slot at a time for controlled memory release.
-        const size_t total_slots = concurrent_join->getNumSlots();
-        while (true)
         {
-            size_t slot = next_slot_to_convert.fetch_add(1);
-            if (slot >= total_slots)
-                break;
+            /// Exclusive lock: waits for all in-flight `addBlockToJoin` (shared lock holders)
+            /// to complete. After this, no thread is inside `ConcurrentHashJoin::addBlockToJoin`.
+            std::unique_lock lock(switch_mutex);
 
-            BlocksList blocks = concurrent_join->releaseSlotBlocks(slot);
-            while (!blocks.empty())
-            {
-                grace_join->addBlockToJoin(blocks.front(), /*check_limits=*/false);
-                blocks.pop_front();
-            }
-            slots_converted.fetch_add(1, std::memory_order_release);
+            /// Re-check: another thread may have already switched.
+            if (state.load(std::memory_order_relaxed) != SpillingState::COLLECTING)
+                return;
 
-            /// Check if memory is back under limit — stop converting, leave rest for joinBlock.
-            size_t grace_bytes = grace_join->getTotalByteCount();
-            size_t concurrent_bytes = concurrent_join->getTotalByteCount();
-            if (limits.softCheck(0, grace_bytes + concurrent_bytes))
-                break;
+            ProfileEvents::increment(ProfileEvents::JoinSpilledToDisk);
+
+            LOG_DEBUG(
+                log,
+                "Memory limit exceeded ({} bytes, {} rows), "
+                "switching ConcurrentHashJoin to GraceHashJoin",
+                concurrent_join->getTotalByteCount(),
+                concurrent_join->getTotalRowCount());
+
+            /// Create GraceHashJoin.
+            grace_join = std::make_shared<GraceHashJoin>(
+                initial_num_buckets,
+                max_num_buckets,
+                table_join,
+                left_sample_block,
+                std::make_shared<const Block>(right_sample_block),
+                tmp_data);
+            grace_join->initialize(*left_sample_block);
+            inner_join = grace_join;
+
+            /// Set state BEFORE releasing the lock so new `addBlockToJoin` calls
+            /// see GRACE_HASH_JOIN and go directly to `grace_join`.
+            state.store(SpillingState::GRACE_HASH_JOIN, std::memory_order_release);
         }
+        /// Convert ConcurrentHashJoin slots into GraceHashJoin.
+        /// Other build-phase threads will also help via `addBlockToJoin`.
+        tryConvertSlots();
         return;
     }
 
@@ -212,15 +224,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
         }
         state.store(SpillingState::IN_MEMORY_JOIN, std::memory_order_release);
     }
-    else if (
-        state.load(std::memory_order_acquire) == SpillingState::GRACE_HASH_JOIN && concurrent_join
-        && !conversion_complete.load(std::memory_order_acquire))
-    {
-        /// For GRACE_HASH_JOIN with unconverted concurrent slots:
-        /// Do NOT call `inner_join->onBuildPhaseFinish` yet.
-        /// Conversion and `onBuildPhaseFinish` are handled in `finishConcurrentConversion`.
-        return;
-    }
 
     inner_join->onBuildPhaseFinish();
 }
@@ -251,82 +254,7 @@ JoinResultPtr SpillingHashJoin::joinBlock(Block block)
         return hash_join->joinBlock(std::move(block));
     }
 
-    /// If switched from concurrent to grace, ensure conversion is done before joining.
-    if (state.load(std::memory_order_acquire) == SpillingState::GRACE_HASH_JOIN && concurrent_join
-        && !conversion_complete.load(std::memory_order_acquire))
-        finishConcurrentConversion();
-
     return inner_join->joinBlock(std::move(block));
-}
-
-void SpillingHashJoin::finishConcurrentConversion()
-{
-    chassert(concurrent_join);
-    chassert(grace_join);
-
-    const size_t total_slots = concurrent_join->getNumSlots();
-
-    /// Each thread picks up slots, extracts blocks, pushes to shared queue.
-    while (true)
-    {
-        size_t slot = next_slot_to_convert.fetch_add(1);
-        if (slot >= total_slots)
-            break;
-
-        BlocksList blocks = concurrent_join->releaseSlotBlocks(slot);
-        if (!blocks.empty())
-        {
-            std::lock_guard lock(block_queue_mutex);
-            block_queue.splice(block_queue.end(), std::move(blocks));
-        }
-
-        /// Track that this slot has been extracted (blocks may still be in queue).
-        slots_converted.fetch_add(1, std::memory_order_release);
-
-        /// Also consume from queue (producer + consumer).
-        consumeBlockQueue();
-    }
-
-    /// Phase 3: If all slots have been converted, finalize.
-    /// Use `build_phase_called` to ensure exactly one thread calls `onBuildPhaseFinish`.
-    if (slots_converted.load(std::memory_order_acquire) >= total_slots)
-    {
-        bool expected = false;
-        if (build_phase_called.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
-        {
-            consumeBlockQueue();
-            grace_join->onBuildPhaseFinish();
-            conversion_complete.store(true, std::memory_order_release);
-        }
-        else
-        {
-            /// Another thread is calling onBuildPhaseFinish. Wait for it.
-            while (!conversion_complete.load(std::memory_order_acquire))
-                consumeBlockQueue();
-        }
-    }
-    else
-    {
-        /// Help drain queue while waiting for all slots to be converted.
-        while (!conversion_complete.load(std::memory_order_acquire))
-            consumeBlockQueue();
-    }
-}
-
-void SpillingHashJoin::consumeBlockQueue()
-{
-    while (true)
-    {
-        Block block;
-        {
-            std::lock_guard lock(block_queue_mutex);
-            if (block_queue.empty())
-                return;
-            block = std::move(block_queue.front());
-            block_queue.pop_front();
-        }
-        grace_join->addBlockToJoin(block, /*check_limits=*/false);
-    }
 }
 
 void SpillingHashJoin::setTotals(const Block & block)

@@ -34,8 +34,7 @@ class ConcurrentHashJoin;
 /// Blocks are fed into a `ConcurrentHashJoin` from multiple threads concurrently.
 /// A `SharedMutex` protects the COLLECTING → GRACE_HASH_JOIN transition:
 /// `addBlockToJoin` takes a shared lock, while `switchToGraceHashJoin` takes an exclusive lock.
-/// On overflow, slots are extracted one at a time for memory control. Remaining unconverted
-/// slots are converted in parallel during `joinBlock` / `getDelayedBlocks`.
+/// On overflow, a `GraceHashJoin` is created and ConcurrentHashJoin slots are converted via `addBlockToJoin`.
 ///
 /// `hasDelayedBlocks` always returns true so that the pipeline includes the delayed block
 /// transforms needed by `GraceHashJoin`. When `HashJoin` / `ConcurrentHashJoin` is used,
@@ -105,8 +104,7 @@ private:
     };
 
     void switchToGraceHashJoin();
-    void finishConcurrentConversion();
-    void consumeBlockQueue();
+    void tryConvertSlots();
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -138,13 +136,9 @@ private:
     /// This ensures no thread is inside `ConcurrentHashJoin::addBlockToJoin` during the switch.
     SharedMutex switch_mutex;
 
-    /// Parallel conversion state (used by joinBlock threads to convert remaining concurrent slots).
+    /// Slot conversion counter: `addBlockToJoin` and `onBuildPhaseFinish` use this to
+    /// distribute ConcurrentHashJoin slot conversion across build-phase threads.
     std::atomic<size_t> next_slot_to_convert{0};
-    std::atomic<size_t> slots_converted{0};
-    std::atomic<bool> build_phase_called{false};
-    std::atomic<bool> conversion_complete{false};
-    std::mutex block_queue_mutex;
-    BlocksList block_queue;
 
     std::mutex totals_mutex;
 };
