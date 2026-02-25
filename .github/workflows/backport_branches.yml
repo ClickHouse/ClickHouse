@@ -19,7 +19,7 @@ permissions: write-all
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -94,7 +94,7 @@ jobs:
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
@@ -512,7 +512,7 @@ jobs:
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   install_packages_arm_release:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2Up') }}
     name: "Install packages (arm_release)"
@@ -588,7 +588,7 @@ jobs:
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   compatibility_check_arm_release:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYXJtX3JlbGVhc2Up') }}
     name: "Compatibility check (arm_release)"
@@ -1234,7 +1234,7 @@ jobs:
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   finish_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [build_amd_asan, build_amd_darwin, build_amd_debug, build_amd_release, build_amd_tsan, build_arm_darwin, build_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stress_test_amd_tsan]
     if: ${{ always() }}
     name: "Finish Workflow"

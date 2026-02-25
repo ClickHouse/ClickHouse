@@ -14,7 +14,7 @@ permissions: write-all
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -93,7 +93,7 @@ jobs:
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
@@ -253,7 +253,7 @@ jobs:
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   finish_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [build_toolchain_pgo_bolt_aarch64, build_toolchain_pgo_bolt_amd64, config_workflow, dockers_build_amd, dockers_build_arm, update_toolchain_dockerfile]
     if: ${{ always() }}
     name: "Finish Workflow"
