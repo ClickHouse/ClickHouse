@@ -29,8 +29,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     ContextPtr local_context,
     LoggerPtr log,
     const String & filename,
-    Int64 inherited_sequence_number,
-    Int64 inherited_snapshot_id);
+    size_t bytes_size);
 
 
 ManifestFileCacheKeys getManifestList(

@@ -125,14 +125,17 @@ using namespace Iceberg;
 //         data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
 // }
 
-size_t SingleThreadIcebergKeysIterator::ManifestFileWeightFunction::operator()(const Iceberg::ManifestFilePtr & manifest_file) const
+template <typename HeavyCPUProcessingFunction>
+size_t HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFileWeightFunction::operator()(
+    const Iceberg::ManifestFilePtr & manifest_file) const
 {
     return manifest_file->getFileBytesSize();
 }
 
-SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::ManifestFilesAsyncronousIterator(
+template <typename HeavyCPUProcessingFunction>
+HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncronousIterator::ManifestFilesAsyncronousIterator(
     Iceberg::ManifestFileContentType manifest_file_content_type_,
-    const SingleThreadIcebergKeysIterator & parent_,
+    const HomogeneousIcebergKeysIterator & parent_,
     size_t max_sum_size_of_manifest_files_in_queue_)
     : blocking_queue(max_sum_size_of_manifest_files_in_queue_)
     , index(0)
@@ -146,13 +149,19 @@ SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::ManifestFiles
             {
                 while (true)
                 {
-                    blocking_queue.push(task());
+                    auto iterator = task();
+                    if (!iterator)
+                    {
+                        break;
+                    }
+                    blocking_queue.push(iterator);
                 }
             }));
     }
 }
 
-Iceberg::ManifestFilePtr SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::task()
+template <typename HeavyCPUProcessingFunction>
+Iceberg::ManifestFilePtr HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncronousIterator::task()
 {
     while (true)
     {
@@ -193,9 +202,7 @@ Iceberg::ManifestFilePtr SingleThreadIcebergKeysIterator::ManifestFilesAsyncrono
     }
 }
 
-Iceberg::ManifestFilePtr SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::task()
-
-    namespace
+namespace
 {
 std::span<const ManifestFileEntryPtr> defineDeletesSpan(
     ManifestFileEntryPtr data_object_, const std::vector<ManifestFileEntryPtr> & deletes_objects, bool is_equality_delete, LoggerPtr logger)
@@ -264,91 +271,111 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
 
 }
 
-std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
+template <typename HeavyCPUProcessingFunction>
+std::optional<typename HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::Result>
+HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::next()
 {
-    if (!data_snapshot)
+    ManifestFilePtr reference_to_iterator;
+    while (true)
     {
-        return std::nullopt;
-    }
-
-    while (manifest_file_index < data_snapshot->manifest_list_entries.size())
-    {
-        if (!current_manifest_file_content)
         {
-            if (persistent_components.format_version > 1 && data_snapshot->manifest_list_entries[manifest_file_index].content_type != manifest_file_content_type)
+            std::lock_guard lock(current_manifest_file_mutex);
+            if (current_manifest_file_iterator->isInitialized())
             {
-                ++manifest_file_index;
-                continue;
+                current_manifest_file_iterator = manifest_files_asyncronous_iterator.next();
             }
-            current_manifest_file_content = Iceberg::getManifestFile(
-                object_storage,
-                persistent_components,
-                local_context,
-                log,
-                data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
-                data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
-                data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
-            internal_data_index = 0;
-            files = files_generator(current_manifest_file_content);
+            reference_to_iterator = current_manifest_file_iterator;
         }
-        while (current_manifest_file_content->manifest_file_content_type ==)
-            while (internal_data_index < files.size())
-            {
-                const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
-                if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
-                {
-                    previous_entry_schema = manifest_file_entry->schema_id;
-                    if (previous_entry_schema > manifest_file_entry->schema_id)
-                    {
-                        LOG_WARNING(
-                            log,
-                            "Manifest entries in file {} are not sorted by schema id",
-                            current_manifest_file_content->getPathToManifestFile());
-                    }
-                    current_pruner.emplace(
-                        *persistent_components.schema_processor,
-                        table_snapshot->schema_id,
-                        manifest_file_entry->schema_id,
-                        filter_dag.get(),
-                        *current_manifest_file_content,
-                        local_context);
-                }
-                auto pruning_status = current_pruner ? current_pruner->canBePruned(manifest_file_entry) : PruningReturnStatus::NOT_PRUNED;
-                insertRowToLogTable(
-                    local_context,
-                    "",
-                    DB::IcebergMetadataLogLevel::ManifestFileEntry,
-                    persistent_components.table_path,
-                    current_manifest_file_content->getPathToManifestFile(),
-                    manifest_file_entry->row_number,
-                    pruning_status);
-                switch (pruning_status)
-                {
-                    case PruningReturnStatus::NOT_PRUNED:
-                        return manifest_file_entry;
-                    case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
-                        ++min_max_index_pruned_files;
-                        break;
-                    }
-                    case PruningReturnStatus::PARTITION_PRUNED: {
-                        ++partition_pruned_files;
-                        break;
-                    }
-                        return nullptr;
-                }
-            }
-        current_manifest_file_content = nullptr;
-        files.clear();
-        current_pruner = std::nullopt;
-        ++manifest_file_index;
-        internal_data_index = 0;
-        previous_entry_schema = -1;
+        auto file_entry = reference_to_iterator->next();
+        if (!file_entry)
+        {
+            continue;
+        }
+        return file_entry;
     }
+    // if (!data_snapshot)
+    // {
+    //     return std::nullopt;
+    // }
 
-    return std::nullopt;
+    // while (manifest_file_index < data_snapshot->manifest_list_entries.size())
+    // {
+    //     if (!current_manifest_file_content)
+    //     {
+    //         if (persistent_components.format_version > 1 && data_snapshot->manifest_list_entries[manifest_file_index].content_type != manifest_file_content_type)
+    //         {
+    //             ++manifest_file_index;
+    //             continue;
+    //         }
+    //         current_manifest_file_content = Iceberg::getManifestFile(
+    //             object_storage,
+    //             persistent_components,
+    //             local_context,
+    //             log,
+    //             data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
+    //             data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
+    //             data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
+    //         internal_data_index = 0;
+    //         files = files_generator(current_manifest_file_content);
+    //     }
+    //     while (current_manifest_file_content->manifest_file_content_type ==)
+    //         while (internal_data_index < files.size())
+    //         {
+    //             const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
+    //             if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
+    //             {
+    //                 previous_entry_schema = manifest_file_entry->schema_id;
+    //                 if (previous_entry_schema > manifest_file_entry->schema_id)
+    //                 {
+    //                     LOG_WARNING(
+    //                         log,
+    //                         "Manifest entries in file {} are not sorted by schema id",
+    //                         current_manifest_file_content->getPathToManifestFile());
+    //                 }
+    //                 current_pruner.emplace(
+    //                     *persistent_components.schema_processor,
+    //                     table_snapshot->schema_id,
+    //                     manifest_file_entry->schema_id,
+    //                     filter_dag.get(),
+    //                     *current_manifest_file_content,
+    //                     local_context);
+    //             }
+    //             auto pruning_status = current_pruner ? current_pruner->canBePruned(manifest_file_entry) : PruningReturnStatus::NOT_PRUNED;
+    //             insertRowToLogTable(
+    //                 local_context,
+    //                 "",
+    //                 DB::IcebergMetadataLogLevel::ManifestFileEntry,
+    //                 persistent_components.table_path,
+    //                 current_manifest_file_content->getPathToManifestFile(),
+    //                 manifest_file_entry->row_number,
+    //                 pruning_status);
+    //             switch (pruning_status)
+    //             {
+    //                 case PruningReturnStatus::NOT_PRUNED:
+    //                     return manifest_file_entry;
+    //                 case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
+    //                     ++min_max_index_pruned_files;
+    //                     break;
+    //                 }
+    //                 case PruningReturnStatus::PARTITION_PRUNED: {
+    //                     ++partition_pruned_files;
+    //                     break;
+    //                 }
+    //                     return nullptr;
+    //             }
+    //         }
+    //     current_manifest_file_content = nullptr;
+    //     files.clear();
+    //     current_pruner = std::nullopt;
+    //     ++manifest_file_index;
+    //     internal_data_index = 0;
+    //     previous_entry_schema = -1;
+    // }
+
+    // return std::nullopt;
 }
 
-SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
+HomogeneousIcebergKeysIterator::~HomogeneousIcebergKeysIterator()
 {
     if (partition_pruned_files > 0)
         ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, partition_pruned_files);
@@ -356,7 +383,7 @@ SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
         ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles, min_max_index_pruned_files);
 }
 
-SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
+HomogeneousIcebergKeysIterator::HomogeneousIcebergKeysIterator(
     ObjectStoragePtr object_storage_,
     ContextPtr local_context_,
     FilesGenerator files_generator_,

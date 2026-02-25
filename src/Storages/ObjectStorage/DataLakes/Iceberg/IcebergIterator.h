@@ -32,15 +32,17 @@ namespace DB
 
 namespace Iceberg
 {
-
-class SingleThreadIcebergKeysIterator
+template <typename HeavyCPUProcessingFunction>
+class HomogeneousIcebergKeysIterator
 {
     using FilesGenerator = std::function<std::vector<ManifestFileEntryPtr>(const Iceberg::ManifestFilePtr & manifest_file)>;
+
+    using Result = std::invoke_result_t<HeavyCPUProcessingFunction, const Iceberg::ManifestFileEntryPtr &>;
 
     friend class ManifestFilesAsyncronousIterator;
 
 public:
-    SingleThreadIcebergKeysIterator(
+    HomogeneousIcebergKeysIterator(
         ObjectStoragePtr object_storage_,
         ContextPtr local_context_,
         FilesGenerator files_generator_,
@@ -50,9 +52,9 @@ public:
         IcebergDataSnapshotPtr data_snapshot_,
         PersistentTableComponents persistent_components);
 
-    std::optional<DB::Iceberg::ManifestFileEntryPtr> next();
+    std::optional<Result> next();
 
-    ~SingleThreadIcebergKeysIterator();
+    ~HomogeneousIcebergKeysIterator();
 
 private:
     ObjectStoragePtr object_storage;
@@ -87,7 +89,7 @@ private:
         ConcurrentBoundedQueue<Iceberg::ManifestFilePtr, ManifestFileWeightFunction> blocking_queue;
         std::atomic<size_t> index;
         const Iceberg::ManifestFileContentType manifest_file_content_type;
-        const SingleThreadIcebergKeysIterator & parent;
+        const HomogeneousIcebergKeysIterator & parent;
         const size_t number_of_workers;
         const size_t max_sum_size_of_manifest_files_in_queue;
         std::deque<ThreadFromGlobalPool> workers;
@@ -98,10 +100,14 @@ private:
 
         ManifestFilesAsyncronousIterator(
             Iceberg::ManifestFileContentType manifest_file_content_type_,
-            const SingleThreadIcebergKeysIterator & parent_,
+            const HomogeneousIcebergKeysIterator & parent_,
             size_t max_sum_size_of_manifest_files_in_queue_);
     } manifest_files_asyncronous_iterator;
 
+    ManifestFilePtr current_manifest_file_iterator;
+    std::mutex current_manifest_file_mutex;
+
+    HeavyCPUProcessingFunction heavy_cpu_processing_function;
 };
 
 class IcebergIterator : public IObjectIterator
@@ -127,8 +133,10 @@ private:
     ObjectStoragePtr object_storage;
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
     Iceberg::PersistentTableComponents persistent_components;
-    Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
-    Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
+    Iceberg::HomogeneousIcebergKeysIterator<std::function<ObjectInfoPtr(const Iceberg::ManifestFilePtr & manifest_file)>>
+        data_files_iterator;
+    Iceberg::HomogeneousIcebergKeysIterator<std::function<Iceberg::ManifestFileEntryPtr(const Iceberg::ManifestFilePtr & manifest_file)>>
+        deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ManifestFileEntryPtr> blocking_queue;
     std::optional<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
@@ -137,6 +145,8 @@ private:
     std::exception_ptr exception;
     std::mutex exception_mutex;
 };
+}
+
 }
 
 
