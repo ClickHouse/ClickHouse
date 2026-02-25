@@ -400,47 +400,6 @@ void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStat
     ids.clear();
 }
 
-void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
-{
-    const uint32_t ncodecs = rg.randomInt<uint32_t>(1, 3);
-    std::uniform_int_distribution<uint32_t> codec_range(1, static_cast<uint32_t>(CompressionCodec_MAX));
-
-    for (uint32_t i = 0; i < ncodecs; i++)
-    {
-        CodecParam * cp = i == 0 ? cl->mutable_codec() : cl->add_other_codecs();
-        const CompressionCodec cc = static_cast<CompressionCodec>(codec_range(rg.generator));
-
-        cp->set_codec(cc);
-        switch (cc)
-        {
-            case COMP_LZ4HC:
-            case COMP_ZSTD:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 22));
-                }
-                break;
-            case COMP_Delta:
-            case COMP_DoubleDelta:
-            case COMP_Gorilla:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(UINT32_C(1) << rg.randomInt<uint32_t>(0, 3));
-                }
-                break;
-            case COMP_FPC:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 28));
-                    cp->add_params()->set_ival(rg.nextBool() ? 4 : 9);
-                }
-                break;
-            default:
-                break;
-        }
-    }
-}
-
 void StatementGenerator::generateTableExpression(
     RandomGenerator & rg, std::optional<SQLRelation> & rel, const bool use_global_agg, const bool pred, Expr * expr)
 {
@@ -556,7 +515,7 @@ void StatementGenerator::generateNextTTL(
 
             if (nopt2 < 16)
             {
-                generateNextCodecs(rg, tupt->mutable_codecs());
+                tupt->set_codecs(generateNextCodecString(rg));
             }
             else if (!fc.disks.empty() && nopt2 < 31)
             {
@@ -1289,7 +1248,7 @@ void StatementGenerator::generateEngineDetails(
     else if (
         te->has_engine()
         && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine()
-            || b.isRedisEngine() || b.isExternalDistributedEngine() || b.isKafkaEngine() || b.isURLEngine()))
+            || b.isRedisEngine() || b.isKafkaEngine() || b.isURLEngine()))
     {
         if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
         {
@@ -1691,7 +1650,7 @@ void StatementGenerator::addTableColumnInternal(
 
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_ALIAS) && rg.nextMediumNumber() < 16)
             {
-                generateNextCodecs(rg, cd->mutable_codecs());
+                cd->set_codecs(generateNextCodecString(rg));
             }
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !csettings.empty() && rg.nextMediumNumber() < 16)
             {
@@ -1827,16 +1786,21 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
-            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
-            const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
+            static const std::vector<Tokenizer> & tokenizerVals
+                = {{"splitByNonAlpha", "SplitByNonAlpha"},
+                   {"splitByString", "SplitByString"},
+                   {"ngrams", "Ngrams"},
+                   {"array", "Array"},
+                   {"sparseGrams", "SparseGrams"}};
+            const Tokenizer & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
-            buf += fmt::format("tokenizer = {}", next_tokenizer);
+            buf += fmt::format("tokenizer = {}", nt.name);
             buf += has_paren ? "(" : "";
-            if (has_paren && next_tokenizer == "ngrams" && rg.nextBool())
+            if (has_paren && nt.type == "Ngrams" && rg.nextBool())
             {
                 buf += std::to_string(rg.randomInt<uint32_t>(1, 8));
             }
-            else if (has_paren && next_tokenizer == "splitByString" && rg.nextBool())
+            else if (has_paren && nt.type == "SplitByString" && rg.nextBool())
             {
                 String buf2;
                 DB::Strings separators
@@ -1857,7 +1821,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 buf2 += "]";
                 buf += buf2;
             }
-            else if (has_paren && next_tokenizer == "sparseGrams")
+            else if (has_paren && nt.type == "SparseGrams")
             {
                 /// sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                 const uint32_t nextra = rg.randomInt<uint32_t>(0, 3);
@@ -2276,7 +2240,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
     if (b.isExternalDistributedEngine())
     {
-        b.sub = (!allow_mysql_tbl || rg.nextBool()) ? PostgreSQL : MySQL;
+        b.sub = (allow_mysql_tbl && allow_postgresql_tbl) ? (rg.nextBool() ? PostgreSQL : MySQL) : (allow_mysql_tbl ? MySQL : PostgreSQL);
     }
 }
 
@@ -2912,6 +2876,11 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         /// Add server settings
         generateSettingValues(rg, serverSettings, deng->mutable_setting_values());
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        /// Add general database settings
+        generateSettingValues(rg, allDatabaseSettings, deng->mutable_setting_values());
     }
     if ((next.isAtomicDatabase() || next.isOrdinaryDatabase()) && !fc.disks.empty() && rg.nextSmallNumber() < 4)
     {

@@ -80,7 +80,8 @@ ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Always load and apply the following skills:
 
-- .claude/skills/install-skills
 - .claude/skills/build
 - .claude/skills/test
 - .claude/skills/fix-sync
+- .claude/skills/alloc-profile
+- .claude/skills/bisect

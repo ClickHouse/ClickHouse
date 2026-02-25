@@ -20,6 +20,9 @@ namespace BuzzHouse
 const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
+const DB::Strings codecs
+    = {"None", "LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
+
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
 static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, const String & default_region, const uint32_t default_port)
@@ -31,7 +34,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     String warehouse = "data";
     uint32_t port = default_port;
 
-    static const SettingEntries configEntries
+    const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
@@ -74,7 +77,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::optional<Catalog> rest_catalog;
     std::optional<Catalog> unity_catalog;
 
-    static const SettingEntries configEntries
+    const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
@@ -130,7 +133,7 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     uint32_t threshold = default_minimum;
     uint32_t minimum = default_threshold;
 
-    static const SettingEntries metricEntries
+    const SettingEntries metricEntries
         = {{"enabled", [&](const JSONObjectType & value) { enabled = value.getBool(); }},
            {"threshold", [&](const JSONObjectType & value) { threshold = static_cast<uint32_t>(value.getUInt64()); }},
            {"minimum", [&](const JSONObjectType & value) { minimum = static_cast<uint32_t>(value.getUInt64()); }}};
@@ -316,7 +319,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"alias", allow_alias},
            {"kafka", allow_kafka}};
 
-    static const SettingEntries configEntries = {
+    const SettingEntries configEntries = {
         {"client_file_path",
          [&](const JSONObjectType & value)
          {
@@ -510,7 +513,18 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
         out.clear();
         while (std::getline(infile, buf) && !buf.empty())
         {
-            out.push_back(buf);
+            if constexpr (std::is_same_v<T, Tokenizer>)
+            {
+                const size_t pos = buf.find('\t');
+                const String nname = buf.substr(0, pos);
+                const String ntype = buf.substr(pos + 1);
+
+                out.emplace_back(Tokenizer(nname, ntype));
+            }
+            else
+            {
+                out.push_back(buf);
+            }
             buf.resize(0);
             found++;
         }
@@ -537,6 +551,7 @@ void FuzzConfig::loadServerConfigurations()
         "SELECT \"name\" FROM \"system\".\"fail_points\""
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
+    loadServerSettings<Tokenizer>(this->tokenizers, "tokenizers", R"(SELECT "name", "type" FROM "system"."tokenizers")");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const

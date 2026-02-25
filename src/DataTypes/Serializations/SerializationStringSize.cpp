@@ -63,14 +63,14 @@ void SerializationStringSize::deserializeBinaryBulkStatePrefix(
         {
             auto string_state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
 
-            /// Without a states cache (e.g. StorageLog) we must always read the full
-            /// string data, because the state is not shared with SerializationString
-            /// and we cannot know whether the full column will also be read.
+            /// If there is no state cache (e.g. StorageLog), we must always read the full string data. Without cached
+            /// state, we cannot know in advance whether the string data will be needed later, and the string size has
+            /// to be derived from the data itself.
             ///
-            /// With a states cache (MergeTree), we default to sizes-only reading.
-            /// If SerializationString also reads this column, its
-            /// deserializeBinaryBulkStatePrefix will find this shared state and
-            /// upgrade need_string_data to true.
+            /// As a result, the subsequent deserialization relies on the substream cache to correctly share the string
+            /// data across subcolumns. We do not support an optimization that deserializes only the size substream in
+            /// this case, and therefore we must always populate the substream cache with the string data rather than
+            /// the size-only substream.
             if (!cache)
                 string_state->need_string_data = true;
             state = string_state;
@@ -125,15 +125,7 @@ void SerializationStringSize::deserializeWithStringData(
         serialization_string.deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
 
         num_read_rows = string_state.column->size() - prev_size;
-
-        /// Cache only the current range's data, not the entire accumulated column.
-        /// string_state.column accumulates data across marks (it is persistent state),
-        /// so on mark 1+ it contains elements from all previous marks plus the current one.
-        /// If we cache the full accumulated column with num_read_rows < column->size(),
-        /// insertDataFromCachedColumn will see the size mismatch and replace the result
-        /// column entirely (e.g. ColumnSparse's values), breaking invariants.
-        auto column_for_cache = string_state.column->cut(prev_size, num_read_rows);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column_for_cache, num_read_rows);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state.column, num_read_rows);
 
         if (settings.update_avg_value_size_hint_callback)
             settings.update_avg_value_size_hint_callback(settings.path, *string_state.column);

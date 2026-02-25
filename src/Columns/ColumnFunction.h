@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/WeakHash.h>
 
 
@@ -51,7 +52,7 @@ public:
     std::vector<MutableColumnPtr> scatter(size_t num_columns,
                                           const IColumn::Selector & selector) const override;
 
-    void getExtremes(Field &, Field &) const override {}
+    void getExtremes(Field &, Field &, size_t, size_t) const override {}
 
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;

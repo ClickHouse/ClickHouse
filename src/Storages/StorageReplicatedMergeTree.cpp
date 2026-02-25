@@ -609,7 +609,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already contains data parts - probably it was unclean DROP table "
                         "or manual intervention. You must either clear directory by hand "
-                        "or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.");
+                        "or use ATTACH TABLE instead of CREATE TABLE if you need to use those parts");
 
     try
     {
@@ -4640,6 +4640,12 @@ void StorageReplicatedMergeTree::getRemovePartFromZooKeeperOps(const String & pa
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name, bool storage_init)
 {
     auto zookeeper = getZooKeeper();
+
+    if (!storage_init && is_readonly)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Table is in readonly mode (replica path: {}), cannot remove part and enqueue fetch."
+            " This can happen when CHECK TABLE is run before the replica is fully initialized",
+            replica_path);
 
     DataPartPtr broken_part;
     auto outdate_broken_part = [this, &broken_part]()

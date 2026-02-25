@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -268,7 +269,7 @@ public:
         return data;
     }
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn &) const override;
 
