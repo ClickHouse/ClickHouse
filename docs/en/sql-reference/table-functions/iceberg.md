@@ -556,11 +556,24 @@ The command performs the following steps:
 3. Generates new metadata without the expired snapshots
 4. Physically deletes unreachable manifest lists, manifest files, and data files
 
+**Required privileges:**
+
+The `ALTER TABLE EXECUTE` privilege is required, which is a child of `ALTER TABLE` in the ClickHouse access control hierarchy. You can grant it specifically or via the parent:
+
+```sql
+-- Grant only EXECUTE permission
+GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
+
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
+GRANT ALTER TABLE ON my_iceberg_table TO my_user;
+```
+
 :::note
 - Only Iceberg format version 2 tables are supported
 - The current snapshot is always preserved, even if it is older than the specified timestamp
 - Snapshots referenced by branches or tags are also preserved
 - Requires the `allow_insert_into_iceberg` setting to be enabled
+- The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
 :::
 
 ## See Also {#see-also}
