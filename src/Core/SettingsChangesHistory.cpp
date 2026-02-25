@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"ordered_group_by_limit_pushdown", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -70,7 +71,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_insert_into_iceberg", false, false, "Insert into iceberg was moved to Beta"},
             {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
             {"opentelemetry_start_keeper_trace_probability", 0.0, 0.0, "New setting"},
-            {"ordered_group_by_limit_pushdown", true, true, "New setting"},
             {"jemalloc_profile_text_output_format", "collapsed", "collapsed", "New setting to control output format for system.jemalloc_profile_text table. Possible values: 'raw', 'symbolized', 'collapsed'"},
             {"jemalloc_profile_text_symbolize_with_inline", true, true, "New setting to control whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included at the cost of slower symbolization; when disabled, they are skipped for faster output"},
             {"jemalloc_profile_text_collapsed_use_count", false, false, "New setting to aggregate by allocation count instead of bytes in the collapsed jemalloc heap profile format"},
