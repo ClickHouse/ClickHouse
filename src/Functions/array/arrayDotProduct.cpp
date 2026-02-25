@@ -1,6 +1,5 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
-#include <Common/TargetSpecific.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionBinaryArithmetic.h>
@@ -79,7 +78,7 @@ struct DotProduct
 
 #if USE_MULTITARGET_CODE
     template <typename Type>
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
         const Type * __restrict data_x,
         const Type * __restrict data_y,
         size_t i_max,
@@ -352,7 +351,7 @@ private:
             if constexpr ((std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>)
                             && std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>)
             {
-                if (isArchSupported(TargetArch::x86_64_v4))
+                if (isArchSupported(TargetArch::AVX512F))
                     Kernel::template accumulateCombine<ResultType>(&data_x[0], &data_y[current_offset], array_size, i, state);
             }
 #else

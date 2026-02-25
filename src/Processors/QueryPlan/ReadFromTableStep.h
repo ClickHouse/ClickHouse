@@ -15,7 +15,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void serialize(Serialization & ctx) const override;
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
     const String & getTable() const { return table_name; }
     TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }

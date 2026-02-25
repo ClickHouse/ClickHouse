@@ -72,7 +72,7 @@ struct IndexReadTask
 };
 
 using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
-using IndexReadColumns = std::unordered_map<String, VirtualColumnsDescription>;
+using IndexReadColumns = std::unordered_map<String, NamesAndTypesList>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -176,7 +176,7 @@ public:
         std::vector<MarkRanges> patches_mark_ranges_,
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,

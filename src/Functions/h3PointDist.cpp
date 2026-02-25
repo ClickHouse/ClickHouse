@@ -25,20 +25,16 @@ extern const int ILLEGAL_COLUMN;
 
 namespace
 {
-
+template <class Impl>
 class FunctionH3PointDist final : public IFunction
 {
 public:
-    using DistFunc = double (*)(const LatLng *, const LatLng *);
+    static constexpr auto name = Impl::name;
+    static constexpr auto function = Impl::function;
 
-    FunctionH3PointDist(const char * name_, DistFunc func_) : function_name(name_), dist_func(func_) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PointDist>(); }
 
-    static FunctionPtr create(const char * name, DistFunc func)
-    {
-        return std::make_shared<FunctionH3PointDist>(name, func);
-    }
-
-    std::string getName() const override { return function_name; }
+    std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 4; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -123,19 +119,34 @@ public:
             LatLng point1 = {degsToRads(lat1), degsToRads(lon1)};
             LatLng point2 = {degsToRads(lat2), degsToRads(lon2)};
 
-            Float64 res = dist_func(&point1, &point2);
+            // function will be equivalent to distanceM or distanceKm or distanceRads
+            Float64 res = function(&point1, &point2);
             dst_data[row] = res;
         }
 
         return dst;
     }
-
-private:
-    const char * function_name;
-    DistFunc dist_func;
 };
 
 }
+
+struct H3PointDistM
+{
+    static constexpr auto name = "h3PointDistM";
+    static constexpr auto function = distanceM;
+};
+
+struct H3PointDistKm
+{
+    static constexpr auto name = "h3PointDistKm";
+    static constexpr auto function = distanceKm;
+};
+
+struct H3PointDistRads
+{
+    static constexpr auto name = "h3PointDistRads";
+    static constexpr auto function = distanceRads;
+};
 
 
 REGISTER_FUNCTION(H3PointDistM)
@@ -169,7 +180,7 @@ distance between pairs of GeoCoord points (latitude/longitude) in meters.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistM", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistM", distanceM); }, documentation);
+    factory.registerFunction<FunctionH3PointDist<H3PointDistM>>(documentation);
 }
 REGISTER_FUNCTION(H3PointDistKm)
 {
@@ -202,7 +213,7 @@ distance between pairs of GeoCoord points (latitude/longitude) in kilometers.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistKm", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistKm", distanceKm); }, documentation);
+    factory.registerFunction<FunctionH3PointDist<H3PointDistKm>>(documentation);
 }
 REGISTER_FUNCTION(H3PointDistRads)
 {
@@ -235,7 +246,7 @@ distance between pairs of GeoCoord points (latitude/longitude) in radians.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistRads", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistRads", distanceRads); }, documentation);
+    factory.registerFunction<FunctionH3PointDist<H3PointDistRads>>(documentation);
 }
 
 }

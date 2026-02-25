@@ -3,22 +3,21 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
-#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationString.h>
-#include <Formats/FormatSettings.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Common/Arena.h>
+#include <Common/SipHash.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <IO/WriteBufferFromVector.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromVector.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -237,7 +236,7 @@ void ColumnDynamic::insert(const Field & x)
     auto & variant_col = getVariantColumn();
     auto shared_variant_discr = getSharedVariantDiscriminator();
     /// Check if we can insert field into existing variants and avoid Variant extension.
-    for (ColumnVariant::Discriminator i = 0; i != variant_col.getNumVariants(); ++i)
+    for (size_t i = 0; i != variant_col.getNumVariants(); ++i)
     {
         if (i != shared_variant_discr && variant_col.getVariantByGlobalDiscriminator(i).tryInsert(x))
         {
@@ -1098,7 +1097,7 @@ DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
     return assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants()[discr];
 }
 
-void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> & names) const
+void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
 {
     auto shared_variant_discr = getSharedVariantDiscriminator();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)

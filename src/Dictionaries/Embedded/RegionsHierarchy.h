@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 #include <boost/noncopyable.hpp>
 #include <base/types.h>
 #include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
@@ -19,13 +19,13 @@ class RegionsHierarchy : private boost::noncopyable
 {
 private:
     /// Relationship parent; 0, if there are no parents, the usual lookup table.
-    using RegionParents = VectorWithMemoryTracking<RegionID>;
+    using RegionParents = std::vector<RegionID>;
     /// type of region
-    using RegionTypes = VectorWithMemoryTracking<RegionType>;
+    using RegionTypes = std::vector<RegionType>;
     /// depth in the tree, starting from the country (country: 1, root: 0)
-    using RegionDepths = VectorWithMemoryTracking<RegionDepth>;
+    using RegionDepths = std::vector<RegionDepth>;
     /// population of the region. If more than 2 ^ 32 - 1, then it is equated to this maximum.
-    using RegionPopulations = VectorWithMemoryTracking<RegionPopulation>;
+    using RegionPopulations = std::vector<RegionPopulation>;
 
     /// region -> parent region
     RegionParents parents;

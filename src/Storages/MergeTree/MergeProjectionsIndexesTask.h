@@ -12,17 +12,12 @@ namespace ErrorCodes
 
 struct IDiskTransaction;
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
-
-class IMergeTreeDataPart;
 struct MergeTreeDataPartChecksums;
 
-using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
-using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
-
+/// Base task for merging projections and text indexes.
 class MergeProjectionsIndexesTask : public IExecutableTask
 {
 public:
-    virtual MutableDataPartsVector extractTemporaryParts() = 0;
     virtual void addToChecksums(MergeTreeDataPartChecksums & checksums) = 0;
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }

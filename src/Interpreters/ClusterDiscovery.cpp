@@ -29,7 +29,6 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>

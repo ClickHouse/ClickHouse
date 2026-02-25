@@ -2,7 +2,9 @@
 #include <Functions/geometryConverters.h>
 #include <Functions/geometry.h>
 
+#include <boost/geometry.hpp>
 #include <boost/geometry/algorithms/perimeter.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
 
 namespace DB
 {

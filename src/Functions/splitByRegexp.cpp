@@ -5,6 +5,8 @@
 #include <Functions/FunctionTokens.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/Regexps.h>
+#include <Common/StringUtils.h>
+#include <Common/assert_cast.h>
 
 #include <ranges>
 

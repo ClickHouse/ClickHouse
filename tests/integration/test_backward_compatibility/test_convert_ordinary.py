@@ -28,7 +28,6 @@ def q(query):
 
 
 def check_convert_system_db_to_atomic():
-    node.query("DROP DATABASE IF EXISTS default2")
     node.query(
         "CREATE DATABASE default2 ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
@@ -86,8 +85,6 @@ def check_convert_system_db_to_atomic():
         and "1\n" == node.count_in_log("Can't receive Netlink response")
     )
 
-    node.query("DROP DATABASE default2")
-
 
 def create_some_tables(db):
     node.query("CREATE TABLE {}.t1 (n int) ENGINE=Memory".format(db))
@@ -98,15 +95,13 @@ def create_some_tables(db):
         "CREATE TABLE {}.mt2 (n int) ENGINE=MergeTree order by n".format(db),
     )
     node.query(
-        "DROP TABLE IF EXISTS {}.rmt1 SYNC;"
-        "CREATE TABLE {}.rmt1 (n int, m int) ENGINE=ReplicatedMergeTree('/test/rmt1/{}', '1') order by n;".format(
-            db, db, db
+        "CREATE TABLE {}.rmt1 (n int, m int) ENGINE=ReplicatedMergeTree('/test/rmt1/{}', '1') order by n".format(
+            db, db
         ),
     )
     node.query(
-        "DROP TABLE IF EXISTS {}.rmt2 SYNC;"
-        "CREATE TABLE {}.rmt2 (n int, m int) ENGINE=ReplicatedMergeTree('/test/{}/rmt2', '1') order by n;".format(
-            db, db, db
+        "CREATE TABLE {}.rmt2 (n int, m int) ENGINE=ReplicatedMergeTree('/test/{}/rmt2', '1') order by n".format(
+            db, db
         ),
     )
     node.exec_in_container(
@@ -117,9 +112,8 @@ def create_some_tables(db):
         ]
     )
     node.query(
-        "DROP TABLE IF EXISTS {}.mv1 SYNC;"
-        "CREATE MATERIALIZED VIEW {}.mv1 (n int) ENGINE=ReplicatedMergeTree('/test/{}/mv1/', '1') order by n AS SELECT n FROM {}.rmt1;".format(
-            db, db, db, db
+        "CREATE MATERIALIZED VIEW {}.mv1 (n int) ENGINE=ReplicatedMergeTree('/test/{}/mv1/', '1') order by n AS SELECT n FROM {}.rmt1".format(
+            db, db, db
         ),
     )
     node.query(
@@ -144,12 +138,6 @@ def create_some_tables(db):
 
 
 def check_convert_all_dbs_to_atomic():
-    node.query("DROP DATABASE IF EXISTS ordinary SYNC")
-    node.query("DROP DATABASE IF EXISTS other SYNC")
-    node.query("DROP DATABASE IF EXISTS `.o r d i n a r y.` SYNC")
-    node.query("DROP DATABASE IF EXISTS atomic SYNC")
-    node.query("DROP DATABASE IF EXISTS mem SYNC")
-
     node.query(
         "CREATE DATABASE ordinary ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
@@ -164,6 +152,7 @@ def check_convert_all_dbs_to_atomic():
     )
     node.query("CREATE DATABASE atomic ENGINE=Atomic")
     node.query("CREATE DATABASE mem ENGINE=Memory")
+    node.query("CREATE DATABASE lazy ENGINE=Lazy(1)")
 
     tables_with_data = ["mt1", "mt2", "rmt1", "rmt2", "mv1", "mv2", "detached"]
 
@@ -175,6 +164,7 @@ def check_convert_all_dbs_to_atomic():
     node.query(
         "CREATE TABLE `.o r d i n a r y.`.`t. a. b. l. e.` (n int) ENGINE=MergeTree ORDER BY n"
     )
+    node.query("CREATE TABLE lazy.table (n int) ENGINE=Log")
 
     # Introduce some cross dependencies
     node.query(
@@ -230,15 +220,16 @@ def check_convert_all_dbs_to_atomic():
     node.restart_clickhouse()
 
     assert (
-        ".o r d i n a r y.\natomic\ndefault\nordinary\nother\nsystem\n"
+        ".o r d i n a r y.\natomic\ndefault\ndefault2\nordinary\nother\nsystem\n"
         == node.query(
             "SELECT name FROM system.databases WHERE engine='Atomic' ORDER BY name"
         )
     )
-    assert "Memory\n" == node.query(
-        "SELECT engine FROM system.databases WHERE name IN ('mem') ORDER BY name"
+    assert "Lazy\nMemory\n" == node.query(
+        "SELECT engine FROM system.databases WHERE name IN ('mem', 'lazy') ORDER BY name"
     )
     assert "t. a. b. l. e.\n" == node.query("SHOW TABLES FROM `.o r d i n a r y.`")
+    assert "table\n" == node.query("SHOW TABLES FROM lazy")
 
     for db in ["ordinary", "other", "atomic"]:
         assert "\n".join(
@@ -263,17 +254,6 @@ def check_convert_all_dbs_to_atomic():
         assert "2\t{}\n".format(2 * len(db) * 2) == node.query(
             "SELECT count(), sum(n) FROM {}.detached".format(db)
         )
-
-    node.query("DROP TABLE atomic.l SYNC")
-    node.query("DROP TABLE other.l SYNC")
-    node.query("DROP TABLE ordinary.l SYNC")
-    node.query("DROP TABLE `.o r d i n a r y.`.`t. a. b. l. e.` SYNC")
-
-    node.query("DROP DATABASE mem SYNC")
-    node.query("DROP DATABASE atomic SYNC")
-    node.query("DROP DATABASE `.o r d i n a r y.` SYNC")
-    node.query("DROP DATABASE other SYNC")
-    node.query("DROP DATABASE ordinary SYNC")
 
 
 def test_convert_ordinary_to_atomic(start_cluster):
