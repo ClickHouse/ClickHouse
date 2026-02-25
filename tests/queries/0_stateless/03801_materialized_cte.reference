@@ -158,3 +158,5 @@ MaterializingCTEs (Materialize CTEs before main query execution)
       Expression ((Project names + (Projection + Change column names to column identifiers)))
         ReadFromSystemNumbers
 36
+-- Materialized CTE in scalar subquery
+10	9

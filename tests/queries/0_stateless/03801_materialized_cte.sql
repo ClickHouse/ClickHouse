@@ -57,3 +57,7 @@ WITH
         SELECT number as n FROM numbers(5)
     )
 SELECT count() FROM cte, cte;
+
+SELECT '-- Materialized CTE in scalar subquery';
+WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(10)), (SELECT max(c) FROM t) AS scalar
+SELECT scalar + 1, scalar;
