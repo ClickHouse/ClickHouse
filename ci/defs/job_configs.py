@@ -1226,8 +1226,8 @@ class JobConfigs:
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
     )
-    llvm_coverage_merge_job = Job.Config(
-        name=JobNames.LLVM_COVERAGE_MERGE,
+    llvm_coverage_job = Job.Config(
+        name=JobNames.LLVM_COVERAGE,
         runs_on=RunnerLabels.AMD_MEDIUM,
         run_in_docker="clickhouse/test-base",
         requires=[
