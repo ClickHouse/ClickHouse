@@ -67,7 +67,7 @@ namespace
                 case 'r':  res_string.push_back(0x0D); pos += 2; break;  /// \r  U+000D carriage return
                 case 't':  res_string.push_back(0x09); pos += 2; break;  /// \t  U+0009 horizontal tab
                 case 'v':  res_string.push_back(0x0B); pos += 2; break;  /// \v  U+000B vertical tab
-                case '\\': res_string.push_back('\''); pos += 2; break;  /// \\  U+005C backslash
+                case '\\': res_string.push_back('\\'); pos += 2; break;  /// \\  U+005C backslash
                 case '\'': res_string.push_back('\''); pos += 2; break;  /// \'  U+0027 single quote
                 case '"':  res_string.push_back('"');  pos += 2; break;  /// \"  U+0022 double quote
                 case 'x':
@@ -80,7 +80,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    char byte;
+                    UInt8 byte;
                     if (!tryParseIntInBase<16>(byte, input.substr(pos + 2, 2)))
                     {
                         setErrorMessage(error_message,
@@ -697,12 +697,12 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
     return true;
 }
 
-/// Parses a time range with an optional resolution which are used in subqueries.
+/// Parses a time range with an optional step which are used in subqueries.
 bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     std::string_view input,
     UInt32 timestamp_scale,
     DurationType & res_range,
-    std::optional<DurationType> & res_resolution,
+    std::optional<DurationType> & res_step,
     String * error_message,
     size_t * error_pos)
 {
@@ -741,15 +741,15 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     {
         --range_end_pos;
     }
-    size_t resolution_start_pos = colon_pos + 1;
-    while (resolution_start_pos != input.length() && std::isspace(input[resolution_start_pos]))
+    size_t step_start_pos = colon_pos + 1;
+    while (step_start_pos != input.length() && std::isspace(input[step_start_pos]))
     {
-        ++resolution_start_pos;
+        ++step_start_pos;
     }
-    size_t resolution_end_pos = input.length() - 1;
-    while (resolution_end_pos != resolution_start_pos && std::isspace(input[resolution_end_pos - 1]))
+    size_t step_end_pos = input.length() - 1;
+    while (step_end_pos != step_start_pos && std::isspace(input[step_end_pos - 1]))
     {
-        --resolution_end_pos;
+        --step_end_pos;
     }
 
     if (range_start_pos == range_end_pos)
@@ -766,14 +766,14 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
-    res_resolution.reset();
+    res_step.reset();
 
-    if (resolution_start_pos != resolution_end_pos)
+    if (step_start_pos != step_end_pos)
     {
-        if (!tryParseDuration(input.substr(resolution_start_pos, resolution_end_pos - resolution_start_pos), timestamp_scale, res_resolution.emplace(), error_message, error_pos))
+        if (!tryParseDuration(input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), error_message, error_pos))
         {
             if (error_pos)
-                *error_pos += resolution_start_pos;
+                *error_pos += step_start_pos;
             return false;
         }
     }

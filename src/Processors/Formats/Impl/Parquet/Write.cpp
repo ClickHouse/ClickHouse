@@ -3,7 +3,7 @@
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
-#include <arrow/util/rle_encoding.h>
+#include <arrow/util/rle_encoding_internal.h>
 #include <arrow/util/crc32.h>
 #include <lz4.h>
 #include <Poco/JSON/JSON.h>
@@ -658,19 +658,19 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
 void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, PODArray<char> & out)
 {
-    using arrow::util::RleEncoder;
+    using arrow::util::RleBitPackedEncoder;
 
     chassert(max_level > 0);
     size_t offset = out.size();
     size_t prefix_size = sizeof(Int32);
 
     int bit_width = bitScanReverse(max_level) + 1;
-    int max_rle_size = RleEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
-                       RleEncoder::MinBufferSize(bit_width);
+    auto max_rle_size = RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
+                        RleBitPackedEncoder::MinBufferSize(bit_width);
 
     out.resize(offset + prefix_size + max_rle_size);
 
-    RleEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), max_rle_size, bit_width);
+    RleBitPackedEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), static_cast<int>(max_rle_size), bit_width);
     for (size_t i = 0; i < size; ++i)
         encoder.Put(data[i]);
     encoder.Flush();
