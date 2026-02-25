@@ -1211,8 +1211,9 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
-    if (checksums.files.contains(path_prefix + ".idx"))
+    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
         return {1, getSubstreams()};
+
     return {0, {}};
 }
 

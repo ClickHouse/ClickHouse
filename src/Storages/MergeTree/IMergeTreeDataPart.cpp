@@ -2569,24 +2569,34 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
         {
             ColumnSize substream_size;
 
-            auto index_file_name = index_name + index_substream.suffix + index_substream.extension;
-            auto index_marks_file_name = index_name + index_substream.suffix + getMarksFileExtension();
+            auto index_stream_name = index_name + index_substream.suffix;
 
-            auto bin_checksum = checksums.files.find(index_file_name);
-            if (bin_checksum != checksums.files.end())
+            /// Check for both original and hashed filenames (hashed if the name is too long)
+            auto actual_index_file_name = getStreamNameOrHash(index_stream_name, index_substream.extension, checksums);
+            if (actual_index_file_name)
             {
-                substream_size.data_compressed = bin_checksum->second.file_size;
+                auto full_index_file_name = *actual_index_file_name + index_substream.extension;
+                auto bin_checksum = checksums.files.find(full_index_file_name);
+                if (bin_checksum != checksums.files.end())
+                {
+                    substream_size.data_compressed = bin_checksum->second.file_size;
 
-                /// For uncompressed files, the size of the uncompressed data is the same as the file size.
-                if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
-                    substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
-                else
-                    substream_size.data_uncompressed = bin_checksum->second.file_size;
+                    /// For uncompressed files, the size of the uncompressed data is the same as the file size.
+                    if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
+                        substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+                    else
+                        substream_size.data_uncompressed = bin_checksum->second.file_size;
+                }
             }
 
-            auto mrk_checksum = checksums.files.find(index_marks_file_name);
-            if (mrk_checksum != checksums.files.end())
-                substream_size.marks = mrk_checksum->second.file_size;
+            auto actual_marks_file_name = getStreamNameOrHash(index_stream_name, getMarksFileExtension(), checksums);
+            if (actual_marks_file_name)
+            {
+                auto full_marks_file_name = *actual_marks_file_name + getMarksFileExtension();
+                auto mrk_checksum = checksums.files.find(full_marks_file_name);
+                if (mrk_checksum != checksums.files.end())
+                    substream_size.marks = mrk_checksum->second.file_size;
+            }
 
             total_secondary_indices_size.add(substream_size);
             secondary_index_sizes[index_description.name].add(substream_size);
@@ -2662,7 +2672,9 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
+    /// Check for both original and hashed filenames
+    return getStreamNameOrHash(file_name, ".idx", checksums).has_value()
+        || getStreamNameOrHash(file_name, ".idx2", checksums).has_value();
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

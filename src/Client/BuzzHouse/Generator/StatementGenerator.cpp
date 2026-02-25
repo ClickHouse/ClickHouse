@@ -804,7 +804,7 @@ void StatementGenerator::generateNextTablePartition(
         const String dname = t.getDatabaseName();
         const String tname = t.getTableName();
 
-        if ((table_has_partitions = (rg.nextMediumNumber() < 76 && fc.tableHasPartitions(detached, dname, tname))))
+        if ((table_has_partitions = ((allow_parts == 2 || rg.nextMediumNumber() < 76) && fc.tableHasPartitions(detached, dname, tname))))
         {
             if (allow_parts == 2 || (allow_parts == 1 && rg.nextBool()))
             {
@@ -863,11 +863,13 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
     }
     if (!strict && ((!has_final && !has_partition) || rg.nextLargeNumber() < 6) && rg.nextSmallNumber() < 4)
     {
-        OptimizeDryRun * odr = ot->mutable_dry_run();
+        const bool detached = rg.nextSmallNumber() < 3;
+        const String dname = t.getDatabaseName();
+        const String tname = t.getTableName();
 
-        if (rg.nextBool())
+        if (fc.tableHasPartitions(detached, dname, tname))
         {
-            generateNextTablePartition(rg, 2, rg.nextSmallNumber() < 3, false, t, odr->add_parts());
+            generateNextTablePartition(rg, 2, detached, false, t, ot->add_dry_run_parts());
         }
     }
     setClusterClause(rg, t.getCluster(), ot->mutable_cluster());
@@ -2332,7 +2334,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
             {
                 generateNextTablePartition(rg, 0, rg.nextSmallNumber() < 3, false, t, fp->mutable_single_partition()->mutable_partition());
             }
-            fp->set_fname(t.freeze_counter++);
+            fp->set_fname(freeze_counter++);
         }
         else if (
             unfreeze_partition
@@ -2724,9 +2726,13 @@ static const auto has_mergeable_mt_func
 static const auto has_non_mergeable_mt_func
     = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && !t.can_run_merges; };
 
-static const auto has_distributed_table_func = [](const SQLTable & t) { return t.isAttached() && t.isDistributedEngine(); };
-
 static const auto has_refreshable_view_func = [](const SQLView & v) { return v.isAttached() && v.is_refreshable; };
+
+static const std::function<bool(const std::shared_ptr<SQLDatabase> &)> db_has_replicas
+    = [](const std::shared_ptr<SQLDatabase> & db) { return db->isAttached() && db->replica_counter > 0; };
+
+static const std::function<bool(const SQLTable &)> table_has_replicas
+    = [](const SQLTable & t) { return t.isAttached() && t.replica_counter > 0; };
 
 void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const bool allow_table_statements, SystemCommand * sc)
 {
@@ -2736,9 +2742,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_non_mergeable_mt_func));
     const uint32_t has_refreshable_view
         = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLView>(has_refreshable_view_func));
-    const uint32_t has_distributed_table
-        = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_distributed_table_func));
     const uint32_t has_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(attached_tables));
+    const uint32_t has_replicated_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(table_has_replicas));
+    const uint32_t has_replicated_database = static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(db_has_replicas));
 
     const uint32_t reload_embedded_dictionaries = 0;
     const uint32_t reload_dictionaries = 0;
@@ -2807,9 +2813,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     /// for dictionaries
     const uint32_t reload_dictionary = 0 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     /// for distributed tables
-    const uint32_t flush_distributed = 8 * has_distributed_table;
-    const uint32_t stop_distributed_sends = 8 * has_distributed_table;
-    const uint32_t start_distributed_sends = 8 * has_distributed_table;
+    const uint32_t flush_distributed = 3 * has_table;
+    const uint32_t stop_distributed_sends = 3 * has_table;
+    const uint32_t start_distributed_sends = 3 * has_table;
     const uint32_t drop_query_condition_cache = 3;
     const uint32_t enable_failpoint = 20 * static_cast<uint32_t>(!fc.failpoints.empty());
     const uint32_t disable_failpoint = 5 * static_cast<uint32_t>(!fc.failpoints.empty());
@@ -2823,6 +2829,12 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t wait_failpoint = 5 * static_cast<uint32_t>(!fc.failpoints.empty());
     const uint32_t notify_failpoint = 5 * static_cast<uint32_t>(!fc.failpoints.empty());
     const uint32_t reload_delta_kernel_tracing = 3;
+    const uint32_t restore_database_replica = 8 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
+    const uint32_t stop_replicated_view = 8 * has_refreshable_view;
+    const uint32_t start_replicated_view = 8 * has_refreshable_view;
+    const uint32_t unfreeze = 3 * static_cast<uint32_t>(freeze_counter > 0);
+    const uint32_t drop_replica = 3 * has_replicated_table;
+    const uint32_t drop_database_replica = 3 * has_replicated_database;
     const uint32_t prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
         + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
         + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
@@ -2836,7 +2848,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         + reload_dictionary + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache
         + enable_failpoint + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
         + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
-        + notify_failpoint + reload_delta_kernel_tracing;
+        + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
+        + unfreeze + drop_replica + drop_database_replica;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::optional<String> cluster;
@@ -3118,11 +3131,29 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + 1))
     {
+        const uint32_t nopt2 = rg.nextSmallNumber();
         SyncReplica * srep = sc->mutable_sync_replica();
-        std::uniform_int_distribution<uint32_t> sync_range(1, static_cast<uint32_t>(SyncReplica::SyncPolicy_MAX));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_merge_tree_func));
 
-        srep->set_policy(static_cast<SyncReplica_SyncPolicy>(sync_range(rg.generator)));
-        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, srep->mutable_est());
+        cluster = t.getCluster();
+        t.setName(srep->mutable_est(), false);
+        if (nopt2 < 4)
+        {
+            srep->set_strict(true);
+        }
+        else if (nopt2 < 8)
+        {
+            LightweightSyncReplica * lsrep = srep->mutable_lightweight();
+
+            if (t.replica_counter > 0)
+            {
+                lsrep->add_replicas("r" + std::to_string(rg.randomInt<uint32_t>(0, t.replica_counter - 1)));
+            }
+        }
+        else
+        {
+            srep->set_pull(true);
+        }
     }
     else if (
         sync_replicated_database
@@ -3593,7 +3624,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_table_func, sc->mutable_flush_distributed());
+        cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_flush_distributed());
     }
     else if (
         stop_distributed_sends
@@ -3611,7 +3642,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_table_func, sc->mutable_stop_distributed_sends());
+        cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_stop_distributed_sends());
     }
     else if (
         start_distributed_sends
@@ -3629,7 +3660,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_distributed_table_func, sc->mutable_start_distributed_sends());
+        cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_start_distributed_sends());
     }
     else if (
         drop_query_condition_cache
@@ -3886,6 +3917,163 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         std::uniform_int_distribution<uint32_t> t_range(1, static_cast<uint32_t>(DeltaKernelTraceLevel_MAX));
 
         sc->set_reload_delta_kernel_tracing(static_cast<DeltaKernelTraceLevel>(t_range(rg.generator)));
+    }
+    else if (
+        restore_database_replica
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
+               + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + 1))
+    {
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+
+        d->setName(sc->mutable_restore_database_replica());
+        cluster = d->getCluster();
+    }
+    else if (
+        stop_replicated_view
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
+               + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + 1))
+    {
+        cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_stop_replicated_view());
+    }
+    else if (
+        start_replicated_view
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
+               + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
+               + 1))
+    {
+        cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_start_replicated_view());
+    }
+    else if (
+        unfreeze
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
+               + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
+               + unfreeze + 1))
+    {
+        chassert(freeze_counter > 0);
+        sc->set_unfreeze(rg.randomInt<uint32_t>(0, freeze_counter - 1));
+    }
+    else if (
+        drop_replica
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
+               + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
+               + unfreeze + drop_replica + 1))
+    {
+        const uint32_t nopt2 = rg.nextSmallNumber();
+        DropReplica * dr = sc->mutable_drop_replica();
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(table_has_replicas));
+
+        dr->set_replica("r" + std::to_string(rg.randomInt<uint32_t>(0, t.replica_counter - 1)));
+        if (nopt2 < 4)
+        {
+            t.setName(dr->mutable_est(), false);
+        }
+        else if (nopt2 < 7 && t.db)
+        {
+            t.db->setName(dr->mutable_database());
+        }
+    }
+    else if (
+        drop_database_replica
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
+               + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
+               + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
+               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + drop_text_index_postings_cache + drop_text_index_caches + iceberg_metadata_cache + reset_ddl_worker + wait_failpoint
+               + notify_failpoint + reload_delta_kernel_tracing + restore_database_replica + stop_replicated_view + start_replicated_view
+               + unfreeze + drop_replica + drop_database_replica + 1))
+    {
+        DropDatabaseReplica * dr = sc->mutable_drop_database_replica();
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(db_has_replicas));
+
+        dr->set_replica("r" + std::to_string(rg.randomInt<uint32_t>(0, d->replica_counter - 1)));
+        if (d->shard_counter > 0 && rg.nextBool())
+        {
+            dr->set_shard("s" + std::to_string(rg.randomInt<uint32_t>(0, d->shard_counter - 1)));
+        }
+        if (rg.nextSmallNumber() < 4)
+        {
+            d->setName(dr->mutable_database());
+        }
     }
     else
     {
