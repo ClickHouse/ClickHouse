@@ -136,6 +136,12 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
 
 bool ZooKeeperReplicator::insertEntity(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
+    {
+        std::lock_guard lock{mutex};
+        if (memory_storage.entityLimitReached())
+            memory_storage.throwTooManyEntities();
+    }
+
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Inserting entity of type {} named {} with id {}", type_info.name, name, toString(id));
@@ -659,7 +665,7 @@ AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::Zo
 void ZooKeeperReplicator::setEntityNoLock(const UUID & id, const AccessEntityPtr & entity)
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Setting id {} to entity named {}", toString(id), entity->getName());
-    memory_storage.insert(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
+    memory_storage.insertIgnoreLimit(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
 }
 
 void ZooKeeperReplicator::removeEntityNoLock(const UUID & id)

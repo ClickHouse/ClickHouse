@@ -20,7 +20,8 @@ public:
         zkutil::GetZooKeeper get_zookeeper,
         AccessChangesNotifier & changes_notifier_,
         bool allow_backup,
-        bool throw_on_invalid_entities_);
+        bool throw_on_invalid_entities_,
+        UInt64 access_entities_num_limit_);
     ~ReplicatedAccessStorage() override;
 
     void shutdown() override;

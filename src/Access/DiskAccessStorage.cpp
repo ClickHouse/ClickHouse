@@ -161,8 +161,8 @@ namespace
 }
 
 
-DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_)
-    : IAccessStorage(storage_name_), memory_storage(storage_name_, changes_notifier_, /* allow_backup_= */ true)
+DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_, UInt64 access_entities_num_limit_)
+    : IAccessStorage(storage_name_), memory_storage(storage_name_, changes_notifier_, /* allow_backup_= */ true, access_entities_num_limit_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);
     readonly = readonly_;
@@ -473,17 +473,6 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     /// Check that we can insert.
     if (readonly)
         throwReadonlyCannotInsert(new_entity->getType(), new_entity->getName());
-
-    /// In case of name collision old file should be removed.
-    if (replace_if_exists && write_on_disk)
-    {
-        std::optional<UUID> collision_id = memory_storage.find(new_entity->getType(), new_entity->getName());
-        if (collision_id.has_value())
-        {
-            scheduleWriteLists(new_entity->getType());
-            deleteAccessEntityOnDisk(collision_id.value());
-        }
-    }
 
     /// Do insertion.
     if (!memory_storage.insert(id, new_entity, replace_if_exists, throw_if_exists, conflicting_id))
