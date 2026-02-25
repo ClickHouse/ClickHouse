@@ -95,6 +95,7 @@ RUN apt-get update \
         netbase \
         perl \
         pv \
+        python3-requests \
         ripgrep \
         zstd \
         locales \

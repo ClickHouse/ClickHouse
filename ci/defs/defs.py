@@ -345,6 +345,7 @@ class JobNames:
     SQL_TEST = "SQLTest"
     SQLANCER = "SQLancer"
     LLVM_COVERAGE = "LLVM Coverage"
+    LLVM_COVERAGE_CIDB_TEST = "LLVM Coverage CIDB Test"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"

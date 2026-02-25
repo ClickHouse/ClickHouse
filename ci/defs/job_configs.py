@@ -1226,6 +1226,15 @@ class JobConfigs:
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
     )
+    llvm_coverage_cidb_test_job = Job.Config(
+        name=JobNames.LLVM_COVERAGE_CIDB_TEST,
+        runs_on=RunnerLabels.AMD_SMALL,
+        run_in_docker="clickhouse/test-base",
+        command="python3 ./ci/jobs/test_cidb_coverage.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/test_cidb_coverage.py"],
+        ),
+    )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
         runs_on=RunnerLabels.AMD_SMALL,

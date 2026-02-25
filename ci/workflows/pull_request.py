@@ -48,6 +48,7 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
+        JobConfigs.llvm_coverage_cidb_test_job,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
         *[

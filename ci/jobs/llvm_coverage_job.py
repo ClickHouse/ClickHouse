@@ -231,32 +231,33 @@ if __name__ == "__main__":
             f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz",
         )
 
-        # Construct S3 artifact URLs from the known upload path structure:
-        #   files/assets → https://<report_endpoint>/<s3_prefix>/<path_relative_to_TEMP_DIR>
-        #   log files    → https://<report_endpoint>/<s3_prefix>/<normalize(result.name)>/<log_basename>
-        _env = _Environment.get()
-        _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
-        _log_name = f"{Utils.normalize_string(print_res.name)}.log"
+        if not info.is_local_run:
+            # Construct S3 artifact URLs from the known upload path structure:
+            #   files/assets → https://<report_endpoint>/<s3_prefix>/<path_relative_to_TEMP_DIR>
+            #   log files    → https://<report_endpoint>/<s3_prefix>/<normalize(result.name)>/<log_basename>
+            _env = _Environment.get()
+            _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
+            _log_name = f"{Utils.normalize_string(print_res.name)}.log"
 
-        save_date_into_ci_db(
-            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-            pr_number,
-            current_commit_sha,
-            branch,
-            merge_base_commit_sha,
-            base_branch,
-            b_line_cov,
-            b_function_cov,
-            b_branch_cov,
-            c_line_cov,
-            c_function_cov,
-            c_branch_cov,
-            delta,
-            diff_res.status,
-            coverage_report_url=f"{_s3_base}/llvm_coverage_html_report/index.html",
-            diff_coverage_report_url=f"{_s3_base}/llvm_coverage_diff_html_report/index.html",
-            uncovered_code_url=f"{_s3_base}/{Utils.normalize_string(print_res.name)}/{_log_name}",
-        )
+            save_date_into_ci_db(
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                pr_number,
+                current_commit_sha,
+                branch,
+                merge_base_commit_sha,
+                base_branch,
+                b_line_cov,
+                b_function_cov,
+                b_branch_cov,
+                c_line_cov,
+                c_function_cov,
+                c_branch_cov,
+                delta,
+                diff_res.status,
+                coverage_report_url=f"{_s3_base}/llvm_coverage_html_report/index.html",
+                diff_coverage_report_url=f"{_s3_base}/llvm_coverage_diff_html_report/index.html",
+                uncovered_code_url=f"{_s3_base}/{Utils.normalize_string(print_res.name)}/{_log_name}",
+            )
     else:
         print("On master branch, skipping diff coverage generation")
 
