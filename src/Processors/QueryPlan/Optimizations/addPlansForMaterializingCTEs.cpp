@@ -10,13 +10,17 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-void addPlansForMaterializingCTEs(QueryPlan & root_plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+void addPlansForMaterializingCTEs(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan & root_plan,
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes)
 {
     auto * delayed = typeid_cast<DelayedMaterializingCTEsStep *>(node.step.get());
     if (!delayed)
         return;
 
-    auto plans = DelayedMaterializingCTEsStep::makePlansForCTEs(std::move(*delayed));
+    auto plans = DelayedMaterializingCTEsStep::makePlansForCTEs(std::move(*delayed), optimization_settings);
 
     SharedHeaders input_headers;
     input_headers.reserve(1 + plans.size());
@@ -38,7 +42,7 @@ void addPlansForMaterializingCTEs(QueryPlan & root_plan, QueryPlan::Node & node,
 
 }
 
-void resolveMaterializingCTEs(QueryPlan & root_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & root_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -55,7 +59,7 @@ void resolveMaterializingCTEs(QueryPlan & root_plan, QueryPlan::Node & root, Que
             continue;
         }
 
-        addPlansForMaterializingCTEs(root_plan, *frame.node, nodes);
+        addPlansForMaterializingCTEs(optimization_settings, root_plan, *frame.node, nodes);
 
         stack.pop_back();
     }

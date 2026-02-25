@@ -103,7 +103,7 @@ QUERY id: 0
             LIST id: 21, nodes: 2
               COLUMN id: 22, column_name: uid, result_type: Int16, source_id: 4
               COLUMN id: 23, column_name: uid, result_type: Int16, source_id: 12
-MaterializingCTEs
+MaterializingCTEs (Materialize CTEs before main query execution)
 Header: count() UInt64
   Expression ((Project names + Projection))
   Header: count() UInt64
@@ -139,7 +139,7 @@ Header: count() UInt64
               name String
               age Int16
 3
-MaterializingCTEs
+MaterializingCTEs (Materialize CTEs before main query execution)
   Expression ((Project names + Projection))
     Aggregating
       Expression (Before GROUP BY)

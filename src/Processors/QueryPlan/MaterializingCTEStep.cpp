@@ -1,6 +1,7 @@
 #include <memory>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -107,7 +108,9 @@ QueryPipelineBuilderPtr DelayedMaterializingCTEsStep::updatePipeline(QueryPipeli
         "Cannot build pipeline in DelayedMaterializingCTEs. This step should be optimized out.");
 }
 
-std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
+std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(
+    DelayedMaterializingCTEsStep && step,
+    const QueryPlanOptimizationSettings & optimization_settings)
 {
     std::vector<std::unique_ptr<QueryPlan>> plans;
     for (auto & [materialized_cte, plan] : step.cte_plans)
@@ -115,6 +118,7 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansF
         if (materialized_cte->is_built)
             continue;
 
+        plan->optimize(optimization_settings);
         plans.emplace_back(std::move(plan));
     }
     return plans;

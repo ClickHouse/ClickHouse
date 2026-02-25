@@ -73,7 +73,9 @@ public:
 
     /// Returns the subset of pre-built CTE plans that still need to be executed,
     /// atomically marking each as materialized. CTEs already marked are skipped.
-    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
+    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(
+        DelayedMaterializingCTEsStep && step,
+        const QueryPlanOptimizationSettings & optimization_settings);
 
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }

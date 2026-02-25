@@ -220,7 +220,7 @@ bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings
 /// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
 /// Must be called after the second optimization pass so that is_materialized flags
 /// set by buildOrderedSetInplace are already visible.
-void resolveMaterializingCTEs(QueryPlan & root_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & root_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan
