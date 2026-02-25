@@ -22,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
     extern const int DATABASE_ACCESS_DENIED;
 }
 
