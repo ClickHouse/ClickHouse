@@ -30,11 +30,8 @@ endif()
 
 if (ENABLE_LLVM_LIBC_MATH)
     link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
-
-    if (ARCH_AMD64 OR ARCH_AARCH64)
-        target_link_libraries(global-libs INTERFACE libllvmlibc)
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
-    endif()
+    target_link_libraries(global-libs INTERFACE libllvmlibc)
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 endif()
 
 if (OS_ANDROID)
