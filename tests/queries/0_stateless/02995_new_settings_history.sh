@@ -22,7 +22,7 @@ then
 fi
 
 # Note that this is a broad check. A per version check is done in the upgrade test
-# Baselines generated with v26.1.1 (pre-release)
+# Baselines generated with v26.2.1 (pre-release)
 # clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_settings_26_2_1.tsv
 # clickhouse local --query "select name, value from system.merge_tree_settings order by name format TSV" > 02995_merge_tree_settings_settings_26_2_1.tsv
 $CLICKHOUSE_LOCAL --query "
