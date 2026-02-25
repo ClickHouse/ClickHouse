@@ -97,7 +97,15 @@ std::pair<String, StoragePtr> createTableFromAST(
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
-        StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
+        bool lazy_init = StorageFactory::instance().getStorageFeatures(table_function->getStorageEngineName()).supports_schema_inference;
+        StoragePtr storage = table_function->execute(
+            table_function_ast,
+            context,
+            ast_create_query.getTable(),
+            std::move(columns),
+            /*use_global_context=*/false,
+            /*is_insert_query=*/false,
+            lazy_init);
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.getTable(), storage};
     }

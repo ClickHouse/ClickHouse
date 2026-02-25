@@ -41,6 +41,11 @@ class ITableFunction : public std::enable_shared_from_this<ITableFunction>
 public:
     static std::string getDatabaseName() { return "_table_function"; }
 
+    /// The name which is used in ENGINE section of the CREATE query.
+    /// This name is registered in the storage factory and used
+    /// to check privileges.
+    virtual const char * getStorageEngineName() const = 0;
+
     /// Get the main function name.
     virtual std::string getName() const = 0;
 
@@ -85,8 +90,14 @@ public:
     virtual void setPartitionBy(const ASTPtr &) {}
 
     /// Create storage according to the query.
-    StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
+    StoragePtr execute(
+        const ASTPtr & ast_function,
+        ContextPtr context,
+        const std::string & table_name,
+        ColumnsDescription cached_columns_ = {},
+        bool use_global_context = false,
+        bool is_insert_query = false,
+        bool force_lazy_init = false) const;
 
     virtual ~ITableFunction() = default;
 
@@ -97,10 +108,6 @@ private:
     virtual StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const = 0;
 
-    /// The name which is used in ENGINE section of the CREATE query.
-    /// This name is registered in the storage factory and used
-    /// to check privileges.
-    virtual const char * getStorageEngineName() const = 0;
     virtual bool isClusterFunction() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
