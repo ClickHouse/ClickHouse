@@ -20,8 +20,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_)
-    : IStorage(table_id)
+StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_,
+                           const String & format_)
+    : IStorage(table_id), format(format_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);

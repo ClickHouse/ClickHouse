@@ -249,6 +249,10 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 /// Callback for reading blocks of data from client for function input()
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
+class ColumnsDescription;
+/// Callback for inferring schema from input stream for function input()
+using InputSchemaInferenceCallback = std::function<ColumnsDescription(const String & format, ContextPtr)>;
+
 /// Used in distributed task processing
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
@@ -349,6 +353,7 @@ protected:
 
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
+    InputSchemaInferenceCallback input_schema_inference_callback;
 
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
@@ -874,6 +879,11 @@ public:
     /// Get callback for reading data for input()
     InputBlocksReader getInputBlocksReaderCallback() const;
     void resetInputCallbacks();
+
+    /// Schema inference callback for input() table function
+    void setInputSchemaInferenceCallback(InputSchemaInferenceCallback && callback);
+    bool hasInputSchemaInferenceCallback() const;
+    ColumnsDescription inferInputSchema(const String & format) const;
 
     /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }

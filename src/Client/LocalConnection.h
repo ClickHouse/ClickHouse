@@ -196,6 +196,10 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     ReadBuffer * in;
+
+    /// First block deserialized during schema inference (Native format).
+    /// Returned by the block reader callback before the pipeline reads subsequent blocks.
+    std::optional<Block> inferred_first_block;
 };
 
 }

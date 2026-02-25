@@ -6478,6 +6478,27 @@ void Context::resetInputCallbacks()
 
     if (input_blocks_reader)
         input_blocks_reader = {};
+
+    input_schema_inference_callback = {};
+}
+
+
+void Context::setInputSchemaInferenceCallback(InputSchemaInferenceCallback && callback)
+{
+    input_schema_inference_callback = std::move(callback);
+}
+
+bool Context::hasInputSchemaInferenceCallback() const
+{
+    return static_cast<bool>(input_schema_inference_callback);
+}
+
+ColumnsDescription Context::inferInputSchema(const String & format) const
+{
+    if (!input_schema_inference_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input schema inference callback is not set");
+
+    return input_schema_inference_callback(format, shared_from_this());
 }
 
 

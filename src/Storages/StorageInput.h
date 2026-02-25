@@ -12,9 +12,12 @@ class StorageInput final : public IStorage
 {
     friend class ReadFromInput;
 public:
-    StorageInput(const StorageID & table_id, const ColumnsDescription & columns_);
+    StorageInput(const StorageID & table_id, const ColumnsDescription & columns_,
+                 const String & format_ = {});
 
     String getName() const override { return "Input"; }
+
+    const String & getFormat() const { return format; }
 
     /// A table will read from this stream.
     void setPipe(Pipe pipe_);
@@ -31,6 +34,7 @@ public:
 
 private:
     Pipe pipe;
+    String format;
     bool was_pipe_initialized = false;
     bool was_pipe_used = false;
     bool is_input_initialized = false;

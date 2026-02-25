@@ -15,7 +15,15 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTIdentifier_fwd.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/NativeReader.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageInput.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
@@ -51,6 +59,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
@@ -185,6 +194,7 @@ void LocalConnection::sendQuery(
         state->after_send_profile_events.restart();
 
     next_packet_type.reset();
+    inferred_first_block.reset();
 
     /// Prepare input() function
     query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
@@ -198,50 +208,65 @@ void LocalConnection::sendQuery(
         next_packet_type = Protocol::Server::Data;
         state->block = sample;
 
-        String current_format = "Values";
+        String current_format;
 
         const auto & settings = context->getSettingsRef();
-        const char * begin = state->query.data();
 
-        const char * end = begin + state->query.size();
-        const Dialect & dialect = settings[Setting::dialect];
-
-        std::unique_ptr<IParserBase> parser;
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-        else if (dialect == Dialect::prql)
-            parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        else if (dialect == Dialect::promql)
-            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-        else
-            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-
-        ASTPtr parsed_query;
-        if (dialect == Dialect::kusto)
-            parsed_query = parseKQLQueryAndMovePosition(
-                *parser,
-                begin,
-                end,
-                "",
-                /*allow_multi_statements*/ false,
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
-        else
-            parsed_query = parseQueryAndMovePosition(
-                *parser,
-                begin,
-                end,
-                "",
-                /*allow_multi_statements*/ false,
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
-
-        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+        /// If input() was called with an explicit format argument, use it directly.
+        if (const auto * storage_input = typeid_cast<const StorageInput *>(input_storage.get());
+            storage_input && !storage_input->getFormat().empty())
         {
-            if (!insert->format.empty())
-                current_format = insert->format;
+            current_format = storage_input->getFormat();
+            if (current_format != "Native")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Schema inference for input() in clickhouse-local is only supported for Native format, got {}", current_format);
+        }
+        else
+        {
+            current_format = "Values";
+
+            const char * begin = state->query.data();
+
+            const char * end = begin + state->query.size();
+            const Dialect & dialect = settings[Setting::dialect];
+
+            std::unique_ptr<IParserBase> parser;
+            if (dialect == Dialect::kusto)
+                parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+            else if (dialect == Dialect::prql)
+                parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            else if (dialect == Dialect::promql)
+                parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            else
+                parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+            ASTPtr parsed_query;
+            if (dialect == Dialect::kusto)
+                parsed_query = parseKQLQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    "",
+                    /*allow_multi_statements*/ false,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+            else
+                parsed_query = parseQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    "",
+                    /*allow_multi_statements*/ false,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+
+            if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+            {
+                if (!insert->format.empty())
+                    current_format = insert->format;
+            }
         }
 
         chassert(in, "ReadBuffer should be initialized");
@@ -275,10 +300,33 @@ void LocalConnection::sendQuery(
         if (context != query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
+        if (inferred_first_block)
+        {
+            Block block = std::move(*inferred_first_block);
+            inferred_first_block.reset();
+            return block;
+        }
+
         Block block;
         state->input_pipeline_executor->pull(block);
         return block;
     });
+
+    if (in)
+    {
+        query_context->setInputSchemaInferenceCallback([this](const String & format, ContextPtr context) -> ColumnsDescription
+        {
+            if (format != "Native")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Schema inference for input() in clickhouse-local "
+                    "is only supported for Native format, got {}", format);
+
+            auto format_settings = getFormatSettings(context);
+            NativeReader reader(*in, 0, format_settings);
+            inferred_first_block = reader.read();
+            return ColumnsDescription(inferred_first_block->getNamesAndTypesList());
+        });
+    }
 
     try
     {

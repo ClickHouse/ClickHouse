@@ -27,6 +27,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -1496,11 +1497,6 @@ static BlockIO executeQueryImpl(
             }
 
             insert_query->tail.reset();
-        }
-        else
-        {
-            /// reset Input callbacks if query is not INSERT SELECT
-            context->resetInputCallbacks();
         }
 
         StreamLocalLimits limits;

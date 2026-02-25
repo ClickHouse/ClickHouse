@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
@@ -46,6 +47,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String structure;
+    String format;
     ColumnsDescription structure_hint;
 };
 
@@ -64,11 +66,14 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
         return;
     }
 
-    if (args.size() != 1)
+    if (args.size() > 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' requires exactly 1 argument: structure", getName());
+            "Table function '{}' requires at most 2 arguments: structure, format", getName());
 
     structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "structure");
+
+    if (args.size() > 1)
+        format = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context), "format");
 }
 
 ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -76,11 +81,18 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
     if (structure == "auto")
     {
         if (structure_hint.empty())
+        {
+            /// Infer schema from the input stream when format is explicitly specified,
+            /// e.g. CREATE TABLE ... AS SELECT * FROM input('auto', 'Native').
+            if (!format.empty() && context->hasInputSchemaInferenceCallback())
+                return context->inferInputSchema(format);
+
             throw Exception(
                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                 "Table function '{}' was used without structure argument but structure could not be determined automatically. Please, "
                 "provide structure manually",
                 getName());
+        }
         return structure_hint;
     }
     return parseColumnsListFromString(structure, context);
@@ -88,7 +100,7 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
 
 StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context, is_insert_query));
+    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context, is_insert_query), format);
     storage->startup();
     return storage;
 }
