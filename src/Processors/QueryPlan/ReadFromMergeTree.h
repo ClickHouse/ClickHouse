@@ -292,6 +292,7 @@ public:
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
+    void deferFiltersAfterFinalIfNeeded();
 private:
     MergeTreeReaderSettings reader_settings;
 
@@ -318,6 +319,10 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Row policy / prewhere deferred to after FINAL, if needed
+    FilterDAGInfoPtr deferred_row_level_filter;
+    PrewhereInfoPtr deferred_prewhere_info;
 
     LoggerPtr log;
     UInt64 selected_parts = 0;
