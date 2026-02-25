@@ -9,6 +9,8 @@ instead of only after the multi-hour LLVM Coverage pipeline finishes.
 import json
 from datetime import datetime, timezone
 
+import requests
+
 from ci.praktika._environment import _Environment
 from ci.praktika.mangle import _get_workflows
 from ci.praktika.result import Result
@@ -16,6 +18,29 @@ import ci.praktika.cidb as CIDB
 from ci.praktika.settings import Settings
 
 WORKFLOW = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
+
+
+def _cidb_query(url, auth, query):
+    """Run a read-only query and return the response text, or an error string."""
+    try:
+        resp = requests.post(
+            url=url,
+            params={"query": query},
+            headers=auth,
+            timeout=20,
+        )
+        return resp.text.strip() if resp.ok else f"[HTTP {resp.status_code}] {resp.text.strip()}"
+    except Exception as ex:
+        return f"[exception] {ex}"
+
+
+def diagnose_cidb(cidb: CIDB.CIDB) -> None:
+    print("=== CI DB diagnostics ===")
+    print("SHOW DATABASES:")
+    print(_cidb_query(cidb.url, cidb.auth, "SHOW DATABASES"))
+    print("SHOW TABLES FROM coverage_ci:")
+    print(_cidb_query(cidb.url, cidb.auth, "SHOW TABLES FROM coverage_ci"))
+    print("=========================")
 
 
 def insert_hello_world_row() -> None:
@@ -27,6 +52,8 @@ def insert_hello_world_row() -> None:
     is_ok, error = cidb.check()
     if not is_ok:
         raise RuntimeError(f"CI DB connection check failed: {error}")
+
+    diagnose_cidb(cidb)
 
     row = json.dumps(
         {
