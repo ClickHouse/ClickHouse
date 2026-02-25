@@ -574,6 +574,9 @@ public:
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
 
+    /// Execute a named command (e.g. expire_snapshots for Iceberg tables).
+    virtual void executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context);
+
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/);
 

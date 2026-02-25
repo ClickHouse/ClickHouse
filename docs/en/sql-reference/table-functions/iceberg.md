@@ -523,6 +523,46 @@ x: Ivanov
 y: 993
 ```
 
+### Expire Snapshots {#iceberg-expire-snapshots}
+
+Iceberg tables accumulate snapshots with each INSERT, DELETE, or UPDATE operation. Over time, this can lead to a large number of snapshots and associated data files. The `expire_snapshots` command removes old snapshots and cleans up data files that are no longer referenced by any retained snapshot.
+
+**Syntax:**
+
+```sql
+ALTER TABLE iceberg_table EXECUTE expire_snapshots('timestamp');
+```
+
+Where `timestamp` is a datetime string (e.g., `'2024-06-01 00:00:00'`). All snapshots older than this timestamp will be expired, except for the current snapshot and any snapshots referenced by branches or tags.
+
+**Example:**
+
+```sql
+SET allow_insert_into_iceberg = 1;
+
+-- Create some snapshots by inserting data
+INSERT INTO iceberg_table VALUES (1);
+INSERT INTO iceberg_table VALUES (2);
+INSERT INTO iceberg_table VALUES (3);
+
+-- Expire snapshots older than the given timestamp
+ALTER TABLE iceberg_table EXECUTE expire_snapshots('2025-01-01 00:00:00');
+```
+
+The command performs the following steps:
+
+1. Identifies snapshots matching the expiration criteria
+2. Computes which files are exclusively associated with expired snapshots
+3. Generates new metadata without the expired snapshots
+4. Physically deletes unreachable manifest lists, manifest files, and data files
+
+:::note
+- Only Iceberg format version 2 tables are supported
+- The current snapshot is always preserved, even if it is older than the specified timestamp
+- Snapshots referenced by branches or tags are also preserved
+- Requires the `allow_insert_into_iceberg` setting to be enabled
+:::
+
 ## See Also {#see-also}
 
 * [Iceberg engine](/engines/table-engines/integrations/iceberg.md)

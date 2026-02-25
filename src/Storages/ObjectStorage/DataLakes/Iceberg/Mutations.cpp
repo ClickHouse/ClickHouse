@@ -19,6 +19,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -742,6 +743,259 @@ void alter(
 
     if (i == MAX_TRANSACTION_RETRIES)
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+}
+
+void expireSnapshots(
+    Int64 expire_before_ms,
+    ContextPtr context,
+    ObjectStoragePtr object_storage,
+    const DataLakeStorageSettings & data_lake_settings,
+    PersistentTableComponents & persistent_table_components,
+    const String & write_format,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & blob_storage_type_name,
+    const String & blob_storage_namespace_name,
+    const String & table_name)
+{
+    auto common_path = persistent_table_components.table_path;
+    if (!common_path.starts_with('/'))
+        common_path = "/" + common_path;
+
+    int max_retries = MAX_TRANSACTION_RETRIES;
+    while (--max_retries > 0)
+    {
+        FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, write_format);
+        auto log = getLogger("IcebergExpireSnapshots");
+        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            persistent_table_components.table_path,
+            data_lake_settings,
+            persistent_table_components.metadata_cache,
+            context,
+            log.get(),
+            persistent_table_components.table_uuid);
+
+        filename_generator.setVersion(last_version + 1);
+        filename_generator.setCompressionMethod(compression_method);
+
+        auto metadata = getMetadataJSONObject(
+            metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+
+        if (metadata->getValue<Int32>(f_format_version) < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
+
+        if (!metadata->has(Iceberg::f_current_snapshot_id))
+        {
+            LOG_INFO(log, "No snapshots to expire (table has no current snapshot)");
+            return;
+        }
+
+        Int64 current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+
+        std::set<Int64> ref_snapshot_ids;
+        if (metadata->has(Iceberg::f_refs))
+        {
+            auto refs = metadata->getObject(Iceberg::f_refs);
+            for (const auto & ref_name : refs->getNames())
+            {
+                auto ref_obj = refs->getObject(ref_name);
+                ref_snapshot_ids.insert(ref_obj->getValue<Int64>(Iceberg::f_metadata_snapshot_id));
+            }
+        }
+
+        auto snapshots = metadata->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+        Poco::JSON::Array::Ptr retained_snapshots = new Poco::JSON::Array;
+        std::set<Int64> expired_snapshot_ids;
+        std::vector<String> expired_manifest_list_paths;
+
+        for (UInt32 i = 0; i < snapshots->size(); ++i)
+        {
+            auto snapshot = snapshots->getObject(i);
+            Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+            Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
+
+            bool is_current = (snap_id == current_snapshot_id);
+            bool is_ref = ref_snapshot_ids.contains(snap_id);
+            bool is_newer = (snap_ts >= expire_before_ms);
+
+            if (is_current || is_ref || is_newer)
+            {
+                retained_snapshots->add(snapshot);
+            }
+            else
+            {
+                expired_snapshot_ids.insert(snap_id);
+                if (snapshot->has(Iceberg::f_manifest_list))
+                    expired_manifest_list_paths.push_back(snapshot->getValue<String>(Iceberg::f_manifest_list));
+            }
+        }
+
+        if (expired_snapshot_ids.empty())
+        {
+            LOG_INFO(log, "No snapshots to expire");
+            return;
+        }
+
+        LOG_INFO(log, "Expiring {} snapshots", expired_snapshot_ids.size());
+
+        std::set<String> retained_manifest_paths;
+        std::set<String> retained_data_file_paths;
+
+        for (UInt32 i = 0; i < retained_snapshots->size(); ++i)
+        {
+            auto snapshot = retained_snapshots->getObject(i);
+            if (!snapshot->has(Iceberg::f_manifest_list))
+                continue;
+
+            String manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
+            String storage_manifest_list_path = getProperFilePathFromMetadataInfo(
+                manifest_list_path, persistent_table_components.table_path, persistent_table_components.table_location);
+
+            auto manifest_keys = getManifestList(
+                object_storage, persistent_table_components, context, storage_manifest_list_path, log);
+
+            for (const auto & mf_key : manifest_keys)
+            {
+                retained_manifest_paths.insert(mf_key.manifest_file_path);
+
+                auto manifest_file = getManifestFile(
+                    object_storage, persistent_table_components, context, log,
+                    mf_key.manifest_file_path, mf_key.added_sequence_number, mf_key.added_snapshot_id);
+
+                for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::DATA))
+                    retained_data_file_paths.insert(entry->file_path);
+
+                for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+                    retained_data_file_paths.insert(entry->file_path);
+            }
+        }
+
+        Strings files_to_delete;
+
+        for (const auto & ml_path : expired_manifest_list_paths)
+        {
+            String storage_ml_path = getProperFilePathFromMetadataInfo(
+                ml_path, persistent_table_components.table_path, persistent_table_components.table_location);
+
+            ManifestFileCacheKeys manifest_keys;
+            try
+            {
+                manifest_keys = getManifestList(
+                    object_storage, persistent_table_components, context, storage_ml_path, log);
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Failed to read manifest list {}, skipping", storage_ml_path);
+                continue;
+            }
+
+            for (const auto & mf_key : manifest_keys)
+            {
+                if (!retained_manifest_paths.contains(mf_key.manifest_file_path))
+                {
+                    Iceberg::ManifestFilePtr manifest_file;
+                    try
+                    {
+                        manifest_file = getManifestFile(
+                            object_storage, persistent_table_components, context, log,
+                            mf_key.manifest_file_path, mf_key.added_sequence_number, mf_key.added_snapshot_id);
+                    }
+                    catch (...)
+                    {
+                        LOG_WARNING(log, "Failed to read manifest file {}, skipping", mf_key.manifest_file_path);
+                        continue;
+                    }
+
+                    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::DATA))
+                    {
+                        if (!retained_data_file_paths.contains(entry->file_path))
+                            files_to_delete.push_back(entry->file_path);
+                    }
+
+                    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+                    {
+                        if (!retained_data_file_paths.contains(entry->file_path))
+                            files_to_delete.push_back(entry->file_path);
+                    }
+
+                    files_to_delete.push_back(mf_key.manifest_file_path);
+                }
+            }
+
+            files_to_delete.push_back(storage_ml_path);
+        }
+
+        metadata->set(Iceberg::f_snapshots, retained_snapshots);
+
+        if (metadata->has(Iceberg::f_snapshot_log))
+        {
+            auto snapshot_log = metadata->get(Iceberg::f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
+            Poco::JSON::Array::Ptr retained_log = new Poco::JSON::Array;
+            for (UInt32 i = 0; i < snapshot_log->size(); ++i)
+            {
+                auto entry = snapshot_log->getObject(i);
+                Int64 snap_id = entry->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+                if (!expired_snapshot_ids.contains(snap_id))
+                    retained_log->add(entry);
+            }
+            metadata->set(Iceberg::f_snapshot_log, retained_log);
+        }
+
+        auto now = std::chrono::system_clock::now();
+        auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+        metadata->set(Iceberg::f_last_updated_ms, ms.count());
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata, oss, 4);
+        std::string json_representation = removeEscapedSlashes(oss.str());
+
+        auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
+        auto hint = filename_generator.generateVersionHint();
+
+        if (!writeMetadataFileAndVersionHint(
+                storage_metadata_name,
+                json_representation,
+                hint.path_in_storage,
+                storage_metadata_name,
+                object_storage,
+                context,
+                compression_method,
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        {
+            continue;
+        }
+
+        if (catalog)
+        {
+            String catalog_filename = metadata_name;
+            if (!catalog_filename.starts_with(blob_storage_type_name))
+                catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + metadata_name;
+
+            const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
+            if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
+            {
+                LOG_WARNING(log, "Failed to update catalog metadata, but new metadata file was written");
+            }
+        }
+
+        for (const auto & file_path : files_to_delete)
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(file_path));
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
+            }
+        }
+
+        LOG_INFO(log, "Expired {} snapshots, deleted {} files", expired_snapshot_ids.size(), files_to_delete.size());
+        return;
+    }
+
+    if (max_retries == 0)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessful retries to expire iceberg snapshots");
 }
 
 #endif
