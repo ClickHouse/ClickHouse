@@ -38,6 +38,13 @@ if (ARCH_AARCH64)
         # rcpc:    Load-Acquire RCpc Register. Better support of release/acquire of atomics. Good for allocators and high contention code.
         #          Optional in v8.2, mandatory in v8.3 [9]. Supported in Graviton >=2, Azure and GCP instances.
         # bf16:    Bfloat16, a half-precision floating point format developed by Google Brain. Optional in v8.2, mandatory in v8.6.
+        # sha3:    SHA3 and SM3 instructions (BCAX, EOR3, RAX1, XAR). Optional in v8.2. Available in Graviton >=2, Azure and GCP instances.
+        # sha512:  SHA-512 and SHA-384 instructions. Optional in v8.2. Available in Graviton >=2, Azure and GCP instances.
+        # fp16:    Full half-precision FP arithmetic (scalar and NEON). Optional in v8.2. Available in Graviton >=2, Azure and GCP instances.
+        #
+        # mtune:   Tune instruction scheduling for Neoverse V1 (Graviton 3). Does not change the ISA -- the binary still runs on Graviton 2
+        #          and other ARMv8.2 hardware, but scheduling heuristics are biased toward the uarch used in our primary CI/production fleet.
+        #          Only applied on Linux; macOS/Apple Silicon has a completely different pipeline where Neoverse tuning would be wrong.
         #
         # [1]  https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
         # [2]  https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
@@ -49,9 +56,13 @@ if (ARCH_AARCH64)
         # [8]  https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
         # [9]  https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
         # [10] https://github.com/aws/aws-graviton-getting-started/blob/main/README.md
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16")
-        # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+dotprod,+ssbs,+rcpc,+bf16")
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16+sha3+sha512+fp16")
+        if (OS_LINUX)
+            set (COMPILER_FLAGS "${COMPILER_FLAGS} -mtune=neoverse-v1")
+        endif ()
+        # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable.
+        # No equivalent of -mtune in Rust target features (target-cpu would also change the ISA baseline).
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+dotprod,+ssbs,+rcpc,+bf16,+sha3,+fp16")
     endif ()
 
     # Best-effort check: The build generates and executes intermediate binaries, e.g. protoc and llvm-tablegen. If we build on ARM for ARM
