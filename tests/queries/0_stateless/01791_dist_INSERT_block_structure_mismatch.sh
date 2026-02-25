@@ -15,8 +15,6 @@ $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 -m -q "
     CREATE TABLE tmp_01683 (n Int8) ENGINE=Memory;
     CREATE TABLE dist_01683 (n UInt64) Engine=Distributed(test_cluster_two_shards, currentDatabase(), tmp_01683, n);
 
-    SET async_insert=0;
-
     SET distributed_foreground_insert=1;
     INSERT INTO dist_01683 VALUES (1),(2);
 

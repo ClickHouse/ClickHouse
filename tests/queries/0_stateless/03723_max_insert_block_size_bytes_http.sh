@@ -16,20 +16,20 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "DROP table IF EXISTS test_max_insert_bytes_sh;"
+$CLICKHOUSE_CLIENT -q "DROP table IF EXISTS test_max_insert_bytes_sh;" 
 $CLICKHOUSE_CLIENT -q "DROP table IF EXISTS test_min_insert_rows_bytes_sh;"
 $CLICKHOUSE_CLIENT -q "DROP table IF EXISTS test_min_insert_rows_sh;"
 $CLICKHOUSE_CLIENT -q "DROP table IF EXISTS test_min_insert_bytes_sh;"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test_max_insert_bytes_sh (id UInt64) Engine = MergeTree() Order by id;"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE test_max_insert_bytes_sh (id UInt64) Engine = MergeTree() Order by id;" 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_min_insert_rows_bytes_sh (id UInt64) Engine = MergeTree() Order by id;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_min_insert_rows_sh (id UInt64) Engine = MergeTree() Order by id;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_min_insert_bytes_sh (id UInt64) Engine = MergeTree() Order by id;"
 
-echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+test_max_insert_bytes_sh+FORMAT+TSV&max_insert_block_size_bytes=8&max_insert_block_size=1000000&min_insert_block_size_rows=0&min_insert_block_size_bytes=0" --data-binary @-
-echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+test_min_insert_rows_bytes_sh+FORMAT+TSV&max_insert_block_size_bytes=1000000&max_insert_block_size=1000000&min_insert_block_size_rows=2&min_insert_block_size_bytes=16" --data-binary @-
-echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+test_min_insert_rows_sh+FORMAT+TSV&max_insert_block_size_bytes=1000000&max_insert_block_size=1000000&min_insert_block_size_rows=4&min_insert_block_size_bytes=0" --data-binary @-
-echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0&query=INSERT+INTO+test_min_insert_bytes_sh+FORMAT+TSV&max_insert_block_size_bytes=1000000&max_insert_block_size=1000000&min_insert_block_size_rows=0&min_insert_block_size_bytes=32" --data-binary @-
+echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+test_max_insert_bytes_sh+FORMAT+TSV&max_insert_block_size_bytes=8&max_insert_block_size=1000000&min_insert_block_size_rows=0&min_insert_block_size_bytes=0" --data-binary @-
+echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+test_min_insert_rows_bytes_sh+FORMAT+TSV&max_insert_block_size_bytes=1000000&max_insert_block_size=1000000&min_insert_block_size_rows=2&min_insert_block_size_bytes=16" --data-binary @-
+echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+test_min_insert_rows_sh+FORMAT+TSV&max_insert_block_size_bytes=1000000&max_insert_block_size=1000000&min_insert_block_size_rows=4&min_insert_block_size_bytes=0" --data-binary @-
+echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+test_min_insert_bytes_sh+FORMAT+TSV&max_insert_block_size_bytes=1000000&max_insert_block_size=1000000&min_insert_block_size_rows=0&min_insert_block_size_bytes=32" --data-binary @-
 
 # Wait for all HTTP insert queries to appear in query_log.
 # There is a race between HTTP response being sent and the query_log entry being written.
