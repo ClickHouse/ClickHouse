@@ -215,6 +215,8 @@ public:
     ManifestFileIterator(ManifestFileIterator &&) = delete;
     ManifestFileIterator & operator=(ManifestFileIterator &&) = delete;
 
+    size_t getFileBytesSize() const { return file_bytes_size; }
+
 private:
     void preinitialize(const String & manifest_file_name, const String & common_path, DB::ContextPtr context);
 
@@ -235,6 +237,7 @@ private:
 
     // State for iterative initialization
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer;
+    size_t file_bytes_size;
     String path_to_manifest_file;
     size_t total_rows = 0;
     std::atomic<size_t> current_row_index = 0;

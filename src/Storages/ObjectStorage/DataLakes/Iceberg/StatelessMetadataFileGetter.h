@@ -23,13 +23,14 @@
 namespace DB::Iceberg
 {
 
-ManifestFileCacheableInfo getManifestFile(
+Iceberg::ManifestFileCacheableInfo getManifestFile(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
     const String & filename,
-    size_t bytes_size);
+    Int64 inherited_sequence_number,
+    Int64 inherited_snapshot_id);
 
 
 ManifestFileCacheKeys getManifestList(

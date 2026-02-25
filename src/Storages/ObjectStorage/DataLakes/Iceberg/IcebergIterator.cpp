@@ -125,7 +125,34 @@ using namespace Iceberg;
 //         data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
 // }
 
-Iceberg::ManifestFilePtr SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::next()
+size_t SingleThreadIcebergKeysIterator::ManifestFileWeightFunction::operator()(const Iceberg::ManifestFilePtr & manifest_file) const
+{
+    return manifest_file->getFileBytesSize();
+}
+
+SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::ManifestFilesAsyncronousIterator(
+    Iceberg::ManifestFileContentType manifest_file_content_type_,
+    const SingleThreadIcebergKeysIterator & parent_,
+    size_t max_sum_size_of_manifest_files_in_queue_)
+    : blocking_queue(max_sum_size_of_manifest_files_in_queue_)
+    , index(0)
+    , manifest_file_content_type(manifest_file_content_type_)
+    , parent(parent_)
+{
+    for (size_t i = 0; i < number_of_workers; ++i)
+    {
+        workers.push_back(ThreadFromGlobalPool(
+            [this]()
+            {
+                while (true)
+                {
+                    blocking_queue.push(task());
+                }
+            }));
+    }
+}
+
+Iceberg::ManifestFilePtr SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::task()
 {
     while (true)
     {
@@ -166,8 +193,9 @@ Iceberg::ManifestFilePtr SingleThreadIcebergKeysIterator::ManifestFilesAsyncrono
     }
 }
 
+Iceberg::ManifestFilePtr SingleThreadIcebergKeysIterator::ManifestFilesAsyncronousIterator::task()
 
-namespace
+    namespace
 {
 std::span<const ManifestFileEntryPtr> defineDeletesSpan(
     ManifestFileEntryPtr data_object_, const std::vector<ManifestFileEntryPtr> & deletes_objects, bool is_equality_delete, LoggerPtr logger)

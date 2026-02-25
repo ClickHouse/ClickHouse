@@ -77,20 +77,29 @@ private:
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
 
+    struct ManifestFileWeightFunction
+    {
+        size_t operator()(const Iceberg::ManifestFilePtr & manifest_file) const;
+    };
+
     struct ManifestFilesAsyncronousIterator
     {
-        ConcurrentBoundedQueue<Iceberg::ManifestFilePtr> blocking_queue;
+        ConcurrentBoundedQueue<Iceberg::ManifestFilePtr, ManifestFileWeightFunction> blocking_queue;
         std::atomic<size_t> index;
         const Iceberg::ManifestFileContentType manifest_file_content_type;
         const SingleThreadIcebergKeysIterator & parent;
+        const size_t number_of_workers;
+        const size_t max_sum_size_of_manifest_files_in_queue;
+        std::deque<ThreadFromGlobalPool> workers;
 
         Iceberg::ManifestFilePtr next();
 
-        static Iceberg::ManifestFilePtr task();
+        Iceberg::ManifestFilePtr task();
 
         ManifestFilesAsyncronousIterator(
             Iceberg::ManifestFileContentType manifest_file_content_type_,
-            const SingleThreadIcebergKeysIterator & parent_);
+            const SingleThreadIcebergKeysIterator & parent_,
+            size_t max_sum_size_of_manifest_files_in_queue_);
     } manifest_files_asyncronous_iterator;
 
 };
