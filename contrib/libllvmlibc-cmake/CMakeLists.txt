@@ -52,7 +52,7 @@ if (ARCH_AMD64)
     set_target_properties(libllvmlibc PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
 
     if (X86_ARCH_LEVEL VERSION_LESS 3)
-        # Compat build: no dispatch, SSE2 baseline
+        # Compat build: SSE2 baseline
         target_compile_definitions(libllvmlibc PRIVATE
             ${LLVMLIBC_DEFS_COMMON}
             LIBC_NAMESPACE=${LIBC_NAMESPACE}
@@ -62,7 +62,7 @@ if (ARCH_AMD64)
             LIBC_TARGET_CPU_HAS_FPU_DOUBLE=1
         )
     else()
-        # v3+: single library with AVX/AVX2/FMA, no dispatch needed
+        # v3+: single library with AVX/AVX2/FMA
         target_compile_definitions(libllvmlibc PRIVATE
             ${LLVMLIBC_DEFS_COMMON}
             LIBC_NAMESPACE=${LIBC_NAMESPACE}
