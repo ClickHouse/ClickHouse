@@ -12,10 +12,10 @@ namespace ProfileEvents
     extern const Event JoinBuildTableRowCount;
     extern const Event JoinProbeTableRowCount;
     extern const Event JoinResultRowCount;
-    extern const Event JoinNonJoinedBlockCount;
-    extern const Event JoinNonJoinedRowCount;
-    extern const Event JoinDelayedBlockCount;
-    extern const Event JoinDelayedRowCount;
+    extern const Event JoinNonJoinedTransformBlockCount;
+    extern const Event JoinNonJoinedTransformRowCount;
+    extern const Event JoinDelayedJoinedTransformBlockCount;
+    extern const Event JoinDelayedJoinedTransformRowCount;
 }
 
 namespace DB
@@ -483,8 +483,8 @@ void DelayedJoinedBlocksWorkerTransform::work()
 
     // Add block to the output
     const auto rows = block.rows();
-    ProfileEvents::increment(ProfileEvents::JoinDelayedBlockCount);
-    ProfileEvents::increment(ProfileEvents::JoinDelayedRowCount, rows);
+    ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformBlockCount);
+    ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformRowCount, rows);
     output_chunk.setColumns(block.getColumns(), rows);
 }
 
@@ -614,8 +614,8 @@ Chunk NonJoinedBlocksTransform::generate()
 
     const auto rows = block.rows();
     ProfileEvents::increment(ProfileEvents::JoinResultRowCount, rows);
-    ProfileEvents::increment(ProfileEvents::JoinNonJoinedBlockCount);
-    ProfileEvents::increment(ProfileEvents::JoinNonJoinedRowCount, rows);
+    ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformBlockCount);
+    ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformRowCount, rows);
     return Chunk(block.getColumns(), rows);
 }
 

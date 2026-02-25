@@ -1,3 +1,4 @@
+Algorithm: SpillingHashJoin
 inner join small
 100	49500
 left join small
