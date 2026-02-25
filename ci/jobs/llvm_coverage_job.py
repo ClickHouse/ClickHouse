@@ -208,6 +208,9 @@ if __name__ == "__main__":
 
         if c_line_cov < b_line_cov:
             diff_res.set_failed()
+            diff_res.set_comment(
+                f"Lines: {b_line_cov:.2f}% → {c_line_cov:.2f}% (Δ {delta:+.2f}%)"
+            )
             print("Coverage degraded.")
         else:
             print("Coverage did not degrade.")
