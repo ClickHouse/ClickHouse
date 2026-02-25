@@ -14,7 +14,6 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_plan_optimize_exchanges;
-    extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
@@ -155,7 +154,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes] && from[Setting::use_skip_indexes_on_data_read];
-    enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
         && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
