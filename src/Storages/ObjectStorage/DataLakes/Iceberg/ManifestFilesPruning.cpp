@@ -96,7 +96,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
-    const ManifestFileContent & manifest_file,
+    const ManifestFileIterator & manifest_file,
     DB::ContextPtr context)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)

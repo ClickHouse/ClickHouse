@@ -281,7 +281,7 @@ IcebergIterator::IcebergIterator(
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : logger(getLogger("IcebergIterator"))
-    , filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
+    , filter_dag(filter_dag_ ? std::make_shared<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
     , table_state_snapshot(table_snapshot_)
     , persistent_components(persistent_components_)

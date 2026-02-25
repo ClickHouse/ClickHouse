@@ -92,7 +92,7 @@ Iceberg::ManifestFilePtr getManifestFile(
         auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
             std::move(buffer), filename, getFormatSettings(local_context));
 
-        return std::make_shared<Iceberg::ManifestFileContent>(
+        return std::make_shared<Iceberg::ManifestFileIterator>(
             std::move(manifest_file_deserializer),
             filename,
             persistent_table_components.format_version,

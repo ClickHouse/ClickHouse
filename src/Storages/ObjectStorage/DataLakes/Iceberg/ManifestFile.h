@@ -148,7 +148,7 @@ using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
 
-class ManifestFileContent : public boost::noncopyable
+class ManifestFileIterator : public boost::noncopyable
 {
 public:
     struct ManifestFileEntriesHandle
@@ -169,7 +169,7 @@ public:
         SharedLockGuard<SharedMutex> lock;
     };
 
-    explicit ManifestFileContent(
+    explicit ManifestFileIterator(
         std::unique_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
         const String & manifest_file_name,
         Int32 format_version_,
@@ -179,7 +179,10 @@ public:
         Int64 inherited_snapshot_id,
         const std::string & table_location,
         DB::ContextPtr context,
-        const String & path_to_manifest_file_);
+        const String & path_to_manifest_file_,
+        bool use_partition_pruning_,
+        std::shared_ptr<ActionsDAG> filter_dag_,
+        Int32 table_snapshot_schema_id_);
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle(FileContentType content_type) const;
 
@@ -203,8 +206,8 @@ public:
     /// Process the next manifest file entry and return it. Returns nullptr if all entries have been processed.
     ManifestFileEntryPtr next();
 
-    ManifestFileContent(ManifestFileContent &&) = delete;
-    ManifestFileContent & operator=(ManifestFileContent &&) = delete;
+    ManifestFileIterator(ManifestFileIterator &&) = delete;
+    ManifestFileIterator & operator=(ManifestFileIterator &&) = delete;
 
 private:
     void preinitialize(const String & manifest_file_name, const String & common_path, DB::ContextPtr context);
@@ -240,9 +243,15 @@ private:
     DB::ContextPtr context;
     String manifest_file_name;
     Int32 manifest_schema_id = 0;
+
+    std::atomic<std::size_t> min_max_index_pruned_files = 0;
+    std::atomic<std::size_t> partition_pruned_files = 0;
+    bool use_partition_pruning;
+    const std::shared_ptr<ActionsDAG> filter_dag;
+    const Int32 table_snapshot_schema_id;
 };
 
-using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;
+using ManifestFilePtr = std::shared_ptr<ManifestFileIterator>;
 
 bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);

@@ -72,9 +72,6 @@ private:
     std::optional<Iceberg::ManifestFilesPruner> current_pruner;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
-
-    size_t min_max_index_pruned_files = 0;
-    size_t partition_pruned_files = 0;
 };
 
 }
@@ -98,7 +95,7 @@ public:
 
 private:
     LoggerPtr logger;
-    std::unique_ptr<ActionsDAG> filter_dag;
+    std::shared_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
     Iceberg::PersistentTableComponents persistent_components;

@@ -131,8 +131,7 @@ namespace
 
 }
 
-ManifestFileContent::ManifestFileEntriesHandle
-ManifestFileContent::getFilesWithoutDeletedHandle(FileContentType content_type) const
+ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWithoutDeletedHandle(FileContentType content_type) const
 {
     SharedLockGuard<SharedMutex> shared_lock{files_mutex};
     if (!fully_initialized)
@@ -150,7 +149,7 @@ ManifestFileContent::getFilesWithoutDeletedHandle(FileContentType content_type) 
 
 using namespace DB;
 
-ManifestFileContent::ManifestFileContent(
+ManifestFileIterator::ManifestFileIterator(
     std::unique_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
     const String & manifest_file_name_,
     Int32 format_version_,
@@ -160,7 +159,10 @@ ManifestFileContent::ManifestFileContent(
     Int64 inherited_snapshot_id_,
     const String & table_location_,
     DB::ContextPtr context_,
-    const String & path_to_manifest_file_)
+    const String & path_to_manifest_file_,
+    bool use_partition_pruning_,
+    std::shared_ptr<ActionsDAG> filter_dag_,
+    Int32 table_snapshot_schema_id_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
     , format_version(format_version_)
@@ -171,11 +173,14 @@ ManifestFileContent::ManifestFileContent(
     , table_location(table_location_)
     , context(context_)
     , manifest_file_name(manifest_file_name_)
+    , use_partition_pruning(use_partition_pruning_)
+    , filter_dag(std::move(filter_dag_))
+    , table_snapshot_schema_id(table_snapshot_schema_id_)
 {
     preinitialize(manifest_file_name_, common_path_, context_);
 }
 
-void ManifestFileContent::preinitialize(const String & manifest_file_name_, const String & common_path_, DB::ContextPtr context_)
+void ManifestFileIterator::preinitialize(const String & manifest_file_name_, const String & common_path_, DB::ContextPtr context_)
 {
     insertRowToLogTable(
         context_,
@@ -258,7 +263,7 @@ void ManifestFileContent::preinitialize(const String & manifest_file_name_, cons
     fully_initialized = false;
 }
 
-ManifestFileEntryPtr ManifestFileContent::processRow(size_t row_index)
+ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 {
     insertRowToLogTable(
         context,
@@ -566,9 +571,10 @@ ManifestFileEntryPtr ManifestFileContent::processRow(size_t row_index)
             break;
         }
     }
+    std::optional<ManifestFilesPruner> current_pruner;
     if (use_partition_pruning)
     {
-        current_pruner.emplace(*schema_processor_ptr, table_schema_id, entry->schema_id, filter_dag.get(), *this, local_context);
+        current_pruner.emplace(*schema_processor_ptr, table_snapshot_schema_id, entry->schema_id, filter_dag.get(), *this, context);
     }
     auto pruning_status = current_pruner ? current_pruner->canBePruned(entry) : PruningReturnStatus::NOT_PRUNED;
     insertRowToLogTable(
@@ -611,26 +617,29 @@ ManifestFileEntryPtr ManifestFileContent::processRow(size_t row_index)
     return entry;
 }
 
-bool ManifestFileContent::isInitialized() const
+bool ManifestFileIterator::isInitialized() const
 {
     return fully_initialized;
 }
 
-ManifestFileEntryPtr ManifestFileContent::next()
+ManifestFileEntryPtr ManifestFileIterator::next()
 {
     if (fully_initialized.load())
         return nullptr;
 
     size_t row_index = current_row_index.fetch_add(1);
-    auto entry = processRow(row_index);
-    if (current_row_index.fetch_add(1) >= total_rows)
+    if (row_index >= total_rows)
+    {
         fully_initialized.store(true);
+        return nullptr;
+    }
+    auto entry = processRow(row_index);
 
     return entry;
 }
 
 // We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
-void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files)
+void ManifestFileIterator::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files)
 {
     std::vector<size_t> indices(files.size());
     std::iota(indices.begin(), indices.end(), 0);
@@ -656,19 +665,19 @@ void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFile
     files = std::move(sorted_files);
 }
 
-bool ManifestFileContent::hasPartitionKey() const
+bool ManifestFileIterator::hasPartitionKey() const
 {
     return partition_key_description.has_value();
 }
 
-const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() const
+const DB::KeyDescription & ManifestFileIterator::getPartitionKeyDescription() const
 {
     if (!hasPartitionKey())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no partition key, but it was requested");
     return *(partition_key_description);
 }
 
-bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
+bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
 {
     auto data_files_handle = getFilesWithoutDeletedHandle(FileContentType::DATA);
     for (const auto & file : *data_files_handle)
@@ -685,9 +694,9 @@ bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id
 
 }
 
-size_t ManifestFileContent::getSizeInMemory() const
+size_t ManifestFileIterator::getSizeInMemory() const
 {
-    size_t total_size = sizeof(ManifestFileContent);
+    size_t total_size = sizeof(ManifestFileIterator);
     if (partition_key_description)
         total_size += sizeof(DB::KeyDescription);
 
@@ -713,7 +722,7 @@ size_t ManifestFileContent::getSizeInMemory() const
     return total_size;
 }
 
-std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+std::optional<Int64> ManifestFileIterator::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
     Int64 result = 0;
 
@@ -738,7 +747,7 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
 }
 
 
-std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFilesExcludingDeleted() const
+std::optional<Int64> ManifestFileIterator::getBytesCountInAllDataFilesExcludingDeleted() const
 {
     Int64 result = 0;
     auto data_files_handle = getFilesWithoutDeletedHandle(FileContentType::DATA);

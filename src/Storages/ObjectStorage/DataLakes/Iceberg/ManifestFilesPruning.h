@@ -29,7 +29,7 @@ namespace DB::Iceberg
 {
 
 struct ManifestFileEntry;
-class ManifestFileContent;
+class ManifestFileIterator;
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
 
@@ -55,7 +55,7 @@ public:
         Int32 current_schema_id_,
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,
-        const ManifestFileContent & manifest_file,
+        const ManifestFileIterator & manifest_file,
         DB::ContextPtr context);
 
     PruningReturnStatus canBePruned(const ManifestFileEntryPtr & entry) const;
