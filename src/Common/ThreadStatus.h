@@ -10,6 +10,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -18,9 +19,13 @@
 #include <mutex>
 #include <unordered_set>
 
-
-template <class T>
-class ConcurrentBoundedQueue;
+// namespace detail
+// {
+// template <typename T>
+// struct UnitWeight;
+// }
+// template <class T, class WeightFunction = detail::UnitWeight<T>>
+// class ConcurrentBoundedQueue;
 
 namespace DB
 {
