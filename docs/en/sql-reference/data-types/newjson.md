@@ -1068,12 +1068,13 @@ With lazy type hints enabled, this query returns no rows, confirming the operati
 To materialize type hints in existing data, you can either:
 
 1. **Wait for background merges**: ClickHouse will automatically materialize type hints when parts are merged
-2. **Force materialization**: Use `OPTIMIZE TABLE test_lazy FINAL` to merge all parts immediately
+2. **Force merge**: Use `OPTIMIZE TABLE test_lazy FINAL` to merge all parts immediately
+3. **Rewrite parts**: Use `ALTER TABLE test_lazy REWRITE PARTS` to rewrite parts with the new metadata
 
 ### Limitations {#lazy-type-hints-limitations}
 
 - This feature is experimental and may change in future versions
-- Query-time type conversion has a small performance overhead compared to pre-materialized types
+- Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
 - The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
 
 ## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
