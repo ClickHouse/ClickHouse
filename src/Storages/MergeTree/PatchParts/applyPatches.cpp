@@ -226,7 +226,7 @@ void CombinedPatchBuilder::build()
 
 IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions) const
 {
-    std::vector<IColumn::Patch::Source> sources;
+    VectorWithMemoryTracking<IColumn::Patch::Source> sources;
 
     for (const auto & patch_block : all_patch_blocks)
     {
