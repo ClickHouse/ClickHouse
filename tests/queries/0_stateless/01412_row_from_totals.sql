@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS tracking_events_tmp;
 DROP TABLE IF EXISTS open_events_tmp;
+SET enable_auto_spilling_hash_join = 0; -- Remove once totals are handled correctly with spilling hash join
 
 CREATE TABLE tracking_events_tmp (`APIKey` UInt32, `EventDate` Date) ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (APIKey, EventDate);
 CREATE TABLE open_events_tmp (`APIKey` UInt32, `EventDate` Date) ENGINE = MergeTree PARTITION BY toMonday(EventDate) ORDER BY (APIKey, EventDate);
@@ -18,7 +19,7 @@ FROM
     WHERE (EventDate >= toDate('2020-07-10')) AND (EventDate <= toDate('2020-07-11')) AND (APIKey = 2)
     GROUP BY EventDate
 )
-FULL OUTER JOIN 
+FULL OUTER JOIN
 (
     SELECT EventDate
     FROM remote('127.0.0.{1,3}', currentDatabase(), open_events_tmp) AS t2

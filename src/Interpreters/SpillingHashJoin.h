@@ -20,6 +20,8 @@ class HashJoin;
 class GraceHashJoin;
 class ConcurrentHashJoin;
 
+// TODO(antaljanosbenjamin): Disable SpillingHashJoin when totals are used.
+
 /// An IJoin wrapper that automatically switches to GraceHashJoin to spill to disk when memory limits are exceeded.
 ///
 /// Operates in two modes depending on the constructor parameters:
@@ -66,6 +68,8 @@ public:
 
     ~SpillingHashJoin() override;
 
+    // TODO(antaljanosbenjamin): Combine the name of the inner join to be able to distinguish between normal and
+    // concurrent hash join
     std::string getName() const override { return "SpillingHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 

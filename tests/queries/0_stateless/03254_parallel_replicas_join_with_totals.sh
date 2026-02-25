@@ -22,6 +22,7 @@ for enable_parallel_replicas in {0..1}; do
   ${CLICKHOUSE_CLIENT} --query="
   --- Old analyzer uses different code path and it produces wrong result in this case.
   set enable_analyzer=1;
+  set enable_auto_spilling_hash_join = 0; -- Remove once totals are handled correctly with spilling hash join
   set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;
 
   SELECT *

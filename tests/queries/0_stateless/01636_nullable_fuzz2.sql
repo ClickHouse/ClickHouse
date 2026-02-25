@@ -1,3 +1,5 @@
+SET enable_auto_spilling_hash_join = 0; -- Remove once totals are handled correctly with spilling hash join
+
 DROP TABLE IF EXISTS open_events_tmp;
 DROP TABLE IF EXISTS tracking_events_tmp;
 
@@ -20,7 +22,7 @@ FROM
     WHERE (EventDate >= toDate('2020-07-09')) AND (EventDate <= toDate('2020-07-11')) AND (APIKey = 2)
     GROUP BY EventDate
 )
-FULL OUTER JOIN 
+FULL OUTER JOIN
 (
     SELECT EventDate
     FROM remote('127.0.0.{1,3}', currentDatabase(), open_events_tmp) AS t2
