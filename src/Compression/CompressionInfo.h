@@ -49,7 +49,7 @@ enum class CompressionMethodByte : uint8_t
     /// DeflateQpl      = 0x99, /// Removed, don't reuse for another codec
     GCD             = 0x9a,
     /// ZSTD_QPL        = 0x9b, /// Removed, don't reuse for another codec
-    T64B            = 0x9c,
+    ByteStreamSplit = 0x9c,
 };
 
 }

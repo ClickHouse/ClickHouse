@@ -201,12 +201,12 @@ void registerCodecMultiple(CompressionCodecFactory & factory);
 /// in standalone build
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
-void registerCodecT64B(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+void registerCodecByteStreamSplit(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -217,12 +217,12 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecMultiple(*this);
     registerCodecDelta(*this);
     registerCodecT64(*this);
-    registerCodecT64B(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
     registerCodecGCD(*this);
+    registerCodecByteStreamSplit(*this);
 
     default_codec = get("LZ4", {});
 }
