@@ -87,7 +87,7 @@ protected:
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
                 database_name = databases->getDataAt(database_idx);
-                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name, context);
 
                 if (database)
                     break;
@@ -274,7 +274,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext());
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

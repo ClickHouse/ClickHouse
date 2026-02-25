@@ -908,7 +908,7 @@ namespace
         }
 
         /// The user could specify session identifier and session timeout.
-        /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+        /// It allows to modify settings, create temporary tables/databases and reuse them in subsequent requests.
         if (!query_info.session_id().empty())
         {
             session->makeSessionContext(

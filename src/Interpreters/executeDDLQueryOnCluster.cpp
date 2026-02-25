@@ -230,7 +230,7 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
         database_name = context->getCurrentDatabase();
 
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
-    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name, context);
     if (database && database->shouldReplicateQuery(context, query_ptr))
     {
         if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database] && database_name != query_on_cluster->cluster)

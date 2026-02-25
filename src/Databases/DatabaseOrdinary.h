@@ -18,12 +18,14 @@ public:
     DatabaseOrdinary(
         const String & name_,
         const String & metadata_path_,
+        bool is_temporary_,
         ContextPtr context,
         DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
     DatabaseOrdinary(
         const String & name_,
         const String & metadata_path_,
         const String & data_path_,
+        bool is_temporary_,
         const String & logger,
         ContextPtr context_,
         DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});

@@ -27,50 +27,53 @@ namespace
     /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
     void visitCreateQuery(ASTCreateQuery & create, const DDLRenamingVisitor::Data & data)
     {
-        if (create.isTemporary())
+        if (create.table)
         {
-            /// CREATE TEMPORARY TABLE
-            String table_name = create.getTable();
-            QualifiedTableName full_table_name{DatabaseCatalog::TEMPORARY_DATABASE, table_name};
-            const auto & new_table_name = data.renaming_map.getNewTableName(full_table_name);
-            if (new_table_name != full_table_name)
+            if (create.isTemporary())
             {
-                create.setTable(new_table_name.table);
-                if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
-                {
-                    create.setIsTemporary(false);
-                    create.setDatabase(new_table_name.database);
-                }
-            }
-        }
-        else if (create.table)
-        {
-            /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW
-            QualifiedTableName full_name;
-            full_name.table = create.getTable();
-            full_name.database = create.getDatabase();
-
-            if (!full_name.database.empty() && !full_name.table.empty())
-            {
-                auto new_table_name = data.renaming_map.getNewTableName(full_name);
-                if (new_table_name != full_name)
+                /// CREATE TEMPORARY TABLE
+                String table_name = create.getTable();
+                QualifiedTableName full_table_name{DatabaseCatalog::TEMPORARY_DATABASE, table_name};
+                const auto & new_table_name = data.renaming_map.getNewTableName(full_table_name);
+                if (new_table_name != full_table_name)
                 {
                     create.setTable(new_table_name.table);
-                    if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+                    if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
                     {
-                        create.setIsTemporary(true);
-                        create.setDatabase("");
-                    }
-                    else
-                    {
+                        create.setIsTemporary(false);
                         create.setDatabase(new_table_name.database);
+                    }
+                }
+            }
+            else
+            {
+                /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW
+                QualifiedTableName full_name;
+                full_name.table = create.getTable();
+                full_name.database = create.getDatabase();
+
+                if (!full_name.database.empty() && !full_name.table.empty())
+                {
+                    auto new_table_name = data.renaming_map.getNewTableName(full_name);
+                    if (new_table_name != full_name)
+                    {
+                        create.setTable(new_table_name.table);
+                        if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+                        {
+                            create.setIsTemporary(true);
+                            create.setDatabase("");
+                        }
+                        else
+                        {
+                            create.setDatabase(new_table_name.database);
+                        }
                     }
                 }
             }
         }
         else if (create.database)
         {
-            /// CREATE DATABASE
+            /// CREATE [TEMPORARY] DATABASE
             String database_name = create.getDatabase();
             if (!database_name.empty())
             {

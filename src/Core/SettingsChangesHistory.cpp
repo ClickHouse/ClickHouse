@@ -42,6 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"allow_experimental_temporary_databases", false, false, "New experimental setting."},
+            {"show_temporary_databases_from_other_sessions_in_system_tables", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {

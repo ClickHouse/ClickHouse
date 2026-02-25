@@ -114,7 +114,7 @@ void StorageTimeSeries::normalizeTableDefinition(ASTCreateQuery & create_query, 
     {
         auto as_database = local_context->resolveDatabase(create_query.as_database);
         as_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
-            DatabaseCatalog::instance().getDatabase(as_database)->getCreateTableQuery(create_query.as_table, local_context));
+            DatabaseCatalog::instance().getDatabase(as_database, local_context)->getCreateTableQuery(create_query.as_table, local_context));
     }
     TimeSeriesDefinitionNormalizer normalizer{time_series_storage_id, time_series_settings, as_create_query.get()};
     normalizer.normalize(create_query);

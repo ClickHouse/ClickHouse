@@ -339,6 +339,18 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
+void throwIfTemporaryDatabaseUsedOnCluster(const String & database_name, const ContextPtr & context)
+{
+    if (!database_name.empty())
+        throwIfTemporaryDatabaseUsedOnCluster(DatabaseCatalog::instance().tryGetDatabase(database_name, context));
+}
+
+void throwIfTemporaryDatabaseUsedOnCluster(const DatabasePtr & db)
+{
+    if (db && db->isTemporary())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ON CLUSTER cannot be used with temporary databases or tables inside");
+}
+
 void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context [[maybe_unused]])
 {
     if (!command.comment)
@@ -377,8 +389,8 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
     }
 }
 
-DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : DatabaseWithAltersOnDiskBase(name_)
+DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, bool is_temporary_, const String & logger, ContextPtr context_)
+    : DatabaseWithAltersOnDiskBase(name_, is_temporary_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(logger))
 {

@@ -210,6 +210,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `CREATE ARBITRARY TEMPORARY TABLE`
       - `CREATE TEMPORARY TABLE`
     - `CREATE DATABASE`
+      - `CREATE TEMPORARY DATABASE`
     - `CREATE DICTIONARY`
     - `CREATE FUNCTION`
     - `CREATE RESOURCE`
@@ -465,6 +466,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 
 - `CREATE`. Level: `GROUP`
   - `CREATE DATABASE`. Level: `DATABASE`
+    - `CREATE TEMPORARY DATABASE`. Level: `DATABASE`
   - `CREATE TABLE`. Level: `TABLE`
     - `CREATE ARBITRARY TEMPORARY TABLE`. Level: `GLOBAL`
       - `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
@@ -530,6 +532,7 @@ Allows executing `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries according to th
   - `SHOW TABLES`. Level: `TABLE`. Allows to execute `SHOW TABLES`, `EXISTS <table>`, `CHECK <table>` queries.
   - `SHOW COLUMNS`. Level: `COLUMN`. Allows to execute `SHOW CREATE TABLE`, `DESCRIBE` queries.
   - `SHOW DICTIONARIES`. Level: `DICTIONARY`. Allows to execute `SHOW DICTIONARIES`, `SHOW CREATE DICTIONARY`, `EXISTS <dictionary>` queries.
+  - `SHOW ALL TEMPORARY DATABASES`. Level: `GLOBAL`. Allows to use `show_temporary_databases_from_other_sessions_in_system_tables` setting.
 
 **Notes**
 

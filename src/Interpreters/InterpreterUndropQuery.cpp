@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterUndropQuery.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
+#include <Databases/DatabasesCommon.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -29,14 +30,16 @@ InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterUndropQuery::execute()
 {
-    getContext()->checkAccess(AccessType::UNDROP_TABLE);
+    const auto & context = getContext();
+    context->checkAccess(AccessType::UNDROP_TABLE);
 
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
-    if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, context))
     {
+        throwIfTemporaryDatabaseUsedOnCluster(undrop.getDatabase(), context);
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(query_ptr, context, params);
     }
 
     if (undrop.table)
@@ -57,7 +60,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);
 
-    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name, context);
     if (database->getEngineName() == "Replicated")
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Replicated database does not support UNDROP query");
     if (database->isTableExist(table_id.table_name, getContext()))
@@ -74,7 +77,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     }
 #endif
 
-    DatabaseCatalog::instance().undropTable(table_id);
+    DatabaseCatalog::instance().undropTable(table_id, context);
     return {};
 }
 

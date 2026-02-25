@@ -64,8 +64,9 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
-        std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
+        std::unique_ptr<MaterializedPostgreSQLSettings> settings_,
+        bool is_temporary_)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid_, is_temporary_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , is_attach(is_attach_)
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
@@ -558,7 +559,8 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,
             args.database_name, configuration.database, connection_info,
-            std::move(postgresql_replica_settings));
+            std::move(postgresql_replica_settings),
+            args.is_temporary);
     };
     factory.registerDatabase("MaterializedPostgreSQL", create_fn, {
         .supports_arguments = true,

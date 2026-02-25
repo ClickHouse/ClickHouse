@@ -159,6 +159,7 @@ struct ParallelReadResponse;
 class S3SettingsByEndpoint;
 class AzureSettingsByEndpoint;
 class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 class DDLWorker;
 class ITableFunction;
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
@@ -192,6 +193,9 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+
+struct TemporaryDatabaseHolder;
+using TemporaryDatabasesMapping = std::map<String, std::shared_ptr<TemporaryDatabaseHolder>>;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -304,6 +308,7 @@ class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
+struct GetDatabasesOptions;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
@@ -392,6 +397,7 @@ protected:
 
     String insert_format; /// Format, used in insert query.
 
+    TemporaryDatabasesMapping temporary_databases_mapping;
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
@@ -724,7 +730,11 @@ public:
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
-    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const;
+    DatabaseAndTable getOrCacheStorage(
+        const StorageID & id,
+        const GetDatabasesOptions & options,
+        std::function<DatabaseAndTable()> storage_getter,
+        std::optional<Exception> * exception) const;
 
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
@@ -958,6 +968,12 @@ public:
     void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
+
+    void addTemporaryDatabase(const String & database_name, DatabasePtr database);
+    bool hasTemporaryDatabase(const String & database_name) const;
+    bool hasTemporaryDatabase(const DatabasePtr & database) const;
+    void renameTemporaryDatabase(const String & old_name, const String & new_name);
+    void removeTemporaryDatabase(const String & database_name);
 
     Scalars getScalars() const;
     Block getScalar(const String & name) const;
@@ -1214,6 +1230,11 @@ public:
 
     ContextMutablePtr getSessionContext() const;
     bool hasSessionContext() const { return !session_context.expired(); }
+    bool isSessionContext() const
+    {
+        auto ptr = session_context.lock();
+        return ptr && ptr.get() == this;
+    }
 
     ContextMutablePtr getGlobalContext() const;
 

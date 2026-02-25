@@ -231,7 +231,9 @@ enum class AccessType : uint8_t
     \
     M(ALTER, "", GROUP, ALL) /* allows to execute ALTER TABLE */\
     \
-    M(CREATE_DATABASE, "", DATABASE, CREATE) /* allows to execute {CREATE|ATTACH} DATABASE */\
+    M(CREATE_DATABASE, "", DATABASE, CREATE) /* allows to execute {CREATE|ATTACH} {TEMPORARY} DATABASE */\
+    M(CREATE_TEMPORARY_DATABASE, "", DATABASE, CREATE) /* allows to create and manipulate temporary databases and tables inside;
+                                                        implicitly enabled by the grant CREATE_DATABASE; */\
     M(CREATE_TABLE, "", TABLE, CREATE) /* allows to execute {CREATE|ATTACH} {TABLE|VIEW} */\
     M(CREATE_VIEW, "", VIEW, CREATE) /* allows to execute {CREATE|ATTACH} VIEW;
                                         implicitly enabled by the grant CREATE_TABLE */\
@@ -298,6 +300,7 @@ enum class AccessType : uint8_t
     M(SHOW_QUOTAS, "SHOW CREATE QUOTA", GLOBAL, SHOW_ACCESS) \
     M(SHOW_SETTINGS_PROFILES, "SHOW PROFILES, SHOW CREATE SETTINGS PROFILE, SHOW CREATE PROFILE", GLOBAL, SHOW_ACCESS) \
     M(SHOW_MASKING_POLICIES, "SHOW CREATE MASKING POLICY", GLOBAL, SHOW_ACCESS) \
+    M(SHOW_ALL_TEMPORARY_DATABASES, "SHOW ALL TEMPORARY DATABASES", GLOBAL, SHOW_ACCESS) \
     M(SHOW_ACCESS, "", GROUP, ACCESS_MANAGEMENT) \
     M(IMPERSONATE, "EXECUTE AS", USER_NAME, ACCESS_MANAGEMENT) \
     M(ACCESS_MANAGEMENT, "", GROUP, ALL) \

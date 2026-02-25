@@ -13,6 +13,7 @@ namespace DB
 {
 
 class IDisk;
+class AccessRightsElements;
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, bool validate_new_create_query = true);
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
@@ -23,6 +24,9 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path);
 void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata);
+
+void throwIfTemporaryDatabaseUsedOnCluster(const String & database_name, const ContextPtr & context);
+void throwIfTemporaryDatabaseUsedOnCluster(const DatabasePtr & db);
 
 /// TODO: move more common code to here
 class DatabaseWithAltersOnDiskBase : public IDatabase
@@ -66,7 +70,7 @@ protected:
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 
-    DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
+    DatabaseWithOwnTablesBase(const String & name_, bool is_temporary_, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
     StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);

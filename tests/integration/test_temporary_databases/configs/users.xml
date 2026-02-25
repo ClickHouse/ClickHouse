@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_temporary_databases>1</allow_experimental_temporary_databases>
+        </default>
+    </profiles>
+</clickhouse>

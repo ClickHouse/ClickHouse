@@ -54,7 +54,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 
     using RocksDBStoragePtr = std::shared_ptr<StorageEmbeddedRocksDB>;
     std::map<String, std::map<String, RocksDBStoragePtr>> tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, context))
     {
         if (db.second->isExternal())
             continue;

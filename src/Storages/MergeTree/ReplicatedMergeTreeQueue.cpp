@@ -1817,7 +1817,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
 
         auto database_name = storage.getStorageID().database_name;
-        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        auto database = DatabaseCatalog::instance().getDatabase(database_name, storage.getContext());
         if (!database->canExecuteReplicatedMetadataAlter())
         {
             LOG_TRACE(LogToStr(out_postpone_reason, log), "Cannot execute alter metadata {} with version {} "
