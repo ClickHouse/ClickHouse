@@ -768,7 +768,6 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            LOG_DEBUG(storage.log, "Flush buffer by threshold");
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
             buffer.metadata_version = metadata_version;
         }
@@ -854,7 +853,6 @@ bool StorageBuffer::optimize(
     if (cleanup)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
 
-    LOG_DEBUG(log, "Running optimize of buffers.");
     flushAllBuffers(false);
     return true;
 }
@@ -1114,7 +1112,6 @@ void StorageBuffer::backgroundFlush()
 {
     try
     {
-        LOG_DEBUG(log, "Running background flush of buffers.");
         flushAllBuffers(true);
     }
     catch (...)
