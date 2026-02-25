@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-parallel-replicas, no-async-insert
 
---- GitHub issue 56144
+--- GitHub issue 56144 
 --- Tests number values of enum are validated during insertion.
 
 SELECT 'Table insertion';
@@ -28,7 +28,7 @@ SELECT 'Non-null values';
 SET check_conversion_from_numbers_to_enum = 0; -- legacy behavior
 
 INSERT INTO enum_table VALUES (0, 'first');
-INSERT INTO enum_table VALUES (0, 'fifth'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO enum_table VALUES (0, 0);
 
 INSERT INTO enum_table SELECT 0, 'first';
@@ -38,8 +38,8 @@ INSERT INTO enum_table SELECT 0, 0;
 SET check_conversion_from_numbers_to_enum = 1; -- default behavior
 
 INSERT INTO enum_table VALUES (0, 'first');
-INSERT INTO enum_table VALUES (0, 'fifth'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
-INSERT INTO enum_table VALUES (0, 0); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO enum_table VALUES (0, 0); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 
 INSERT INTO enum_table SELECT 0, 'first';
 INSERT INTO enum_table SELECT 0, 'fifth'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
@@ -67,16 +67,16 @@ SELECT 'Non-null values';
 SET check_conversion_from_numbers_to_enum = 0; -- legacy behavior
 
 INSERT INTO nullable_enum_table VALUES (0, 'first');
-INSERT INTO nullable_enum_table VALUES (0, 'fifth'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO nullable_enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO nullable_enum_table VALUES (0, NULL);
 INSERT INTO nullable_enum_table VALUES (0, 0);
 
 SET check_conversion_from_numbers_to_enum = 1; -- default behavior
 
 INSERT INTO nullable_enum_table VALUES (0, 'first');
-INSERT INTO nullable_enum_table VALUES (0, 'fifth'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO nullable_enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO nullable_enum_table VALUES (0, NULL);
-INSERT INTO nullable_enum_table VALUES (0, 0); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO nullable_enum_table VALUES (0, 0); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 
 DROP TABLE nullable_enum_table;
 
