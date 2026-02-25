@@ -113,10 +113,11 @@ std::string API::requestNonce() const
     LOG_TEST(log, "Requesting nonce from {}", directory->new_nonce.toString());
 
     auto uri = Poco::URI(directory->new_nonce);
-    auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, uri.getPathAndQuery());
+    auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     r.set("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, connection_timeout_settings, proxy_configuration);
+    session->setKeepAlive(false);
     session->sendRequest(r);
 
     auto response = Poco::Net::HTTPResponse();
@@ -164,12 +165,13 @@ std::string API::doJWSRequest(
     std::string nonce = requestNonce();
     std::string request_data = formatJWSRequestData(url, payload, nonce);
 
-    auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery());
+    auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     r.set("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
     r.set("Content-Type", APPLICATION_JOSE_JSON);
     r.set("Content-Length", std::to_string(request_data.size()));
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, connection_timeout_settings, proxy_configuration);
+    session->setKeepAlive(false);
 
     ProfileEvents::increment(ProfileEvents::ACMEAPIRequests);
 

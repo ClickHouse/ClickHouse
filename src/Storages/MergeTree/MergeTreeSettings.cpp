@@ -1935,7 +1935,7 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
+    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
     Enabled cleanup of Keeper entries of empty partition.
     )", 0) \
     DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
@@ -2550,6 +2550,10 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         constraints.get(*this, setting_name, min, max, disallowed_values, writability);
+
+        /// Certain merge tree settings are unconditionally read-only
+        if (isReadonlySetting(setting_name))
+            writability = SettingConstraintWritability::CONST;
 
         /// These two columns can accept strings only.
         if (!min.isNull())

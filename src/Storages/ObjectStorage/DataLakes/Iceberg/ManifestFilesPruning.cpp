@@ -110,6 +110,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
     transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
+    chassert(transformed_dag != nullptr);
 
     if (manifest_file.hasPartitionKey())
     {

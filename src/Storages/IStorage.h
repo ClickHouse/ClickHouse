@@ -96,6 +96,8 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
+    virtual std::vector<StorageID> getInnerStorageIDs() const { return {}; }
+
     virtual bool isMergeTree() const { return false; }
 
     virtual bool isDataLake() const { return false; }
