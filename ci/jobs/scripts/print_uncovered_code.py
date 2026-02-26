@@ -146,10 +146,11 @@ if __name__ == "__main__":
         is_failing = True
     else:
         print("No uncovered changed lines found.")
-    
+
     r = Result.create_from(
         name="Print Uncovered Code",
-        status=Result.Status.FAILED if is_failing else Result.Status.SUCCESS
+        status=Result.Status.FAILED if is_failing else Result.Status.SUCCESS,
+        info=msg,
     )
     r.set_comment(msg)
     r.complete_job()

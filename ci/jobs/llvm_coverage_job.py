@@ -217,25 +217,12 @@ if __name__ == "__main__":
 
         if c_line_cov < b_line_cov:
             diff_res.set_failed()
+            diff_res.set_comment(
+                f"Coverage in main branch: {b_line_cov:.2f}%, coverage in PR: {c_line_cov:.2f}%. Coverage degraded by {delta:.2f} percentage points."
+            )
             print("Coverage degraded.")
         else:
             print("Coverage did not degrade.")
-
-        results.append(diff_res)
-
-        # Generate report for changed blocks only
-        print_res = Result.from_commands_run(
-            name="Print uncovered changed code with context",
-            command=["python3 ci/jobs/scripts/print_uncovered_code.py"],
-            with_log=True,
-            with_info=True,
-            with_info_on_failure=True,
-        )
-        if print_res.is_error or print_res.is_failure:
-            print_res.set_comment(
-                f"Lines: {b_line_cov:.2f}% → {c_line_cov:.2f}% (Δ {delta:+.2f}%)"
-            )
-        results.append(print_res)
 
         # Compress and attach the diff HTML report archive + files to the diff result.
         Utils.compress_gz(
@@ -248,6 +235,12 @@ if __name__ == "__main__":
         )
         diff_res.files.extend(_diff_files)
         diff_res.assets.extend(_diff_assets)
+        results.append(diff_res)
+
+        # Generate report for changed blocks only
+        Shell.run("python3 ci/jobs/scripts/print_uncovered_code.py", verbose=True)
+        print_res = Result.from_fs("Print Uncovered Code")
+        results.append(print_res)
 
         if not info.is_local_run:
             # Construct S3 artifact URLs from the known upload path structure:
