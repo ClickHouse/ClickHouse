@@ -10,8 +10,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
+#include <base/map.h>
 
-#include <ranges>
 
 namespace DB
 {
@@ -25,24 +25,21 @@ using namespace GatherUtils;
 namespace
 {
 
+template <typename Name, bool is_injective>
 class ConcatImpl : public IFunction
 {
 public:
-    ConcatImpl(ContextPtr context_, const char * name_, bool is_injective_)
-        : context(context_), function_name(name_), injective(is_injective_) {}
+    static constexpr auto name = Name::name;
+    explicit ConcatImpl(ContextPtr context_) : context(context_) { }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatImpl>(context); }
 
-    static FunctionPtr create(ContextPtr context, const char * name = "concat", bool is_injective = false)
-    {
-        return std::make_shared<ConcatImpl>(context, name, is_injective);
-    }
-
-    String getName() const override { return function_name; }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return injective; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -82,8 +79,6 @@ public:
 
 private:
     ContextWeakPtr context;
-    const char * function_name;
-    bool injective;
 
     ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
@@ -146,22 +141,17 @@ private:
             }
             else
             {
-                /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String.
-                /// Only strip top-level wrappers (Const, Sparse, LowCardinality) without recursing into subcolumns.
-                /// Using the recursive convertToFullIfNeeded would strip LowCardinality from inside
-                /// compound types like Variant while the type is not updated, creating a type/column mismatch.
-                auto full_column = column->convertToFullColumnIfConst()
-                    ->convertToFullColumnIfSparse()
-                    ->convertToFullColumnIfLowCardinality();
+                /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
+                auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
-                    write_helper.finishRow();
+                    write_helper.rowWritten();
                 }
                 write_helper.finalize();
 
@@ -198,6 +188,19 @@ private:
 };
 
 
+struct NameConcat
+{
+    static constexpr auto name = "concat";
+};
+struct NameConcatAssumeInjective
+{
+    static constexpr auto name = "concatAssumeInjective";
+};
+
+using FunctionConcat = ConcatImpl<NameConcat, false>;
+using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true>;
+
+
 /// Works with arrays via `arrayConcat`, maps via `mapConcat`, and tuples via `tupleConcat`.
 /// Additionally, allows concatenation of arbitrary types that can be cast to string using the corresponding default serialization.
 class ConcatOverloadResolver : public IFunctionOverloadResolver
@@ -223,8 +226,8 @@ public:
         if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(elem.type); }))
             return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            ConcatImpl::create(context),
-            DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
+            FunctionConcat::create(context),
+            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
             return_type);
     }
 
@@ -247,75 +250,8 @@ private:
 
 REGISTER_FUNCTION(Concat)
 {
-    FunctionDocumentation::Description description = R"(
-Concatenates the given arguments.
-
-Arguments which are not of types [`String`](../data-types/string.md) or [`FixedString`](../data-types/fixedstring.md) are converted to strings using their default serialization.
-As this decreases performance, it is not recommended to use non-String/FixedString arguments.
-)";
-    FunctionDocumentation::Syntax syntax = "concat([s1, s2, ...])";
-    FunctionDocumentation::Arguments arguments = {
-        {"s1, s2, ...", "Any number of values of arbitrary type.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the String created by concatenating the arguments. If any of arguments is `NULL`, the function returns `NULL`. If there are no arguments, it returns an empty string.",
-        {"Nullable(String)"}
-    };
-    FunctionDocumentation::Examples examples = {
-    {
-        "String concatenation",
-        "SELECT concat('Hello, ', 'World!')",
-        R"(
-┌─concat('Hello, ', 'World!')─┐
-│ Hello, World!               │
-└─────────────────────────────┘
-        )"
-    },
-    {
-        "Number concatenation",
-        "SELECT concat(42, 144)",
-        R"(
-┌─concat(42, 144)─┐
-│ 42144           │
-└─────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    FunctionDocumentation::Description description_injective = R"(
-Like [`concat`](#concat) but assumes that `concat(s1, s2, ...) → sn` is injective,
-i.e, it returns different results for different arguments.
-
-Can be used for optimization of `GROUP BY`.
-)";
-    FunctionDocumentation::Syntax syntax_injective = "concatAssumeInjective([s1, s2, ...])";
-    FunctionDocumentation::Arguments arguments_injective = {
-        {"s1, s2, ...", "Any number of values of arbitrary type.", {"String", "FixedString"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_injective = {
-        "Returns the string created by concatenating the arguments. If any of argument values is `NULL`, the function returns `NULL`. If no arguments are passed, it returns an empty string.",
-        {"String"}
-    };
-    FunctionDocumentation::Examples examples_injective = {
-    {
-        "Group by optimization",
-        "SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)",
-        R"(
-┌─concat(key1, key2)─┬─sum(value)─┐
-│ Hello, World!      │          3 │
-│ Hello, World!      │          2 │
-│ Hello, World       │          3 │
-└────────────────────┴────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, {}, returned_value_injective, examples_injective, introduced_in, category};
-
-    factory.registerFunction<ConcatOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerFunction("concatAssumeInjective", [](ContextPtr ctx){ return ConcatImpl::create(ctx, "concatAssumeInjective", true); }, documentation_injective);
+    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 
 }

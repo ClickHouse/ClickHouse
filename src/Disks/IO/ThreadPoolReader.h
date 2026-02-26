@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /** Perform reads from separate thread pool of specified size.
   *
@@ -36,7 +40,7 @@ public:
 
     std::future<Result> submit(Request request) override;
 
-    Result execute(Request request) override;
+    Result execute(Request /* request */) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for ThreadpoolReader"); }
 
     void wait() override;
 

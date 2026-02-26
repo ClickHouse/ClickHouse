@@ -21,7 +21,6 @@ def cluster():
                 "configs/ssl_conf.xml",
             ],
             with_minio=True,
-            with_remote_database_disk=False,  # The test compares some S3 events. We disable the remote DB disk, so it doesn't affect the comparing events.
         )
 
         logging.info("Starting cluster...")
@@ -119,7 +118,7 @@ def test_profile_events(cluster):
 
     instance.query("DROP TABLE IF EXISTS test_s3.test_s3")
     instance.query("DROP DATABASE IF EXISTS test_s3")
-    instance.query("CREATE DATABASE test_s3")
+    instance.query("CREATE DATABASE IF NOT EXISTS test_s3")
 
     metrics0 = get_s3_events(instance)
     minio0 = get_minio_stat(cluster)

@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-parallel, no-fasttest
 
-# Regression test for https://github.com/ClickHouse/ClickHouse/pull/63353
-# A LOGICAL_ERROR "Unexpected return type from materialize" could occur during SELECT
-# after concurrent ALTERs, because `IMergeTreeReader::evaluateMissingDefaults` used the
-# column type from storage metadata instead of from the data part. During concurrent
-# MODIFY COLUMN (e.g. UInt8 -> String), a SELECT could read a part whose column type
-# didn't match the current metadata, causing a type mismatch when materializing columns.
-# The test reproduces this by running an intense concurrent workload of ADD/DROP/MODIFY
-# COLUMN, SELECT, OPTIMIZE, and INSERT across 3 replicas, then verifies replication consistency.
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -36,8 +27,7 @@ done
 
 function alter_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 3 + 1))
         ADD=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_add_drop_steroids_$REPLICA ADD COLUMN value$ADD UInt32 DEFAULT 42 SETTINGS replication_alter_partitions_sync=0"; # additionally we don't wait anything for more heavy concurrency
@@ -49,12 +39,11 @@ function alter_thread()
 
 function alter_thread_1()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 3 + 1))
-        ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 String SETTINGS mutations_sync = 0, replication_alter_partitions_sync = 0"
+        ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 String SETTINGS mutations_sync = 0"
         sleep 1.$RANDOM
-        ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 UInt8 SETTINGS mutations_sync = 0, replication_alter_partitions_sync = 0"
+        ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 UInt8 SETTINGS mutations_sync = 0"
         sleep 1.$RANDOM
     done
 
@@ -62,8 +51,7 @@ function alter_thread_1()
 
 function optimize_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 3 + 1))
         $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE concurrent_alter_add_drop_steroids_$REPLICA FINAL SETTINGS replication_alter_partitions_sync=0";
         sleep 0.$RANDOM
@@ -72,8 +60,7 @@ function optimize_thread()
 
 function insert_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 3 + 1))
         $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_add_drop_steroids_$REPLICA VALUES($RANDOM, 7)"
         sleep 0.$RANDOM
@@ -82,8 +69,7 @@ function insert_thread()
 
 function select_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 3 + 1))
         $CLICKHOUSE_CLIENT --query "SELECT * FROM merge(currentDatabase(), 'concurrent_alter_add_drop_steroids_') FORMAT Null"
         sleep 0.$RANDOM
@@ -92,47 +78,47 @@ function select_thread()
 
 
 echo "Starting alters"
-TIMEOUT=10
+export -f alter_thread;
+export -f alter_thread_1;
+export -f select_thread;
+export -f optimize_thread;
+export -f insert_thread;
+
+
+TIMEOUT=20
 
 # Sometimes we detach and attach tables
-alter_thread 2> /dev/null &
-alter_thread 2> /dev/null &
-alter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
 
-alter_thread_1 2> /dev/null &
-alter_thread_1 2> /dev/null &
-alter_thread_1 2> /dev/null &
+timeout $TIMEOUT bash -c alter_thread_1 2> /dev/null &
+timeout $TIMEOUT bash -c alter_thread_1 2> /dev/null &
+timeout $TIMEOUT bash -c alter_thread_1 2> /dev/null &
 
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
 
-optimize_thread 2> /dev/null &
-optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 
 wait
 
 echo "Finishing alters"
 
-# Sync replicas to help them process pending ALTER_METADATA entries from the alter storm
-for i in $(seq $REPLICAS); do
-    timeout 120 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_add_drop_steroids_$i" 2>/dev/null ||:
-done
-
 columns1=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_1' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
 columns2=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_2' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
 columns3=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_3' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
 
-CONVERGE_TIMEOUT=$((SECONDS + 300))
 while [ "$columns1" != "$columns2" ] || [ "$columns2" != "$columns3" ]; do
-    if [ $SECONDS -ge "$CONVERGE_TIMEOUT" ]; then
-        echo "Columns did not converge after 300 seconds: $columns1 $columns2 $columns3"
-        break
-    fi
     columns1=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_1' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
     columns2=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_2' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
     columns3=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_3' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
@@ -143,11 +129,7 @@ done
 echo "Equal number of columns"
 
 # This alter will finish all previous, but replica 1 maybe still not up-to-date
-SYNC_TIMELIMIT=$((SECONDS + 300))
 while [[ $(timeout 120 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
-    if [ $SECONDS -ge "$SYNC_TIMELIMIT" ]; then
-        break
-    fi
     sleep 1
 done
 

@@ -25,9 +25,7 @@ include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsFeatureTests.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadAffinity.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadName.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsSIMD.cmake")
-include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsGetVersion.cmake")
-
-set (AWS_STUBS "${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/aws_stubs.cpp")
+include("${ClickHouse_SOURCE_DIR}/contrib/aws-crt-cpp/cmake/AwsGetVersion.cmake")
 
 
 # Gather sources and options.
@@ -44,15 +42,14 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DDEBUG_BUILD")
 endif()
 
-if (OS_LINUX)
-    list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DAWS_ENABLE_EPOLL")
-elseif (OS_DARWIN)
-    list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DAWS_ENABLE_KQUEUE")
-endif()
-
 set(ENABLE_OPENSSL_ENCRYPTION ON)
 if (ENABLE_OPENSSL_ENCRYPTION)
     list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DENABLE_OPENSSL_ENCRYPTION")
+endif()
+
+set(USE_S2N ON)
+if (USE_S2N)
+    list(APPEND AWS_PRIVATE_COMPILE_DEFS "-DUSE_S2N")
 endif()
 
 
@@ -73,6 +70,7 @@ SET(AWS_EVENT_STREAM_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-event-stream")
 SET(AWS_HTTP_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-http")
 SET(AWS_IO_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-io")
 SET(AWS_MQTT_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-mqtt")
+SET(AWS_S2N_TLS_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-s2n-tls")
 SET(AWS_S3_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-s3")
 SET(AWS_SDKUTILS_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-sdkutils")
 
@@ -104,7 +102,6 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/utils/base64/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/component-registry/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/utils/crypto/crt/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/factory/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/openssl/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/event/*.cpp"
@@ -130,7 +127,6 @@ configure_file("${AWS_SDK_CORE_DIR}/include/aws/core/SDKConfig.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/aws/core/SDKConfig.h" @ONLY)
 
 aws_get_version(AWS_CRT_CPP_VERSION_MAJOR AWS_CRT_CPP_VERSION_MINOR AWS_CRT_CPP_VERSION_PATCH FULL_VERSION GIT_HASH)
-set(FULL_VERSION "${AWS_CRT_CPP_VERSION_MAJOR}.${AWS_CRT_CPP_VERSION_MINOR}.${AWS_CRT_CPP_VERSION_PATCH}-clickhouse")
 configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
 
 list(APPEND AWS_SOURCES ${AWS_SDK_CORE_SRC} ${AWS_SDK_CORE_NET_SRC} ${AWS_SDK_CORE_PLATFORM_SRC})
@@ -173,19 +169,12 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_AUTH_DIR}/include/")
 # aws-c-cal
 file(GLOB AWS_CAL_SRC
     "${AWS_CAL_DIR}/source/*.c"
-    "${AWS_CAL_DIR}/source/shared/*.c"
 )
 
 if (ENABLE_OPENSSL_ENCRYPTION)
-    if (OS_LINUX)
-        file(GLOB AWS_CAL_OS_SRC
-            "${AWS_CAL_DIR}/source/unix/*.c"
-        )
-    else (OS_DARWIN)
-        file(GLOB AWS_CAL_OS_SRC
-            "${AWS_CAL_DIR}/source/darwin/*.c"
-        )
-    endif()
+    file(GLOB AWS_CAL_OS_SRC
+        "${AWS_CAL_DIR}/source/unix/*.c"
+    )
     list(APPEND AWS_PRIVATE_LIBS OpenSSL::Crypto)
 endif()
 
@@ -208,9 +197,6 @@ file(GLOB AWS_COMMON_SRC
     "${AWS_COMMON_DIR}/source/external/*.c"
     "${AWS_COMMON_DIR}/source/posix/*.c"
     "${AWS_COMMON_DIR}/source/linux/*.c"
-    "${AWS_COMMON_DIR}/source/external/libcbor/*.c"
-    "${AWS_COMMON_DIR}/source/external/libcbor/cbor/*.c"
-    "${AWS_COMMON_DIR}/source/external/libcbor/cbor/internal/*.c"
 )
 
 file(GLOB AWS_COMMON_ARCH_SRC
@@ -223,13 +209,9 @@ if (AWS_ARCH_INTEL)
         "${AWS_COMMON_DIR}/source/arch/intel/asm/*.c"
     )
 elseif (AWS_ARCH_ARM64 OR AWS_ARCH_ARM32)
-    if (OS_LINUX)
+    if (AWS_HAVE_AUXV)
         file(GLOB AWS_COMMON_ARCH_SRC
-            "${AWS_COMMON_DIR}/source/arch/arm/auxv/cpuid.c"
-        )
-    elseif(OS_DARWIN)
-        file(GLOB AWS_COMMON_ARCH_SRC
-            "${AWS_COMMON_DIR}/source/arch/arm/darwin/cpuid.c"
+            "${AWS_COMMON_DIR}/source/arch/arm/asm/*.c"
         )
     endif()
 endif()
@@ -251,20 +233,17 @@ list(APPEND AWS_PUBLIC_INCLUDES
     "${CMAKE_CURRENT_BINARY_DIR}/include"
 )
 
-list(APPEND AWS_PRIVATE_INCLUDES
-    "${AWS_COMMON_DIR}/source/external/libcbor/cbor/"
-    "${AWS_COMMON_DIR}/source/external/libcbor/"
-)
-
 
 # aws-checksums
 file(GLOB AWS_CHECKSUMS_SRC
     "${AWS_CHECKSUMS_DIR}/source/*.c"
+    "${AWS_CHECKSUMS_DIR}/source/intel/*.c"
+    "${AWS_CHECKSUMS_DIR}/source/intel/asm/*.c"
+    "${AWS_CHECKSUMS_DIR}/source/arm/*.c"
 )
 
 if(AWS_ARCH_INTEL AND AWS_HAVE_GCC_INLINE_ASM)
     file(GLOB AWS_CHECKSUMS_ARCH_SRC
-            "${AWS_CHECKSUMS_DIR}/source/intel/*.c"
             "${AWS_CHECKSUMS_DIR}/source/intel/asm/*.c"
     )
 endif()
@@ -305,8 +284,37 @@ elseif (OS_DARWIN)
     )
 endif()
 
-list(APPEND AWS_SOURCES ${AWS_IO_SRC} ${AWS_IO_OS_SRC})
+set(AWS_IO_TLS_SRC)
+if (USE_S2N)
+    file(GLOB AWS_IO_TLS_SRC
+            "${AWS_IO_DIR}/source/s2n/*.c"
+    )
+endif()
+
+list(APPEND AWS_SOURCES ${AWS_IO_SRC} ${AWS_IO_OS_SRC} ${AWS_IO_TLS_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_IO_DIR}/include/")
+
+
+# aws-s2n-tls
+if (USE_S2N)
+    file(GLOB AWS_S2N_TLS_SRC
+        "${AWS_S2N_TLS_DIR}/crypto/*.c"
+        "${AWS_S2N_TLS_DIR}/error/*.c"
+        "${AWS_S2N_TLS_DIR}/stuffer/*.c"
+        "${AWS_S2N_TLS_DIR}/pq-crypto/*.c"
+        "${AWS_S2N_TLS_DIR}/pq-crypto/kyber_r3/*.c"
+        "${AWS_S2N_TLS_DIR}/tls/*.c"
+        "${AWS_S2N_TLS_DIR}/tls/extensions/*.c"
+        "${AWS_S2N_TLS_DIR}/utils/*.c"
+    )
+
+    list(APPEND AWS_SOURCES ${AWS_S2N_TLS_SRC})
+
+    list(APPEND AWS_PRIVATE_INCLUDES
+        "${AWS_S2N_TLS_DIR}/"
+        "${AWS_S2N_TLS_DIR}/api/"
+    )
+endif()
 
 
 # aws-crt-cpp
@@ -318,7 +326,6 @@ file(GLOB AWS_CRT_SRC
     "${AWS_CRT_DIR}/source/external/*.cpp"
     "${AWS_CRT_DIR}/source/http/*.cpp"
     "${AWS_CRT_DIR}/source/io/*.cpp"
-    "${AWS_CRT_DIR}/source/checksum/*.cpp"
 )
 
 list(APPEND AWS_SOURCES ${AWS_CRT_SRC})
@@ -326,6 +333,11 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_CRT_DIR}/include/")
 
 
 # aws-c-mqtt
+file(GLOB AWS_MQTT_SRC
+    "${AWS_MQTT_DIR}/source/*.c"
+)
+
+list(APPEND AWS_SOURCES ${AWS_MQTT_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_MQTT_DIR}/include/")
 
 
@@ -373,8 +385,6 @@ file(GLOB AWS_SDK_GLUE_SRC
 list(APPEND AWS_SOURCES ${AWS_SDK_GLUE_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_GLUE_DIR}/include/")
 
-list(APPEND AWS_SOURCES ${AWS_STUBS})
-
 # Add library.
 add_library(_aws ${AWS_SOURCES})
 
@@ -382,12 +392,6 @@ target_include_directories(_aws SYSTEM BEFORE PUBLIC ${AWS_PUBLIC_INCLUDES})
 target_include_directories(_aws SYSTEM BEFORE PRIVATE ${AWS_PRIVATE_INCLUDES})
 target_compile_definitions(_aws PUBLIC ${AWS_PUBLIC_COMPILE_DEFS})
 target_compile_definitions(_aws PRIVATE ${AWS_PRIVATE_COMPILE_DEFS})
-
-if (OS_DARWIN)
-    target_link_libraries(_aws PRIVATE "-framework CoreFoundation")
-    target_link_libraries(_aws PRIVATE "-framework Security")
-endif()
-
 target_link_libraries(_aws PRIVATE ${AWS_PRIVATE_LIBS})
 
 aws_set_thread_affinity_method(_aws)
@@ -395,7 +399,7 @@ aws_set_thread_name_method(_aws)
 
 # The library is large - avoid bloat.
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_aws PRIVATE -g1)
+    target_compile_options (_aws PRIVATE -g0)
 endif()
 
 add_library(ch_contrib::aws_s3 ALIAS _aws)

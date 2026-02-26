@@ -1,24 +1,21 @@
-#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include "UserDefinedSQLFunctionVisitor.h"
 
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
 
-#include <Parsers/ASTAlterQuery.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryNormalizer.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
-#include <Core/Settings.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/QueryAliasesVisitor.h>
-#include <Interpreters/QueryNormalizer.h>
 
 
 namespace DB
@@ -73,7 +70,7 @@ bool isVariadic(const ASTPtr & arg)
 
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
 {
-    if (udf_in_replace_process.contains(function.name))
+    if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive function call detected during function call {}",
             function.name);
@@ -85,12 +82,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;
 
-    auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
-
-    if (!create_function_query)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "The function '{}' is not a SQL defined function and is not supported when 'enable_analyzer' is set to false", function.formatForErrorMessage());
-
+    const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
     auto & function_core_expression = create_function_query->function_core->children.at(0);
 
     const auto & identifiers_expression_list = function_core_expression->children.at(0)->children.at(0)->as<ASTExpressionList>();
@@ -145,11 +137,11 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
         /// Common subexpression elimination. Rewrite rules.
-        QueryNormalizer::Data normalizer_data(aliases, {}, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
+        QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 
-    auto expression_list = make_intrusive<ASTExpressionList>();
+    auto expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
     std::stack<ASTPtr> ast_nodes_to_update;

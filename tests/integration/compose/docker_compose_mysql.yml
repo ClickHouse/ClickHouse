@@ -1,7 +1,6 @@
 services:
     mysql57:
-        image: clickhouse/test-mysql57:${DOCKER_TEST_MYSQL57_TAG:-latest}
-        stop_grace_period: 5s
+        image: mysql:5.7
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: ClickHouse_MySQL_P@ssw0rd
@@ -23,7 +22,3 @@ services:
               source: ${MYSQL_LOGS:-}
               target: /var/log/mysql/
         user: ${MYSQL_DOCKER_USER}
-        cap_add:
-          - NET_ADMIN
-        privileged: true
-        cpus: 3

@@ -17,7 +17,6 @@ public:
     std::optional<Field> value;
     std::optional<Field> min_value;
     std::optional<Field> max_value;
-    std::vector<Field> disallowed_values;
     std::optional<SettingConstraintWritability> writability;
     bool id_mode = false;  /// If true then `parent_profile` keeps UUID, not a name.
     bool use_inherit_keyword = false;  /// If true then this element is a part of ASTCreateSettingsProfileQuery.
@@ -25,7 +24,7 @@ public:
     bool empty() const { return parent_profile.empty() && setting_name.empty(); }
 
     String getID(char) const override { return "SettingsProfileElement"; }
-    ASTPtr clone() const override { return make_intrusive<ASTSettingsProfileElement>(*this); }
+    ASTPtr clone() const override { return std::make_shared<ASTSettingsProfileElement>(*this); }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -38,7 +37,7 @@ protected:
 class ASTSettingsProfileElements : public IAST
 {
 public:
-    std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> elements;
+    std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
 
     bool empty() const;
 
@@ -67,9 +66,9 @@ protected:
 class ASTAlterSettingsProfileElements : public IAST
 {
 public:
-    boost::intrusive_ptr<ASTSettingsProfileElements> add_settings;
-    boost::intrusive_ptr<ASTSettingsProfileElements> modify_settings;
-    boost::intrusive_ptr<ASTSettingsProfileElements> drop_settings;
+    std::shared_ptr<ASTSettingsProfileElements> add_settings;
+    std::shared_ptr<ASTSettingsProfileElements> modify_settings;
+    std::shared_ptr<ASTSettingsProfileElements> drop_settings;
 
     bool drop_all_settings = false;
     bool drop_all_profiles = false;

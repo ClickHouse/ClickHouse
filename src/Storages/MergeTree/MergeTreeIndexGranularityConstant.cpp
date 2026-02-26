@@ -38,17 +38,6 @@ size_t MergeTreeIndexGranularityConstant::getMarkRows(size_t mark_index) const
     return 0; // Final mark.
 }
 
-MarkRange MergeTreeIndexGranularityConstant::getMarkRangeForRowOffset(size_t row_offset) const
-{
-    size_t mark_index;
-    if (row_offset < constant_granularity * (num_marks_without_final - 1))
-        mark_index = row_offset / constant_granularity;
-    else
-        mark_index = num_marks_without_final - 1;
-
-    return {mark_index, mark_index + 1};
-}
-
 size_t MergeTreeIndexGranularityConstant::getMarksCount() const
 {
     return num_marks_without_final + has_final_mark;
@@ -143,41 +132,6 @@ size_t MergeTreeIndexGranularityConstant::countRowsForRows(size_t from_mark, siz
     size_t last_row_pos = rows_before_mark + offset_in_rows + number_of_rows;
 
     return getRowsCountInRange(from_mark, std::max(1UL, getMarkUpperBoundForRow(last_row_pos))) - offset_in_rows;
-}
-
-void MergeTreeIndexGranularityConstant::fixFromRowsCount(size_t rows_count)
-{
-    if (num_marks_without_final == 0)
-        return;
-
-    /// Calculate the expected number of data marks for the given row count.
-    size_t expected_data_marks = (rows_count + constant_granularity - 1) / constant_granularity;
-    if (rows_count == 0)
-        expected_data_marks = 0;
-
-    /// If we have more marks than expected data marks, the extra mark is a final mark.
-    if (num_marks_without_final > expected_data_marks && !has_final_mark)
-    {
-        has_final_mark = true;
-        --num_marks_without_final;
-    }
-
-    /// Adjust the last mark granularity to match the actual row count.
-    if (num_marks_without_final > 0)
-    {
-        size_t rows_in_complete_granules = (num_marks_without_final - 1) * constant_granularity;
-        if (rows_count > rows_in_complete_granules)
-            last_mark_granularity = rows_count - rows_in_complete_granules;
-        else
-            last_mark_granularity = 0;
-    }
-}
-
-std::shared_ptr<MergeTreeIndexGranularityConstant> MergeTreeIndexGranularityConstant::fixedFromRowsCount(size_t rows_count) const
-{
-    auto result = std::make_shared<MergeTreeIndexGranularityConstant>(constant_granularity, last_mark_granularity, num_marks_without_final, has_final_mark);
-    result->fixFromRowsCount(rows_count);
-    return result;
 }
 
 std::string MergeTreeIndexGranularityConstant::describe() const

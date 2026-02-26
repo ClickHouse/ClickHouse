@@ -33,23 +33,20 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        MergeTreeIndexGranularityPtr index_granularity_,
-        WrittenOffsetSubstreams * written_offset_substreams_);
+        MergeTreeIndexGranularityPtr index_granularity_);
 
     void write(const Block & block, const IColumnPermutation * permutation) override;
 
-    void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;
     void cancel() noexcept override;
 
     size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
-
-    static ISerialization::EnumerateStreamsSettings getEnumerateSettings(const MergeTreeWriterSettings & settings);
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
@@ -63,14 +60,14 @@ private:
     void writeColumn(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
-        WrittenOffsetSubstreams & offset_substreams,
+        WrittenOffsetColumns & offset_columns,
         const Granules & granules);
 
     /// Write single granule of one column.
     void writeSingleGranule(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
-        const WrittenOffsetSubstreams & offset_substreams,
+        WrittenOffsetColumns & offset_columns,
         ISerialization::SerializeBinaryBulkStatePtr & serialization_state,
         ISerialization::SerializeBinaryBulkSettings & serialize_settings,
         const Granule & granule);
@@ -78,23 +75,27 @@ private:
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & name_and_type,
-        const WrittenOffsetSubstreams & offset_substreams);
+        const ColumnPtr & column_sample,
+        WrittenOffsetColumns & offset_columns);
 
     /// Write mark to disk using stream and rows count
-    void flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark);
+    void flushMarkToFile(
+        const StreamNameAndMark & stream_with_mark,
+        size_t rows_in_mark);
 
     /// Write mark for column taking offsets from column stream
     void writeSingleMark(
         const NameAndTypePair & name_and_type,
-        const WrittenOffsetSubstreams & offset_substreams,
+        WrittenOffsetColumns & offset_columns,
         size_t number_of_rows);
 
     void writeFinalMark(
         const NameAndTypePair & name_and_type,
-        WrittenOffsetSubstreams & offset_substreams);
+        WrittenOffsetColumns & offset_columns);
 
     void addStreams(
         const NameAndTypePair & name_and_type,
+        const ColumnPtr & column,
         const ASTPtr & effective_codec_desc) override;
 
     /// Method for self check (used in debug-build only). Checks that written
@@ -116,12 +117,7 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    void initColumnsSubstreamsIfNeeded(const Block & block);
-
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
-
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
-        const WrittenOffsetSubstreams & offset_substreams) const;
+    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
@@ -149,8 +145,6 @@ private:
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
-
-    String already_written_stream_holder;
 };
 
 }

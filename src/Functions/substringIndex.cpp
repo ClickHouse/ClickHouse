@@ -24,18 +24,16 @@ namespace ErrorCodes
 namespace
 {
 
+    template <bool is_utf8>
     class FunctionSubstringIndex : public IFunction
     {
     public:
-        FunctionSubstringIndex(const char * name_, bool is_utf8_)
-            : function_name(name_), is_utf8(is_utf8_) {}
+        static constexpr auto name = is_utf8 ? "substringIndexUTF8" : "substringIndex";
 
-        static FunctionPtr create(const char * name, bool is_utf8)
-        {
-            return std::make_shared<FunctionSubstringIndex>(name, is_utf8);
-        }
 
-        String getName() const override { return function_name; }
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSubstringIndex>(); }
+
+        String getName() const override { return name; }
 
         size_t getNumberOfArguments() const override { return 3; }
 
@@ -86,7 +84,7 @@ namespace
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument to {} must be a constant String", getName());
 
             String delim = column_delim_const->getValue<String>();
-            if (!is_utf8)
+            if constexpr (!is_utf8)
             {
                 if (delim.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument to {} must be a single character", getName());
@@ -126,13 +124,13 @@ namespace
         }
 
     protected:
-        void vectorVector(
+        static void vectorVector(
             const ColumnString * str_column,
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
-            size_t input_rows_count) const
+            size_t input_rows_count)
         {
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
@@ -144,11 +142,11 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view str_ref = str_column->getDataAt(i);
+                StringRef str_ref = str_column->getDataAt(i);
                 Int64 count = count_column->getInt(i);
 
-                std::string_view res_ref;
-                if (!is_utf8)
+                StringRef res_ref;
+                if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -159,13 +157,13 @@ namespace
             }
         }
 
-        void vectorConstant(
+        static void vectorConstant(
             const ColumnString * str_column,
             const String & delim,
             Int64 count,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
-            size_t input_rows_count) const
+            size_t input_rows_count)
         {
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
@@ -177,10 +175,10 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view str_ref = str_column->getDataAt(i);
+                StringRef str_ref = str_column->getDataAt(i);
 
-                std::string_view res_ref;
-                if (!is_utf8)
+                StringRef res_ref;
+                if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -191,12 +189,12 @@ namespace
             }
         }
 
-        void constantVector(
+        static void constantVector(
             const String & str,
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets) const
+            ColumnString::Offsets & res_offsets)
         {
             size_t rows = count_column->size();
             res_data.reserve(str.size() * rows / 2);
@@ -207,13 +205,13 @@ namespace
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
-            std::string_view str_ref{str};
+            StringRef str_ref{str.data(), str.size()};
             for (size_t i = 0; i < rows; ++i)
             {
                 Int64 count = count_column->getInt(i);
 
-                std::string_view res_ref;
-                if (!is_utf8)
+                StringRef res_ref;
+                if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
                     res_ref = substringIndex(str_ref, delim[0], count);
@@ -225,31 +223,31 @@ namespace
         }
 
         template <bool padded>
-        static void appendToResultColumn(std::string_view res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+        static void appendToResultColumn(const StringRef & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
         {
             size_t res_offset = res_data.size();
-            if (!res_ref.empty())
-            {
-                res_data.resize(res_offset + res_ref.size());
-                if constexpr (padded)
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data(), res_ref.size());
-                else
-                    memcpy(&res_data[res_offset], res_ref.data(), res_ref.size());
+            res_data.resize(res_offset + res_ref.size + 1);
 
-                res_offset += res_ref.size();
-            }
+            if constexpr (padded)
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data, res_ref.size);
+            else
+                memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
+
+            res_offset += res_ref.size;
+            res_data[res_offset] = 0;
+            ++res_offset;
 
             res_offsets.emplace_back(res_offset);
         }
 
-        static std::string_view substringIndexUTF8(
-            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, std::string_view str_ref, const String & delim, Int64 count)
+        static StringRef substringIndexUTF8(
+            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, const StringRef & str_ref, const String & delim, Int64 count)
         {
             if (count == 0)
-                return {};
+                return {str_ref.data, 0};
 
-            const auto * begin = reinterpret_cast<const UInt8 *>(str_ref.data());
-            const auto * end = reinterpret_cast<const UInt8 *>(str_ref.data() + str_ref.size());
+            const auto * begin = reinterpret_cast<const UInt8 *>(str_ref.data);
+            const auto * end = reinterpret_cast<const UInt8 *>(str_ref.data + str_ref.size);
             const auto * pos = begin;
             if (count > 0)
             {
@@ -266,7 +264,7 @@ namespace
                     else
                         return str_ref;
                 }
-                return {reinterpret_cast<const char *>(begin), static_cast<size_t>(pos - begin - delim.size())};
+                return {begin, static_cast<size_t>(pos - begin - delim.size())};
             }
 
             Int64 total = 0;
@@ -287,16 +285,16 @@ namespace
                 pos += delim.size();
                 ++i;
             }
-            return {reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos)};
+            return {pos, static_cast<size_t>(end - pos)};
         }
 
-        static std::string_view substringIndex(std::string_view str_ref, char delim, Int64 count)
+        static StringRef substringIndex(const StringRef & str_ref, char delim, Int64 count)
         {
             if (count == 0)
-                return {};
+                return {str_ref.data, 0};
 
-            const auto * pos = count > 0 ? str_ref.data() : str_ref.data() + str_ref.size() - 1;
-            const auto * end = count > 0 ? str_ref.data() + str_ref.size() : str_ref.data() - 1;
+            const auto * pos = count > 0 ? str_ref.data : str_ref.data + str_ref.size - 1;
+            const auto * end = count > 0 ? str_ref.data + str_ref.size : str_ref.data - 1;
             int d = count > 0 ? 1 : -1;
 
             for (; count; pos += d)
@@ -308,65 +306,16 @@ namespace
             }
             pos -= d;
             return {
-                d > 0 ? str_ref.data() : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data() : str_ref.data() + str_ref.size() - pos - 1)};
+                d > 0 ? str_ref.data : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data : str_ref.data + str_ref.size - pos - 1)};
         }
-
-    private:
-        const char * function_name;
-        bool is_utf8;
     };
 }
 
 
 REGISTER_FUNCTION(SubstringIndex)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
-)";
-    FunctionDocumentation::Syntax syntax = "substringIndex(s, delim, count)";
-    FunctionDocumentation::Arguments arguments = {
-        {"s", "The string to extract substring from.", {"String"}},
-        {"delim", "The character to split.", {"String"}},
-        {"count", "The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned.", {"UInt", "Int"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a substring of `s` before `count` occurrences of `delim`.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        "SELECT substringIndex('www.clickhouse.com', '.', 2)",
-        R"(
-┌─substringIndex('www.clickhouse.com', '.', 2)─┐
-│ www.clickhouse                               │
-└──────────────────────────────────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    FunctionDocumentation::Description description_utf8 = R"(
-Returns the substring of `s` before `count` occurrences of the delimiter `delim`, specifically for Unicode code points.
-Assumes that the string contains valid UTF-8 encoded text.
-If this assumption is violated, no exception is thrown and the result is undefined.
-)";
-    FunctionDocumentation::Syntax syntax_utf8 = "substringIndexUTF8(s, delim, count)";
-    FunctionDocumentation::Arguments arguments_utf8 = {
-        {"s", "The string to extract substring from.", {"String"}},
-        {"delim", "The character to split.", {"String"}},
-        {"count", "The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned.", {"UInt", "Int"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_utf8 = {"Returns a substring of `s` before `count` occurrences of `delim`.", {"String"}};
-    FunctionDocumentation::Examples examples_utf8 = {
-    {
-        "UTF8 example",
-        "SELECT substringIndexUTF8('www.straßen-in-europa.de', '.', 2)",
-        "www.straßen-in-europa"
-    }
-    };
-    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
-
-    factory.registerFunction("substringIndex", [](ContextPtr){ return FunctionSubstringIndex::create("substringIndex", false); }, documentation);
-    factory.registerFunction("substringIndexUTF8", [](ContextPtr){ return FunctionSubstringIndex::create("substringIndexUTF8", true); }, documentation_utf8);
+    factory.registerFunction<FunctionSubstringIndex<false>>(); /// substringIndex
+    factory.registerFunction<FunctionSubstringIndex<true>>(); /// substringIndexUTF8
 
     factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::Case::Insensitive);
 }

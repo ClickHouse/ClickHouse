@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
@@ -20,7 +19,6 @@ namespace ColumnsHashing
 struct HashMethodContextSettings
 {
     size_t max_threads;
-    bool serialize_string_with_zero_byte = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.

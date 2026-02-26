@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/castColumn.h>
@@ -20,10 +19,6 @@ ColumnPtr tryGetColumnFromBlock(const Block & block, const NameAndTypePair & req
         return nullptr;
 
     auto elem_type = elem->type;
-
-    if (!elem->column)
-        return nullptr;
-
     auto elem_column = elem->column->decompress();
 
     if (requested_column.isSubcolumn())

@@ -10,7 +10,6 @@
 #include <unistd.h>
 #include <sys/inotify.h>
 #include <poll.h>
-#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -48,7 +47,7 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     if (inotify_fd == -1)
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
 
-    watch_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "directory_watch", [this] { watchFunc(); });
+    watch_task = getContext()->getSchedulePool().createTask("directory_watch", [this] { watchFunc(); });
     start();
 }
 
@@ -157,7 +156,7 @@ void DirectoryWatcherBase::start()
 void DirectoryWatcherBase::stop()
 {
     stopped = true;
-    (void)::write(event_pipe.fds_rw[1], "\0", 1);
+    ::write(event_pipe.fds_rw[1], "\0", 1);
     if (watch_task)
         watch_task->deactivate();
 }

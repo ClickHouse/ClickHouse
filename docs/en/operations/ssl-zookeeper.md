@@ -5,7 +5,6 @@ sidebar_label: 'Secured Communication with Zookeeper'
 sidebar_position: 45
 slug: /operations/ssl-zookeeper
 title: 'Optional secured communication between ClickHouse and Zookeeper'
-doc_type: 'guide'
 ---
 
 # Optional secured communication between ClickHouse and Zookeeper
@@ -17,14 +16,14 @@ You should specify `ssl.keyStore.location`, `ssl.keyStore.password` and `ssl.tru
 
 You can add `zookeeper.crt` to trusted certificates.
 
-```bash
+``` bash
 sudo cp zookeeper.crt /usr/local/share/ca-certificates/zookeeper.crt
 sudo update-ca-certificates
 ```
 
 Client section in `config.xml` will look like:
 
-```xml
+``` xml
 <client>
     <certificateFile>/etc/clickhouse-server/client.crt</certificateFile>
     <privateKeyFile>/etc/clickhouse-server/client.key</privateKeyFile>
@@ -40,7 +39,7 @@ Client section in `config.xml` will look like:
 
 Add Zookeeper to ClickHouse config with some cluster and macros:
 
-```xml
+``` xml
 <clickhouse>
     <zookeeper>
         <node>

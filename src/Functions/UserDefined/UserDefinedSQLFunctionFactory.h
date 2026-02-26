@@ -1,16 +1,18 @@
 #pragma once
 
+#include <unordered_map>
+#include <mutex>
+
 #include <Common/NamePrompter.h>
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
-#include <Interpreters/Context_fwd.h>
+
+#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
 class BackupEntriesCollector;
 class RestorerFromBackup;
-class IUserDefinedSQLObjectsStorage;
-class WasmModuleManager;
 
 /// Factory for SQLUserDefinedFunctions
 class UserDefinedSQLFunctionFactory : public IHints<>
@@ -45,14 +47,12 @@ public:
     /// Restores user-defined SQL functions from the backup.
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
-    void loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager);
-
 private:
-    ContextPtr global_context;
+    /// Checks that a specified function can be registered, throws an exception if not.
+    static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query);
+    static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name);
 
-    UserDefinedSQLFunctionFactory();
+    ContextPtr global_context = Context::getGlobalContextInstance();
 };
-
-ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context);
 
 }
