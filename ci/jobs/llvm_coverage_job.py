@@ -208,9 +208,6 @@ if __name__ == "__main__":
 
         if c_line_cov < b_line_cov:
             diff_res.set_failed()
-            diff_res.set_comment(
-                f"Lines: {b_line_cov:.2f}% → {c_line_cov:.2f}% (Δ {delta:+.2f}%)"
-            )
             print("Coverage degraded.")
         else:
             print("Coverage did not degrade.")
@@ -225,7 +222,10 @@ if __name__ == "__main__":
             with_info=True,
             with_info_on_failure=True,
         )
-        # print_res.set_status(diff_res.status)
+        if print_res.is_error or print_res.is_failure:
+            print_res.set_comment(
+                f"Lines: {b_line_cov:.2f}% → {c_line_cov:.2f}% (Δ {delta:+.2f}%)"
+            )
         results.append(print_res)
 
         # Rename the diff report entry-point so it does not clash with the
