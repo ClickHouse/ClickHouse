@@ -1571,7 +1571,7 @@ String DatabaseCatalog::getPathForUUID(const UUID & uuid)
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
 }
 
-void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid, std::function<bool()> is_cancelled)
+void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
@@ -1581,11 +1581,8 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid, std::function<b
 
     while (tables_marked_dropped_ids.contains(uuid) && !is_shutting_down)
     {
-        if (is_cancelled && is_cancelled())
-        {
-            LOG_DEBUG(log, "Stop waiting for the table {} to be dropped because the query was cancelled", toString(uuid));
-            return;
-        }
+        if (throw_if_cancelled)
+            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
         wait_table_finally_dropped.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(1));
     }
 

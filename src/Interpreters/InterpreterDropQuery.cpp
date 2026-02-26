@@ -115,10 +115,11 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
 
     if (query.kind == ASTDropQuery::Kind::Drop)
     {
-        auto process_list_element = context_->getProcessListElementSafe();
-        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, [&]() -> bool
+        QueryStatusPtr query_status = context_->getProcessListElementSafe();
+        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, [&]()
         {
-            return process_list_element && process_list_element->isKilled();
+            if (query_status)
+                query_status->throwIfKilled();
         });
     }
     else if (query.kind == ASTDropQuery::Kind::Detach)
