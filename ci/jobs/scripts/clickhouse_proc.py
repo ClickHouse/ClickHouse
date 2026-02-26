@@ -804,16 +804,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
         return res
 
-    def _collect_core_dumps(self):
-        print("REMOVEME _collect_core_dumps")
-        Shell.check("find / -name core.* -type f", verbose=True)
-        time.sleep(5)
-        Shell.check('pwd', verbose=True)
-        print(Path(temp_dir))
-        print("before zst", Path(temp_dir).glob("run_r*/core.*"))
-        r = [Utils.compress_zst(f) for f in Path(temp_dir).glob("run_r*/core.*")]
-        print("files", r)
-        return r
+    def _collect_core_dumps(self) -> List[str]:
+        return [Utils.compress_zst(f) for f in Path(temp_dir).glob("run_r*/core.*")]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
