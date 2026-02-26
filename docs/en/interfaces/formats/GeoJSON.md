@@ -1,6 +1,6 @@
 ---
 alias: []
-description: 'Documentation for the GeoJSON format'
+description: 'Input format that reads a GeoJSON FeatureCollection and produces one row per feature with id, geometry, and properties columns.'
 input_format: true
 output_format: false
 keywords: ['GeoJSON']
