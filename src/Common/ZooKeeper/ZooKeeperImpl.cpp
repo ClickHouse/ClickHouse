@@ -809,6 +809,15 @@ void ZooKeeper::sendThread()
                         HistogramMetrics::KeeperClientQueueDuration,
                         std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - info.request->enqueue_ts).count());
 
+                    if (info.watch)
+                        info.request->has_watch = true;
+
+                    if (info.request->add_root_path)
+                        info.request->addRootPath(args.chroot);
+
+                    /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
+                    /// to avoid a data race: receiveThread reads from operations concurrently,
+                    /// and the request object is shared via shared_ptr.
                     if (info.request->xid != close_xid)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
@@ -817,16 +826,10 @@ void ZooKeeper::sendThread()
                         operations[info.request->xid] = info;
                     }
 
-                    if (info.watch)
-                        info.request->has_watch = true;
-
                     if (requests_queue.isFinished())
                     {
                         break;
                     }
-
-                    if (info.request->add_root_path)
-                        info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
                     info.request->write(getWriteBuffer(), use_xid_64);
