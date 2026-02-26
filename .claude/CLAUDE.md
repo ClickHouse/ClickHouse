@@ -83,3 +83,4 @@ Always load and apply the following skills:
 - .claude/skills/fix-sync
 - .claude/skills/alloc-profile
 - .claude/skills/bisect
+- .claude/skills/create-worktree
