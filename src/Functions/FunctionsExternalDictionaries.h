@@ -685,11 +685,9 @@ private:
                 IColumn::Filter default_mask;
                 result_columns = dictionary->getColumns(attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
 
-                auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
+                auto [defaults_column, mask_column] = getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
 
                 const auto & tuple_defaults = assert_cast<const ColumnTuple &>(*defaults_column);
-                const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
 
                 for (size_t col = 0; col < result_columns.size(); ++col)
                 {
@@ -697,7 +695,7 @@ private:
                         result_columns[col],
                         tuple_defaults.getColumnPtr(col),
                         mask_column,
-                        result_tuple_type.getElements()[col]);
+                        attribute_tuple_type.getElements()[col]);
                 }
             }
             else
@@ -720,10 +718,9 @@ private:
                 IColumn::Filter default_mask;
                 result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
 
-                auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
+                auto [defaults_column, mask_column] = getDefaultsShortCircuit(std::move(default_mask), attribute_type, last_argument);
 
-                restoreShortCircuitColumn(result, defaults_column, mask_column, result_type);
+                restoreShortCircuitColumn(result, defaults_column, mask_column, attribute_type);
             }
             else
             {
