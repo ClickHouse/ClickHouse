@@ -412,7 +412,6 @@ public:
     uint32_t idx_counter = 0;
     uint32_t proj_counter = 0;
     uint32_t constr_counter = 0;
-    uint32_t freeze_counter = 0;
     std::unordered_map<uint32_t, SQLColumn> cols;
     std::unordered_map<uint32_t, SQLColumn> staged_cols;
     std::unordered_map<uint32_t, SQLIndex> idxs;

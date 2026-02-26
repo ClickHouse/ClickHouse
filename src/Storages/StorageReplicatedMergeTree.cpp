@@ -4641,6 +4641,12 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 {
     auto zookeeper = getZooKeeper();
 
+    if (!storage_init && is_readonly)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Table is in readonly mode (replica path: {}), cannot remove part and enqueue fetch."
+            " This can happen when CHECK TABLE is run before the replica is fully initialized",
+            replica_path);
+
     DataPartPtr broken_part;
     auto outdate_broken_part = [this, &broken_part]()
     {

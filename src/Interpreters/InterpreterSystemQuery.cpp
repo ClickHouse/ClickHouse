@@ -87,7 +87,8 @@
 #endif
 
 #if USE_JEMALLOC
-#include <Common/Jemalloc.h>
+#    include <Processors/Sources/JemallocProfileSource.h>
+#    include <Common/Jemalloc.h>
 #endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
@@ -113,6 +114,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 keeper_max_retries;
+#if USE_JEMALLOC
+    extern const SettingsJemallocProfileFormat jemalloc_profile_text_output_format;
+    extern const SettingsBool jemalloc_profile_text_symbolize_with_inline;
+#endif
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -1052,13 +1057,29 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            auto context = getContext();
+            context->checkAccess(AccessType::SYSTEM_JEMALLOC);
             auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
-            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
-            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
-            filename += ".symbolized";
+            auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
+            auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
+
+            std::string output_filename;
+            if (format == JemallocProfileFormat::Raw)
+            {
+                output_filename = filename;
+            }
+            else if (format == JemallocProfileFormat::Symbolized)
+            {
+                output_filename = filename + ".symbolized";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
+            else
+            {
+                output_filename = filename + ".collapsed";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
             auto col = ColumnString::create();
-            col->insertData(filename.data(), filename.size());
+            col->insertData(output_filename.data(), output_filename.size());
             Columns columns;
             columns.emplace_back(std::move(col));
             Chunk chunk(std::move(columns), 1);

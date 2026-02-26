@@ -107,6 +107,7 @@ def run_tests(
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
+    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -432,7 +433,7 @@ def main():
             commands.append(CH.enable_thread_fuzzer_config)
 
         os.environ["MALLOC_CONF"] = (
-            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+            f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
         if not is_coverage:

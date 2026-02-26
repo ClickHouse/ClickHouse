@@ -421,7 +421,7 @@ FROM
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("kolmogorovSmirnovTest", {createAggregateFunctionKolmogorovSmirnovTest, {}, documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("kolmogorovSmirnovTest", {createAggregateFunctionKolmogorovSmirnovTest, documentation}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

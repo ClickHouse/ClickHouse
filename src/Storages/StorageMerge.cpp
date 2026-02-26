@@ -859,7 +859,18 @@ public:
                 node = std::move(column_expression);
             }
             else
+            {
+                /// Do not replace column source for lambda arguments.
+                /// Lambda argument columns reference the LambdaNode as their source,
+                /// and replacing it with the table expression would cause toAST()
+                /// to qualify them with the table alias (e.g. `__table1.x` instead of `x`),
+                /// which is invalid for lambda argument identifiers.
+                auto column_source = column->getColumnSourceOrNull();
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    return;
+
                 column->setColumnSource(replacement_table_expression);
+            }
         }
     }
 private:
