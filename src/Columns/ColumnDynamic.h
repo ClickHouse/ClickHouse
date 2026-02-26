@@ -48,11 +48,11 @@ public:
         /// Source of the statistics.
         Source source;
         /// Statistics data for usual variants: (variant name) -> (total variant size in data part).
-        std::unordered_map<String, size_t> variants_statistics;
+        UnorderedMapWithMemoryTracking<String, size_t> variants_statistics;
         /// Statistics data for variants from shared variant: (variant name) -> (total variant size in data part).
         /// For shared variant we store statistics only for first 256 variants (should cover almost all cases and it's not expensive).
         static constexpr const size_t MAX_SHARED_VARIANT_STATISTICS_SIZE = 256;
-        std::unordered_map<String, size_t> shared_variants_statistics;
+        UnorderedMapWithMemoryTracking<String, size_t> shared_variants_statistics;
     };
 
     using StatisticsPtr = std::shared_ptr<const Statistics>;
