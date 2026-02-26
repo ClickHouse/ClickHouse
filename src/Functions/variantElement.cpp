@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -46,24 +47,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto is_variant_or_array_of_variant = [](const IDataType & type)
-        {
-            const IDataType * current_type = &type;
-            while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
-                current_type = array->getNestedType().get();
-            return isVariant(current_type);
-        };
+        const size_t number_of_arguments = arguments.size();
 
-        FunctionArgumentDescriptors mandatory_args{
-            {"variant", is_variant_or_array_of_variant, nullptr, "Variant or Array of Variant"},
-            {"name", &isString, &isColumnConst, "const String"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"default", nullptr, nullptr, "Any"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        if (number_of_arguments < 2 || number_of_arguments > 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                            getName(), number_of_arguments);
 
         size_t count_arrays = 0;
         const IDataType * input_type = arguments[0].type.get();
@@ -74,8 +63,13 @@ public:
         }
 
         const DataTypeVariant * variant_type = checkAndGetDataType<DataTypeVariant>(input_type);
+        if (!variant_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be Variant or Array of Variant. Actual {}",
+                    getName(),
+                    arguments[0].type->getName());
 
-        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, arguments.size());
+        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, number_of_arguments);
         if (variant_global_discr.has_value())
         {
             DataTypePtr return_type = makeNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
@@ -164,39 +158,31 @@ private:
 
 REGISTER_FUNCTION(VariantElement)
 {
-    FunctionDocumentation::Description description = R"(
+    factory.registerFunction<FunctionVariantElement>(FunctionDocumentation{
+        .description = R"(
 Extracts a column with specified type from a `Variant` column.
-)";
-    FunctionDocumentation::Syntax syntax = "variantElement(variant, type_name[, default_value])";
-    FunctionDocumentation::Arguments arguments = {
-        {"variant", "Variant column.", {"Variant"}},
-        {"type_name", "The name of the variant type to extract.", {"String"}},
-        {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a column with the specified variant type extracted from the Variant column.", {"Any"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
+)",
+        .syntax{"variantElement(variant, type_name, [, default_value])"},
+        .arguments{
+            {"variant", "Variant column"},
+            {"type_name", "The name of the variant type to extract"},
+            {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional"}},
+        .examples{{{
+            "Example",
+            R"(
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;
-         )",
-         R"(
+SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;)",
+            R"(
 ┌─v─────────────┬─variantElement(v, 'String')─┬─variantElement(v, 'UInt64')─┬─variantElement(v, 'Array(UInt64)')─┐
 │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ []                                 │
 │ 42            │ ᴺᵁᴸᴸ                        │                          42 │ []                                 │
 │ Hello, World! │ Hello, World!               │                        ᴺᵁᴸᴸ │ []                                 │
 │ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 2};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionVariantElement>(documentation);
+)"}}},
+        .category = FunctionDocumentation::Category::JSON,
+    });
 }
 
 }

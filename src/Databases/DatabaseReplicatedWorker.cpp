@@ -1,5 +1,4 @@
 #include <Databases/DatabaseReplicatedWorker.h>
-#include <base/sleep.h>
 
 #include <filesystem>
 #include <Core/ServerUUID.h>
@@ -9,6 +8,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/sleep.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -47,7 +47,6 @@ namespace FailPoints
 {
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
-    extern const char database_replicated_stop_entry_execution[];
 }
 
 
@@ -125,7 +124,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
         catch (...)
         {
             tryLogCurrentException(log, fmt::format("Error on initialization of {}", database->getDatabaseName()));
-            queue_updated_event->tryWait(5000);
+            sleepForSeconds(5);
         }
     }
 
@@ -256,18 +255,6 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
     active_node_holder_zookeeper = zookeeper;
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
-}
-
-void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
-{
-    DDLWorker::scheduleTasks(reinitialized);
-    if (need_update_cached_cluster)
-    {
-        database->setCluster(database->getClusterImpl());
-        if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
-        need_update_cached_cluster = false;
-    }
 }
 
 void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
@@ -594,7 +581,6 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         std::chrono::milliseconds sleep_time{1000 + thread_local_rng() % 1000};
         std::this_thread::sleep_for(sleep_time);
     });
-    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_stop_entry_execution);
 
     if (unsynced_after_recovery)
     {
@@ -616,7 +602,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
 
     String initiator_name;
-    Coordination::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
+    zkutil::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
     String try_node_path = fs::path(entry_path) / "try";
     if (!dry_run && zookeeper->tryGet(try_node_path, initiator_name, nullptr, wait_committed_or_failed))
@@ -680,7 +666,9 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     if (task->entry.query.empty())
     {
         /// Some replica is added or removed, let's update cached cluster
-        need_update_cached_cluster = true;
+        database->setCluster(database->getClusterImpl());
+        if (!database->replica_group_name.empty())
+            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }

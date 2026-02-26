@@ -4,8 +4,7 @@ description: 'This engine provides a read-only integration with existing Apache 
 sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
-title: 'Iceberg table engine'
-doc_type: 'reference'
+title: 'Iceberg Table Engine'
 ---
 
 # Iceberg table engine {#iceberg-table-engine}
@@ -75,8 +74,7 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 Table engine `Iceberg` is an alias to `IcebergS3` now.
 
 ## Schema evolution {#schema-evolution}
-ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
-
+At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P. 
@@ -95,12 +93,10 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ## Processing of tables with deleted rows {#deleted-rows}
 
-ClickHouse supports reading Iceberg tables that use the following deletion methods:
+Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
 
-- [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
-- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
-
-The following deletion method is **not supported**:
+The following deletion methods are **not supported**:
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
 - [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
@@ -165,6 +161,8 @@ Consider this sequence of operations:
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
+
+
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
 +------------+------------+
@@ -221,6 +219,8 @@ A time travel query at a current moment might show a different schema than the c
 
 -- Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
+
+
     +------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+

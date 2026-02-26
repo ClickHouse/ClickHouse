@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
