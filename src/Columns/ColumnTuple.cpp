@@ -726,12 +726,12 @@ size_t ColumnTuple::capacity() const
     return getColumn(0).capacity();
 }
 
-void ColumnTuple::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        Columns nested_columns;
+        VectorWithMemoryTracking<ColumnPtr> nested_columns;
         nested_columns.reserve(source_columns.size() * factor);
         for (const auto & source_column : source_columns)
             nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));

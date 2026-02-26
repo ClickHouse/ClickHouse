@@ -1116,7 +1116,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     }
 }
 
-void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1139,7 +1139,7 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t f
     prepareVariantsForSquashing(source_columns, factor);
 }
 
-void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
@@ -1230,7 +1230,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
-        Columns source_variant_columns;
+        VectorWithMemoryTracking<ColumnPtr> source_variant_columns;
         source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
         {

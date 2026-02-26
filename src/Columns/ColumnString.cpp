@@ -577,7 +577,7 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();

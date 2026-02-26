@@ -551,7 +551,7 @@ public:
     virtual size_t capacity() const { return size(); }
 
     /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns, size_t factor)
+    virtual void prepareForSquashing(const VectorWithMemoryTracking<Ptr> & source_columns, size_t factor)
     {
         size_t new_size = size();
         for (const auto & source_column : source_columns)

@@ -1429,7 +1429,7 @@ void ColumnVariant::reserve(size_t n)
     getOffsets().reserve_exact(n);
 }
 
-void ColumnVariant::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnVariant::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
     for (const auto & source_column : source_columns)
@@ -1438,7 +1438,7 @@ void ColumnVariant::prepareForSquashing(const Columns & source_columns, size_t f
 
     for (size_t i = 0; i != variants.size(); ++i)
     {
-        Columns source_variant_columns;
+        VectorWithMemoryTracking<ColumnPtr> source_variant_columns;
         source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             source_variant_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));

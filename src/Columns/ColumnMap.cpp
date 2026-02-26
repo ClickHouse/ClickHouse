@@ -297,9 +297,9 @@ size_t ColumnMap::capacity() const
     return nested->capacity();
 }
 
-void ColumnMap::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnMap::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
-    Columns nested_source_columns;
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());

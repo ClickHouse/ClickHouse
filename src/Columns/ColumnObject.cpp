@@ -1556,7 +1556,7 @@ void ColumnObject::getExtremes(DB::Field & min, DB::Field & max, size_t, size_t)
     }
 }
 
-void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor)
+void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1627,11 +1627,11 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
     /// Now current object column has all resulting dynamic paths and we can call
     /// prepareForSquashing on them to preallocate the memory.
     /// Also we can preallocate memory for dynamic paths and shared data.
-    Columns shared_data_source_columns;
+    VectorWithMemoryTracking<ColumnPtr> shared_data_source_columns;
     shared_data_source_columns.reserve(source_columns.size());
-    std::unordered_map<String, Columns> typed_paths_source_columns;
+    std::unordered_map<String, VectorWithMemoryTracking<ColumnPtr>> typed_paths_source_columns;
     typed_paths_source_columns.reserve(typed_paths.size());
-    std::unordered_map<String, Columns> dynamic_paths_source_columns;
+    std::unordered_map<String, VectorWithMemoryTracking<ColumnPtr>> dynamic_paths_source_columns;
     dynamic_paths_source_columns.reserve(dynamic_paths.size());
 
     for (const auto & [path, column] : typed_paths)

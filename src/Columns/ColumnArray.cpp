@@ -513,10 +513,10 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnArray::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
-    Columns source_data_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_data_columns;
     source_data_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {

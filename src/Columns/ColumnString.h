@@ -293,7 +293,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
