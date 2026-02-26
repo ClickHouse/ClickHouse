@@ -23,6 +23,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -197,12 +198,10 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     /// config_prefix is "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse"),
     /// where the dictionary root is always the first component.
     auto dot = config_prefix.find('.');
-    chassert(dot != std::string::npos);
-    if (dot != std::string::npos)
-    {
-        auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix.substr(0, dot));
-        NamedCollectionFactory::instance().addDependency(collection_name, dict_id);
-    }
+    if (dot == std::string::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected config_prefix to have dotted components, got: {}", config_prefix);
+    auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix.substr(0, dot));
+    NamedCollectionFactory::instance().addDependency(collection_name, dict_id);
 
     return collection_copy;
 }
