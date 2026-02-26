@@ -52,7 +52,8 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
-    if (!force_lazy_init) {
+    if (!force_lazy_init)
+    {
         if (cached_columns.empty())
             return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
         if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
