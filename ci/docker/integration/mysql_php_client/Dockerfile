@@ -10,5 +10,3 @@ COPY ./test_ssl.php test_ssl.php
 
 RUN docker-php-ext-install pdo pdo_mysql
 
-# Run as non-root to satisfy CIS Docker Benchmark and Docker Scout policy
-USER nobody
