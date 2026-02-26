@@ -49,8 +49,8 @@ TEST(ColumnDynamic, InsertFields)
     ASSERT_TRUE(column->size() == 10);
 
     ASSERT_EQ(column->getVariantInfo().variant_type->getName(), "Variant(Float64, Int8, SharedVariant, String)");
-    std::vector<String> expected_names = {"Float64", "Int8", "SharedVariant", "String"};
-    ASSERT_EQ(column->getVariantInfo().variant_names, expected_names);
+    VectorWithMemoryTracking<String> expected_names = {"Float64", "Int8", "SharedVariant", "String"};
+    ASSERT_EQ(column->getVariantInfo().variant_names, Names(expected_names.begin(), expected_names.end()));
     std::unordered_map<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
     ASSERT_TRUE(column->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
@@ -147,11 +147,11 @@ ColumnDynamic::MutablePtr getInsertFromColumn(size_t num = 1)
     return column_from;
 }
 
-void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const std::vector<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const VectorWithMemoryTracking<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertFrom(*column_from, 0);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
-    ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names(expected_names.begin(), expected_names.end()));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
     auto field = (*column_to)[column_to->size() - 1];
     ASSERT_EQ(field, 42);
@@ -165,7 +165,7 @@ void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynami
     ASSERT_EQ(field, "str");
 
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
-    ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names(expected_names.begin(), expected_names.end()));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 
@@ -268,11 +268,11 @@ TEST(ColumnDynamic, InsertFromOverflow3)
     ASSERT_EQ(field, 42.42);
 }
 
-void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const std::vector<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const VectorWithMemoryTracking<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertManyFrom(*column_from, 0, 2);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
-    ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names(expected_names.begin(), expected_names.end()));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
     auto field = (*column_to)[column_to->size() - 2];
     ASSERT_EQ(field, 42);
@@ -292,7 +292,7 @@ void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDy
     ASSERT_EQ(field, "str");
 
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
-    ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names(expected_names.begin(), expected_names.end()));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 
@@ -414,11 +414,11 @@ TEST(ColumnDynamic, InsertManyFromOverflow3)
     ASSERT_EQ(field, 42.42);
 }
 
-void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const std::vector<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const VectorWithMemoryTracking<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertRangeFrom(*column_from, 0, 3);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
-    ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names(expected_names.begin(), expected_names.end()));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
     auto field = (*column_to)[column_to->size() - 3];
     ASSERT_EQ(field, 42);
@@ -436,7 +436,7 @@ void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnD
     ASSERT_EQ(field, "str");
 
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
-    ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names(expected_names.begin(), expected_names.end()));
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 
@@ -796,8 +796,8 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena2)
     ASSERT_EQ((*column_to)[column_to->size() - 2], "str");
     ASSERT_EQ((*column_to)[column_to->size() - 1], Null());
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), "Variant(Float64, Int8, SharedVariant, String)");
-    std::vector<String> expected_names = {"Float64", "Int8", "SharedVariant", "String"};
-    ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
+    VectorWithMemoryTracking<String> expected_names = {"Float64", "Int8", "SharedVariant", "String"};
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names(expected_names.begin(), expected_names.end()));
     std::unordered_map<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
