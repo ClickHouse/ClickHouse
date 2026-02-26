@@ -1,7 +1,8 @@
+#include <Interpreters/SpillingHashJoin.h>
+
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -87,6 +88,16 @@ void SpillingHashJoin::tryConvertSlots()
             blocks.pop_front();
         }
     }
+}
+
+std::string SpillingHashJoin::getName() const
+{
+    static constexpr auto name_format = "SpillingHashJoin({})";
+
+    if (concurrent_join)
+        return fmt::format(name_format, concurrent_join->getName());
+
+    return fmt::format(name_format, hash_join->getName());
 }
 
 bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)

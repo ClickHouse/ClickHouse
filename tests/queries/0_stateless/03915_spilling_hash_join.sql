@@ -1,17 +1,23 @@
 -- Test SpillingHashJoin: automatic spilling of hash joins to disk.
 
-SET join_algorithm = 'hash';
 SET enable_auto_spilling_hash_join = 1;
-SET max_threads = 1;
 
--- Ensure it shows up in query plan
+-- Ensure it shows up in query plan nicely
 SELECT trim(explain)
 FROM
 (
-    EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number
+    EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number SETTINGS join_algorithm = 'hash'
 )
-WHERE trim(explain) = 'Algorithm: SpillingHashJoin';
+WHERE trim(explain) LIKE 'Algorithm%';
+SELECT trim(explain)
+FROM
+(
+    EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number SETTINGS join_algorithm = 'parallel_hash'
+)
+WHERE trim(explain) LIKE 'Algorithm%';
 
+SET join_algorithm = 'hash';
+SET max_threads = 1;
 -- Test 1: Small INNER JOIN that fits in memory.
 SELECT 'inner join small';
 SELECT count(), sum(t2.v)

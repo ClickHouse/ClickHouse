@@ -68,9 +68,7 @@ public:
 
     ~SpillingHashJoin() override;
 
-    // TODO(antaljanosbenjamin): Combine the name of the inner join to be able to distinguish between normal and
-    // concurrent hash join
-    std::string getName() const override { return "SpillingHashJoin"; }
+    std::string getName() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addBlockToJoin(const Block & block, bool check_limits) override;
