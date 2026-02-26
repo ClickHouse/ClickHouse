@@ -58,22 +58,27 @@ def get_lcov_summary_percentages(info_file_path: str) -> tuple[float, float, flo
     )
 
 
-def add_html_report_to_ci(folder_path, entry_point: str = "index.html"):
-    files_to_attach = []
-    assets_to_attach = []
-    # Attach all HTML report files preserving directory structure
+def collect_html_report_files(
+    folder_path: str, entry_point: str = "index.html"
+) -> tuple[list[str], list[str]]:
+    """Return (files, assets) for an HTML report folder.
+
+    The entry-point file goes into `files` (uploaded individually and linked),
+    while every other file goes into `assets`.  Both lists must be attached to
+    the *same* Result so that upload_result_files_to_s3 computes
+    common_root = <folder>, keeping genhtml relative links intact on S3.
+    """
     html_report_dir = Path(TEMP_DIR) / folder_path
+    files: list[str] = []
+    assets: list[str] = []
     if html_report_dir.exists():
-        # Add the entry-point file first so it is easily identifiable
         index_file = html_report_dir / entry_point
         if index_file.exists():
-            files_to_attach.append(str(index_file))
-
-        # Add all other files including index.html in subdirectories
+            files.append(str(index_file))
         for file_path in html_report_dir.rglob("*"):
             if file_path.is_file() and file_path != index_file:
-                assets_to_attach.append(str(file_path))
-    return files_to_attach, assets_to_attach
+                assets.append(str(file_path))
+    return files, assets
 
 
 def save_date_into_ci_db(
@@ -172,18 +177,22 @@ if __name__ == "__main__":
 
     results = []
 
-    results.append(
-        Result.from_commands_run(
-            name="Generate LLVM Coverage Report",
-            command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
-        )
+    gen_report_res = Result.from_commands_run(
+        name="Generate LLVM Coverage Report",
+        command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
-
-    # Compress the diff HTML report for full coverage
+    # Compress and attach the full HTML report archive + files to the generate result.
+    # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
+    # computes common_root = llvm_coverage_html_report/, so relative links stay intact.
     Utils.compress_gz(
         f"{TEMP_DIR}/llvm_coverage_html_report",
         f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
     )
+    gen_report_res.files.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
+    _html_files, _html_assets = collect_html_report_files("llvm_coverage_html_report")
+    gen_report_res.files.extend(_html_files)
+    gen_report_res.assets.extend(_html_assets)
+    results.append(gen_report_res)
 
     if not is_master_branch:
         diff_res = Result.from_commands_run(
@@ -228,23 +237,22 @@ if __name__ == "__main__":
             )
         results.append(print_res)
 
-        # Rename the diff report entry-point so it does not clash with the
-        # full-coverage report's index.html when both are served from the same S3 prefix.
-        _diff_index = Path(f"{TEMP_DIR}/llvm_coverage_diff_html_report/index.html")
-        _diff_index_renamed = _diff_index.with_name("diff_index.html")
-        if _diff_index.exists():
-            _diff_index.rename(_diff_index_renamed)
-
-        # Compress the diff HTML report
+        # Compress and attach the diff HTML report archive + files to the diff result.
         Utils.compress_gz(
             f"{TEMP_DIR}/llvm_coverage_diff_html_report",
             f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz",
         )
+        diff_res.files.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
+        _diff_files, _diff_assets = collect_html_report_files(
+            "llvm_coverage_diff_html_report"
+        )
+        diff_res.files.extend(_diff_files)
+        diff_res.assets.extend(_diff_assets)
 
         if not info.is_local_run:
             # Construct S3 artifact URLs from the known upload path structure:
-            #   files/assets → https://<report_endpoint>/<s3_prefix>/<path_relative_to_TEMP_DIR>
-            #   log files    → https://<report_endpoint>/<s3_prefix>/<normalize(result.name)>/<log_basename>
+            #   HTML files/assets → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(sub_result)>/<rel_path>
+            #   log files         → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(result)>/<log_basename>
             _env = _Environment.get()
             _s3_base = (
                 f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
@@ -266,8 +274,8 @@ if __name__ == "__main__":
                 c_branch_cov,
                 delta,
                 diff_res.status,
-                coverage_report_url=f"{_s3_base}/llvm_coverage/index.html",
-                diff_coverage_report_url=f"{_s3_base}/llvm_coverage/diff_index.html",
+                coverage_report_url=f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
+                diff_coverage_report_url=f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index.html",
                 uncovered_code_url=f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}",
             )
         else:
@@ -275,27 +283,28 @@ if __name__ == "__main__":
     else:
         print("On master branch, skipping diff coverage generation")
 
-    files_to_attach = []
-    assets_to_attach = []
-
-    # Attach merged HTML report for full coverage
-    files_to_attach.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
-    merged_files, merged_assets = add_html_report_to_ci("llvm_coverage_html_report")
-    files_to_attach.extend(merged_files)
-    assets_to_attach.extend(merged_assets)
-
-    if not is_master_branch:
-        # Attach merged HTML report for diff coverage
-        files_to_attach.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
-        merged_files, merged_assets = add_html_report_to_ci(
-            "llvm_coverage_diff_html_report", entry_point="diff_index.html"
+    # Add direct S3 links to both HTML reports in the main job result.
+    # index.html is uploaded within the corresponding generate sub-result;
+    # the URL is deterministic: llvm_coverage/<normalize(sub_result_name)>/index.html.
+    report_links = []
+    if not info.is_local_run:
+        _env = _Environment.get()
+        _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
+        report_links.append(
+            f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
         )
-        files_to_attach.extend(merged_files)
-        assets_to_attach.extend(merged_assets)
+        if not is_master_branch:
+            report_links.append(
+                f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index.html"
+            )
+
+    archives = [f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz"]
+    if not is_master_branch:
+        archives.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
 
     Result.create_from(
         results=results,
-        files=files_to_attach,
-        assets=assets_to_attach,
+        files=archives,
+        links=report_links,
         info="LLVM Coverage Job Completed",
     ).complete_job(disable_attached_files_sorting=True)

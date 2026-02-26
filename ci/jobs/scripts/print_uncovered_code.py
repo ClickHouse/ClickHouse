@@ -2,6 +2,7 @@ import os
 from ci.praktika.utils import Utils
 import re
 from collections import defaultdict
+from ci.praktika.result import Result
 
 repo_root = Utils.cwd()
 temp_dir = f"{repo_root}/ci/tmp/"
@@ -90,8 +91,10 @@ if __name__ == "__main__":
     CONTEXT = 2  # lines before/after
     MAX_PRINT = 200  # max uncovered lines to print total
 
-    print(f"PR changed-lines coverage: {pct:.2f}% ({covered}/{total})")
+    msg = f"PR changed-lines coverage: {pct:.2f}% ({covered}/{total})"
+    print(msg)
 
+    is_failing = False
     if uncovered:
         print("\nUncovered changed code (with context):\n")
 
@@ -140,6 +143,13 @@ if __name__ == "__main__":
                     prefix = ">>" if block_start <= i <= block_end else "  "
                     code = lines[i - 1].rstrip("\n")
                     print(f"{prefix} {i:6d} | {code}")
-        exit(1)
+        is_failing = True
     else:
         print("No uncovered changed lines found.")
+    
+    r = Result.create_from(
+        name="Print Uncovered Code",
+        status=Result.Status.FAILED if is_failing else Result.Status.SUCCESS
+    )
+    r.set_comment(msg)
+    r.complete_job()
