@@ -262,6 +262,9 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     size_t & total_size_of_variants) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
+    if (offset == 0)
+        col.validateState();
+
     if (const size_t size = col.size(); limit == 0 || offset + limit > size)
         limit = size - offset;
 
@@ -320,9 +323,17 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
             addVariantElementToPath(settings.path, i);
             /// We can use the same offset/limit as for whole Variant column
             if (i == non_empty_global_discr)
-                variant_serializations[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), offset, limit, settings, variant_state->variant_states[i]);
+            {
+                const auto & variant_column = col.getVariantByGlobalDiscriminator(i);
+                if (variant_column.size() < offset + limit)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} has less rows ({}) than expected rows to serialize ({})", variant_names[i], variant_column.size(), offset + limit);
+
+                variant_serializations[i]->serializeBinaryBulkWithMultipleStreams(variant_column, offset, limit, settings, variant_state->variant_states[i]);
+            }
             else
+            {
                 variant_serializations[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), col.getVariantByGlobalDiscriminator(i).size(), 0, settings, variant_state->variant_states[i]);
+            }
             settings.path.pop_back();
         }
         variants_statistics[variant_names[non_empty_global_discr]] += limit;
@@ -447,6 +458,10 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
+        const auto & variant_column = col.getVariantByGlobalDiscriminator(i);
+        if (variant_column.size() < variant_offsets_and_limits[i].first + variant_offsets_and_limits[i].second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} has less rows ({}) than expected rows to serialize ({})", variant_names[i], variant_column.size(), variant_offsets_and_limits[i].first + variant_offsets_and_limits[i].second);
+
         addVariantElementToPath(settings.path, i);
         variant_serializations[i]->serializeBinaryBulkWithMultipleStreams(
             col.getVariantByGlobalDiscriminator(i),
@@ -651,6 +666,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
                 last_non_empty_discr = i;
             }
 
+            if (col.getVariantByLocalDiscriminator(i).size() < variant_limits[i])
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}", variant_names[i], variant_limits[i], col.getVariantByLocalDiscriminator(i).size());
+
             variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
         }
 
@@ -688,6 +706,8 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getOffsetsPtr(), col.getOffsetsPtr()->size() - prev_size);
     }
     settings.path.pop_back();
+
+    col.validateState();
 }
 
 std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deserializeCompactDiscriminators(

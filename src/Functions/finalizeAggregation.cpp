@@ -73,15 +73,15 @@ public:
 
 REGISTER_FUNCTION(FinalizeAggregation)
 {
-    FunctionDocumentation::Description description_finalizeAggregation = R"(
+    FunctionDocumentation::Description description = R"(
 Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#-state) combinator).
 )";
-    FunctionDocumentation::Syntax syntax_finalizeAggregation = "finalizeAggregation(state)";
-    FunctionDocumentation::Arguments arguments_finalizeAggregation = {
+    FunctionDocumentation::Syntax syntax = "finalizeAggregation(state)";
+    FunctionDocumentation::Arguments arguments = {
         {"state", "State of aggregation.", {"AggregateFunction"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_finalizeAggregation = {"Returns the finalized result of aggregation.", {"Any"}};
-    FunctionDocumentation::Examples examples_finalizeAggregation = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the finalized result of aggregation.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -114,11 +114,11 @@ FROM numbers(5);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_finalizeAggregation = {1, 1};
-    FunctionDocumentation::Category category_finalizeAggregation = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_finalizeAggregation = {description_finalizeAggregation, syntax_finalizeAggregation, arguments_finalizeAggregation, {}, returned_value_finalizeAggregation, examples_finalizeAggregation, introduced_in_finalizeAggregation, category_finalizeAggregation};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionFinalizeAggregation>(documentation_finalizeAggregation);
+    factory.registerFunction<FunctionFinalizeAggregation>(documentation);
 }
 
 }

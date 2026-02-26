@@ -605,6 +605,10 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
         size_t index = accessor.find(name);
 
         std::ignore = BaseSettingsHelpers::readFlags(in);
+
+        if (index == static_cast<size_t>(-1))
+            BaseSettingsHelpers::throwSettingNotFound(name);
+
         accessor.readBinary(*this, index, in);
     }
 }

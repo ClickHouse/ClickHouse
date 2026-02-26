@@ -208,7 +208,7 @@ REGISTER_FUNCTION(Nested)
 {
     factory.registerFunction<FunctionNested>(FunctionDocumentation{
         .description=R"(
-This is a function used internally by the ClickHouse engine and not meant to be used directly.
+This is a function used internally by ClickHouse and not meant to be used directly.
 
 Returns the array of tuples from multiple arrays.
 
@@ -216,7 +216,8 @@ The first argument must be a constant array of Strings determining the names of 
 The other arguments must be arrays of the same size.
 )",
         .examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])", ""}},
-        .category = FunctionDocumentation::Category::Other
+        .introduced_in = {23, 2},
+        .category = FunctionDocumentation::Category::Internal
     });
 }
 
