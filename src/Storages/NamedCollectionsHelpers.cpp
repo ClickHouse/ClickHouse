@@ -197,6 +197,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     /// config_prefix is "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse"),
     /// where the dictionary root is always the first component.
     auto dot = config_prefix.find('.');
+    chassert(dot != std::string::npos);
     if (dot != std::string::npos)
     {
         auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix.substr(0, dot));
