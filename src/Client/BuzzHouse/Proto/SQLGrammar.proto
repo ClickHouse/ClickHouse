@@ -2111,8 +2111,9 @@ message CondExpr {
 }
 
 message LambdaExpr {
-    repeated Column args = 1;
-    required Expr expr = 2;
+    optional bool paren = 1;
+    repeated Column args = 2;
+    required Expr expr = 3;
 }
 
 message SQLFuncArg {

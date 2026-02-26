@@ -715,6 +715,7 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
+    lexpr->set_paren(rg.nextMediumNumber() < (nparams == 1 ? 51 : 91));
     for (const auto & [key, val] : this->levels)
     {
         levels_backup[key] = val;

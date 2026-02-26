@@ -116,8 +116,10 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 {
     for (auto & type : types)
     {
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-            type = low_cardinality_type->getDictionaryType();
+        /// Strip LowCardinality recursively to match what setHeader/insertFromColumns do:
+        /// insertFromColumns calls convertToFullIfNeeded which recursively strips LC from
+        /// compound types like Tuple(LowCardinality(T), ...).
+        type = recursiveRemoveLowCardinality(type);
 
         if (!transform_null_in)
             type = removeNullable(type);
@@ -155,10 +157,15 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
-            set_elements_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
             key_columns.back() = materialized_columns.back().get();
         }
+
+        /// Strip LowCardinality recursively from set_elements_types so they match what
+        /// convertToFullIfNeeded (which is recursive) does to columns in insertFromColumns.
+        /// Without this, compound types like Tuple(LowCardinality(T), ...) keep LowCardinality
+        /// in the type while the column has it stripped, causing type/column mismatches later.
+        set_elements_types.back() = recursiveRemoveLowCardinality(set_elements_types.back());
     }
 
     /// We will insert to the Set only keys, where all components are not NULL.
