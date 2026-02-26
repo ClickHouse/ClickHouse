@@ -11,14 +11,14 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
-    user_configs=["configs/users.xml"],
+    user_configs=["configs/sync_insert.xml"],
     with_zookeeper=True,
     macros={"layer": 0, "shard": 0, "replica": 1},
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
-    user_configs=["configs/users.xml"],
+    user_configs=["configs/sync_insert.xml"],
     with_zookeeper=True,
     macros={"layer": 0, "shard": 0, "replica": 2},
 )

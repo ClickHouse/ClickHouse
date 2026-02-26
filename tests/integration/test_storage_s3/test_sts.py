@@ -35,7 +35,10 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/s3_credentials_provider_cache_size.xml",
             ],
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/sync_insert.xml",
+            ],
         )
 
         sts = cluster.add_instance(

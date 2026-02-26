@@ -1,7 +1,7 @@
 <clickhouse>
-    <users>
+    <profiles>
         <default>
             <async_insert>0</async_insert>
         </default>
-    </users>
+    </profiles>
 </clickhouse>
