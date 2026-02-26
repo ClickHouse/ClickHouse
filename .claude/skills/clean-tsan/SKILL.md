@@ -266,6 +266,49 @@ Each entry is compact (~5 lines):
 - `FAILED` — the same or equivalent alert reappeared after the fix (add `- **Why it failed:** <explanation>`)
 - `NEW_ALERT` — a different alert appeared (the fix worked, new issue found)
 
+### Threading model file
+
+The file `<artifact_dir>/threading-model.md` is a cumulative knowledge base about the threading architecture of the code touched during the session. Unlike `progress.md` (which tracks what was tried), this captures the *understanding* of how the code works.
+
+RCA subagents read it before analysis and **update it** with new discoveries. Fix subagents read it and **update it** when their changes alter invariants.
+
+Structure:
+
+```markdown
+# Threading Model
+
+## <ClassName>
+
+### Mutexes
+- `mutex_name` (type) — guards <what>
+  - Fields: `field1`, `field2`
+  - Acquired by: <which threads/methods>
+
+### Lock Ordering
+- `mutex_a` → `mutex_b` (never reverse)
+
+### Cross-Class Calls Under Lock
+- `method` holds `mutex_name` and calls `OtherClass::method` (acquires `other_mutex`)
+
+### Atomics
+- `field_name` (std::atomic<type>) — <semantics>
+
+### Thread Roles
+- <thread_name>: calls `method1`, `method2`
+
+### Condition Variables
+- `cv_name` — waits on <predicate>, signaled by <who>
+
+### Known Safe Patterns
+- <pattern that looks like a race but is safe because X>
+```
+
+Rules:
+- Only add classes that appear in TSan alerts or are directly involved in the fix
+- Keep entries factual and concise — one line per item
+- When a fix changes an invariant (e.g., "method no longer calls X under lock"), update the relevant entry rather than appending
+- If an earlier understanding was wrong, correct it and note why
+
 ---
 
 ## Phase 5: Root Cause Analysis
@@ -274,7 +317,8 @@ Launch a Task with `subagent_type=general-purpose` for the extracted alert. Usin
 
 **Before launching**, prepare the context:
 1. Read `<artifact_dir>/progress.md` (if it exists — skip on first iteration)
-2. Generate the diff of all uncommitted changes: `git diff`
+2. Read `<artifact_dir>/threading-model.md` (if it exists — skip on first iteration)
+3. Generate the diff of all uncommitted changes: `git diff`
 
 If a previous iteration was marked `FAILED` in `progress.md`, add to the prompt: **"IMPORTANT: A previous fix attempt for a similar alert failed. Read the progress file carefully and think deeper about the root cause. The obvious fix did not work — consider less obvious causes such as lock ordering across call chains, re-entrant paths, or indirect mutex acquisitions through callbacks."**
 
@@ -286,6 +330,9 @@ Prompt: "Perform root cause analysis of this ThreadSanitizer alert in ClickHouse
 
 ## Previous Progress
 <contents of progress.md, or "First iteration — no previous context.">
+
+## Threading Model
+<contents of threading-model.md, or "First iteration — no model yet.">
 
 ## Changes Already Applied
 <git diff output, or "No changes yet.">
@@ -302,6 +349,8 @@ Read each source file. For the classes/structs involved in the racing accesses, 
 - Member fields: classify each as atomic, mutex-protected (`TSA_GUARDED_BY`), pointer-guarded (`TSA_PT_GUARDED_BY`), unprotected, or immutable
 - Synchronization primitives: mutexes, their types, what they guard, lock ordering (`TSA_ACQUIRED_AFTER`)
 - Thread access patterns: which threads call the methods in the stack traces
+
+Use the Threading Model section above as a starting point — it may already have relevant information from previous iterations. Verify it against the current source code.
 
 ### Step 3: Root cause analysis (varies by error type)
 
@@ -380,10 +429,24 @@ Key threading concepts:
 ...
 ```
 **Fix Explanation:** <why this fix is correct and doesn't introduce new issues>
-**TSA Annotations to Add:** <any TSA_GUARDED_BY, TSA_ACQUIRED_AFTER, etc.>"
+**TSA Annotations to Add:** <any TSA_GUARDED_BY, TSA_ACQUIRED_AFTER, etc.>
+
+### Threading Model Update
+Write updated threading-model.md content for the classes you analyzed. If a threading-model.md was provided in context, merge your findings into it — correct any outdated entries and add new ones.
+
+Use this structure per class:
+- **Mutexes**: name, type, what fields it guards, which threads/methods acquire it
+- **Lock ordering**: which mutex must be acquired before which (never reverse)
+- **Cross-class calls under lock**: method holds mutex X and calls OtherClass::method (acquires mutex Y)
+- **Atomics**: field name, type, semantics
+- **Thread roles**: which named threads call which entry points
+- **Condition variables**: name, wait predicate, who signals
+- **Known safe patterns**: things that look like races but are safe (and why)
+
+Keep entries factual, one line per item. Only include classes involved in the alert."
 ```
 
-### Save RCA report
+### Save RCA report and update threading model
 
 Save the subagent's RCA output to the artifact directory (created in Phase 4):
 
@@ -392,6 +455,8 @@ Write RCA to: <artifact_dir>/rca-NNN.txt
 ```
 
 Where NNN matches the alert number from Phase 4.
+
+Update `<artifact_dir>/threading-model.md` with the Threading Model Update section from the subagent's output.
 
 Present the RCA summary to the user.
 
@@ -426,6 +491,9 @@ Prompt: "Apply the following TSan fix to the ClickHouse codebase.
 ## Previous Progress
 <contents of progress.md, or "First iteration — no previous context.">
 
+## Threading Model
+<contents of threading-model.md, or "First iteration — no model yet.">
+
 ## Changes Already Applied
 <git diff output, or "No changes yet.">
 
@@ -439,10 +507,13 @@ Prompt: "Apply the following TSan fix to the ClickHouse codebase.
    - Never use sleep to fix race conditions
    - Prefer `std::lock_guard` or `std::unique_lock` for RAII locking
    - Use TSA annotations when adding mutex protection
-6. Report what was changed"
+6. If your fix changes threading invariants (e.g., a method no longer holds a lock when calling another method), report what threading-model.md entries need updating
+7. Report what was changed"
 ```
 
-After the fix is applied, show the diff to the user for review.
+After the fix is applied:
+1. Show the diff to the user for review
+2. Update `<artifact_dir>/threading-model.md` if the fix subagent reported changed invariants
 
 ---
 
@@ -458,11 +529,15 @@ Repeat Phase 3 (run tests).
 
 ### 7c. Update progress
 
-After checking results, update `<artifact_dir>/progress.md` with the outcome of the current iteration:
-
-- **Same/equivalent alert reappeared** → mark previous iteration as `FAILED`, add `- **Why it failed:** <explanation>`
-- **Different alert appeared** → mark previous iteration as `NEW_ALERT` (the fix worked)
-- **No TSan errors** → mark previous iteration as `FIXED`
+After checking results, write the full entry for the current iteration to `<artifact_dir>/progress.md` using the format from Phase 4. The entry includes:
+- **Alert** type and key identifiers (from Phase 4 extraction)
+- **Root cause** summary (from Phase 5 RCA)
+- **Fix** applied (from Phase 6)
+- **Files** modified
+- **Outcome** based on the verify results:
+  - Same/equivalent alert reappeared → `FAILED`, add `- **Why it failed:** <explanation>`
+  - Different alert appeared → `NEW_ALERT` (the fix worked, new issue found)
+  - No TSan errors → `FIXED`
 
 ### 7d. Check results and loop
 
@@ -551,6 +626,7 @@ TSA_CAPABILITY("mutex")            // Declare a capability type
 | TSan alerts | `_clean-tsan/<test_name>/alert-NNN.txt` |
 | RCA reports | `_clean-tsan/<test_name>/rca-NNN.txt` |
 | Progress log | `_clean-tsan/<test_name>/progress.md` |
+| Threading model | `_clean-tsan/<test_name>/threading-model.md` |
 
 ---
 
