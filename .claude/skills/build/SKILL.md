@@ -1,7 +1,7 @@
 ---
 name: build
 description: Build ClickHouse with various configurations (Release, Debug, ASAN, TSAN, etc.). Use when the user wants to compile ClickHouse.
-argument-hint: [build-type] [target] [options]
+argument-hint: "[build-type] [target] [options]"
 disable-model-invocation: false
 allowed-tools: Task, Bash(ninja:*), Bash(cd:*), Bash(ls:*), Bash(pgrep:*), Bash(ps:*), Bash(pkill:*), Bash(mktemp:*), Bash(sleep:*)
 ---
@@ -41,9 +41,39 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 **IMPORTANT:** This skill assumes the build directory is already configured with CMake. Do NOT run `cmake` or create build directories - only run `ninja`.
 
 1. **Determine build configuration:**
-   - Build type: `$0` or `RelWithDebInfo` if not specified
-   - Target: `$1` or `clickhouse` if not specified
-   - Build directory: `build/${buildType}` (e.g., `build/RelWithDebInfo`, `build/Debug`, `build/ASAN`)
+   - Build type: `$0` or default (auto-detected) if not specified
+   - Target: `$1` or `clickhouse` if not specified. **Always default to building `clickhouse`** — only build a different target if the user explicitly asks for one.
+   - Build directory: auto-detected (see step 1a)
+
+   **Step 1a: Auto-detect build directory:**
+
+   Search for an existing, configured build directory (one containing `build.ninja`) in the following order. Stop at the first match:
+
+   1. If a specific build type was requested (e.g., `Debug`, `ASAN`):
+      - `build_<lowercase_type>/` (e.g., `build_debug/`, `build_asan/`)
+      - `build/<type>/` (e.g., `build/Debug/`, `build/ASAN/`)
+   2. For any build type (including default when none specified):
+      - `build/` (check for `build.ninja` directly in `build/`)
+      - `build/RelWithDebInfo/`
+      - `build/Debug/`
+      - `build_debug/`
+      - `build_asan/`
+      - `build_tsan/`
+      - `build_msan/`
+      - `build_ubsan/`
+
+   **Verification:** The candidate directory must contain a `build.ninja` file to be considered valid.
+
+   **If no configured build directory is found:**
+   - Use `AskUserQuestion` to ask the user:
+     - Question: "No configured build directory found. Where is your build directory?"
+     - Option 1: "Let me configure it" - Description: "I'll run cmake to set up a build directory first"
+     - Option 2: "Specify path" - Description: "Enter the path to an existing build directory"
+   - Do NOT proceed without a valid build directory.
+
+   **If a build directory is found:**
+   - Report to the user: "Using build directory: `<path>`"
+   - If no specific build type was requested, infer it from the directory name (e.g., `build/Debug` → Debug, `build_asan` → ASan).
 
 2. **Create log file and start the build:**
 
@@ -62,8 +92,9 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
    **Step 2b: Start the ninja build:**
    ```bash
-   cd build/${buildType} && ninja [target] > [log file path] 2>&1
+   cd [build_directory] && ninja [target] > [log file path] 2>&1
    ```
+   Where `[build_directory]` is the path found in step 1a.
 
     When using ninja you can pass `-k{num}` to continue building even if some targets fail. For example, `-k20` will keep going after 20 failures. Adjust this number based on your needs.
 
@@ -90,7 +121,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
      **If build succeeds:**
      - Confirm build completed successfully
-     - Report binary location: `build/${buildType}/programs/[target]`
+     - Report binary location: `[build_directory]/programs/[target]`
      - Mention any warnings if present
      - Report build time if available
      - Keep response concise
@@ -161,7 +192,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
         - Run: pkill -f \"clickhouse[- ]server\"
         - Wait 1 second: sleep 1
         - Verify stopped: pgrep -f \"clickhouse[- ]server\" should return nothing
-        - Report: \"Server stopped. To start the new version, run: ./build/${buildType}/programs/clickhouse server --config-file ./programs/server/config.xml\"
+        - Report: \"Server stopped. To start the new version, run: ./[build_directory]/programs/clickhouse server --config-file ./programs/server/config.xml\"
       - If user chooses \"No, keep it running\":
         - Report: \"Server remains running with the old binary. You'll need to manually restart it to use the new build.\"
 
@@ -180,7 +211,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
    **For successful builds:**
    - Confirm the build completed successfully
-   - Report the binary location: `build/${buildType}/programs/[target]`
+   - Report the binary location: `[build_directory]/programs/[target]`
    - Report the server status outcome from step 5
 
    **For failed builds:**
@@ -190,7 +221,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
    ```
    Build completed successfully!
 
-   Binary: build/RelWithDebInfo/programs/clickhouse
+   Binary: [build_directory]/programs/clickhouse
    Server status: No ClickHouse server is currently running.
    ```
 
@@ -207,11 +238,11 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
 - Always run from repository root
 - **NEVER** create build directories or run `cmake` - the build directory must already be configured
-- Build directories follow pattern: `build/${buildType}` (e.g., `build/Debug`, `build/ASAN`)
-- Binaries are located in: `build/${buildType}/programs/`
+- Build directories follow patterns: `build/`, `build/<type>/`, `build_<type>/` (e.g., `build_debug/`, `build/RelWithDebInfo/`)
+- Binaries are located in: `[build_directory]/programs/`
 - This skill only runs incremental builds with `ninja`
 - To configure a new build directory, the user must manually run CMake first
-- For a clean build, the user should remove `build/${buildType}` and reconfigure manually
+- For a clean build, the user should remove `build` and reconfigure manually
 - **MANDATORY:** After successful builds, this skill MUST check for running ClickHouse servers and ask the user if they want to stop them to use the new build
 - **MANDATORY:** ALL build output (success or failure) MUST be analyzed by a Task agent with `subagent_type=general-purpose`
 - **MANDATORY:** ALWAYS provide a final summary to the user at the end of the skill execution (step 6)

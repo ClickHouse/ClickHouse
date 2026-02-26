@@ -127,6 +127,7 @@ Unfreezer::Unfreezer(ContextPtr context) : local_context(context)
 
 BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("Unfreezer::systemUnfreeze");
     LOG_DEBUG(log, "Unfreezing backup {}", escapeForFileName(backup_name));
 
     const auto & config = local_context->getConfigRef();

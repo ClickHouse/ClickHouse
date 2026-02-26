@@ -260,6 +260,12 @@ public:
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+
+    /// Variant columns pair variant sub-columns with DataTypeVariant's sorted type list.
+    /// The default convertToFullIfNeeded recurses into sub-columns and strips LowCardinality
+    /// from variant columns, but cannot update the corresponding DataTypeVariant, creating
+    /// column/type position mismatches. Override to skip recursion.
+    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
     bool structureEquals(const IColumn & rhs) const override;
     ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;

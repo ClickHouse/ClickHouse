@@ -365,8 +365,7 @@ public:
 
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
-        void rollback();
-        void rollback(DataPartsLock & lock);
+        void rollback(DataPartsLock * acquired_lock = nullptr);
 
         /// Immediately remove parts from table's data_parts set and change part
         /// state to temporary. Useful for new parts which not present in table.
@@ -1082,8 +1081,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
