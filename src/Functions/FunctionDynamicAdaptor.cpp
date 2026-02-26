@@ -292,7 +292,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     selector.reserve(variant_column.size());
     IColumn::Offsets variants_offsets;
     variants_offsets.reserve(variant_column.size());
-    std::vector<ColumnWithTypeAndName> variants;
+    ColumnsWithTypeAndName variants;
     /// We need to determine the selector index for rows with NULL values, but we don't know how many
     /// variants we have in Dynamic column (shared variant can contain unknown amount of new variant types).
     /// So, we allocate 0 index for rows with NULL values.

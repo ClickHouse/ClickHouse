@@ -11,7 +11,7 @@
 namespace DB
 {
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
 class CatBoostLibraryBridgeHelper final : public LibraryBridgeHelper
 {

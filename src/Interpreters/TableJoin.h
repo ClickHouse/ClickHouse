@@ -35,7 +35,7 @@ class StorageDictionary;
 class IKeyValueEntity;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
 struct Settings;
 

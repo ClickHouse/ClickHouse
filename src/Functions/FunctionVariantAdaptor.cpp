@@ -295,7 +295,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// We use an array where index is the global discriminator.
     /// Variants that don't appear in the data will have null column pointers.
     /// Index num_variants is reserved for NULL values.
-    std::vector<ColumnWithTypeAndName> variants;
+    ColumnsWithTypeAndName variants;
     variants.resize(num_variants + 1);
 
     /// Create selector using global discriminators as indexes.

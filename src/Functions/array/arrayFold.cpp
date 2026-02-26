@@ -247,9 +247,9 @@ public:
             auto * lambda = typeid_cast<ColumnFunction *>(lambda_col_filtered_cloned.get());
 
             /// Bind arguments to lambda function (accumulator + array arguments)
-            lambda->appendArguments(std::vector({ColumnWithTypeAndName(std::move(unfinished_accumulator_values), arguments.back().type, arguments.back().name)}));
+            lambda->appendArguments(ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(unfinished_accumulator_values), arguments.back().type, arguments.back().name)});
             for (size_t array_col = 0; array_col < num_array_cols; ++array_col)
-                lambda->appendArguments(std::vector({ColumnWithTypeAndName(std::move(vertical_slices[array_col][slice]), arrays_data_with_type_and_name[array_col].type, arrays_data_with_type_and_name[array_col].name)}));
+                lambda->appendArguments(ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(vertical_slices[array_col][slice]), arrays_data_with_type_and_name[array_col].type, arrays_data_with_type_and_name[array_col].name)});
 
             /// Perform the actual calculation and copy the result into the accumulator
             ColumnWithTypeAndName res_with_type_and_name = lambda->reduce();

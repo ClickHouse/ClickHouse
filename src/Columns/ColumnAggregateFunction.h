@@ -23,7 +23,7 @@ class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
