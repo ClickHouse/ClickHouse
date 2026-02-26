@@ -47,11 +47,13 @@ TTLDeleteFilterTransform::TTLDeleteFilterTransform(
     const StorageMetadataPtr & metadata_snapshot_,
     const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
     time_t current_time_,
-    bool force_)
+    bool force_,
+    const MergeTreeMutableDataPartPtr & data_part_)
     : ISimpleTransform(header_, transformHeader(header_), /*skip_empty_chunks=*/ false)
     , current_time(current_time_)
     , force(force_)
     , date_lut(DateLUT::instance())
+    , data_part(data_part_)
 {
     if (metadata_snapshot_->hasRowsTTL())
     {
@@ -62,7 +64,11 @@ TTLDeleteFilterTransform::TTLDeleteFilterTransform(
         entry.expressions = std::move(expressions);
         entry.description = rows_ttl;
         entry.old_ttl_info = old_ttl_infos_.table_ttl;
-        entry.is_table_ttl = true;
+
+        if (!isMinTTLExpired(entry.old_ttl_info))
+            entry.new_ttl_info = entry.old_ttl_info;
+        if (isTTLExpired(entry.old_ttl_info.max))
+            entry.new_ttl_info.ttl_finished = true;
 
         if (isMinTTLExpired(entry.old_ttl_info)
             && isTTLExpired(entry.old_ttl_info.max)
@@ -84,7 +90,11 @@ TTLDeleteFilterTransform::TTLDeleteFilterTransform(
         auto it = old_ttl_infos_.rows_where_ttl.find(where_ttl.result_column);
         if (it != old_ttl_infos_.rows_where_ttl.end())
             entry.old_ttl_info = it->second;
-        entry.is_table_ttl = false;
+
+        if (!isMinTTLExpired(entry.old_ttl_info))
+            entry.new_ttl_info = entry.old_ttl_info;
+        if (isTTLExpired(entry.old_ttl_info.max))
+            entry.new_ttl_info.ttl_finished = true;
 
         delete_ttl_entries.emplace_back(std::move(entry));
     }
@@ -196,12 +206,43 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
 
             bool where_filter_passed = !where_column || where_column->getBool(i);
             if (isTTLExpired(timestamps[i]) && where_filter_passed)
+            {
                 filter_vec[i] = 0;
+            }
+            else if (where_filter_passed)
+            {
+                entry.new_ttl_info.update(timestamps[i]);
+            }
         }
     }
 
     chunk = Chunk(block.getColumns(), num_rows);
     chunk.addColumn(std::move(filter_data));
+}
+
+void TTLDeleteFilterTransform::finalize()
+{
+    if (finalized)
+        return;
+    finalized = true;
+
+    for (const auto & entry : delete_ttl_entries)
+    {
+        if (entry.expressions.where_expression)
+            data_part->ttl_infos.rows_where_ttl[entry.description.result_column] = entry.new_ttl_info;
+        else
+            data_part->ttl_infos.table_ttl = entry.new_ttl_info;
+
+        data_part->ttl_infos.updatePartMinMaxTTL(entry.new_ttl_info.min, entry.new_ttl_info.max);
+    }
+}
+
+IProcessor::Status TTLDeleteFilterTransform::prepare()
+{
+    auto status = ISimpleTransform::prepare();
+    if (status == Status::Finished)
+        finalize();
+    return status;
 }
 
 }

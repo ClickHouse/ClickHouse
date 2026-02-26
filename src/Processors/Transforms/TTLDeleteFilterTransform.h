@@ -15,8 +15,9 @@ namespace DB
 /// without actually filtering the block. The filter column is then used
 /// by the merging algorithm to set skip flags in row sources for vertical merge.
 ///
-/// TTL info tracking is handled separately by TTLTransform which runs
-/// after the merge on the already-filtered data.
+/// Also tracks new_ttl_info for each delete TTL entry and writes updated
+/// TTL metadata to the data part when processing is complete, similar to
+/// ITTLAlgorithm::finalize implementations.
 class TTLDeleteFilterTransform : public ISimpleTransform
 {
 public:
@@ -28,9 +29,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
         time_t current_time_,
-        bool force_);
+        bool force_,
+        const MergeTreeMutableDataPartPtr & data_part_);
 
     String getName() const override { return "TTLDeleteFilter"; }
+
+    Status prepare() override;
 
     PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
 
@@ -45,7 +49,7 @@ private:
         TTLExpressions expressions;
         TTLDescription description;
         IMergeTreeDataPart::TTLInfo old_ttl_info;
-        bool is_table_ttl;
+        IMergeTreeDataPart::TTLInfo new_ttl_info;
     };
 
     std::vector<DeleteTTLEntry> delete_ttl_entries;
@@ -55,11 +59,16 @@ private:
     const DateLUTImpl & date_lut;
     bool all_data_dropped = false;
 
+    MergeTreeMutableDataPartPtr data_part;
+    bool finalized = false;
+
     PreparedSets::Subqueries subqueries_for_sets;
     PaddedPODArray<Int64> timestamps;
 
     bool isTTLExpired(time_t ttl) const;
     bool isMinTTLExpired(const IMergeTreeDataPart::TTLInfo & info) const;
+
+    void finalize();
 
     /// Convert a typed TTL column into a uniform Int64 timestamp array.
     /// Resolves the concrete column type once, then extracts all values in a tight loop.

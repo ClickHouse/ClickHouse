@@ -426,11 +426,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     /// For vertical merge with TTL delete optimization, include columns needed by
     /// TTL expressions in the horizontal phase so the TTL filter can be evaluated.
-    if (ctx->need_remove_expired_values && !ctx->force_ttl
-        && global_ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary
-        && !global_ctx->metadata_snapshot->hasAnyGroupByTTL()
-        && !global_ctx->metadata_snapshot->hasAnyColumnTTL()
-        && (*global_ctx->data_settings)[MergeTreeSetting::vertical_merge_optimize_ttl_delete])
+    if (ctx->need_remove_expired_values && canVerticalTTLDelete(*global_ctx))
     {
         auto add_ttl_expression_columns = [&](const TTLDescription & ttl_descr)
         {
@@ -953,20 +949,9 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
     return hasLightweightDelete(global_ctx.future_part);
 }
 
-bool MergeTask::isVerticalTTLDelete(
-    const GlobalRuntimeContext & global_ctx,
-    const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx)
+bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
 {
     if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-        return false;
-
-    if (global_ctx.chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        return false;
-
-    if (!ctx.need_remove_expired_values)
-        return false;
-
-    if (ctx.force_ttl)
         return false;
 
     if (!(*global_ctx.data_settings)[MergeTreeSetting::vertical_merge_optimize_ttl_delete])
@@ -982,6 +967,19 @@ bool MergeTask::isVerticalTTLDelete(
         return false;
 
     return global_ctx.metadata_snapshot->hasRowsTTL() || global_ctx.metadata_snapshot->hasAnyRowsWhereTTL();
+}
+
+bool MergeTask::isVerticalTTLDelete(
+    const GlobalRuntimeContext & global_ctx,
+    const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx)
+{
+    if (global_ctx.chosen_merge_algorithm != MergeAlgorithm::Vertical)
+        return false;
+
+    if (!ctx.need_remove_expired_values)
+        return false;
+
+    return canVerticalTTLDelete(global_ctx);
 }
 
 
@@ -2250,18 +2248,20 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
         time_t current_time_,
-        bool force_)
+        bool force_,
+        const MergeTreeMutableDataPartPtr & data_part_)
         : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_), getTraits())
         , context(context_)
         , metadata_snapshot(metadata_snapshot_)
         , old_ttl_infos(old_ttl_infos_)
         , current_time(current_time_)
         , force(force_)
+        , data_part(data_part_)
     {
         /// Collect subqueries eagerly in the constructor, following the same pattern as TTLStep.
         /// transformPipeline() runs later during pipeline construction, after getSubqueries()
         /// has already been called by createMergedStream(), so subqueries must be available now.
-        TTLDeleteFilterTransform probe(context, input_header_, metadata_snapshot, old_ttl_infos, current_time, force);
+        TTLDeleteFilterTransform probe(context, input_header_, metadata_snapshot, old_ttl_infos, current_time, force, data_part);
         subqueries_for_sets = probe.getSubqueries();
     }
 
@@ -2272,7 +2272,7 @@ public:
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<TTLDeleteFilterTransform>(
-                context, header, metadata_snapshot, old_ttl_infos, current_time, force);
+                context, header, metadata_snapshot, old_ttl_infos, current_time, force, data_part);
         });
     }
 
@@ -2304,6 +2304,7 @@ private:
     IMergeTreeDataPart::TTLInfos old_ttl_infos;
     time_t current_time;
     bool force;
+    MergeTreeMutableDataPartPtr data_part;
     PreparedSets::Subqueries subqueries_for_sets;
 };
 
@@ -2704,7 +2705,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part->ttl_infos,
             global_ctx->time_of_merge,
-            ctx->force_ttl);
+            ctx->force_ttl,
+            global_ctx->new_data_part);
 
         ttl_filter_subqueries = ttl_filter_step->getSubqueries();
         ttl_filter_step->setStepDescription("TTL delete filter");
@@ -2875,16 +2877,7 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         return MergeAlgorithm::Horizontal;
     if (ctx->need_remove_expired_values)
     {
-        bool can_use_vertical_ttl =
-            (*merge_tree_settings)[MergeTreeSetting::vertical_merge_optimize_ttl_delete]
-            && global_ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary
-            && !ctx->force_ttl
-            && !global_ctx->metadata_snapshot->hasAnyGroupByTTL()
-            && !global_ctx->metadata_snapshot->hasAnyColumnTTL()
-            && (global_ctx->metadata_snapshot->hasRowsTTL() || global_ctx->metadata_snapshot->hasAnyRowsWhereTTL())
-            && !hasLightweightDelete(global_ctx->future_part);
-
-        if (!can_use_vertical_ttl)
+        if (!canVerticalTTLDelete(*global_ctx))
             return MergeAlgorithm::Horizontal;
     }
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)

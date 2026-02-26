@@ -197,3 +197,105 @@ SELECT 'test4_algo', merge_algorithm FROM system.part_log
     ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE IF EXISTS t_ttl_vert_4;
+
+-- Test 5: Verify delete_ttl_info_min/max metadata is updated correctly after vertical merge
+DROP TABLE IF EXISTS t_ttl_vert_5;
+
+CREATE TABLE t_ttl_vert_5
+(
+    id UInt64,
+    d DateTime,
+    c1 UInt64,
+    c2 UInt64,
+    c3 UInt64,
+    c4 UInt64
+)
+ENGINE = MergeTree
+ORDER BY id
+TTL d + INTERVAL 1 DAY
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
+    enable_block_number_column = 0,
+    enable_block_offset_column = 0,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    vertical_merge_optimize_ttl_delete = 1,
+    merge_with_ttl_timeout = 0,
+    ratio_of_defaults_for_sparse_serialization = 1.0;
+
+SYSTEM STOP TTL MERGES t_ttl_vert_5;
+SYSTEM STOP MERGES t_ttl_vert_5;
+
+-- Expired rows (d = 2000-01-01) and non-expired rows (d = future)
+INSERT INTO t_ttl_vert_5 SELECT number, '2000-01-01 00:00:00', number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
+INSERT INTO t_ttl_vert_5 SELECT number + 1000, '2100-01-01 00:00:00', number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
+
+SYSTEM START TTL MERGES t_ttl_vert_5;
+SYSTEM START MERGES t_ttl_vert_5;
+OPTIMIZE TABLE t_ttl_vert_5 FINAL;
+
+SELECT 'test5_after', count() FROM t_ttl_vert_5;
+
+-- After merge, only non-expired rows remain. TTL info should reflect the surviving rows' timestamps.
+-- delete_ttl_info_min and delete_ttl_info_max should both be non-zero (the future timestamp + 1 day)
+-- and should be equal since all surviving rows have the same TTL value.
+SELECT 'test5_ttl_info',
+    delete_ttl_info_min > 0,
+    delete_ttl_info_max > 0,
+    delete_ttl_info_min = delete_ttl_info_max
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_vert_5' AND active;
+
+DROP TABLE IF EXISTS t_ttl_vert_5;
+
+-- Test 6: Verify TTL metadata with WHERE clause after vertical merge
+DROP TABLE IF EXISTS t_ttl_vert_6;
+
+CREATE TABLE t_ttl_vert_6
+(
+    id UInt64,
+    d DateTime,
+    category UInt8,
+    c1 UInt64,
+    c2 UInt64,
+    c3 UInt64
+)
+ENGINE = MergeTree
+ORDER BY id
+TTL d + INTERVAL 1 DAY DELETE WHERE category = 1
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
+    enable_block_number_column = 0,
+    enable_block_offset_column = 0,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    vertical_merge_optimize_ttl_delete = 1,
+    merge_with_ttl_timeout = 0,
+    ratio_of_defaults_for_sparse_serialization = 1.0;
+
+SYSTEM STOP TTL MERGES t_ttl_vert_6;
+SYSTEM STOP MERGES t_ttl_vert_6;
+
+-- All rows have expired d, but only category=1 should be deleted by WHERE clause.
+-- category=0 rows survive with expired TTL, category=1 rows are deleted.
+INSERT INTO t_ttl_vert_6 SELECT number, '2000-01-01 00:00:00', number % 2, number * 10, number * 100, number * 1000 FROM numbers(1000);
+INSERT INTO t_ttl_vert_6 SELECT number + 1000, '2000-01-01 00:00:00', number % 2, number * 10, number * 100, number * 1000 FROM numbers(1000);
+
+SYSTEM START TTL MERGES t_ttl_vert_6;
+SYSTEM START MERGES t_ttl_vert_6;
+OPTIMIZE TABLE t_ttl_vert_6 FINAL;
+
+SELECT 'test6_after', count() FROM t_ttl_vert_6;
+
+-- With WHERE clause TTL, delete_ttl_info_min/max should be zero because
+-- the rows_where TTL info only tracks rows that pass the WHERE filter.
+-- Surviving rows (category=0) don't pass WHERE, so their TTL is not tracked.
+SELECT 'test6_ttl_info',
+    delete_ttl_info_min,
+    delete_ttl_info_max
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_vert_6' AND active;
+
+DROP TABLE IF EXISTS t_ttl_vert_6;

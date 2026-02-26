@@ -17,3 +17,7 @@ test4_after	1000
 test4_category	1
 test4_parts	1
 test4_algo	Vertical
+test5_after	1000
+test5_ttl_info	1	1	1
+test6_after	1000
+test6_ttl_info	0	0
