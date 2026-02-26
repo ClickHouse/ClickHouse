@@ -7502,7 +7502,7 @@ Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_geojson_format, false, R"(
-Allows the experimental `GeoJSON` input format that reads a GeoJSON FeatureCollection and produces one row per feature with `id Nullable(String)`, `geometry Geometry`, and `properties JSON` columns.
+Allows the experimental `GeoJSON` input format that reads a GeoJSON FeatureCollection and produces one row per feature with `id String`, `geometry Geometry`, and `properties JSON` columns.
 )", EXPERIMENTAL) \
     DECLARE(String, input_format_geojson_geometry_collection_handling, "throw", R"(
 Controls what happens when a `GeometryCollection` geometry type is encountered while reading `GeoJSON` input. `GeometryCollection` cannot be represented in ClickHouse's `Geometry` type.

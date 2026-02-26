@@ -13,7 +13,7 @@ namespace DB
 class FormatFactory;
 
 /// Reads a GeoJSON FeatureCollection, yielding one row per feature.
-/// The output schema is: id Nullable(String), geometry Geometry, properties JSON.
+/// The output schema is: id String, geometry Geometry, properties JSON.
 class GeoJSONRowInputFormat final : public IRowInputFormat
 {
 public:
