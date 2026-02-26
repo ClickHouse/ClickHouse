@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/IStorage.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -170,6 +171,7 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     }
 
     statistics.estimated_row_count = left_statistics.estimated_row_count * right_statistics.estimated_row_count * join_selectivity;
+    statistics.estimated_bytes_per_row = left_statistics.estimated_bytes_per_row + right_statistics.estimated_bytes_per_row;
 
     for (auto & column_statistics : statistics.column_statistics)
         if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
@@ -234,6 +236,8 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     if (cardinality_hint)
         statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, Float64(*cardinality_hint));
 
+    statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step);
+
     return statistics;
 }
 
@@ -285,6 +289,8 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     aggregation_statistics.estimated_row_count = std::min(max_key_number_of_distinct_values, input_statistics.estimated_row_count);
     /// Maximum number of rows is the product of all aggregation key NDVs
     aggregation_statistics.max_row_count = std::min(max_total_number_of_distinct_values, input_statistics.max_row_count);
+    /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output header
+    aggregation_statistics.estimated_bytes_per_row = estimateRowWidthFromHeader(*aggregating_step.getOutputHeader());
     return aggregation_statistics;
 }
 
@@ -317,6 +323,31 @@ ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep
         trimStatisticsByLimit(result_statistics, limit_step.getLimit());
     }
     return result_statistics;
+}
+
+Float64 StatisticsDerivation::estimateReadBytesPerRow(const ReadFromMergeTree & read_step)
+{
+    /// Priority: hint > storage column sizes > header-based estimate
+    auto avg_row_bytes_hint = statistics_lookup.getAvgRowBytes(read_step.getStorageID().getTableName());
+    if (avg_row_bytes_hint)
+        return *avg_row_bytes_hint;
+
+    auto total_rows_opt = read_step.getStorageSnapshot()->storage.totalRows(nullptr);
+    auto column_sizes = read_step.getStorageSnapshot()->storage.getColumnSizes();
+    if (total_rows_opt && *total_rows_opt > 0 && !column_sizes.empty())
+    {
+        Float64 total_bytes = 0;
+        for (const auto & col_name : read_step.getAllColumnNames())
+        {
+            auto it = column_sizes.find(col_name);
+            if (it != column_sizes.end())
+                total_bytes += Float64(it->second.data_uncompressed);
+        }
+        if (total_bytes > 0)
+            return total_bytes / Float64(*total_rows_opt);
+    }
+
+    return estimateRowWidthFromHeader(*read_step.getOutputHeader());
 }
 
 }

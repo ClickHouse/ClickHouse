@@ -127,15 +127,17 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (auto * broadcast = dynamic_cast<BroadcastExchangeStep *>(expression_plan_step))
     {
         auto result_count = static_cast<Float64>(broadcast->getResultBucketCount());
-        /// Broadcast replicates all rows to every destination node.
-        total_cost.cost.network += memo.getCostConfig().exchange_fixed_overhead + group->statistics->estimated_row_count * result_count;
+        auto bytes_per_row = group->statistics->estimated_bytes_per_row;
+        /// Broadcast replicates all rows to every destination node; cost is proportional to data volume.
+        total_cost.cost.network += memo.getCostConfig().exchange_fixed_overhead + group->statistics->estimated_row_count * bytes_per_row * result_count;
         /// Each destination materializes the full dataset in memory.
-        total_cost.cost.memory += group->statistics->estimated_row_count * result_count;
+        total_cost.cost.memory += group->statistics->estimated_row_count * bytes_per_row * result_count;
     }
     else if (dynamic_cast<LogicalExchangeStep *>(expression_plan_step))
     {
-        /// Gather, Shuffle, Scatter: each row is sent exactly once.
-        total_cost.cost.network += memo.getCostConfig().exchange_fixed_overhead + group->statistics->estimated_row_count;
+        auto bytes_per_row = group->statistics->estimated_bytes_per_row;
+        /// Gather, Shuffle, Scatter: each row is sent exactly once; cost is proportional to data volume.
+        total_cost.cost.network += memo.getCostConfig().exchange_fixed_overhead + group->statistics->estimated_row_count * bytes_per_row;
     }
     else if (typeid_cast<SortingStep *>(expression_plan_step))
     {
@@ -183,13 +185,14 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
     {
         /// Hash table is built from the full right table on every node.
         /// Network cost is already modeled by the BroadcastExchange expression.
-        join_cost.cost.memory += right_statistics.estimated_row_count * distribution_node_count;
+        /// Memory is proportional to data volume of the build side.
+        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row * distribution_node_count;
     }
     else if (is_shuffle)
     {
         /// Hash table is built from right_rows/N on each node, total = right_rows.
         /// Network cost is already modeled by ShuffleExchange expressions.
-        join_cost.cost.memory += right_statistics.estimated_row_count;
+        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
     }
     else
     {
@@ -197,7 +200,7 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
             left_statistics.estimated_row_count +           /// Scan of left table
             2.0 * right_statistics.estimated_row_count;     /// Right table contributes more because we build hash table from it
 
-        join_cost.cost.memory += right_statistics.estimated_row_count;
+        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
     }
 
     return join_cost;
@@ -209,17 +212,19 @@ ExpressionCost CostEstimator::estimateReadCost(
     const ExpressionStatistics & this_step_statistics,
     Float64 distribution_node_count)
 {
+    auto bytes_per_row = this_step_statistics.estimated_bytes_per_row;
+
     /// FIXME: hack to simulate that parallel read is faster
     if (dynamic_cast<const ParallelReadStrategy *>(strategy) != nullptr)
     {
         return ExpressionCost{
-            .cost = Cost{.io = this_step_statistics.estimated_row_count / distribution_node_count},
+            .cost = Cost{.io = this_step_statistics.estimated_row_count * bytes_per_row / distribution_node_count},
             .subtree_cost = {},
         };
     }
 
     return ExpressionCost{
-        .cost = Cost{.io = this_step_statistics.estimated_row_count},
+        .cost = Cost{.io = this_step_statistics.estimated_row_count * bytes_per_row},
         .subtree_cost = {},
     };
 }
@@ -248,7 +253,7 @@ ExpressionCost CostEstimator::estimateAggregationCost(
         aggregation_cost.cost.cpu +=
             this_step_statistics.estimated_row_count / distribution_node_count +
             input_statistics.estimated_row_count / distribution_node_count;
-        aggregation_cost.cost.network += input_statistics.estimated_row_count;
+        aggregation_cost.cost.network += input_statistics.estimated_row_count * input_statistics.estimated_bytes_per_row;
     }
     else if (is_partial)
     {

@@ -41,6 +41,9 @@ private:
     ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
 
+    /// Estimate bytes per row for a ReadFromMergeTree step using hint, storage column sizes, or output header.
+    Float64 estimateReadBytesPerRow(const ReadFromMergeTree & read_step);
+
     Memo & memo;
     const IOptimizerStatistics & statistics_lookup;
     LoggerPtr log = getLogger("StatisticsDerivation");
