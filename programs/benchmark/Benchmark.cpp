@@ -18,6 +18,7 @@
 #include <boost/program_options.hpp>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/randomSeed.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Core/Settings.h>

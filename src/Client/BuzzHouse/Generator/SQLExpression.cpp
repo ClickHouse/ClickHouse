@@ -369,7 +369,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         }
         this->depth--;
     }
-    else if (nopt < 20 && (this->next_type_mask & allow_map) != 0)
+    else if (nopt < 20 && complex && (this->next_type_mask & allow_map) != 0)
     {
         /// Generate a few map key/value pairs
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 4));
@@ -715,6 +715,7 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
+    lexpr->set_paren(rg.nextMediumNumber() < (nparams == 1 ? 51 : 91));
     for (const auto & [key, val] : this->levels)
     {
         levels_backup[key] = val;
@@ -803,7 +804,15 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         /// Most of the times disallow nested aggregates, and window functions inside aggregates
         this->levels[this->current_level].inside_aggregate = rg.nextSmallNumber() < 9;
         this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
-        if (max_params > 0 && max_params >= min_params)
+        if (agg.fnum == SQLFunc::FUNCestimateCompressionRatio && rg.nextSmallNumber() < 9)
+        {
+            func_call->add_params()->mutable_lit_val()->set_no_quote_str("'" + generateNextCodecString(rg) + "'");
+            if (rg.nextBool())
+            {
+                func_call->add_params()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(blockSizes));
+            }
+        }
+        else if (max_params > 0 && max_params >= min_params)
         {
             std::uniform_int_distribution<uint32_t> nparams(min_params, max_params);
             const uint32_t nagg_params = nparams(rg.generator);

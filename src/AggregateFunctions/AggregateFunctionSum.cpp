@@ -115,7 +115,7 @@ SELECT sum(salary) FROM employees;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, {}, documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, documentation}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_overflow = R"(
 Computes a sum of numeric values, using the same data type for the result as for the input parameters.
@@ -170,7 +170,7 @@ FROM employees;
     FunctionDocumentation::Category category_overflow = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_overflow = {description_overflow, syntax_overflow, arguments_overflow, {}, returned_value_overflow, examples_overflow, introduced_in_overflow, category_overflow};
 
-    factory.registerFunction("sumWithOverflow", {createAggregateFunctionSum<AggregateFunctionSumWithOverflow>, {}, documentation_overflow});
+    factory.registerFunction("sumWithOverflow", {createAggregateFunctionSum<AggregateFunctionSumWithOverflow>, documentation_overflow});
 
     FunctionDocumentation::Description description_kahan = R"(
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm).
@@ -203,7 +203,7 @@ SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
     FunctionDocumentation::Category category_kahan = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_kahan = {description_kahan, syntax_kahan, arguments_kahan, {}, returned_value_kahan, examples_kahan, introduced_in_kahan, category_kahan};
 
-    factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, {}, documentation_kahan});
+    factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan});
 }
 
 }

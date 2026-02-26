@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/sleep.h>
 
 #include <filesystem>
 #include <Core/ServerUUID.h>
@@ -11,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
 
@@ -312,6 +314,7 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooK
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries");
     auto zookeeper = context->getZooKeeper();
     const auto our_log_ptr_path = database->replica_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
