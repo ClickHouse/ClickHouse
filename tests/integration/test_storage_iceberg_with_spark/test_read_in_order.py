@@ -126,7 +126,7 @@ def test_defining_columns_with_special_character(started_cluster_iceberg_with_sp
 
     spark.sql(
         f"""
-            CREATE IF NOT EXISTS TABLE {table_name} 
+            CREATE TABLE {table_name} 
             ( 
             `#event` STRING NOT NULL ,
             `#data_lifecycle` STRING NOT NULL, 
@@ -143,6 +143,8 @@ def test_defining_columns_with_special_character(started_cluster_iceberg_with_sp
     )
 
     instance.query(f"SELECT * FROM icebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/demo_events', url = 'http://minio1:9001/{started_cluster_iceberg_with_spark.minio_bucket}/')")
+    spark.sql(f"DROP TABLE {table_name}")
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_read_in_order_with_complex_bucket(started_cluster_iceberg_with_spark,  storage_type):
