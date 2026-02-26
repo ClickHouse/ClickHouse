@@ -179,13 +179,6 @@ EOL
                    <readonly/>
                </allow_experimental_window_view>
 
-                <ast_fuzzer_runs>
-                    <readonly/>
-                </ast_fuzzer_runs>
-                <ast_fuzzer_any_query>
-                    <readonly/>
-                </ast_fuzzer_any_query>
-
             </constraints>
 
             <allow_experimental_window_view>false</allow_experimental_window_view>
