@@ -99,6 +99,21 @@ void setMaxBackgroundThreads(size_t max_threads)
     setValue("max_background_threads", max_threads);
 }
 
+void setProfileSamplingRate(size_t lg_prof_sample)
+{
+    checkProfilingEnabled();
+
+    size_t current = getValue<size_t>("prof.lg_sample");
+    if (current == lg_prof_sample)
+    {
+        LOG_TRACE(getLogger("SystemJemalloc"), "Profiler sampling rate is already {}", current);
+        return;
+    }
+
+    mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
+    LOG_INFO(getLogger("SystemJemalloc"), "Profiler sampling rate changed from {} to {}", current, lg_prof_sample);
+}
+
 
 namespace
 {
@@ -177,7 +192,8 @@ void setup(
     bool enable_global_profiler,
     bool enable_background_threads,
     size_t max_background_threads_num,
-    bool collect_global_profile_samples_in_trace_log)
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate)
 {
     if (enable_global_profiler)
     {
@@ -189,6 +205,9 @@ void setup(
 
     if (max_background_threads_num)
         setValue("max_background_threads", max_background_threads_num);
+
+    if (profiler_sampling_rate != 19)
+        setProfileSamplingRate(profiler_sampling_rate);
 
     collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
     setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
