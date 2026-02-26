@@ -7,6 +7,7 @@ import traceback
 import uuid
 from collections import defaultdict
 from pathlib import Path
+from typing import List
 
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika import Secret
