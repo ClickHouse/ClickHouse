@@ -51,6 +51,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
     extern const SettingsBool allow_experimental_geojson_format;
+    extern const SettingsString input_format_geojson_geometry_collection_handling;
 
     extern SettingsBool input_format_parallel_parsing;
     extern SettingsBool output_format_parallel_formatting;
@@ -342,6 +343,17 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
     format_settings.geojson.allow_experimental = settings[Setting::allow_experimental_geojson_format];
+    {
+        const String & val = settings[Setting::input_format_geojson_geometry_collection_handling];
+        if (val == "throw")
+            format_settings.geojson.geometry_collection_handling = FormatSettings::GeometryCollectionHandling::Throw;
+        else if (val == "null")
+            format_settings.geojson.geometry_collection_handling = FormatSettings::GeometryCollectionHandling::Null;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unknown value '{}' for setting input_format_geojson_geometry_collection_handling. "
+                "Expected 'throw' or 'null'.", val);
+    }
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
     format_settings.mysql_dump.map_column_names = settings[Setting::input_format_mysql_dump_map_column_names];
     format_settings.sql_insert.max_batch_size = settings[Setting::output_format_sql_insert_max_batch_size];

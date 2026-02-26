@@ -469,10 +469,16 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
     }
 
     if (geo_type == "GeometryCollection")
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "GeoJSON: GeometryCollection is not supported because it cannot be represented "
-            "in ClickHouse's Geometry type. Consider flattening GeometryCollections before ingestion.");
+    {
+        if (format_settings.geojson.geometry_collection_handling == FormatSettings::GeometryCollectionHandling::Throw)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "GeoJSON: GeometryCollection is not supported because it cannot be represented "
+                "in ClickHouse's Geometry type. Set input_format_geojson_geometry_collection_handling = 'null' "
+                "to insert NULL for such geometries instead of throwing.");
+        variant_col.insertDefault();
+        return;
+    }
 
     if (geo_type.empty() || raw_coordinates.empty())
     {

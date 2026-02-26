@@ -71,6 +71,43 @@ FROM format('GeoJSON', '{
 -- Schema inference returns the fixed schema.
 DESCRIBE format('GeoJSON', '{"type":"FeatureCollection","features":[]}');
 
+-- GeometryCollection: default behaviour is to throw.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "GeometryCollection",
+                "geometries": [
+                    {"type": "Point", "coordinates": [0, 0]}
+                ]
+            },
+            "properties": {}
+        }
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- GeometryCollection: with null handling inserts NULL for geometry.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "GeometryCollection",
+                "geometries": [
+                    {"type": "Point", "coordinates": [0, 0]}
+                ]
+            },
+            "properties": {}
+        }
+    ]
+}')
+SETTINGS input_format_geojson_geometry_collection_handling = 'null';
+
 -- Format is gated behind the setting.
 SET allow_experimental_geojson_format = 0;
 SELECT * FROM format('GeoJSON', '{"type":"FeatureCollection","features":[]}'); -- { serverError SUPPORT_IS_DISABLED }

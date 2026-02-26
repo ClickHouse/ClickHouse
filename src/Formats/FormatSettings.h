@@ -569,9 +569,12 @@ struct FormatSettings
         bool escape_special_characters = false;
     } markdown{};
 
+    enum class GeometryCollectionHandling { Throw, Null };
+
     struct
     {
         bool allow_experimental = false;
+        GeometryCollectionHandling geometry_collection_handling = GeometryCollectionHandling::Throw;
     } geojson{};
 
 };
