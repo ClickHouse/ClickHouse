@@ -548,16 +548,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_binary, distributed plan, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_BINARY],
-        ),
-        Job.ParamSet(
-            parameter="amd_binary, distributed plan, ParallelReplicas, s3 storage, sequential",
-            runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_BINARY],
-        ),
-        Job.ParamSet(
             parameter="amd_debug, AsyncInsert, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_DEBUG],
