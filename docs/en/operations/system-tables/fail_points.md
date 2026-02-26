@@ -14,13 +14,13 @@ Failpoints can be enabled and disabled at runtime using the `SYSTEM ENABLE FAILP
 
 ## Columns {#columns}
 
-- `name` ([String](/docs/en/sql-reference/data-types/string.md)) — Name of the failpoint.
-- `type` ([Enum8](/docs/en/sql-reference/data-types/enum.md)) — Type of the failpoint. Possible values:
+- `name` ([String](../../sql-reference/data-types/string.md)) — Name of the failpoint.
+- `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the failpoint. Possible values:
   - `'once'` — Triggers a single time and then auto-disables.
   - `'regular'` — Triggers every time the failpoint is hit.
   - `'pauseable_once'` — Blocks execution once until explicitly resumed.
   - `'pauseable'` — Blocks execution every time the failpoint is hit until explicitly resumed.
-- `enabled` ([UInt8](/docs/en/sql-reference/data-types/int-uint.md)) — Whether the failpoint is currently enabled. `1` means enabled, `0` means disabled.
+- `enabled` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Whether the failpoint is currently enabled. `1` means enabled, `0` means disabled.
 
 ## Example {#example}
 

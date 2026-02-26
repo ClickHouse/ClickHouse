@@ -1,12 +1,14 @@
 #pragma once
 
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
+#include <Client/ConnectionPool_fwd.h>
+#include <Core/Protocol.h>
 #include <Common/Macros.h>
+#include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/Priority.h>
 
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Timespan.h>
 
 #include <map>
 #include <string>

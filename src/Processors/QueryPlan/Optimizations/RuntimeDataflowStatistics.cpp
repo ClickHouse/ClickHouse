@@ -219,7 +219,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & input_columns,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
-    size_t read_bytes)
+    size_t read_bytes,
+    std::optional<bool> & should_continue_sampling)
 {
     Stopwatch watch;
 
@@ -252,8 +253,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         }
         else
         {
+            if (!should_continue_sampling.has_value())
+                should_continue_sampling = shouldSampleBlock(statistics, input_columns[0].column->size());
+
             // We don't have individual column size info, likely because it is a compact part. Let's try to estimate it.
-            if (shouldSampleBlock(statistics, input_columns[0].column->size()))
+            if (*should_continue_sampling)
             {
                 for (const auto & column : input_columns)
                 {

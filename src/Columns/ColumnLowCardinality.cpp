@@ -293,6 +293,11 @@ char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, c
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
+std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
+{
+    return getDictionary().getSerializedValueSize(getIndexes().getUInt(n), settings);
+}
+
 void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     /// nullable is handled internally.
