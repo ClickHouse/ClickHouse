@@ -173,9 +173,12 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
 
 void SerializationDateTime64::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeChar('"', ostr);
+    bool quote = settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::UnixTimestamp;
+    if (quote)
+        writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    writeChar('"', ostr);
+    if (quote)
+        writeChar('"', ostr);
 }
 
 void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

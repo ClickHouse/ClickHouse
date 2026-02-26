@@ -1,0 +1,12 @@
+DateTime simple
+{"ts":"2020-10-15 10:00:00"}
+DateTime unix_timestamp
+{"ts":1602756000}
+DateTime iso
+{"ts":"2020-10-15T10:00:00Z"}
+DateTime64 simple
+{"ts":"2020-10-15 10:00:00.123"}
+DateTime64 unix_timestamp
+{"ts":1602756000.123}
+DateTime64 iso
+{"ts":"2020-10-15T10:00:00.123Z"}
