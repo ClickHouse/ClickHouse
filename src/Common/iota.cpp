@@ -1,12 +1,17 @@
 #include <base/defines.h>
 #include <Common/iota.h>
-#include <Common/TargetSpecific.h>
 
 namespace DB
 {
 
+/// NO_INLINE prevents LTO from inlining these into callers. When inlined, the
+/// hot loop's alignment depends on the surrounding code and can land on a
+/// 64-byte boundary crossing, causing ~5% regression on modern CPUs. As a
+/// separate function the compiler aligns the loop independently.
+/// (Previously the multi-target dispatch mechanism achieved this implicitly.)
+
 template <iota_supported_types T>
-void iota(T * begin, size_t count, T first_value)
+void NO_INLINE iota(T * begin, size_t count, T first_value)
 {
     T value = first_value;
     for (size_t i = 0; i < count; i++)
@@ -17,7 +22,7 @@ void iota(T * begin, size_t count, T first_value)
 }
 
 template <iota_supported_types T>
-void iotaWithStep(T * begin, size_t count, T first_value, T step)
+void NO_INLINE iotaWithStep(T * begin, size_t count, T first_value, T step)
 {
     T value = first_value;
     for (size_t i = 0; i < count; i++)
