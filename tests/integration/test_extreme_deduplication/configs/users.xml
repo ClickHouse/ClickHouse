@@ -1,0 +1,7 @@
+<clickhouse>
+    <users>
+        <default>
+            <async_insert>0</async_insert>
+        </default>
+    </users>
+</clickhouse>

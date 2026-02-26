@@ -306,6 +306,8 @@ private:
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
 
+    static std::vector<std::string> getInsertQueryIds(InsertData & data);
+
 public:
     auto getQueueLocked(size_t shard_num) const
     {

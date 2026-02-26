@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance", with_zookeeper=True)
+instance = cluster.add_instance("instance", with_zookeeper=True, user_configs=["configs/users.xml"])
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -37,10 +37,11 @@ def test_insert_over_http_exception(start_cluster, inject_failpoint):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert "1\n" == instance.query(
-        f"select count() from system.query_log where log_comment ='{log_comment}' and current_database = currentDatabase() and event_date >= yesterday() and type = 'QueryStart'"
+    # log_coment setting is inherited by async push insert, so there should be 2 log records with QueryStart and ExceptionWhileProcessing, and no other log records with this log_comment
+    assert "2\n" == instance.query(
+        f"select count() from system.query_log where log_comment = '{log_comment}' and current_database = currentDatabase() and event_date >= yesterday() and type = 'QueryStart'"
     )
-    assert "1\n" == instance.query(
+    assert "2\n" == instance.query(
         f"select count() from system.query_log where log_comment ='{log_comment}' and current_database = currentDatabase() and event_date >= yesterday() and type = 'ExceptionWhileProcessing'"
     )
     assert "0\n" == instance.query(
