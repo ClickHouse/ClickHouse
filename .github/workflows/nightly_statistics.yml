@@ -16,7 +16,7 @@ env:
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -53,7 +53,7 @@ jobs:
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   collect_statistics:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [config_workflow]
     name: "Collect Statistics"
     outputs:
