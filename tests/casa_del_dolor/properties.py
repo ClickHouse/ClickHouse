@@ -372,7 +372,7 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         # "server_side_encryption_customer_key_base64": true_false_lambda, not working well
-        "skip_access_check": true_false_lambda,
+        # "skip_access_check": true_false_lambda, may break the startup
         "support_batch_delete": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_insecure_imds_request": true_false_lambda,
@@ -392,7 +392,7 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
-        "skip_access_check": true_false_lambda,
+        # "skip_access_check": true_false_lambda, may break the startup
         "thread_pool_size": threads_lambda,
         "use_native_copy": true_false_lambda,
     },
@@ -459,7 +459,7 @@ all_disks_properties = {
     "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "perform_ttl_move_on_insert": true_false_lambda,
     "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
-    "skip_access_check": true_false_lambda,
+    # "skip_access_check": true_false_lambda, may break the startup
 }
 
 
