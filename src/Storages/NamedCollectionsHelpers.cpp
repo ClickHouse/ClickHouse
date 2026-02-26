@@ -126,13 +126,14 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (!collection)
         return nullptr;
 
-    if (dependent_table_id)
-        NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
-
     auto collection_copy = collection->duplicate();
 
     if (asts.size() == 1)
+    {
+        if (dependent_table_id)
+            NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
         return collection_copy;
+    }
 
     const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
 
@@ -162,6 +163,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
 
+    if (dependent_table_id)
+        NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
+
     return collection_copy;
 }
 
@@ -186,6 +190,17 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+    }
+
+    /// Register the dictionary that uses this named collection as a dependency,
+    /// so that DROP NAMED COLLECTION is blocked while the dictionary exists.
+    /// config_prefix is "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse"),
+    /// where the dictionary root is always the first component.
+    auto dot = config_prefix.find('.');
+    if (dot != std::string::npos)
+    {
+        auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix.substr(0, dot));
+        NamedCollectionFactory::instance().addDependency(collection_name, dict_id);
     }
 
     return collection_copy;
