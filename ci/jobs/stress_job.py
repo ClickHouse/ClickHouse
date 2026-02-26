@@ -238,9 +238,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         else:
             log_parser = FuzzerLogParser(
-                server_log=server_err_log,
-                stderr_log=stderr_log if stderr_log.exists() else "",
-                fuzzer_log="",
+                server_logs=[server_err_log],
+                stderr_logs=[stderr_log] if stderr_log.exists() else None,
             )
             try:
                 name, description, files = log_parser.parse_failure()

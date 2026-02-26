@@ -141,9 +141,9 @@ def analyze_job_logs(
     if is_failed and status != Result.Status.ERROR:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
-            server_log=str(server_logs[0]),
-            stderr_log=str(stderr_logs[0]),
-            fuzzer_log=str(fuzzer_out),
+            server_logs=server_logs,
+            stderr_logs=stderr_logs,
+            fuzzer_log=fuzzer_out,
         )
         parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
 
