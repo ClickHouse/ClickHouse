@@ -22,7 +22,7 @@ INSERT INTO test_nc_dict_dep_source VALUES (1, 'one'), (2, 'two');
 
 CREATE NAMED COLLECTION ${NC_NAME} AS
     host = 'localhost',
-    port = 9000,
+    port = ${CLICKHOUSE_PORT_TCP},
     user = 'default',
     password = '',
     db = '${CLICKHOUSE_DATABASE}',
