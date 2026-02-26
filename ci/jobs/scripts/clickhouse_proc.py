@@ -810,7 +810,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         time.sleep(5)
         Shell.check('pwd', verbose=True)
         print(Path(temp_dir))
-        print("before zst", f in Path(temp_dir).glob("run_r*/core.*"))
+        print("before zst", Path(temp_dir).glob("run_r*/core.*"))
         r = [Utils.compress_zst(f) for f in Path(temp_dir).glob("run_r*/core.*")]
         print("files", r)
         return r
