@@ -109,13 +109,22 @@ Report log path and `tail -f` command to user.
 
 #### Unit Tests
 
-Use `--gtest_repeat` to run multiple iterations in a single process (avoids startup overhead):
+Use `--gtest_repeat` to run multiple iterations in a single process (avoids startup overhead).
+`halt_on_error=1` stops the process immediately on the first TSan alert — without it the test keeps running and generates cascading failures that obscure the root alert.
 
 ```bash
-TSAN_OPTIONS="second_deadlock_stack=1 history_size=7 verbosity=1" ./build_tsan/src/unit_tests_dbms --gtest_filter="*<test_name>*" --gtest_repeat=5 > <log_file> 2>&1
+TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 history_size=7" \
+  ./build_tsan/src/unit_tests_dbms \
+  --gtest_filter="*<test_name>*" \
+  --gtest_repeat=20 \
+  --gtest_break_on_failure \
+  > <log_file> 2>&1
 ```
 
-TSan output goes directly to the log file (stdout/stderr of the binary). TSan sets **exit code 66** when it detects errors — check this first as a fast indicator before grepping logs.
+`--gtest_break_on_failure` stops GTest on the first test assertion failure (separate from TSan).
+`--gtest_repeat=20` keeps repeating until the first TSan hit — combined with `halt_on_error=1` the process aborts immediately when a race is found, so a larger repeat count costs nothing if a race is hit early.
+
+TSan output goes directly to the log file (stdout/stderr of the binary). With `halt_on_error=1`, TSan calls `abort()` on error — the exit code will be non-zero (typically 134 for SIGABRT), not the default 66. Check `$?` non-zero as a fast indicator before grepping logs.
 
 #### Integration Tests
 
@@ -188,7 +197,7 @@ Both files must be checked for TSan errors.
 
 ### 3c. Check for TSan errors
 
-**Unit tests:** Check exit code (66 = TSan error) and grep the log:
+**Unit tests:** Check exit code (non-zero = error; `halt_on_error=1` aborts with SIGABRT rather than exit 66) and grep the log:
 ```bash
 grep -c "SUMMARY: ThreadSanitizer:" <log_file>
 ```
