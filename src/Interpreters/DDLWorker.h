@@ -132,7 +132,7 @@ protected:
     String enqueueQueryAttempt(DDLLogEntry & entry);
 
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
-    void scheduleTasks(bool reinitialized);
+    virtual void scheduleTasks(bool reinitialized);
 
     DDLTaskBase & saveTask(DDLTaskPtr && task);
 

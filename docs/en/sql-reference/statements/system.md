@@ -13,7 +13,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
-Reload all [Internal dictionaries](../../sql-reference/dictionaries/index.md).
+Reload all [Internal dictionaries](./create/dictionary/index.md).
 By default, internal dictionaries are disabled.
 Always returns `Ok.` regardless of the result of the internal dictionary update.
 
@@ -100,10 +100,6 @@ Clears the mark cache.
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
-
-## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
-
-Clears the parquet metadata cache.
 
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 

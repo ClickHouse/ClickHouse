@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/sleep.h>
 
 #include <filesystem>
 #include <Core/ServerUUID.h>
@@ -255,6 +256,18 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
     active_node_holder_zookeeper = zookeeper;
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+}
+
+void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
+{
+    DDLWorker::scheduleTasks(reinitialized);
+    if (need_update_cached_cluster)
+    {
+        database->setCluster(database->getClusterImpl());
+        if (!database->replica_group_name.empty())
+            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
+        need_update_cached_cluster = false;
+    }
 }
 
 void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
@@ -667,9 +680,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     if (task->entry.query.empty())
     {
         /// Some replica is added or removed, let's update cached cluster
-        database->setCluster(database->getClusterImpl());
-        if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
+        need_update_cached_cluster = true;
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }

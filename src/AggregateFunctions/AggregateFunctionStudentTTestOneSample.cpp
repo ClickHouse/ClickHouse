@@ -118,7 +118,7 @@ SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
     FunctionDocumentation::Category category_studentTTestOneSample = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_studentTTestOneSample = {description_studentTTestOneSample, syntax_studentTTestOneSample, arguments_studentTTestOneSample, parameters_studentTTestOneSample, returned_value_studentTTestOneSample, examples_studentTTestOneSample, introduced_in_studentTTestOneSample, category_studentTTestOneSample};
 
-    factory.registerFunction("studentTTestOneSample", {createAggregateFunctionStudentTTestOneSample, {}, documentation_studentTTestOneSample});
+    factory.registerFunction("studentTTestOneSample", {createAggregateFunctionStudentTTestOneSample, documentation_studentTTestOneSample});
 }
 
 }
