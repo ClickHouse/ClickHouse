@@ -19,6 +19,7 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
+WASM_ENGINE=""
 REMOTE_DATABASE_DISK=0
 
 while [[ "$#" -gt 0 ]]; do
@@ -40,6 +41,7 @@ while [[ "$#" -gt 0 ]]; do
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
+        --wasm-engine) WASM_ENGINE=$2 && shift ;;
         --remote-database-disk) REMOTE_DATABASE_DISK=1 ;;
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
@@ -418,6 +420,14 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     # Remove SSH config from replicas to avoid port conflicts on tcp_ssh_port.
     rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_rsa_key
     rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_rsa_key
+fi
+
+ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
+
+if [ ! -z "$WASM_ENGINE" ]; then
+    # ensure that default entry exists and we correctly replace it
+    grep -q -F ">wasmtime<" $DEST_SERVER_PATH/config.d/wasm_udf.xml || exit 1
+    sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
 fi
 
 if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
