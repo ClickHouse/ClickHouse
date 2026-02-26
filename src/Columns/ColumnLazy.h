@@ -33,7 +33,7 @@ class ColumnLazy final : public COWHelper<IColumn, ColumnLazy>
 private:
     friend class COWHelper<IColumn, ColumnLazy>;
 
-    using CapturedColumns = std::vector<WrappedPtr>;
+    using CapturedColumns = VectorWithMemoryTracking<WrappedPtr>;
     CapturedColumns captured_columns;
     size_t s = 0;
 

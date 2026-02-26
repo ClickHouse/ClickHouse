@@ -78,7 +78,7 @@ public:
 private:
     friend class COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>;
 
-    using NestedColumns = std::vector<WrappedPtr>;
+    using NestedColumns = VectorWithMemoryTracking<WrappedPtr>;
 
     /// Create an empty column with provided variants.
     /// Variants are in global order.

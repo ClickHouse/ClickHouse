@@ -17,7 +17,7 @@ class ColumnTuple final : public COWHelper<IColumnHelper<ColumnTuple>, ColumnTup
 private:
     friend class COWHelper<IColumnHelper<ColumnTuple>, ColumnTuple>;
 
-    using TupleColumns = std::vector<WrappedPtr>;
+    using TupleColumns = VectorWithMemoryTracking<WrappedPtr>;
     TupleColumns columns;
 
     template <bool positive>
