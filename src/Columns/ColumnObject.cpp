@@ -629,7 +629,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     /// Second, insert dynamic paths and extend them if needed.
     /// We can reach the limit of dynamic paths, and in this case
     /// the rest of dynamic paths will be inserted into shared data.
-    std::vector<std::string_view> src_dynamic_paths_for_shared_data;
+    VectorWithMemoryTracking<std::string_view> src_dynamic_paths_for_shared_data;
     for (const auto & [path, column] : src_object_column.dynamic_paths)
     {
         /// Check if we already have such dynamic path.
@@ -675,7 +675,7 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     /// Second, insert dynamic paths and extend them if needed.
     /// We can reach the limit of dynamic paths, and in this case
     /// the rest of dynamic paths will be inserted into shared data.
-    std::vector<std::string_view> src_dynamic_paths_for_shared_data;
+    VectorWithMemoryTracking<std::string_view> src_dynamic_paths_for_shared_data;
     for (const auto & [path, column] : src_object_column.dynamic_paths)
     {
         /// Check if we already have such dynamic path.
@@ -699,7 +699,7 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
 }
 
-void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
+void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
 {
     /// Paths in shared data are sorted, so paths from src_dynamic_paths_for_shared_data should be inserted properly
     /// to keep paths sorted. Let's sort them in advance.
@@ -1598,7 +1598,7 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         /// We want to keep the most frequent paths in the resulting object column.
         /// Sort paths by total number of non null values.
         /// Don't include paths from current column as we cannot change them.
-        std::vector<std::pair<size_t, std::string_view>> paths_with_sizes;
+        VectorWithMemoryTracking<std::pair<size_t, std::string_view>> paths_with_sizes;
         paths_with_sizes.reserve(path_to_total_number_of_non_null_values.size() - dynamic_paths.size());
         for (const auto & [path, size] : path_to_total_number_of_non_null_values)
         {
@@ -1766,7 +1766,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const VectorWithMemoryT
     if (path_to_total_number_of_non_null_values.size() > max_dynamic_paths)
     {
         /// Sort paths by total number of non null values.
-        std::vector<std::pair<size_t, std::string_view>> paths_with_sizes;
+        VectorWithMemoryTracking<std::pair<size_t, std::string_view>> paths_with_sizes;
         paths_with_sizes.reserve(path_to_total_number_of_non_null_values.size());
         for (const auto & [path, size] : path_to_total_number_of_non_null_values)
             paths_with_sizes.emplace_back(size, path);

@@ -481,7 +481,7 @@ private:
     /// from other variant to the combined one. It's used for inserting from
     /// different variants.
     /// Returns nullptr if maximum number of variants is reached and the new variant cannot be created.
-    std::vector<UInt8> * combineVariants(const VariantInfo & other_variant_info);
+    VectorWithMemoryTracking<UInt8> * combineVariants(const VariantInfo & other_variant_info);
 
     void updateVariantInfoAndExpandVariantColumn(const DataTypePtr & new_variant_type);
 

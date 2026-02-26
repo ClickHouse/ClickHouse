@@ -560,7 +560,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_colum
         if (column_length != selector.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
 
-        std::vector<size_t> counts(num_columns);
+        VectorWithMemoryTracking<size_t> counts(num_columns);
         for (auto idx : selector)
             ++counts[idx];
 

@@ -201,10 +201,10 @@ public:
 #endif
 
     /// Methods for insertion from another Variant but with known mapping between global discriminators.
-    void insertFrom(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
+    void insertFrom(const IColumn & src_, size_t n, const VectorWithMemoryTracking<ColumnVariant::Discriminator> & global_discriminators_mapping);
     /// Don't insert data into variant with skip_discriminator global discriminator, it will be processed separately.
-    void insertRangeFrom(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping, Discriminator skip_discriminator);
-    void insertManyFrom(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
+    void insertRangeFrom(const IColumn & src_, size_t start, size_t length, const VectorWithMemoryTracking<ColumnVariant::Discriminator> & global_discriminators_mapping, Discriminator skip_discriminator);
+    void insertManyFrom(const IColumn & src_, size_t position, size_t length, const VectorWithMemoryTracking<ColumnVariant::Discriminator> & global_discriminators_mapping);
 
     /// Methods for insertion into a specific variant.
     void insertIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t n);
@@ -328,7 +328,7 @@ public:
         return true;
     }
 
-    std::vector<Discriminator> getLocalToGlobalDiscriminatorsMapping() const { return local_to_global_discriminators; }
+    VectorWithMemoryTracking<Discriminator> getLocalToGlobalDiscriminatorsMapping() const { return local_to_global_discriminators; }
 
     /// Check if we have only 1 non-empty variant and no NULL values,
     /// and if so, return the discriminator of this non-empty column.
@@ -349,7 +349,7 @@ public:
     /// Extend current column with new variants. Change global discriminators of current variants to the new
     /// according to the mapping and add new variants with new global discriminators.
     /// This extension doesn't rewrite any data, just adds new empty variants and modifies global/local discriminators matching.
-    void extend(const std::vector<Discriminator> & old_to_new_global_discriminators, std::vector<std::pair<MutableColumnPtr, Discriminator>> && new_variants_and_discriminators);
+    void extend(const VectorWithMemoryTracking<Discriminator> & old_to_new_global_discriminators, VectorWithMemoryTracking<std::pair<MutableColumnPtr, Discriminator>> && new_variants_and_discriminators);
 
     bool hasDynamicStructure() const override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
@@ -360,9 +360,9 @@ public:
     void validateState() const;
 
 private:
-    void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
-    void insertRangeFromImpl(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping, const Discriminator * skip_discriminator);
-    void insertManyFromImpl(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
+    void insertFromImpl(const IColumn & src_, size_t n, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping);
+    void insertRangeFromImpl(const IColumn & src_, size_t start, size_t length, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping, const Discriminator * skip_discriminator);
+    void insertManyFromImpl(const IColumn & src_, size_t position, size_t length, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping);
 
     void initIdentityGlobalToLocalDiscriminatorsMapping();
     void constructOffsetsFromDiscriminators();
@@ -374,8 +374,8 @@ private:
     WrappedPtr offsets;
     NestedColumns variants;
 
-    std::vector<Discriminator> global_to_local_discriminators;
-    std::vector<Discriminator> local_to_global_discriminators;
+    VectorWithMemoryTracking<Discriminator> global_to_local_discriminators;
+    VectorWithMemoryTracking<Discriminator> local_to_global_discriminators;
 };
 
 

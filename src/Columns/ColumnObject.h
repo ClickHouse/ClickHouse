@@ -344,7 +344,7 @@ public:
 
 private:
 
-    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
+    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
@@ -353,7 +353,7 @@ private:
     /// This set of paths is constant and cannot be changed.
     PathToColumnMap typed_paths;
     /// Sorted list of typed paths. Used to avoid sorting paths every time in some methods.
-    std::vector<std::string_view> sorted_typed_paths;
+    VectorWithMemoryTracking<std::string_view> sorted_typed_paths;
     /// Map path -> column for dynamically added paths. All columns
     /// here are Dynamic columns. This set of paths can be extended
     /// during inserts into the column.
