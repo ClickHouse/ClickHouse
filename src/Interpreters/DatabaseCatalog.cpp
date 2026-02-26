@@ -14,16 +14,20 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
+#include <Interpreters/executeQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
+#include <Poco/DirectoryIterator.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Common/UniqueLock.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
@@ -35,6 +39,7 @@
 #include <utility>
 
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
@@ -83,6 +88,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace MergeTreeSetting
@@ -377,6 +383,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
+    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -395,7 +402,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        else
+        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
+        else if (!analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -1075,21 +1083,27 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, local_context, &exc);
-    if (!res.second)
+    auto table = local_context->hasQueryContext() ?
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }, &exc).second :
+        getTableImpl(table_id, local_context, &exc).second;
+    if (!table)
         throw Exception(*exc);
-    return res.second;
+    return table;
 }
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableImpl(table_id, local_context, nullptr).second;
+    return local_context->hasQueryContext() ?
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }, nullptr).second :
+        getTableImpl(table_id, local_context, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, local_context, &exc);
+    auto res = local_context->hasQueryContext() ?
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }, &exc) :
+        getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -1097,7 +1111,9 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableImpl(table_id, local_context, nullptr);
+    return local_context->hasQueryContext() ?
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }, nullptr) :
+        getTableImpl(table_id, local_context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
@@ -1348,7 +1364,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     dropped_table.table.reset();
 
-    auto ast_attach = make_intrusive<ASTCreateQuery>();
+    auto ast_attach = std::make_shared<ASTCreateQuery>();
     ast_attach->attach = true;
     ast_attach->setDatabase(dropped_table.table_id.database_name);
     ast_attach->setTable(dropped_table.table_id.table_name);

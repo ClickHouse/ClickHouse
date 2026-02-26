@@ -8,7 +8,7 @@ CREATE TABLE test_table
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY intDiv(id, 100)
-    SETTINGS alter_column_secondary_index_mode = 'drop', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0, index_granularity=8192;
+    SETTINGS alter_column_secondary_index_mode = 'drop', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0;
 INSERT INTO test_table SELECT number, number FROM numbers(10);
 SYSTEM STOP MERGES test_table;
 SET alter_sync = 0, mutations_sync = 0;
@@ -39,7 +39,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'3\', \'3\'])
             Parts: 1/1
             Granules: 1/1
           Ranges: 1
@@ -70,7 +69,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'3\', \'3\'])
             Parts: 1/1
             Granules: 1/1
           Ranges: 1
@@ -102,7 +100,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'3\', \'3\'])
             Parts: 1/1
             Granules: 1/1
           Ranges: 1
@@ -134,7 +131,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'3\', \'3\'])
             Parts: 0/1
             Granules: 0/1
           Ranges: 0
@@ -163,7 +159,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'2000\', \'2000\'])
             Parts: 0/2
             Granules: 0/2
           Ranges: 0
@@ -192,7 +187,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'2000\', \'2000\'])
             Parts: 1/2
             Granules: 1/2
           Ranges: 1
@@ -227,7 +221,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'5\', \'5\'])
             Parts: 1/2
             Granules: 1/2
           Ranges: 1
@@ -258,7 +251,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'5\', \'5\'])
             Parts: 1/2
             Granules: 1/2
           Ranges: 1
@@ -290,7 +282,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'5\', \'5\'])
             Parts: 1/2
             Granules: 1/2
           Ranges: 1
@@ -322,7 +313,6 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_ip_set
             Description: set GRANULARITY 1
-            Condition: (value in [\'5\', \'5\'])
             Parts: 0/2
             Granules: 0/2
           Ranges: 0

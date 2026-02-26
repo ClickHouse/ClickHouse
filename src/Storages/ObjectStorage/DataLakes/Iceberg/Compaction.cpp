@@ -151,7 +151,7 @@ Plan getPlan(
     }
     plan.initial_metadata_object = initial_metadata_object;
 
-    std::vector<ManifestFileEntryPtr> all_positional_delete_files;
+    std::vector<ManifestFileEntry> all_positional_delete_files;
     std::unordered_map<String, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
     {
@@ -183,7 +183,7 @@ Plan getPlan(
 
             for (const auto & data_file : data_files)
             {
-                auto partition_index = plan.partition_encoder.encodePartition(data_file->partition_key_value);
+                auto partition_index = plan.partition_encoder.encodePartition(data_file.partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
@@ -209,14 +209,14 @@ Plan getPlan(
 
     for (const auto & delete_file : all_positional_delete_files)
     {
-        auto partition_index = plan.partition_encoder.encodePartition(delete_file->partition_key_value);
+        auto partition_index = plan.partition_encoder.encodePartition(delete_file.partition_key_value);
         if (partition_index >= plan.partitions.size())
             continue;
 
-        std::vector<Iceberg::ManifestFileEntryPtr> result_delete_files;
+        std::vector<Iceberg::ManifestFileEntry> result_delete_files;
         for (auto & data_file : plan.partitions[partition_index])
         {
-            if (data_file->data_object_info->info.sequence_number <= delete_file->added_sequence_number)
+            if (data_file->data_object_info->info.sequence_number <= delete_file.added_sequence_number)
                 data_file->data_object_info->addPositionDeleteObject(delete_file);
         }
     }
@@ -237,13 +237,7 @@ static void writeDataFiles(
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
-            sample_block,
-            data_file->data_object_info,
-            object_storage,
-            format_settings,
-            // todo make compaction using same FormatParserSharedResources
-            std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
-            context);
+            sample_block, data_file->data_object_info, object_storage, format_settings, context);
 
         RelativePathWithMetadata relative_path(data_file->data_object_info->getPath());
         auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"));

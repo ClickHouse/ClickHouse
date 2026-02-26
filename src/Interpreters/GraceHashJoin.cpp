@@ -23,13 +23,6 @@ namespace CurrentMetrics
     extern const Metric TemporaryFilesForJoin;
 }
 
-namespace ProfileEvents
-{
-    extern const Event ExternalJoinCompressedBytes;
-    extern const Event ExternalJoinUncompressedBytes;
-    extern const Event ExternalJoinWritePart;
-}
-
 namespace DB
 {
 
@@ -266,12 +259,7 @@ GraceHashJoin::GraceHashJoin(
     , max_num_buckets(max_num_buckets_)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
-    , tmp_data(tmp_data_->childScope({
-            .current_metric = CurrentMetrics::TemporaryFilesForJoin,
-            .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
-            .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
-            .num_files = ProfileEvents::ExternalJoinWritePart,
-        }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec()))
+    , tmp_data(tmp_data_->childScope(CurrentMetrics::TemporaryFilesForJoin, table_join->temporaryFilesBufferSize()))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
@@ -541,6 +529,17 @@ public:
             if (not_processed)
             {
                 auto res = not_processed->next();
+                if (res.is_last && res.next_block)
+                {
+                    res.next_block->filterBySelector();
+                    auto next_block = std::move(*res.next_block).getSourceBlock();
+                    if (next_block.rows() > 0)
+                    {
+                        auto new_res = hash_join->joinBlock(std::move(next_block));
+                        std::lock_guard lock(extra_block_mutex);
+                        not_processed_results.emplace_back(std::move(new_res));
+                    }
+                }
                 if (!res.is_last)
                 {
                     std::lock_guard lock(extra_block_mutex);
@@ -615,6 +614,17 @@ public:
         auto res = hash_join->joinBlock(block);
         auto next = res->next();
 
+        if (next.is_last && next.next_block)
+        {
+            next.next_block->filterBySelector();
+            auto next_block = std::move(*next.next_block).getSourceBlock();
+            if (next_block.rows() > 0)
+            {
+                auto new_res = hash_join->joinBlock(std::move(next_block));
+                std::lock_guard lock(extra_block_mutex);
+                not_processed_results.emplace_back(std::move(new_res));
+            }
+        }
         if (!next.is_last)
         {
             std::lock_guard lock(extra_block_mutex);

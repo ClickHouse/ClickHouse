@@ -55,8 +55,6 @@ protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
     virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
 
-    virtual void updateConfigurationIfNeeded(ContextPtr /* context */) {}
-
 private:
     LoggerPtr log;
     String cluster_name;

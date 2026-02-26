@@ -445,7 +445,12 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue; /// We don't want to show the internal database for temporary tables in system.columns
-            database_column_mut->insert(database_name);
+
+            /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
+            /// This should be documented.
+
+            if (database->getEngineName() != "Lazy")
+                database_column_mut->insert(database_name);
         }
 
         Tables external_tables;

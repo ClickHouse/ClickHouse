@@ -4,7 +4,6 @@
 #include <Access/RowPolicy.h>
 #include <base/types.h>
 #include <Core/UUID.h>
-#include <Parsers/IAST_fwd.h>
 
 #include <boost/container/flat_set.hpp>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
@@ -13,8 +12,15 @@
 #include <unordered_map>
 #include <vector>
 
+
 namespace DB
 {
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+
+struct RowPolicyFilter;
+using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
+
 
 struct RowPolicyFilter
 {
@@ -24,8 +30,6 @@ struct RowPolicyFilter
 
     bool empty() const;
 };
-
-using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 
 
 /// Provides fast access to row policies' conditions for a specific user and tables.

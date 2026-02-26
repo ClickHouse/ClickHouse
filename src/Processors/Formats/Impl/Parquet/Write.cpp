@@ -21,7 +21,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
-#include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -37,7 +36,6 @@ namespace DB::ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace DB::Parquet
@@ -348,7 +346,7 @@ struct ConverterNumeric
 
     const To * getBatch(size_t offset, size_t count)
     {
-        if constexpr (sizeof(*column.getData().data()) == sizeof(To) && !std::is_same_v<To, bool>)
+        if constexpr (sizeof(*column.getData().data()) == sizeof(To))
             return reinterpret_cast<const To *>(column.getData().data() + offset);
         else
         {
@@ -375,14 +373,9 @@ struct ConverterDateTime64WithMultiplier
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
-        {
-            Int64 value = column.getData()[offset + i].value;
-            if (common::mulOverflow(value, multiplier, buf[i]))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "DateTime64 value {} is out of range for Parquet timestamp (multiplier {})",
-                    value, multiplier);
-        }
+            /// Not checking overflow because DateTime64 values should already be in the range where
+            /// they fit in Int64 at any allowed scale (i.e. up to nanoseconds).
+            buf[i] = column.getData()[offset + i].value * multiplier;
         return buf.data();
     }
 };
@@ -727,9 +720,9 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
     ///  * bloom filter size must be at most 128 MiB.
     /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
     /// requires this.
-    double requested_num_blocks = static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256;
+    double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
     size_t num_blocks = 1;
-    while (static_cast<double>(num_blocks) < requested_num_blocks)
+    while (num_blocks < requested_num_blocks)
     {
         if (num_blocks >= 4 * 1024 * 1024)
             return;
@@ -1332,13 +1325,7 @@ void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions
         r.total_byte_size += c.meta_data.total_uncompressed_size;
         r.total_compressed_size += c.meta_data.total_compressed_size;
     }
-
-    if (r.columns.empty())
-    {
-        /// All columns are empty tuples, there are no pages.
-        r.__set_file_offset(file.offset);
-    }
-    else
+    chassert(!r.columns.empty());
     {
         auto & m = r.columns[0].meta_data;
         r.__set_file_offset(m.__isset.dictionary_page_offset ? m.dictionary_page_offset : m.data_page_offset);

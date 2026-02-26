@@ -1,4 +1,5 @@
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>

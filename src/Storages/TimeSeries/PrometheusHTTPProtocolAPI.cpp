@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -57,10 +58,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     // Create TimeSeriesTableInfo structure
     PrometheusQueryToSQLConverter::TimeSeriesTableInfo table_info;
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr();
     table_info.storage_id = time_series_storage->getStorageID();
-    table_info.timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    table_info.value_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
+    table_info.timestamp_data_type = std::make_shared<DataTypeDateTime64>(0);
+    table_info.value_data_type = std::make_shared<DataTypeFloat64>();
 
     Field start_time;
     Field end_time;
@@ -98,7 +98,12 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (!sql_query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to convert PromQL to SQL");
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto query_context = getContext();
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(toString(thread_local_rng()));
+    query_context->setSetting("allow_experimental_time_series_aggregate_functions", Field(1));
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     PullingPipelineExecutor executor(io.pipeline);
     Block result_block;
@@ -312,7 +317,7 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
             }
             else
             {
-                writeFloatText(std::round(static_cast<double>(time(nullptr)) * 100.0) / 100.0, response);
+                writeFloatText(std::round(time(nullptr) * 100.0) / 100.0, response);
             }
 
             writeString(",", response);

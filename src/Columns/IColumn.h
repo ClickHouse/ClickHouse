@@ -7,6 +7,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
+#include <IO/WriteBufferFromString.h>
 #include "config.h"
 
 #include <span>
@@ -37,7 +38,6 @@ struct ColumnsInfo;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
-class WriteBufferFromOwnString;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -130,7 +130,32 @@ public:
 
     [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
-        return convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
+        Ptr converted = convertToFullColumnIfConst()
+            ->convertToFullColumnIfReplicated()
+            ->convertToFullColumnIfSparse()
+            ->convertToFullColumnIfLowCardinality();
+
+        Columns new_subcolumns;
+        bool any_changed = false;
+
+        converted->forEachSubcolumn([&](const WrappedPtr & subcolumn)
+        {
+            auto new_sub = subcolumn->convertToFullIfNeeded();
+            any_changed |= (new_sub.get() != subcolumn.get());
+            new_subcolumns.push_back(std::move(new_sub));
+        });
+
+        if (!any_changed)
+            return converted;
+
+        auto mutable_column = IColumn::mutate(std::move(converted));
+        size_t i = 0;
+        mutable_column->forEachMutableSubcolumn([&](WrappedPtr & subcolumn)
+        {
+            subcolumn = std::move(new_subcolumns[i++]);
+        });
+
+        return std::move(mutable_column);
     }
 
     /// Creates empty column with the same type.
@@ -157,7 +182,11 @@ public:
     struct Options
     {
         Int64 optimize_const_name_size = -1;
-        bool notFull(WriteBufferFromOwnString & buf) const;
+
+        bool notFull(WriteBufferFromOwnString & buf) const
+        {
+            return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
+        }
     };
 
     virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
@@ -857,6 +886,9 @@ bool isColumnConst(const IColumn & column);
 
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
+
+/// True if column's an ColumnLazy instance. It's just a syntax sugar for type check.
+bool isColumnLazy(const IColumn & column);
 
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);

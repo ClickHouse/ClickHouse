@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
@@ -16,7 +15,6 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
-#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
 #include <Disks/StoragePolicy.h>
@@ -155,9 +153,6 @@ private:
     /// currently mutating parts with future version
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
 
-    /// current parts postpone reasons
-    std::map<std::string, std::string> current_parts_postpone_reasons;
-
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     /// Unfinished mutations that are required for AlterConversions.
@@ -268,7 +263,7 @@ private:
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
     void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
-    PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) override;

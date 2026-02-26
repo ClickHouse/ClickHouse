@@ -7,7 +7,6 @@
 #include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
@@ -239,8 +238,7 @@ void BackupImpl::openArchive()
     }
     else
     {
-        archive_writer = createArchiveWriter(
-            archive_name, writer->writeFile(archive_name), DBMS_DEFAULT_BUFFER_SIZE, archive_params.adaptive_buffer_max_size);
+        archive_writer = createArchiveWriter(archive_name, writer->writeFile(archive_name));
         archive_writer->setPassword(archive_params.password);
         archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     }

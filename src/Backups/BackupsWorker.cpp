@@ -362,7 +362,7 @@ struct BackupsWorker::BackupStarter
 {
     BackupsWorker & backups_worker;
     LoggerPtr log;
-    boost::intrusive_ptr<ASTBackupQuery> backup_query;
+    std::shared_ptr<ASTBackupQuery> backup_query;
     ContextPtr query_context; /// We have to keep `query_context` until the end of the operation because a pointer to it is stored inside the ThreadGroup we're using.
     ContextMutablePtr backup_context;
     BackupSettings backup_settings;
@@ -379,7 +379,7 @@ struct BackupsWorker::BackupStarter
     BackupStarter(BackupsWorker & backups_worker_, const ASTPtr & query_, const ContextPtr & context_)
         : backups_worker(backups_worker_)
         , log(backups_worker.log)
-        , backup_query(boost::static_pointer_cast<ASTBackupQuery>(query_->clone()))
+        , backup_query(std::static_pointer_cast<ASTBackupQuery>(query_->clone()))
         , query_context(context_)
         , backup_context(Context::createCopy(query_context))
     {
@@ -635,7 +635,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
 
 void BackupsWorker::doBackup(
     BackupMutablePtr backup,
-    const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
+    const std::shared_ptr<ASTBackupQuery> & backup_query,
     const OperationID & backup_id,
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
@@ -680,13 +680,8 @@ void BackupsWorker::doBackup(
         BackupEntries backup_entries;
         {
             BackupEntriesCollector backup_entries_collector(
-                backup_query->elements,
-                backup_settings,
-                backup_id,
-                backup_coordination,
-                read_settings,
-                context,
-                getThreadPool(ThreadPoolId::BACKUP));
+                backup_query->elements, backup_settings, backup_coordination,
+                read_settings, context, getThreadPool(ThreadPoolId::BACKUP));
             backup_entries = backup_entries_collector.run();
         }
 
@@ -837,7 +832,7 @@ struct BackupsWorker::RestoreStarter
 {
     BackupsWorker & backups_worker;
     LoggerPtr log;
-    boost::intrusive_ptr<ASTBackupQuery> restore_query;
+    std::shared_ptr<ASTBackupQuery> restore_query;
     ContextPtr query_context; /// We have to keep `query_context` until the end of the operation because a pointer to it is stored inside the ThreadGroup we're using.
     ContextMutablePtr restore_context;
     RestoreSettings restore_settings;
@@ -853,7 +848,7 @@ struct BackupsWorker::RestoreStarter
     RestoreStarter(BackupsWorker & backups_worker_, const ASTPtr & query_, const ContextPtr & context_)
         : backups_worker(backups_worker_)
         , log(backups_worker.log)
-        , restore_query(boost::static_pointer_cast<ASTBackupQuery>(query_->clone()))
+        , restore_query(std::static_pointer_cast<ASTBackupQuery>(query_->clone()))
         , query_context(context_)
         , restore_context(Context::createCopy(query_context))
     {
@@ -1041,7 +1036,7 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
 }
 
 void BackupsWorker::doRestore(
-    const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
+    const std::shared_ptr<ASTBackupQuery> & restore_query,
     const OperationID & restore_id,
     const BackupInfo & backup_info,
     RestoreSettings restore_settings,
