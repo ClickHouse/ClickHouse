@@ -137,6 +137,7 @@ genhtml "llvm_coverage.info" \
     --ignore-errors source \
     --ignore-errors branch \
     --ignore-errors range \
+    --filter missing \
     --quiet \
     >/dev/null
 

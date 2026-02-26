@@ -94,7 +94,6 @@ if __name__ == "__main__":
     msg = f"PR changed-lines coverage: {pct:.2f}% ({covered}/{total})"
     print(msg)
 
-    is_failing = False
     if uncovered:
         print("\nUncovered changed code (with context):\n")
 
@@ -149,7 +148,7 @@ if __name__ == "__main__":
 
     r = Result.create_from(
         name="Print Uncovered Code",
-        status=Result.Status.FAILED if is_failing else Result.Status.SUCCESS,
+        status=Result.Status.SUCCESS,
         info=msg,
     )
     r.set_comment(msg)

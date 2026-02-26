@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from ci.praktika._environment import _Environment
@@ -230,8 +231,15 @@ if __name__ == "__main__":
             f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz",
         )
         diff_res.files.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
+        # Copy index.html → index_diff.html so the diff entry-point has a unique
+        # name in S3 links. The original index.html is kept as an asset so that
+        # relative links inside the report continue to work.
+        _diff_index = Path(TEMP_DIR) / "llvm_coverage_diff_html_report" / "index.html"
+        _diff_index_copy = _diff_index.parent / "index_diff.html"
+        if _diff_index.exists():
+            shutil.copy2(_diff_index, _diff_index_copy)
         _diff_files, _diff_assets = collect_html_report_files(
-            "llvm_coverage_diff_html_report"
+            "llvm_coverage_diff_html_report", entry_point="index_diff.html"
         )
         diff_res.files.extend(_diff_files)
         diff_res.assets.extend(_diff_assets)
@@ -277,8 +285,8 @@ if __name__ == "__main__":
         print("On master branch, skipping diff coverage generation")
 
     # Add direct S3 links to both HTML reports in the main job result.
-    # index.html is uploaded within the corresponding generate sub-result;
-    # the URL is deterministic: llvm_coverage/<normalize(sub_result_name)>/index.html.
+    # HTML files are uploaded within the corresponding generate sub-result;
+    # the URL is deterministic: llvm_coverage/<normalize(sub_result_name)>/<filename>.
     report_links = []
     if not info.is_local_run:
         _env = _Environment.get()
@@ -288,7 +296,7 @@ if __name__ == "__main__":
         )
         if not is_master_branch:
             report_links.append(
-                f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index.html"
+                f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             )
 
     archives = [f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz"]

@@ -140,6 +140,7 @@ genhtml \
   --ignore-errors empty \
   --ignore-errors unused \
   --simplified-colors \
+  --filter missing \
   --flat \
   $include_args \
   current.changed.info \
