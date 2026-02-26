@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Common/WeakHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
 
@@ -72,7 +73,7 @@ public:
         Names variant_names;
         /// Mapping (variant name) -> (global discriminator).
         /// It's used during variant extension.
-        std::unordered_map<String, UInt8> variant_name_to_discriminator;
+        UnorderedMapWithMemoryTracking<String, UInt8> variant_name_to_discriminator;
     };
 
 private:
@@ -508,7 +509,7 @@ private:
 
     /// Cache (Variant name) -> (global discriminators mapping from this variant to current variant in Dynamic column).
     /// Used to avoid mappings recalculation in combineVariants for the same Variant types.
-    std::unordered_map<String, std::vector<UInt8>> variant_mappings_cache;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<UInt8>> variant_mappings_cache;
     /// Cache of Variant types that couldn't be combined with current variant in Dynamic column.
     /// Used to avoid checking if combination is possible for the same Variant types.
     UnorderedSetWithMemoryTracking<String> variants_with_failed_combination;
@@ -516,16 +517,16 @@ private:
     /// We can use serializations of different data types to serialize values into shared variant.
     /// To avoid creating the same serialization multiple times, use simple cache.
     static const size_t SERIALIZATION_CACHE_MAX_SIZE = 256;
-    std::unordered_map<String, SerializationPtr> serialization_cache;
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> serialization_cache;
 };
 
 struct DynamicColumnCheckpoint : public ColumnCheckpoint
 {
-    DynamicColumnCheckpoint(size_t size_, std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
+    DynamicColumnCheckpoint(size_t size_, UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
     {
     }
 
-    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
+    UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints;
 };
 
 
@@ -533,6 +534,6 @@ void extendVariantColumn(
     IColumn & variant_column,
     const DataTypePtr & old_variant_type,
     const DataTypePtr & new_variant_type,
-    std::unordered_map<String, UInt8> old_variant_name_to_discriminator);
+    UnorderedMapWithMemoryTracking<String, UInt8> old_variant_name_to_discriminator);
 
 }

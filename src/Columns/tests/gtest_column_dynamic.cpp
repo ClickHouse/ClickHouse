@@ -51,7 +51,7 @@ TEST(ColumnDynamic, InsertFields)
     ASSERT_EQ(column->getVariantInfo().variant_type->getName(), "Variant(Float64, Int8, SharedVariant, String)");
     Names expected_names = {"Float64", "Int8", "SharedVariant", "String"};
     ASSERT_EQ(column->getVariantInfo().variant_names, expected_names);
-    std::unordered_map<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
+    UnorderedMapWithMemoryTracking<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
     ASSERT_TRUE(column->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 
@@ -147,7 +147,7 @@ ColumnDynamic::MutablePtr getInsertFromColumn(size_t num = 1)
     return column_from;
 }
 
-void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertFrom(*column_from, 0);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
@@ -268,7 +268,7 @@ TEST(ColumnDynamic, InsertFromOverflow3)
     ASSERT_EQ(field, 42.42);
 }
 
-void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertManyFrom(*column_from, 0, 2);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
@@ -414,7 +414,7 @@ TEST(ColumnDynamic, InsertManyFromOverflow3)
     ASSERT_EQ(field, 42.42);
 }
 
-void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertRangeFrom(*column_from, 0, 3);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
@@ -798,7 +798,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena2)
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), "Variant(Float64, Int8, SharedVariant, String)");
     Names expected_names = {"Float64", "Int8", "SharedVariant", "String"};
     ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
-    std::unordered_map<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
+    UnorderedMapWithMemoryTracking<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 

@@ -10,6 +10,7 @@
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 
 namespace DB
@@ -31,12 +32,12 @@ public:
         /// Source of the statistics.
         Source source;
         /// Statistics for dynamic paths: (path) -> (total number of not-null values).
-        std::unordered_map<String, size_t> dynamic_paths_statistics;
+        UnorderedMapWithMemoryTracking<String, size_t> dynamic_paths_statistics;
         /// Statistics for paths in shared data: (path) -> (total number of not-null values).
         /// We don't store statistics for all paths in shared data but only for some subset of them
         /// (is 10000 a good limit? It should not be expensive to store 10000 paths per part)
         static const size_t MAX_SHARED_DATA_STATISTICS_SIZE = 10000;
-        std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> shared_data_paths_statistics;
+        UnorderedMapWithMemoryTracking<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> shared_data_paths_statistics;
     };
 
     using StatisticsPtr = std::shared_ptr<const Statistics>;
@@ -73,8 +74,8 @@ private:
     ColumnObject(const ColumnObject & other);
 
     /// Use StringHashForHeterogeneousLookup hash for hash maps to be able to use std::string_view in find() method.
-    using PathToColumnMap = std::unordered_map<String, WrappedPtr, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
-    using PathToDynamicColumnPtrMap = std::unordered_map<String, ColumnDynamic *, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using PathToColumnMap = UnorderedMapWithMemoryTracking<String, WrappedPtr, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using PathToDynamicColumnPtrMap = UnorderedMapWithMemoryTracking<String, ColumnDynamic *, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use mutate in order to make mutable column and mutate shared nested columns.
