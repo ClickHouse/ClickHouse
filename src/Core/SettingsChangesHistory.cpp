@@ -42,6 +42,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.3",
         {
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"materialize_statistics_on_insert", true, false, "Disable materialization of statistics on insert after enabling auto statistics"},
+            {"allow_statistics", false, true, "Statistics are now GA"},
+            {"allow_experimental_statistics", false, true, "Statistics are now GA"},
+            {"allow_experimental_statistic", false, true, "Statistics are now GA"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -73,10 +77,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"jemalloc_profile_text_symbolize_with_inline", true, true, "New setting to control whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included at the cost of slower symbolization; when disabled, they are skipped for faster output"},
             {"jemalloc_profile_text_collapsed_use_count", false, false, "New setting to aggregate by allocation count instead of bytes in the collapsed jemalloc heap profile format"},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
-            {"materialize_statistics_on_insert", true, false, "Disable materialization of statistics on insert after enabling auto statistics"},
-            {"allow_statistics", false, true, "Statistics are now GA"},
-            {"allow_experimental_statistics", false, true, "Statistics are now GA"},
-            {"allow_experimental_statistic", false, true, "Statistics are now GA"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -1072,7 +1072,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
-
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
@@ -1082,7 +1082,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
-            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"}
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
