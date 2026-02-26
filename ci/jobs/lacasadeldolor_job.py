@@ -388,7 +388,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             tb_start = tail.rfind("Traceback (most recent call last):")
             tb_snippet = tail[tb_start:].strip()
             Result.create_from(
-                status=Result.StatusExtended.FAIL,
+                status=Result.Status.FAILED,
                 info=f"Python exception in dolor.py:\n{tb_snippet}",
                 files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
                 stopwatch=sw,
@@ -443,7 +443,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
     )
     if not cmd_ok and result.is_ok():
         Result.create_from(
-            status=Result.StatusExtended.FAIL,
+            status=Result.Status.FAILED,
             info="dolor.py exited with non-zero code but no specific error was identified. Check fuzzer.log.",
             files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
             stopwatch=sw,
