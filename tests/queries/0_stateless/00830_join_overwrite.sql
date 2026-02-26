@@ -1,3 +1,4 @@
+SET enable_auto_spilling_hash_join = 0; -- Remove once spilling hash join is enabled by default
 DROP TABLE IF EXISTS kv;
 
 CREATE TABLE kv (k UInt32, v UInt32) ENGINE Join(Any, Left, k);

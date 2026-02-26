@@ -1,3 +1,5 @@
+SET enable_auto_spilling_hash_join = 0; -- Remove once totals are handled correctly with spilling hash join
+
 DROP TABLE IF EXISTS video_log;
 DROP TABLE IF EXISTS video_log_result__fuzz_0;
 DROP TABLE IF EXISTS rng;

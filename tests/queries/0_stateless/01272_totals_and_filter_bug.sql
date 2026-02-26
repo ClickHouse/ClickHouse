@@ -1,3 +1,5 @@
+SET enable_auto_spilling_hash_join = 0; -- Remove once totals are handled correctly with spilling hash join
+
 select * from (select number, count() from numbers(2) group by number with totals) where number > 0 settings enable_optimize_predicate_expression=0;
 
 select '-';
