@@ -20,6 +20,7 @@ BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
 REMOTE_DATABASE_DISK=0
+USE_ENCRYPTED_STORAGE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -66,7 +67,16 @@ function check_clickhouse_version()
 
 function is_fast_build()
 {
-    return $(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    # Tests with MinIO/azure can be slow
+    if [[ $USE_S3_STORAGE_FOR_MERGE_TREE -eq 1 ]] || [[ $USE_AZURE_STORAGE_FOR_MERGE_TREE -eq 1 ]]; then
+        return 1
+    fi
+    # Encrypted storage is slow (but it is enabled only for object storages)
+    if [[ $USE_ENCRYPTED_STORAGE -eq 1 ]]; then
+        return 1
+    fi
+    # sanitizers and debugs builds are slow
+    [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" -eq 1 ]
 }
 
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
@@ -117,7 +127,7 @@ ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
-if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
+if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
     ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 fi
 
@@ -208,7 +218,7 @@ ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
 fi
-if [[ $(is_fast_build) == 1 ]]; then
+if is_fast_build; then
     ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
 fi
 
@@ -328,13 +338,13 @@ function setup_storage_policy()
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     setup_storage_policy
 
-    if [[ -n "$USE_ENCRYPTED_STORAGE" ]] && [[ "$USE_ENCRYPTED_STORAGE" -eq 1 ]]; then
+    if [[ "$USE_ENCRYPTED_STORAGE" -eq 1 ]]; then
         ln -sf $SRC_PATH/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
     else
         ln -sf $SRC_PATH/config.d/s3_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
     fi
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    if [[ -n "$USE_ENCRYPTED_STORAGE" ]] && [[ "$USE_ENCRYPTED_STORAGE" -eq 1 ]]; then
+    if [[ "$USE_ENCRYPTED_STORAGE" -eq 1 ]]; then
         ln -sf $SRC_PATH/config.d/azure_encrypted_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
     else
         ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
@@ -398,7 +408,7 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > $ch_server_2_path/config.d/macros.xml
 
-    if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
+    if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
         rm $ch_server_1_path/config.d/transactions.xml
         rm $ch_server_2_path/config.d/transactions.xml
         cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
