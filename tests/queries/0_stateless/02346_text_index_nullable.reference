@@ -1,4 +1,4 @@
-Basic Nulable(String) expressions.
+Basic Nullable(String) expressions.
 -- hasToken: rows 1 and 5 have "hello"; NULL rows 2 and 4 must not appear
 1
 5
@@ -14,12 +14,12 @@ Basic Nulable(String) expressions.
 0
 -- hasToken on absent token returns no rows
 0
-Nulable(String) consisting entirely of NULLs.
+Nullable(String) consisting entirely of NULLs.
 -- all-NULL part: hasToken must return 0
 0
 -- all-NULL part: hasAnyTokens must return 0
 0
-Nulable(String) consisting multiple granules where one granule is entirely NULL.
+Nullable(String) consisting multiple granules where one granule is entirely NULL.
 -- "hello" appears in granules 0 and 2; granule 1 (all NULL) is skipped
 1
 10

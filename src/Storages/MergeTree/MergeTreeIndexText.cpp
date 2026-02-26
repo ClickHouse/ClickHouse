@@ -1160,7 +1160,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (isArray(    index_column.type))
+    if (isArray(index_column.type))
     {
         const ColumnArray & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
 
@@ -1169,26 +1169,27 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
-            {
-                if (column_data.isNullAt(element_idx))
-                    continue;
+            if (column_data.isNullable())
+                for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+                {
+                    if (column_data.isNullAt(element_idx))
+                        continue;
 
-                std::string_view ref = column_data.getDataAt(element_idx);
-                granule_builder.addDocument(ref);
-            }
+                    granule_builder.addDocument(column_data.getDataAt(element_idx));
+                }
+            else
+                for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+                    granule_builder.addDocument(column_data.getDataAt(element_idx));
+
             granule_builder.incrementCurrentRow();
         }
     }
     else
     {
-        for (size_t i = 0; i < rows_read; ++i)
+        for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            if (!preprocessed_column->isNullAt(offset + i))
-            {
-                std::string_view ref = preprocessed_column->getDataAt(offset + i);
-                granule_builder.addDocument(ref);
-            }
+            if (!preprocessed_column->isNullAt(i))
+                granule_builder.addDocument(preprocessed_column->getDataAt(i));
             granule_builder.incrementCurrentRow();
         }
     }
