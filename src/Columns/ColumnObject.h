@@ -8,6 +8,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/WeakHash.h>
 
@@ -328,10 +329,10 @@ public:
         std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
 
         const ColumnObject & column_object;
-        std::vector<std::string_view>::const_iterator typed_paths_it;
-        std::vector<std::string_view>::const_iterator typed_paths_end;
-        std::set<std::string_view>::const_iterator dynamic_paths_it;
-        std::set<std::string_view>::const_iterator dynamic_paths_end;
+        VectorWithMemoryTracking<std::string_view>::const_iterator typed_paths_it;
+        VectorWithMemoryTracking<std::string_view>::const_iterator typed_paths_end;
+        SetWithMemoryTracking<std::string_view>::const_iterator dynamic_paths_it;
+        SetWithMemoryTracking<std::string_view>::const_iterator dynamic_paths_end;
         size_t shared_data_it;
         size_t shared_data_end;
         const ColumnString * shared_data_paths;
@@ -357,7 +358,7 @@ private:
     /// during inserts into the column.
     PathToColumnMap dynamic_paths;
     /// Sorted list of dynamic paths. Used to avoid sorting paths every time in some methods.
-    std::set<std::string_view> sorted_dynamic_paths;
+    SetWithMemoryTracking<std::string_view> sorted_dynamic_paths;
 
     /// Store and use pointers to ColumnDynamic to avoid virtual calls.
     /// With hundreds of dynamic paths these virtual calls are noticeable.
