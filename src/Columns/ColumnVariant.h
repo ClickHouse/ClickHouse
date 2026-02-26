@@ -106,21 +106,16 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested variants.
       */
     using Base = COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>;
-    static Ptr create(const Columns & variants_) { return create(variants_, {}); }
-    static Ptr create(const Columns & variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
-    static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_) { return create(local_discriminators_, variants_, {}); }
-    static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
-    static Ptr create(const ColumnPtr & local_discriminators_, const DB::ColumnPtr & offsets_, const Columns & variants_) { return create(local_discriminators_, offsets_, variants_, {}); }
-    static Ptr create(const ColumnPtr & local_discriminators_, const DB::ColumnPtr & offsets_, const Columns & variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
+    static Ptr create(const Columns & variants_) { return create(variants_, VectorWithMemoryTracking<Discriminator>{}); }
+    static Ptr create(const Columns & variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
+    static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_) { return create(local_discriminators_, variants_, VectorWithMemoryTracking<Discriminator>{}); }
+    static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
+    static Ptr create(const ColumnPtr & local_discriminators_, const DB::ColumnPtr & offsets_, const Columns & variants_) { return create(local_discriminators_, offsets_, variants_, VectorWithMemoryTracking<Discriminator>{}); }
+    static Ptr create(const ColumnPtr & local_discriminators_, const DB::ColumnPtr & offsets_, const Columns & variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
 
     static MutablePtr create(MutableColumns && variants_)
     {
         return Base::create(std::move(variants_));
-    }
-
-    static MutablePtr create(MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_)
-    {
-        return Base::create(std::move(variants_), VectorWithMemoryTracking<Discriminator>(local_to_global_discriminators_.begin(), local_to_global_discriminators_.end()));
     }
 
     static MutablePtr create(MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_)
@@ -134,11 +129,6 @@ public:
         return Base::create(std::move(local_discriminators_), std::move(variants_));
     }
 
-    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_)
-    {
-        return Base::create(std::move(local_discriminators_), std::move(variants_), VectorWithMemoryTracking<Discriminator>(local_to_global_discriminators_.begin(), local_to_global_discriminators_.end()));
-    }
-
     static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_)
     {
         return Base::create(std::move(local_discriminators_), std::move(variants_), std::move(local_to_global_discriminators_));
@@ -148,11 +138,6 @@ public:
     static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_)
     {
         return Base::create(std::move(local_discriminators_), std::move(offsets_), std::move(variants_));
-    }
-
-    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_)
-    {
-        return Base::create(std::move(local_discriminators_), std::move(offsets_), std::move(variants_), VectorWithMemoryTracking<Discriminator>(local_to_global_discriminators_.begin(), local_to_global_discriminators_.end()));
     }
 
     static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_)

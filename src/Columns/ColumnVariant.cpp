@@ -238,31 +238,14 @@ MutableColumns getVariantsAssumeMutable(const Columns & variants)
 
 }
 
-ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
-{
-    return ColumnVariant::create(getVariantsAssumeMutable(variants), local_to_global_discriminators);
-}
-
 ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
     return ColumnVariant::create(getVariantsAssumeMutable(variants), local_to_global_discriminators);
 }
 
-
-ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
-{
-    return ColumnVariant::create(local_discriminators->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
-}
-
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)
 {
     return ColumnVariant::create(local_discriminators->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
-}
-
-
-ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::ColumnPtr & offsets, const DB::Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
-{
-    return ColumnVariant::create(local_discriminators->assumeMutable(), offsets->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
 }
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::ColumnPtr & offsets, const DB::Columns & variants, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators)

@@ -391,7 +391,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                     result_typed_columns[path.substr(prefix.size())] = column;
             }
 
-            std::vector<std::pair<String, ColumnPtr>> result_dynamic_paths;
+            VectorWithMemoryTracking<std::pair<String, ColumnPtr>> result_dynamic_paths;
             for (const auto & [path, column] :  object_column.getDynamicPaths())
             {
                 if (path.starts_with(prefix))
