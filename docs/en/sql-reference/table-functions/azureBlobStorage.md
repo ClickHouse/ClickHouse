@@ -119,7 +119,7 @@ A table with the specified structure for reading or writing data in the specifie
 
 ## Examples {#examples}
 
-### Reading with `storage_account_url` form
+### Reading with `storage_account_url` form {#reading-with-storage-account-url}
 
 ```sql
 SELECT *
@@ -134,7 +134,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-### Reading with `connection_string` form
+### Reading with `connection_string` form {#reading-with-connection-string}
 
 ```sql
 SELECT *
@@ -147,7 +147,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-### Writing with partitions
+### Writing with partitions {#writing-with-partitions}
 
 ```sql
 INSERT INTO TABLE FUNCTION azureBlobStorage(
