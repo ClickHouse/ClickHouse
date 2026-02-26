@@ -181,7 +181,7 @@ protected:
     ///    - Validates and stores the updated metadata (with retry logic for ZooKeeper `ZBADVERSION` errors)
     /// 3. Sets the updated metadata in memory after successful persistence
     /// Used by `setAndStoreCreationCSN`, `setAndStoreRemovalCSN`, `setAndStoreCreationTID`, and `setAndStoreRemovalTID`.
-    void updateStoreAndSetMetadataWithRefresh(std::function<void(VersionInfo & current_info)> update_info_func);
+    void updateInfoWithRefreshDataThenStoreAndSetMetadata(std::function<void(VersionInfo & current_info)> update_info_func);
 
     /// Validates and updates in-memory `version_info` with locking.
     void validateAndSetInfo(const VersionInfo & new_info);

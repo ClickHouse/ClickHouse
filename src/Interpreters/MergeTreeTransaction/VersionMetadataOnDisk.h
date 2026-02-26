@@ -74,19 +74,19 @@ private:
     /// - For non-transactional parts with no existing file: defers write by storing in `deferred_persist_info`
     /// - Otherwise: validates storing version, increments it, writes to disk via atomic tmp file + rename
     /// - Clears `deferred_persist_info` and sets `is_persist_deferrable` to false after successful write
-    Int32 storeInfoImplUnlock(VersionInfo new_info) TSA_REQUIRES(persisted_info_mutex);
+    Int32 storeInfoImplUnlocked(VersionInfo new_info) TSA_REQUIRES(persisted_info_mutex);
 
     /// Returns the expected storing version number by reading it from disk or from `deferred_persist_info`.
     /// Used for optimistic concurrency control to detect version conflicts.
     /// Requires `persisted_info_mutex` to be held by the caller.
     /// Returns 0 if no metadata file exists yet.
-    Int32 getExpectedStoringVersionUnlock() TSA_REQUIRES(persisted_info_mutex);
+    Int32 getExpectedStoringVersionUnlocked() TSA_REQUIRES(persisted_info_mutex);
 
     /// Reads transactional metadata from `txn_version.txt` without locking.
     /// Requires `persisted_info_mutex` to be held by the caller.
     /// If `deferred_persist_info` is set, flushes it to disk first before reading.
     /// Returns std::nullopt if metadata file does not exist
-    std::optional<VersionInfo> readMetadataUnlock() TSA_REQUIRES(persisted_info_mutex);
+    std::optional<VersionInfo> readMetadataUnlocked() TSA_REQUIRES(persisted_info_mutex);
 
     /// Removes the temporary metadata file `txn_version.txt.tmp` if it exists.
     /// Called during metadata loading when detecting incomplete transactions.

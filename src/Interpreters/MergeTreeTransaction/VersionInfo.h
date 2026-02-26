@@ -40,9 +40,9 @@ struct VersionInfo
     void readFromBuffer(ReadBuffer & buf, bool one_line);
     void writeToBuffer(WriteBuffer & buf, bool one_line) const;
 
+    bool operator==(const VersionInfo & other) const noexcept = default;
+
 private:
     void readFromMultiLineBuffer(ReadBuffer & buf);
-
-    bool operator==(const VersionInfo & other) const noexcept = default;
 };
 }

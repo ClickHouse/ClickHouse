@@ -52,7 +52,7 @@ VersionInfo VersionMetadataOnDisk::loadMetadata()
     auto & data_part_storage = merge_tree_data_part->getDataPartStorage();
     {
         std::lock_guard lock_persisted_metadata{persisted_info_mutex};
-        loading_info = readMetadataUnlock();
+        loading_info = readMetadataUnlocked();
         has_tmp_metadata_file = data_part_storage.existsFile(TMP_TXN_VERSION_METADATA_FILE_NAME);
         if (!merge_tree_data_part->isStoredOnReadonlyDisk() && has_tmp_metadata_file)
             removeTmpMetadataFile();
@@ -175,7 +175,7 @@ bool VersionMetadataOnDisk::hasPersistedMetadata() const
     return merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
 }
 
-Int32 VersionMetadataOnDisk::storeInfoImplUnlock(VersionInfo new_info)
+Int32 VersionMetadataOnDisk::storeInfoImplUnlocked(VersionInfo new_info)
 {
     LOG_DEBUG(log, "Object {}, storeInfoImplUnlock {}", getObjectName(), new_info.toString(/*one_line=*/true));
 
@@ -183,7 +183,7 @@ Int32 VersionMetadataOnDisk::storeInfoImplUnlock(VersionInfo new_info)
     if (!can_write_metadata)
     {
         if (involved_in_transaction)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object was involved in transaction but cannot write metadata");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object {} was involved in transaction but cannot write metadata", getObjectName());
 
         return VersionInfo::UNSTORED_VERSION;
     }
@@ -203,7 +203,7 @@ Int32 VersionMetadataOnDisk::storeInfoImplUnlock(VersionInfo new_info)
     }
     else
     {
-        expected_storing_version = getExpectedStoringVersionUnlock();
+        expected_storing_version = getExpectedStoringVersionUnlocked();
     }
 
     if (expected_storing_version != new_info.storing_version)
@@ -225,26 +225,25 @@ Int32 VersionMetadataOnDisk::storeInfoImplUnlock(VersionInfo new_info)
     return new_info.storing_version;
 }
 
-Int32 VersionMetadataOnDisk::getExpectedStoringVersionUnlock()
+Int32 VersionMetadataOnDisk::getExpectedStoringVersionUnlocked()
 {
-    auto persisted_info = readMetadataUnlock();
+    auto persisted_info = readMetadataUnlocked();
     if (persisted_info)
         return (*persisted_info).storing_version;
     else
         return VersionInfo::UNSTORED_VERSION;
 }
 
-std::optional<VersionInfo> VersionMetadataOnDisk::readMetadataUnlock()
+std::optional<VersionInfo> VersionMetadataOnDisk::readMetadataUnlocked()
 {
     if (deferred_persist_info)
     {
         auto ret = *deferred_persist_info;
-        ret.storing_version = storeInfoImplUnlock(ret);
+        ret.storing_version = storeInfoImplUnlocked(ret);
         return ret;
     }
 
     auto & data_part_storage = merge_tree_data_part->getDataPartStorage();
-
     if (!data_part_storage.existsFile(TXN_VERSION_METADATA_FILE_NAME))
         return std::nullopt;
 
@@ -267,13 +266,13 @@ std::optional<VersionInfo> VersionMetadataOnDisk::readMetadataUnlock()
 Int32 VersionMetadataOnDisk::storeInfoImpl(const VersionInfo & new_info)
 {
     std::lock_guard lock_storing_version{persisted_info_mutex};
-    return storeInfoImplUnlock(new_info);
+    return storeInfoImplUnlocked(new_info);
 }
 
 VersionInfo VersionMetadataOnDisk::readMetadata()
 {
     std::lock_guard lock_persisted_metadata{persisted_info_mutex};
-    auto info = readMetadataUnlock();
+    auto info = readMetadataUnlocked();
     if (!info)
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Object {}, cannot read metadata", getObjectName());
 

@@ -99,7 +99,7 @@ void VersionMetadata::setAndStoreRemovalCSN(CSN csn)
 {
     LOG_DEBUG(log, "Object {}, setAndStoreRemovalCSN {}", getObjectName(), csn);
     auto update_function = [csn](VersionInfo & info) { info.removal_csn = csn; };
-    updateStoreAndSetMetadataWithRefresh(update_function);
+    updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 }
 
 void VersionMetadata::setAndStoreCreationCSN(CSN csn)
@@ -111,7 +111,7 @@ void VersionMetadata::setAndStoreCreationCSN(CSN csn)
         chassert(!info.creation_tid.isEmpty());
         info.creation_csn = csn;
     };
-    updateStoreAndSetMetadataWithRefresh(update_function);
+    updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 }
 
 void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
@@ -125,7 +125,7 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
         if (tid.isNonTransactional())
             info.removal_csn = Tx::NonTransactionalCSN;
     };
-    updateStoreAndSetMetadataWithRefresh(update_function);
+    updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 }
 
 
@@ -208,7 +208,7 @@ void VersionMetadata::setAndStoreCreationTID(const TransactionID & tid, Transact
             info.creation_csn = Tx::NonTransactionalCSN;
         info.creation_tid = tid;
     };
-    updateStoreAndSetMetadataWithRefresh(update_function);
+    updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 
     if (context)
         tryWriteEventToSystemLog(log, TransactionsInfoLogElement::ADD_PART, tid, *context);
@@ -289,7 +289,7 @@ void VersionMetadata::validateAdjustAndStoreMetadata(VersionInfo & new_info)
     new_info.storing_version = storeInfoImpl(new_info);
 }
 
-void VersionMetadata::updateStoreAndSetMetadataWithRefresh(std::function<void(VersionInfo & current_info)> update_info_func)
+void VersionMetadata::updateInfoWithRefreshDataThenStoreAndSetMetadata(std::function<void(VersionInfo & current_info)> update_info_func)
 {
     /// Try to update with in-memory info first
     VersionInfo new_info = getInfo();
@@ -473,10 +473,7 @@ bool VersionMetadata::adjustInfo(VersionInfo & current_info)
 
                 if (!current_removal_tid_lock_hash)
                 {
-                    LOG_TRACE(
-                        log,
-                        "Object {}, no removal_tid_lock, the transaction was not committed, resetting removal_tid",
-                        merge_tree_data_part->name);
+                    LOG_TRACE(log, "Object {}, no removal_tid_lock, the transaction was not committed", getObjectName());
                 }
                 else if (current_removal_tid_lock_hash == current_removal_tid_hash)
                 {
@@ -588,8 +585,8 @@ void VersionMetadata::validateInfo(const String & object_name, const VersionInfo
                 ErrorCodes::LOGICAL_ERROR,
                 "Object {}, start_csn of removal_tid {} should not be greater than removal_csn {}",
                 object_name,
-                info.creation_tid,
-                info.creation_csn);
+                info.removal_tid,
+                info.removal_csn);
     }
 }
 
