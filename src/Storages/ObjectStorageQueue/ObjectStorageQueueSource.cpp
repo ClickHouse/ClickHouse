@@ -984,6 +984,7 @@ String ObjectStorageQueueSource::getName() const
 
 Chunk ObjectStorageQueueSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueSource::generate");
     Chunk chunk;
     try
     {

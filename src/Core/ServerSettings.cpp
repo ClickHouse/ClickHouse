@@ -1266,6 +1266,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     Possible values: -20 to 19.
     )", 0) \
+    DECLARE(Bool, enforce_keeper_component_tracking, false, R"(
+    If enabled, every ZooKeeper request must have a component name set via `Coordination::setCurrentComponent`. Throws a `LOGICAL_ERROR` exception if the component is missing.
+    )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
