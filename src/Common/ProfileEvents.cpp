@@ -362,6 +362,7 @@
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
     \
     M(DeltaLakePartitionPrunedFiles, "Number of skipped files during DeltaLake partition pruning", ValueType::Number) \
+    M(DeltaLakeSnapshotInitializations, "Number of times a DeltaLake table snapshot was initialized (loaded from object storage)", ValueType::Number) \
     M(DeltaLakeScannedFiles, "Number of files scanned during DeltaLake scan callbacks", ValueType::Number) \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
