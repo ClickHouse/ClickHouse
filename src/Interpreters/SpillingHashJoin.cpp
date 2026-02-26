@@ -256,19 +256,13 @@ JoinResultPtr SpillingHashJoin::joinBlock(Block block)
 
 void SpillingHashJoin::setTotals(const Block & block)
 {
-    if (chosen_join)
-        chosen_join->setTotals(block);
-    else
-    {
-        std::lock_guard lock(totals_mutex);
-        IJoin::setTotals(block);
-    }
+    std::lock_guard lock(totals_mutex);
+    IJoin::setTotals(block);
 }
 
 const Block & SpillingHashJoin::getTotals() const
 {
-    if (chosen_join)
-        return chosen_join->getTotals();
+    std::lock_guard lock(totals_mutex);
     return IJoin::getTotals();
 }
 

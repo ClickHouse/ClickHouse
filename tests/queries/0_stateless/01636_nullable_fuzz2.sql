@@ -1,5 +1,3 @@
-SET enable_auto_spilling_hash_join = 0; -- Remove once totals are handled correctly with spilling hash join
-
 DROP TABLE IF EXISTS open_events_tmp;
 DROP TABLE IF EXISTS tracking_events_tmp;
 

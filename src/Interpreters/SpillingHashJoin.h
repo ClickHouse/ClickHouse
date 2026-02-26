@@ -86,7 +86,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
-    bool supportTotals() const override { return false; }
+    bool supportTotals() const override { return true; }
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool canProcessNonJoinedBlocksInParallel() const override;
 
@@ -127,7 +127,7 @@ private:
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_slot_to_convert{0};
-    std::mutex totals_mutex;
+    mutable std::mutex totals_mutex;
     bool supports_parallel_non_joined_blocks_processing{false};
 
     std::atomic<State> state{State::COLLECTING};
