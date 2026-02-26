@@ -5175,6 +5175,10 @@ The probability of a fault injection during table creation after creating metada
     DECLARE(Bool, delta_lake_log_metadata, false, R"(
 Enables logging delta lake metadata files into system table.
 )", 0) \
+    DECLARE(Bool, delta_lake_reload_schema_for_consistency, false, R"(
+If enabled, schema is reloaded from the DeltaLake metadata before each query execution to ensure
+consistency between the schema used during query analysis and the schema used during execution.
+)", 0) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.

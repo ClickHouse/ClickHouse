@@ -3866,6 +3866,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             continue;
         }
+        /// Argument is already a resolved TableFunctionNode (e.g. when the parent table function node
+        /// is re-analyzed in a synthetic subquery created by `analyzer_compatibility_join_using_top_level_identifier`).
+        if (table_function_argument->as<TableFunctionNode>())
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+            continue;
+        }
+
         if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();

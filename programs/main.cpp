@@ -400,6 +400,26 @@ int main(int argc_, char ** argv_)
         main_func = mainEntryClickHouseLocal;
     }
 
+    /// If the argument looks like a file path but doesn't exist, provide a helpful error
+    /// instead of the generic "Use one of the following commands" message.
+    /// The check above routes existing files to clickhouse-local, but when the file
+    /// doesn't exist, we fall through to `printHelpOnError` which is confusing:
+    ///     $ clickhouse tests/queries/0_stateless/my_test.sql
+    ///     Use one of the following commands: ...
+    /// We detect file-like arguments by the presence of `/` (path separator)
+    /// or `.` (file extension), which distinguishes them from mistyped subcommand
+    /// names like "clickhouse sever" where the generic help is appropriate.
+    if (main_func == printHelpOnError && argv.size() >= 2)
+    {
+        std::string_view arg(argv[1]);
+        if (arg.contains('/') || arg.contains('.'))
+        {
+            std::cerr << "Error: no such file: " << arg << std::endl;
+            std::cerr << "If you intended to run a script, please check the path." << std::endl;
+            return 1;
+        }
+    }
+
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
 
 #if defined(SANITIZE_COVERAGE)
