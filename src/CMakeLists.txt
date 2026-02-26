@@ -343,7 +343,7 @@ add_object_library(clickhouse_processors_queryplan_optimizations Processors/Quer
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
 if (TARGET ch_contrib::substrait)
-    add_subdirectory(Processors/Substrait)
+    add_object_library(clickhouse_processors_substrait Processors/Substrait)
 endif()
 
 # Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
@@ -372,7 +372,8 @@ if (TARGET ch_contrib::jemalloc)
 endif()
 
 if (TARGET ch_contrib::substrait)
-    target_link_libraries(dbms PRIVATE clickhouse_processors_substrait)
+    target_link_libraries(dbms PRIVATE ch_contrib::substrait)
+    target_include_directories(dbms SYSTEM PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src)
 endif()
 
 target_include_directories (dbms PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
