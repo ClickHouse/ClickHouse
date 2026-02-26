@@ -88,7 +88,6 @@ Alternatively, you can increment the [compatibility](../../../operations/setting
 
 To define a text index use the following syntax:
 
-
 ```sql
 CREATE TABLE table
 (
