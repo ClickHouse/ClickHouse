@@ -7,7 +7,7 @@
 SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 
-SELECT 'Basic Nulable(String) expressions.';
+SELECT 'Basic Nullable(String) expressions.';
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
@@ -47,7 +47,7 @@ SELECT count() FROM tab WHERE hasToken(str, 'xyz');
 DROP TABLE tab;
 
 
-SELECT 'Nulable(String) consisting entirely of NULLs.';
+SELECT 'Nullable(String) consisting entirely of NULLs.';
 
 CREATE TABLE tab
 (
@@ -68,7 +68,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(str, 'hello world');
 
 DROP TABLE tab;
 
-SELECT 'Nulable(String) consisting multiple granules where one granule is entirely NULL.';
+SELECT 'Nullable(String) consisting multiple granules where one granule is entirely NULL.';
 --   Granule 0 (rows  1-4): mixed NULL / non-NULL
 --   Granule 1 (rows  5-8): all NULL  → no tokens indexed
 --   Granule 2 (rows 9-12): mixed NULL / non-NULL
