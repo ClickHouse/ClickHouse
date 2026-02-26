@@ -56,10 +56,12 @@ CreatingSetsTransform::CreatingSetsTransform(
     SharedHeader in_header_,
     SharedHeader out_header_,
     SetAndKeyPtr set_and_key_,
+    StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
     , set_and_key(std::move(set_and_key_))
+    , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
@@ -102,7 +104,7 @@ void CreatingSetsTransform::work()
 void CreatingSetsTransform::startSubquery()
 {
     /// Lookup the set in the cache if we don't need to build table.
-    if (prepared_sets_cache && !set_and_key->external_table)
+    if (prepared_sets_cache && !external_table)
     {
         /// Try to find the set in the cache and wait for it to be built.
         /// Retry if the set from cache fails to be built.
@@ -150,15 +152,15 @@ void CreatingSetsTransform::startSubquery()
 
     if (set_and_key->set && !set_from_cache)
         LOG_TRACE(log, "Creating set, key: {}", set_and_key->key);
-    if (set_and_key->external_table)
+    if (external_table)
         LOG_TRACE(log, "Filling temporary table.");
 
-    if (set_and_key->external_table)
+    if (external_table)
         /// TODO: make via port
-        table_out = QueryPipeline(set_and_key->external_table->write({}, set_and_key->external_table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
+        table_out = QueryPipeline(external_table->write({}, external_table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
 
     done_with_set = !set_and_key->set || set_from_cache;
-    done_with_table = !set_and_key->external_table;
+    done_with_table = !external_table;
 
     if ((done_with_set && !set_from_cache) && done_with_table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to do with subquery");
@@ -182,7 +184,7 @@ void CreatingSetsTransform::finishSubquery()
     {
         if (set_and_key->set)
             LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
-        if (set_and_key->external_table)
+        if (external_table)
             LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
     }
     else

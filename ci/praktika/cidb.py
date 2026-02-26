@@ -68,7 +68,6 @@ class CIDB:
         # Prefer configured table name if available, fall back to default
         table = Settings.CI_DB_TABLE_NAME or "checks"
 
-        info = Info()
         query = f"""\
 WITH
     90 AS interval_days
@@ -82,7 +81,7 @@ WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     AND test_name = '{tn}'
     -- AND check_name = '{job_name}'
     AND test_status IN ('FAIL', 'ERROR')
-    AND ((pull_request_number = 0 AND head_ref = '{info.git_branch}') OR (pull_request_number != 0 AND base_ref = '{info.base_branch}'))
+    AND ((head_ref = 'master' AND pull_request_number = 0) OR pull_request_number != 0)
 GROUP BY day
 ORDER BY day DESC
 """

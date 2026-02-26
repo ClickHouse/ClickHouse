@@ -58,10 +58,6 @@ class Info:
         return self.env.PR_TITLE
 
     @property
-    def updated_at(self):
-        return self.env.EVENT_TIME
-
-    @property
     def pr_url(self):
         return self.env.CHANGE_URL
 

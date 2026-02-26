@@ -1852,7 +1852,7 @@ private:
         MutableColumnPtr & tmp_dynamic_column,
         bool is_root) const
     {
-        if (shouldSkipPath(current_path, insert_settings))
+        if (shouldSkipPath(current_path))
             return true;
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
@@ -1968,7 +1968,7 @@ private:
         return true;
     }
 
-    bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
+    bool shouldSkipPath(const String & path) const
     {
         if (paths_to_skip.contains(path))
             return true;
@@ -1982,16 +1982,8 @@ private:
 
         for (const auto & regexp : path_regexps_to_skip)
         {
-            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
-            {
-                if (re2::RE2::PartialMatch(path, regexp))
-                    return true;
-            }
-            else
-            {
-                if (re2::RE2::FullMatch(path, regexp))
-                    return true;
-            }
+            if (re2::RE2::FullMatch(path, regexp))
+                return true;
         }
 
         return false;

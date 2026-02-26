@@ -170,21 +170,13 @@ public:
         {
             auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, nullptr);
             scan = KernelUtils::unwrapResult(
-                ffi::scan(
-                    kernel_snapshot_state->snapshot.get(),
-                    kernel_snapshot_state->engine.get(),
-                    predicate.get(),
-                    /* schema */nullptr),
+                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), predicate.get()),
                 "scan");
         }
         else
         {
             scan = KernelUtils::unwrapResult(
-                ffi::scan(
-                    kernel_snapshot_state->snapshot.get(),
-                    kernel_snapshot_state->engine.get(),
-                    /* predicate */nullptr,
-                    /* schema */nullptr),
+                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), nullptr),
                 "scan");
         }
 
@@ -319,7 +311,6 @@ public:
         ffi::NullableCvoid engine_context,
         struct ffi::KernelStringSlice path,
         int64_t size,
-        int64_t /*mod_time*/,
         const ffi::Stats * stats,
         const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
@@ -512,9 +503,7 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
             "snapshot");
     }
     snapshot_version = ffi::version(snapshot.get());
-    scan = KernelUtils::unwrapResult(
-        ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
-        "scan");
+    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
 }
 
 void TableSnapshot::initSnapshotImpl() const

@@ -80,8 +80,6 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         boost::split(configuration->http_proxy_urls, config.getString(config_prefix + ".http_proxy_urls"), [](char c) { return c == '|'; });
         configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
         configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
-        if (config.has(config_prefix + ".ytsaurus_columns_description"))
-            configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
 
         return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
     };
@@ -138,12 +136,7 @@ YTsarususDictionarySource::~YTsarususDictionarySource() = default;
 BlockIO YTsarususDictionarySource::loadAll()
 {
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {
-        .cypress_path = configuration->cypress_path,
-        .settings = configuration->settings,
-        .select_rows_columns = configuration->ytsaurus_columns_description,
-        .check_types_allow_nullable = true,
-    }, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .check_types_allow_nullable = true}, sample_block, max_block_size));
     return io;
 }
 

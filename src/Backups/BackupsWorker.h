@@ -6,8 +6,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
-
-#include <mutex>
 #include <unordered_map>
 
 

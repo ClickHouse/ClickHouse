@@ -101,15 +101,21 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
+## SYSTEM DROP TEXT INDEX DICTIONARY CACHE {#drop-text-index-dictionary-cache}
+
+Clears the text index dictionary cache.
+
+## SYSTEM DROP TEXT INDEX HEADER CACHE {#drop-text-index-header-cache}
+
+Clears the text index header cache.
+
+## SYSTEM DROP TEXT INDEX POSTINGS CACHE {#drop-text-index-postings-cache}
+
+Clears the text index postings cache.
+
 ## SYSTEM DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
-Clears the text index's header, dictionary and postings caches.
-
-If you like to drop one of these caches individually, you can run
-
-- `SYSTEM DROP TEXT INDEX HEADER CACHE`,
-- `SYSTEM DROP TEXT INDEX DICTIONARY CACHE`, or
-- `SYSTEM DROP TEXT INDEX POSTINGS CACHE`
+Clears the text index header cache, dictionary cache, and postings cache.
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
@@ -703,11 +709,6 @@ Wait for the currently running refresh to complete. If the refresh fails, throws
 Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
 
 If the view is in a Replicated or Shared database, `STOP VIEW` only affects the current replica, while `STOP REPLICATED VIEW` affects all replicas.
-
-:::note
-The stopped state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
-In Replicated or Shared databases, `SYSTEM STOP VIEW` only affects the current replica. Use `SYSTEM STOP REPLICATED VIEW` to stop refreshes on all replicas.
-:::
 
 ```sql
 SYSTEM STOP VIEW [db.]name

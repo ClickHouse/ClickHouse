@@ -375,7 +375,6 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::SYNC_FILE_CACHE:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILE_CACHE);
             LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
             sync();
             break;
@@ -885,11 +884,7 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
 
-            std::vector<StorageID> tables;
-            for (const auto & [database, table]: query.tables)
-                tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
-
-            queue->flush(tables);
+            queue->flush(query.tables);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
@@ -925,33 +920,15 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
-            {
-                LOG_TRACE(log, "Waiting for failpoint {} to pause", query.fail_point_name);
-                FailPointInjection::waitForPause(query.fail_point_name);
-                LOG_TRACE(log, "Failpoint {} has paused", query.fail_point_name);
-            }
-            else
-            {
-                LOG_TRACE(log, "Waiting for failpoint {} to resume", query.fail_point_name);
-                FailPointInjection::waitForResume(query.fail_point_name);
-                LOG_TRACE(log, "Failpoint {} has resumed", query.fail_point_name);
-            }
-
-            break;
-        }
-        case Type::NOTIFY_FAILPOINT:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
-            FailPointInjection::notifyFailPoint(query.fail_point_name);
+            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
+            FailPointInjection::pauseFailPoint(query.fail_point_name);
+            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
             break;
         }
 #else // USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
-        case Type::NOTIFY_FAILPOINT:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support");
 #endif // USE_LIBFIU
         case Type::RESET_COVERAGE:
@@ -1004,10 +981,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
-            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
-            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
-            filename += ".symbolized";
+            auto filename = Jemalloc::flushProfile("/tmp/jemalloc_clickhouse");
             auto col = ColumnString::create();
             col->insertData(filename.data(), filename.size());
             Columns columns;
@@ -2326,7 +2300,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
-        case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:

@@ -838,3 +838,4 @@ template <> struct std::hash<Coordination::WatchCallbackPtrOrEventPtr>
         return self.hash();
     }
 };
+

@@ -198,12 +198,6 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
     }
 }
 
-void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void optimizeExchanges(QueryPlan::Node & root);
-
 /// Find the top node of the parallel replicas plan. E.g.:
 ///
 /// Expression ((Project names + Projection))
@@ -508,20 +502,17 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
+    /// Materialize subplan references before other optimizations.
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
     {
-        /// Materialize subplan references before other optimizations.
-        traverseQueryPlan(stack, root, [&](auto & frame_node)
-        {
-            materializeQueryPlanReferences(frame_node, nodes);
-        });
+        materializeQueryPlanReferences(frame_node, nodes);
+    });
 
-        /// Remove CommonSubplanSteps (they must be not used at that point).
-        traverseQueryPlan(stack, root, [&](auto & frame_node)
-        {
-            optimizeUnusedCommonSubplans(frame_node);
-        });
-    }
+    /// Remove CommonSubplanSteps (they must be not used at that point).
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    {
+        optimizeUnusedCommonSubplans(frame_node);
+    });
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
@@ -529,7 +520,6 @@ void optimizeTreeSecondPass(
         {
             optimizeJoinLogical(frame_node, nodes, optimization_settings);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
-            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -572,17 +562,6 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
-        },
-        [&](auto & frame_node)
-        {
-            /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (optimization_settings.make_distributed_plan)
-            {
-                tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
-                tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
-                tryMakeDistributedSorting(frame_node, nodes, optimization_settings);
-                tryMakeDistributedRead(frame_node, nodes, optimization_settings);
-            }
         });
 
     stack.push_back({.node = &root});
@@ -693,9 +672,6 @@ void optimizeTreeSecondPass(
     // local plan can contain redundant sorting
     if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
         tryRemoveRedundantSorting(&root);
-    /// Optimize exchanges
-    if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
-        optimizeExchanges(root);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".

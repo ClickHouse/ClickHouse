@@ -41,11 +41,14 @@
 #include <Server/DistributedCache/DistributedCacheServerInstance.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesUnknown;
+}
+
 namespace ProfileEvents
 {
     extern const Event ExternalProcessingFilesTotal;
-    extern const Event ExternalProcessingCompressedBytesTotal;
-    extern const Event ExternalProcessingUncompressedBytesTotal;
 
 #if ENABLE_DISTRIBUTED_CACHE
     extern const Event DistrCacheTemporaryFilesCreated;
@@ -70,19 +73,17 @@ namespace
 inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings)
 {
     if (settings.compression_codec.empty())
-        return CompressionCodecFactory::instance().get("LZ4");
+        return CompressionCodecFactory::instance().get("NONE");
 
     return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
 }
 
-TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
-    : metric_increment(metrics.current_metric)
+TemporaryFileHolder::TemporaryFileHolder(CurrentMetrics::Metric current_metric_)
+    : metric_increment(current_metric_)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-    if (metrics.num_files)
-        ProfileEvents::increment(metrics.num_files.value());
 }
 
 
@@ -91,9 +92,10 @@ class TemporaryFileInLocalCache : public TemporaryFileHolder
 public:
     explicit TemporaryFileInLocalCache(FileCache & file_cache,
                                        size_t reserve_size,
-                                       const TemporaryDataOnDiskSettings & settings)
-        : TemporaryFileHolder(settings.metrics)
-        , buffer_size(settings.buffer_size)
+                                       size_t buffer_size_,
+                                       CurrentMetrics::Metric current_metric_)
+        : TemporaryFileHolder(current_metric_)
+        , buffer_size(buffer_size_)
     {
         const auto key = FileSegment::Key::random();
         LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
@@ -129,10 +131,11 @@ private:
 class TemporaryFileInDistributedCache final : public TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileInDistributedCache(const TemporaryDataOnDiskSettings & settings)
-        : TemporaryFileHolder(settings.metrics)
+    explicit TemporaryFileInDistributedCache(size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        CurrentMetrics::Metric current_metric_ = CurrentMetrics::TemporaryFilesUnknown)
+        : TemporaryFileHolder(current_metric_)
         , file_key(fmt::format("__tmp_{}", toString(UUIDHelpers::generateV4())))
-        , buffer_size(settings.buffer_size)
+        , buffer_size(buffer_size_)
         , log(getLogger("TemporaryFileInDistributedCache"))
     {
         LOG_TRACE(log, "Creating temporary file in distributed cache: {}", file_key);
@@ -237,10 +240,10 @@ private:
 class TemporaryFileOnLocalDisk : public TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0, const TemporaryDataOnDiskSettings & settings = {})
-        : TemporaryFileHolder(settings.metrics)
+    explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, CurrentMetrics::Metric current_metric_ = CurrentMetrics::TemporaryFilesUnknown)
+        : TemporaryFileHolder(current_metric_)
         , path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
-        , buffer_size(settings.buffer_size)
+        , buffer_size(buffer_size_)
     {
         LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file '{}'", path_to_file);
         if (reserve_size > 0)
@@ -326,7 +329,7 @@ TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Volume is not initialized");
     return [volume](const TemporaryDataOnDiskSettings & settings, size_t max_size) -> std::unique_ptr<TemporaryFileHolder>
     {
-        return std::make_unique<TemporaryFileOnLocalDisk>(volume, max_size, settings);
+        return std::make_unique<TemporaryFileOnLocalDisk>(volume, max_size, settings.buffer_size, settings.current_metric);
     };
 }
 
@@ -336,7 +339,7 @@ TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File cache is not initialized");
     return [file_cache](const TemporaryDataOnDiskSettings & settings, size_t max_size) -> std::unique_ptr<TemporaryFileHolder>
     {
-        return std::make_unique<TemporaryFileInLocalCache>(*file_cache, max_size, settings);
+        return std::make_unique<TemporaryFileInLocalCache>(*file_cache, max_size, settings.buffer_size, settings.current_metric);
     };
 }
 
@@ -350,19 +353,17 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
         if (!DistributedCache::Registry::instance().isReady(read_settings.distributed_cache_settings.read_only_from_current_az))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache is not ready yet");
 
-        return std::make_unique<TemporaryFileInDistributedCache>(settings);
+        return std::make_unique<TemporaryFileInDistributedCache>(settings.buffer_size, settings.current_metric);
     };
 }
 #endif
 
-TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_)
+TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(CurrentMetrics::Metric current_metric, UInt64 buffer_size_)
 {
     TemporaryDataOnDiskSettings child_settings = settings;
-    child_settings.metrics = metrics_;
+    child_settings.current_metric = current_metric;
     if (buffer_size_)
         child_settings.buffer_size = buffer_size_;
-    if (!compression_codec_.empty())
-        child_settings.compression_codec = compression_codec_;
     return std::make_shared<TemporaryDataOnDiskScope>(shared_from_this(), child_settings);
 }
 
@@ -390,7 +391,6 @@ TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScop
     , parent(parent_)
     , file_holder(parent->file_provider(parent->getSettings(), reserve_size))
     , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size)
-    , metrics(parent->getSettings().metrics)
 {
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
 }
@@ -491,18 +491,9 @@ void TemporaryDataBuffer::updateAllocAndCheck()
             new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
     }
 
-    ssize_t compressed_delta = new_compressed_size - stat.compressed_size;
-    ssize_t uncompressed_delta = new_uncompressed_size - stat.uncompressed_size;
-    parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
+    parent->deltaAllocAndCheck(new_compressed_size - stat.compressed_size, new_uncompressed_size - stat.uncompressed_size);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;
-
-    if (metrics.bytes_compressed)
-        ProfileEvents::increment(metrics.bytes_compressed.value(), compressed_delta);
-    if (metrics.bytes_uncompressed)
-        ProfileEvents::increment(metrics.bytes_uncompressed.value(), uncompressed_delta);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, compressed_delta);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, uncompressed_delta);
 }
 
 

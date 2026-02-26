@@ -90,8 +90,6 @@ private:
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
     using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
     using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
-    using LastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMap;
-    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
     using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
 
     ObjectStorageType type;
@@ -175,9 +173,6 @@ private:
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;
-
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    NamesAndTypesList file_columns;
 };
 
 }

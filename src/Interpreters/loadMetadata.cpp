@@ -617,8 +617,6 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
 
     LOG_INFO(getLogger("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
     fs::remove(convert_flag_path);
-
-    context->removeWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED);
 }
 
 LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)

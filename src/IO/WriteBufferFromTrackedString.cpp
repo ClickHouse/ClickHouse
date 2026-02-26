@@ -1,11 +1,11 @@
 #include <Common/Exception.h>
-#include <IO/WriteBufferFromStrictString.h>
+#include <IO/WriteBufferFromTrackedString.h>
 
 namespace DB
 {
 
 /// It is safe to make them autofinalizable.
-WriteBufferFromStrictString::~WriteBufferFromStrictString()
+WriteBufferFromTrackedString::~WriteBufferFromTrackedString()
 {
     try
     {

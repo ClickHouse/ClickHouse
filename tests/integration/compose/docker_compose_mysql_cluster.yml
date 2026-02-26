@@ -23,7 +23,6 @@ services:
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
         user: ${MYSQL_CLUSTER_DOCKER_USER}
-        cpus: 3
     mysql3:
         image: mysql:8.0
         stop_grace_period: 5s
@@ -48,7 +47,6 @@ services:
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
         user: ${MYSQL_CLUSTER_DOCKER_USER}
-        cpus: 3
     mysql4:
         image: mysql:8.0
         stop_grace_period: 5s
@@ -73,4 +71,3 @@ services:
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
         user: ${MYSQL_CLUSTER_DOCKER_USER}
-        cpus: 3

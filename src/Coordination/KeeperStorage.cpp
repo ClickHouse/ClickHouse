@@ -4018,13 +4018,11 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
                 erase_session_from_map(watches, watch_path);
                 break;
             case WatchType::PERSISTENT_WATCH:
-                erase_session_from_map(persistent_watches, watch_path);
-                break;
+                [[fallthrough]];
             case WatchType::PERSISTENT_LIST_WATCH:
-                erase_session_from_map(persistent_list_watches, watch_path);
-                break;
+                [[fallthrough]];
             case WatchType::PERSISTENT_RECURSIVE_WATCH:
-                erase_session_from_map(persistent_recursive_watches, watch_path);
+                ++watch_it;
                 break;
         }
     }

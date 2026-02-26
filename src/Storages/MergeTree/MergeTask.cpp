@@ -176,7 +176,7 @@ public:
     static constexpr auto FILE_ID = "rows_sources";
 
     explicit RowsSourcesTemporaryFile(TemporaryDataOnDiskScopePtr temporary_data_on_disk_)
-        : temporary_data_on_disk(temporary_data_on_disk_->childScope({CurrentMetrics::TemporaryFilesForMerge}))
+        : temporary_data_on_disk(temporary_data_on_disk_->childScope(CurrentMetrics::TemporaryFilesForMerge))
     {
     }
 
@@ -970,10 +970,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
             return;
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
-        Chunk squashed_chunk = Squashing::squash(
-            projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}),
-            projection_squash_plan.getHeader());
-
+        Chunk squashed_chunk = Squashing::squash(projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}));
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
@@ -994,10 +991,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
         auto & projection_squash_plan = ctx->projection_squashes[i];
-        auto squashed_chunk = Squashing::squash(
-            projection_squash_plan.flush(),
-            projection_squash_plan.getHeader());
-
+        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());

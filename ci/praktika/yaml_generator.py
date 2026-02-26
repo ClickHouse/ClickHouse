@@ -138,7 +138,7 @@ jobs:
     name: "{JOB_NAME_GH}"
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
-      pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
+      pipeline_status: ${{{{ steps.run.outputs.pipeline_status }}}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -163,6 +163,7 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . {ENV_SETUP_SCRIPT}
           set -o pipefail
           if command -v ts &> /dev/null; then

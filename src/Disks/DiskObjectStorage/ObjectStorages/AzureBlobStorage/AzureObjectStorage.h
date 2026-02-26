@@ -5,7 +5,6 @@
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Common/BlobStorageLogWriter.h>
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
 #include <azure/core/http/curl_transport.hpp>
@@ -123,8 +122,7 @@ private:
     void removeObjectImpl(
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-        bool if_exists,
-        BlobStorageLogWriterPtr blob_storage_log);
+        bool if_exists);
 
     const String name;
     AzureBlobStorage::AuthMethod auth_method;

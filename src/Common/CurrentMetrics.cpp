@@ -488,28 +488,28 @@ namespace CurrentMetrics
     /// +1 to allow using END as a placeholder
     std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
 
-    static const std::array<std::string_view, END> names =
+    const char * getName(Metric event)
     {
-    #define M(NAME, DOCUMENTATION) #NAME,
-        APPLY_FOR_METRICS(M)
-    #undef M
-    };
+        static const char * strings[] =
+        {
+        #define M(NAME, DOCUMENTATION) #NAME,
+            APPLY_FOR_METRICS(M)
+        #undef M
+        };
 
-    const std::string_view & getName(Metric event)
-    {
-        return names[event];
+        return strings[event];
     }
 
-    static const std::array<std::string_view, END> docs =
+    const char * getDocumentation(Metric event)
     {
-    #define M(NAME, DOCUMENTATION) DOCUMENTATION,
-        APPLY_FOR_METRICS(M)
-    #undef M
-    };
+        static const char * strings[] =
+        {
+        #define M(NAME, DOCUMENTATION) DOCUMENTATION,
+            APPLY_FOR_METRICS(M)
+        #undef M
+        };
 
-    const std::string_view & getDocumentation(Metric event)
-    {
-        return docs[event];
+        return strings[event];
     }
 
     Metric end() { return END; }
