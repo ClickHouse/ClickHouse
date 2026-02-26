@@ -26,7 +26,6 @@
 #include <aws/core/http/URI.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h>
 #include <chrono>
-#include <mutex>
 
 namespace DB
 {
@@ -87,98 +86,12 @@ namespace
             // Add User-Agent parameter AFTER signature (not included in signing)
             presigned_url += "&User-Agent=clickhouse-msk-iam";
 
-            // AWS MSK requires Base64-URL encoding (RFC 4648 §5): + → -, / → _, remove padding
+            // AWS MSK requires Base64-URL encoding (RFC 4648 §5): + -> -, / -> _, remove padding
             return base64Encode(presigned_url, /* url_encoding */ true, /* no_padding */ true);
         }
         catch (const std::exception & e)
         {
             throw Exception(ErrorCodes::AWS_ERROR, "Failed to generate AWS MSK token: {}", e.what());
-        }
-    }
-
-    // Global map to store contexts by context pointer (not handle pointer)
-    // This allows the callback to retrieve the context, and cleanup is tied to Storage lifecycle
-    std::mutex g_contexts_mutex;
-    std::unordered_map<OAuthBearerTokenRefreshContext*, std::shared_ptr<OAuthBearerTokenRefreshContext>> g_contexts;
-
-    void oauthBearerTokenRefreshCallback(cppkafka::KafkaHandleBase & handle, const std::string & oauthbearer_config)
-    {
-        std::shared_ptr<OAuthBearerTokenRefreshContext> ctx;
-
-        // Extract context pointer from config string
-        if (!oauthbearer_config.empty())
-        {
-            try
-            {
-                uintptr_t ptr_val = std::stoull(oauthbearer_config);
-                auto* ctx_ptr = reinterpret_cast<OAuthBearerTokenRefreshContext*>(ptr_val);
-
-                std::lock_guard<std::mutex> lock(g_contexts_mutex);
-                auto it = g_contexts.find(ctx_ptr);
-                if (it != g_contexts.end())
-                    ctx = it->second;
-            }
-            catch (...)
-            {
-                // Invalid config, context will be null
-            }
-        }
-
-        LoggerPtr log;
-        std::shared_ptr<S3::S3CredentialsProviderChain> provider;
-        String region;
-
-        if (ctx)
-        {
-            log = ctx->log;
-            provider = ctx->provider;
-            region = ctx->region;
-        }
-
-        try
-        {
-            if (!provider)
-            {
-                LOG_ERROR(log, "Token refresh callback called without credentials provider context");
-                rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "Internal error: missing credentials provider context");
-                return;
-            }
-
-            auto credentials = provider->GetAWSCredentials();
-
-            if (credentials.IsEmpty())
-            {
-                LOG_ERROR(log, "AWS credentials are empty");
-                rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "No AWS credentials available");
-                return;
-            }
-
-            String token = generateAWSMSKToken(region, credentials);
-
-            auto now = std::chrono::system_clock::now();
-            auto expiry_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                (now + TOKEN_LIFETIME).time_since_epoch()).count();
-
-            char errstr[512];
-            rd_kafka_resp_err_t err = rd_kafka_oauthbearer_set_token(
-                handle.get_handle(), token.c_str(), expiry_ms, credentials.GetAWSAccessKeyId().c_str(),
-                nullptr, 0, errstr, sizeof(errstr));
-
-            if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
-            {
-                LOG_ERROR(log, "Failed to set OAuth token: {}", errstr);
-                rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), errstr);
-            }
-        }
-        catch (const std::exception & e)
-        {
-            LOG_ERROR(log, "Token refresh failed: {}", e.what());
-            rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), e.what());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Token refresh failed");
-            rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "Unexpected exception");
         }
     }
 }
@@ -266,28 +179,57 @@ void setupAuthentication(
         context_holder->region = effective_region;
     }
 
-    // Store context in global map so callback can retrieve it
-    // Cleanup is tied to Storage lifecycle via cleanupContext()
-    {
-        std::lock_guard<std::mutex> lock(g_contexts_mutex);
-        g_contexts[context_holder.get()] = context_holder;
-    }
+    // Set callback with lambda that captures the context directly (similar to set_assignment_callback pattern)
+    // The lambda captures the shared_ptr, keeping the context alive as long as the configuration is alive
+    kafka_config.set_oauthbearer_token_refresh_callback(
+        [context = context_holder](cppkafka::KafkaHandleBase & handle, const std::string* /* oauthbearer_config */)
+        {
+            try
+            {
+                if (!context || !context->provider)
+                {
+                    LOG_ERROR(context ? context->log : nullptr, "Token refresh callback called without credentials provider context");
+                    rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "Internal error: missing credentials provider context");
+                    return;
+                }
 
-    // Pass context pointer in OAuth config string
-    // This allows callback to retrieve the context without relying on handle mapping
-    std::string context_ptr_str = std::to_string(reinterpret_cast<uintptr_t>(context_holder.get()));
-    kafka_config.set("sasl.oauthbearer.config", context_ptr_str);
+                auto credentials = context->provider->GetAWSCredentials();
 
-    kafka_config.set_oauthbearer_token_refresh_callback(oauthBearerTokenRefreshCallback);
-}
+                if (credentials.IsEmpty())
+                {
+                    LOG_ERROR(context->log, "AWS credentials are empty");
+                    rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "No AWS credentials available");
+                    return;
+                }
 
-void cleanupContext(std::shared_ptr<OAuthBearerTokenRefreshContext> & context_holder)
-{
-    if (!context_holder)
-        return;
+                String token = generateAWSMSKToken(context->region, credentials);
 
-    std::lock_guard<std::mutex> lock(g_contexts_mutex);
-    g_contexts.erase(context_holder.get());
+                auto now = std::chrono::system_clock::now();
+                auto expiry_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    (now + TOKEN_LIFETIME).time_since_epoch()).count();
+
+                char errstr[512];
+                rd_kafka_resp_err_t err = rd_kafka_oauthbearer_set_token(
+                    handle.get_handle(), token.c_str(), expiry_ms, credentials.GetAWSAccessKeyId().c_str(),
+                    nullptr, 0, errstr, sizeof(errstr));
+
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
+                {
+                    LOG_ERROR(context->log, "Failed to set OAuth token: {}", errstr);
+                    rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), errstr);
+                }
+            }
+            catch (const std::exception & e)
+            {
+                LOG_ERROR(context ? context->log : nullptr, "Token refresh failed: {}", e.what());
+                rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), e.what());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(context ? context->log : nullptr, "Token refresh failed");
+                rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "Unexpected exception");
+            }
+        });
 }
 
 }

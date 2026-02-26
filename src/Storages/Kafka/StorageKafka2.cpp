@@ -199,11 +199,6 @@ StorageKafka2::StorageKafka2(
 
 StorageKafka2::~StorageKafka2()
 {
-#if USE_AWS_S3
-    // Cleanup OAuth context if it was created
-    if (oauth_context)
-        AWSMSKIAMAuth::cleanupContext(oauth_context);
-#endif
 }
 
 void StorageKafka2::partialShutdown()

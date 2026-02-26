@@ -43,10 +43,6 @@ void setupAuthentication(
     LoggerPtr log,
     std::shared_ptr<OAuthBearerTokenRefreshContext> & context_holder);
 
-/// Cleanup function to be called from Storage destructor
-/// This removes the context from the global map
-void cleanupContext(std::shared_ptr<OAuthBearerTokenRefreshContext> & context_holder);
-
 }
 
 #endif // USE_AWS_S3
