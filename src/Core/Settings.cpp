@@ -7501,6 +7501,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
 Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
 )", EXPERIMENTAL) \
     \
+    DECLARE(Bool, allow_experimental_geojson_format, false, R"(
+Allows the experimental `GeoJSON` input format that reads a GeoJSON FeatureCollection and produces one row per feature with `id Nullable(String)`, `geometry Geometry`, and `properties JSON` columns.
+)", EXPERIMENTAL) \
+    \
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs

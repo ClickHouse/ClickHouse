@@ -569,6 +569,11 @@ struct FormatSettings
         bool escape_special_characters = false;
     } markdown{};
 
+    struct
+    {
+        bool allow_experimental = false;
+    } geojson{};
+
 };
 
 }
