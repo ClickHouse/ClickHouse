@@ -91,6 +91,7 @@ CLOUD = CloudInfrastructure.Config(
             auto_placement="on",
             quantity_per_az=2,
             praktika_resource_tag="mac",
+            runner_type=RunnerLabels.MACOS_ARM_SMALL[1],
         ),
     ],
     ec2_instances=[
