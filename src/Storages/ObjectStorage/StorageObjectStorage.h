@@ -184,9 +184,7 @@ protected:
     const bool distributed_processing;
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
-    /// Whether we need to call `configuration->update()`
-    /// (e.g. refresh configuration) on each read() method call.
-    bool update_configuration_on_read_write = true;
+    bool is_table_function = false;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;

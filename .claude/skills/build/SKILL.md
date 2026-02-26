@@ -1,7 +1,7 @@
 ---
 name: build
 description: Build ClickHouse with various configurations (Release, Debug, ASAN, TSAN, etc.). Use when the user wants to compile ClickHouse.
-argument-hint: [build-type] [target] [options]
+argument-hint: "[build-type] [target] [options]"
 disable-model-invocation: false
 allowed-tools: Task, Bash(ninja:*), Bash(cd:*), Bash(ls:*), Bash(pgrep:*), Bash(ps:*), Bash(pkill:*), Bash(mktemp:*), Bash(sleep:*)
 ---
