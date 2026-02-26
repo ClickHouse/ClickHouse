@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/WebAssembly/WasmTypes.h>
+#include <span>
 
 namespace DB::WebAssembly
 {
@@ -20,8 +21,8 @@ public:
 
     virtual ~WasmCompartment() = default;
 
-    /// Get a pointer to guest memory given a handle
-    virtual uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) = 0;
+    /// Get a view of guest memory given a handle and size
+    virtual std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) = 0;
 
     /// Invoke a function expecting to return a single value of specific result type or void, if no return value expected.
     /// If function returns multiple values or different type, an exception is thrown.

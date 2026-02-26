@@ -230,7 +230,8 @@ public:
         if (handle == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wasm buffer is nullptr");
 
-        const auto * raw_buffer_ptr = compartment->getMemory(handle, sizeof(WasmBuffer));
+        auto raw_buffer_span = compartment->getMemory(handle, sizeof(WasmBuffer));
+        const auto * raw_buffer_ptr = raw_buffer_span.data();
         WasmBuffer buffer;
         if (reinterpret_cast<uintptr_t>(raw_buffer_ptr) % alignof(WasmBuffer) != 0)
         {
@@ -241,7 +242,7 @@ public:
             buffer = *reinterpret_cast<const WasmBuffer *>(raw_buffer_ptr);
         }
 
-        return {compartment->getMemory(buffer.ptr, buffer.size), buffer.size};
+        return compartment->getMemory(buffer.ptr, buffer.size);
     }
 
 private:

@@ -163,7 +163,7 @@ public:
 
     void setLastException(Exception e) { last_exception = std::move(e); }
 
-    uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) override
+    std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override
     {
         auto memory_span = getMemory().data(store);
         if (ptr + size >= memory_span.size())
@@ -173,7 +173,7 @@ public:
                 "Cannot get memory at offset {} and size {} from wasm compartment memory with size {}",
                 ptr, size, memory_span.size());
         }
-        return &memory_span[ptr];
+        return memory_span.subspan(ptr, size);
     }
 
     std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) override

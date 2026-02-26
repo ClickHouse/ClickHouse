@@ -302,7 +302,7 @@ public:
         host_func.linkTo(import_module_ctx.get());
     }
 
-    uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) override;
+    std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override;
 
     std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) override;
 
@@ -418,7 +418,7 @@ void WasmEdgeCompartment::loadModuleImpl()
     }
 }
 
-uint8_t * WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
+std::span<uint8_t> WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
 {
     auto * memory_ctx = WasmEdge_ModuleInstanceFindMemory(vm_instance_cxt, wasmedgeStringWrap("memory"));
     if (memory_ctx == nullptr)
@@ -430,7 +430,7 @@ uint8_t * WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
         throw Exception(
             ErrorCodes::WASM_ERROR, "Cannot get memory at offset {} and size {} from wasm module with size {}", ptr, size, total_memory);
     }
-    return data;
+    return {data, static_cast<size_t>(size)};
 }
 
 std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params)
