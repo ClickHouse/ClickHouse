@@ -37,8 +37,8 @@ FROM format('GeoJSON', '{
     ]
 }');
 
--- Missing id and null geometry should produce defaults.
-SELECT isNull(id), variantType(geometry)
+-- Missing id should produce empty string; null geometry should produce None variant.
+SELECT id = '', variantType(geometry)
 FROM format('GeoJSON', '{
     "type": "FeatureCollection",
     "features": [
@@ -51,7 +51,7 @@ FROM format('GeoJSON', '{
 }');
 
 -- Empty features array produces zero rows (tested via INSERT since format() with 0 rows is a known ClickHouse limitation).
-CREATE TEMPORARY TABLE __geojson_empty_test (id Nullable(String), geometry Geometry, properties JSON);
+CREATE TEMPORARY TABLE __geojson_empty_test (id String, geometry Geometry, properties JSON);
 INSERT INTO __geojson_empty_test FORMAT GeoJSON {"type":"FeatureCollection","features":[]};
 SELECT count() FROM __geojson_empty_test;
 

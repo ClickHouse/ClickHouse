@@ -2,23 +2,23 @@
 1. │ 1  │ (13.405,52.52)   │ Berlin │
 2. │ 2  │ (2.3522,48.8566) │ Paris  │
    └────┴──────────────────┴────────┘
-   ┌─id───┬─geo_type─┐
-1. │ ᴺᵁᴸᴸ │ Polygon  │
-   └──────┴──────────┘
-   ┌─isNull(id)─┬─variantType(geometry)─┐
-1. │          1 │ None                  │
-   └────────────┴───────────────────────┘
+   ┌─id─┬─geo_type─┐
+1. │    │ Polygon  │
+   └────┴──────────┘
+   ┌─equals(id, '')─┬─variantType(geometry)─┐
+1. │              1 │ None                  │
+   └────────────────┴───────────────────────┘
    ┌─count()─┐
 1. │       0 │
    └─────────┘
    ┌─variantType(geometry)─┐
 1. │ Point                 │
    └───────────────────────┘
-   ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-1. │ id         │ Nullable(String) │              │                    │         │                  │                │
-2. │ geometry   │ Geometry         │              │                    │         │                  │                │
-3. │ properties │ JSON             │              │                    │         │                  │                │
-   └────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+   ┌─name───────┬─type─────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+1. │ id         │ String   │              │                    │         │                  │                │
+2. │ geometry   │ Geometry │              │                    │         │                  │                │
+3. │ properties │ JSON     │              │                    │         │                  │                │
+   └────────────┴──────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
    ┌─isNull(geometry)─┐
 1. │                1 │
    └──────────────────┘

@@ -3,7 +3,6 @@
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeCustomGeo.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Formats/FormatFactory.h>
@@ -518,7 +517,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
 NamesAndTypesList GeoJSONExternalSchemaReader::readSchema()
 {
     return {
-        {"id", makeNullable(std::make_shared<DataTypeString>())},
+        {"id", std::make_shared<DataTypeString>()},
         {"geometry", DataTypeFactory::instance().get("Geometry")},
         {"properties", DataTypeFactory::instance().get("JSON")},
     };

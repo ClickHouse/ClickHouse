@@ -21,9 +21,9 @@ This format is experimental. To use it, set [`allow_experimental_geojson_format`
 
 Reads a [GeoJSON](https://geojson.org/) `FeatureCollection` document and produces one row per feature. Each row has the following fixed schema:
 
-| Column       | Type              | Description                                                                                 |
-|--------------|-------------------|---------------------------------------------------------------------------------------------|
-| `id`         | `Nullable(String)` | The feature's top-level `id` field, or `NULL` if absent.                                   |
+| Column       | Type     | Description                                                                                 |
+|--------------|----------|---------------------------------------------------------------------------------------------|
+| `id`         | `String` | The feature's top-level `id` field, or an empty string if absent.                          |
 | `geometry`   | `Geometry`        | The feature's geometry, stored as a `Geometry` variant type.                                |
 | `properties` | `JSON`            | The feature's `properties` object, stored as a semi-structured `JSON` column.              |
 
@@ -79,7 +79,7 @@ Insert features into a table:
 ```sql title="Query"
 CREATE TABLE cities
 (
-    id         Nullable(String),
+    id         String,
     geometry   Geometry,
     properties JSON,
     name       String MATERIALIZED JSONExtractString(properties, 'name')
@@ -101,11 +101,11 @@ SETTINGS allow_experimental_geojson_format = 1
 ```
 
 ```response title="Response"
-┌─name───────┬─type─────────────┐
-│ id         │ Nullable(String) │
-│ geometry   │ Geometry         │
-│ properties │ JSON             │
-└────────────┴──────────────────┘
+┌─name───────┬─type─────┐
+│ id         │ String   │
+│ geometry   │ Geometry │
+│ properties │ JSON     │
+└────────────┴──────────┘
 ```
 
 ## Format settings {#format-settings}
