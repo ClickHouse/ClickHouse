@@ -511,7 +511,7 @@ private:
     std::unordered_map<String, std::vector<UInt8>> variant_mappings_cache;
     /// Cache of Variant types that couldn't be combined with current variant in Dynamic column.
     /// Used to avoid checking if combination is possible for the same Variant types.
-    std::unordered_set<String> variants_with_failed_combination;
+    UnorderedSetWithMemoryTracking<String> variants_with_failed_combination;
 
     /// We can use serializations of different data types to serialize values into shared variant.
     /// To avoid creating the same serialization multiple times, use simple cache.

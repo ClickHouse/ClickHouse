@@ -1,6 +1,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 
 namespace DB
@@ -552,7 +553,7 @@ void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size
 
 UInt64 ColumnReplicated::getNumberOfDefaultRows() const
 {
-    std::unordered_set<size_t> indexes_of_default_values;
+    UnorderedSetWithMemoryTracking<size_t> indexes_of_default_values;
     for (size_t i = 0; i != nested_column->size(); ++i)
     {
         if (nested_column->isDefaultAt(i))

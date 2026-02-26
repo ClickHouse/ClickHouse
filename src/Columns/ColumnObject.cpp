@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -529,7 +530,7 @@ bool ColumnObject::tryInsert(const Field & x)
     size_t prev_values_size = shared_data_values->size();
     /// Save all newly added dynamic paths. In case of failure
     /// we should remove them.
-    std::unordered_set<String> new_dynamic_paths;
+    UnorderedSetWithMemoryTracking<String> new_dynamic_paths;
     auto restore_sizes = [&]()
     {
         for (auto & [_, column] : typed_paths)
