@@ -210,7 +210,7 @@ public:
         }
     }
 
-    void atConnectionDestroy()
+    void atConnectionDestroy() noexcept
     {
         std::lock_guard lock(mutex);
 
@@ -714,7 +714,7 @@ private:
         return connection;
     }
 
-    void atConnectionDestroy(PooledConnection & connection)
+    void atConnectionDestroy(PooledConnection & connection) noexcept
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
@@ -729,17 +729,25 @@ private:
             return;
         }
 
-        auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-        connection_to_store->assign(connection);
-
+        try
         {
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
-            std::lock_guard lock(mutex);
-            stored_connections.push(connection_to_store);
-        }
+            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            connection_to_store->assign(connection);
 
-        CurrentMetrics::add(getMetrics().stored_count, 1);
-        ProfileEvents::increment(getMetrics().preserved, 1);
+            {
+                MemoryTrackerSwitcher switcher{&total_memory_tracker};
+                std::lock_guard lock(mutex);
+                stored_connections.push(connection_to_store);
+            }
+
+            CurrentMetrics::add(getMetrics().stored_count, 1);
+            ProfileEvents::increment(getMetrics().preserved, 1);
+        }
+        catch (...)
+        {
+            ProfileEvents::increment(getMetrics().reset, 1);
+            tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
+        }
     }
 
 
