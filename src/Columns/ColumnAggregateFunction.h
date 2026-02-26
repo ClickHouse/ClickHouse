@@ -17,7 +17,7 @@ namespace ErrorCodes
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
-using ConstArenas = std::vector<ConstArenaPtr>;
+using ConstArenas = VectorWithMemoryTracking<ConstArenaPtr>;
 
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;

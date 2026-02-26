@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/COW.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
 #include <vector>
@@ -13,7 +14,7 @@ using EqualRanges = std::vector<EqualRange>;
 
 struct ColumnCheckpoint;
 using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
-using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
+using ColumnCheckpoints = VectorWithMemoryTracking<ColumnCheckpointPtr>;
 
 class IColumn;
 
