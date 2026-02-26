@@ -929,7 +929,7 @@ TEST(ColumnDynamic, compare)
 
 TEST(ColumnDynamic, rollback)
 {
-    auto check_variant = [](const ColumnVariant & column_variant, std::vector<size_t> sizes)
+    auto check_variant = [](const ColumnVariant & column_variant, VectorWithMemoryTracking<size_t> sizes)
     {
         ASSERT_EQ(column_variant.getNumVariants(), sizes.size());
         size_t num_rows = 0;
@@ -957,8 +957,8 @@ TEST(ColumnDynamic, rollback)
         ASSERT_EQ(num_rows, cp.size);
     };
 
-    std::vector<std::vector<size_t>> variant_checkpoints_sizes;
-    std::vector<std::pair<ColumnCheckpointPtr, std::unordered_map<String, size_t>>> dynamic_checkpoints;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> variant_checkpoints_sizes;
+    VectorWithMemoryTracking<std::pair<ColumnCheckpointPtr, std::unordered_map<String, size_t>>> dynamic_checkpoints;
 
     auto column = ColumnDynamic::create(2);
     auto checkpoint = column->getCheckpoint();
@@ -968,26 +968,26 @@ TEST(ColumnDynamic, rollback)
     column->insert(Field("str1"));
     column->rollback(*checkpoint);
 
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 0});
+    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{0, 1, 0});
     dynamic_checkpoints.emplace_back(checkpoint, std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 0}});
 
     check_checkpoint(*checkpoint, dynamic_checkpoints.back().second);
     check_variant(column->getVariantColumn(), variant_checkpoints_sizes.back());
 
     column->insert("str1");
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 1});
+    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{0, 1, 1});
     dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 1}});
 
     column->insert("str2");
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 2});
+    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{0, 1, 2});
     dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 2}});
 
     column->insert(Array({1, 2}));
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{1, 1, 2});
+    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{1, 1, 2});
     dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 1}, {"Int8", 1}, {"String", 2}});
 
     column->insert(Field(42.42));
-    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{2, 1, 2});
+    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{2, 1, 2});
     dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 2}, {"Int8", 1}, {"String", 2}});
 
     for (size_t i = 0; i != variant_checkpoints_sizes.size(); ++i)
