@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromFile.h>
@@ -30,7 +31,9 @@ class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFile>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFile>(std::move(context)); }
+
+    explicit FunctionFile(ContextPtr context_) : context(std::move(context_)) {}
 
     bool isVariadic() const override { return true; }
     String getName() const override { return name; }
@@ -112,12 +115,17 @@ public:
 
         res_offsets.resize(input_rows_count);
 
-        const auto & context = Context::getGlobalContextInstance();
-        fs::path user_files_absolute_path = fs::canonical(fs::path(context->getUserFilesPath()));
+        const auto current_context = context ? context : Context::getGlobalContextInstance();
+
+        if (current_context->getApplicationType() != Context::ApplicationType::LOCAL)
+            current_context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
+        const auto & execution_context = current_context;
+        fs::path user_files_absolute_path = fs::canonical(fs::path(execution_context->getUserFilesPath()));
         std::string user_files_absolute_path_string = user_files_absolute_path.string();
 
         // If run in Local mode, no need for path checking.
-        bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
+        bool need_check = execution_context->getApplicationType() != Context::ApplicationType::LOCAL;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -159,6 +167,9 @@ public:
 
         return result;
     }
+
+private:
+    ContextPtr context;
 };
 
 

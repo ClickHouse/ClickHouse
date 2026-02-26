@@ -80,6 +80,10 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// Checks access to source object of the table function (for example FILE, URL, S3).
+    /// Doesn't check CREATE TEMPORARY TABLE privilege.
+    void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
+
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
     virtual void setPartitionBy(const ASTPtr &) {}
