@@ -746,7 +746,7 @@ while all_running and (not reached_limit):
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
 good_exit = True
-if not all_running:
+if not all_running and not reached_limit:
     # Check load generator first
     if client.process.poll() is None:
         client.process.kill()
