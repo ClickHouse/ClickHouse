@@ -1275,6 +1275,14 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting for parquet file reads from decoding threads (not prefetching threads)", ValueType::Microseconds) \
+    \
+    M(WasmSerializationMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
+    M(WasmDeserializationMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
+    M(WasmGuestExecuteMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
+    M(WasmTotalExecuteMicroseconds, "Time spent executing WebAssembly code", ValueType::Microseconds) \
+    M(WasmModuleInstatiate, "Number of WebAssembly compartments created", ValueType::Number) \
+    M(WasmMemoryAllocated, "Total memory allocated for WebAssembly compartments", ValueType::Bytes) \
+    \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
