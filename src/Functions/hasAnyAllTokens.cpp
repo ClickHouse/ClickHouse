@@ -1,6 +1,7 @@
 #include <Functions/hasAnyAllTokens.h>
 
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
@@ -8,6 +9,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
@@ -80,16 +82,27 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
     return search_tokens;
 }
 
-/// Function input accept string, fixed string, array of string or array of fixed strings.
+/// Function input accepts string, fixed string, array of string or array of fixed strings.
 bool isStringOrFixedStringOrArrayOfStringOrFixedString(const IDataType & type)
 {
-    if (isStringOrFixedString(type))
+    const IDataType * inner_type = &type;
+
+    /// Unwrap an optional top-level Nullable.
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(inner_type))
+        inner_type = nullable->getNestedType().get();
+
+    if (isStringOrFixedString(*inner_type))
         return true;
 
-    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(&type); array_type)
+    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(inner_type))
     {
-        const DataTypePtr & nested_type = array_type->getNestedType();
-        return isStringOrFixedString(nested_type);
+        const IDataType * element_type = array_type->getNestedType().get();
+
+        /// Array elements may also be Nullable(String) or Nullable(FixedString).
+        if (const auto * nullable_elem = typeid_cast<const DataTypeNullable *>(element_type))
+            element_type = nullable_elem->getNestedType().get();
+
+        return isStringOrFixedString(*element_type);
     }
 
     return false;
@@ -132,6 +145,11 @@ DataTypePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::getReturnT
     };
 
     validateFunctionArguments(name, arguments, mandatory_args, optional_args);
+
+    /// Propagate nullability: if the input column is Nullable, the result is Nullable(UInt8).
+    if (arguments[arg_input].type->isNullable())
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<UInt8>>());
+
     return std::make_shared<DataTypeNumber<UInt8>>();
 }
 
@@ -237,6 +255,7 @@ concept MatcherType = std::same_as<Matcher, HasAnyTokensMatcher> || std::same_as
 void searchOnArray(
     const ColumnArray::Offsets & offsets,
     const StringColumnType auto & input_string,
+    const ColumnNullable * nullable_elements,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
     const ITokenizer * tokenizer,
@@ -251,7 +270,12 @@ void searchOnArray(
 
         for (size_t j = 0; j < array_size; ++j)
         {
-            std::string_view input = input_string.getDataAt(current_offset + j);
+            const size_t element_idx = current_offset + j;
+
+            if (nullable_elements && nullable_elements->isNullAt(element_idx))
+                continue;
+
+            std::string_view input = input_string.getDataAt(element_idx);
 
             forEachTokenPadded(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
 
@@ -310,6 +334,7 @@ template <class HasTokensTraits>
 void executeArray(
     const ColumnArray * array,
     const StringColumnType auto & input_string,
+    const ColumnNullable * nullable_elements,
     PaddedPODArray<UInt8> & col_result,
     const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
@@ -327,9 +352,9 @@ void executeArray(
     col_result.resize(input_size);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        searchOnArray(offsets, input_string, col_result, input_size, tokenizer, HasAnyTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, nullable_elements, col_result, input_size, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        searchOnArray(offsets, input_string, col_result, input_size, tokenizer, HasAllTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, nullable_elements, col_result, input_size, tokenizer, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -348,10 +373,15 @@ void executeStringOrArray(
         executeString<HasTokensTraits>(*col_input_fixedstring, col_result, input_rows_count, tokenizer, tokens);
     else if (const auto * col_input_array = checkAndGetColumn<ColumnArray>(col_input.get()))
     {
-        if (const auto * input_string = checkAndGetColumn<ColumnString>(&col_input_array->getData()))
-            executeArray<HasTokensTraits>(col_input_array, *input_string, col_result, tokenizer, tokens);
-        else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(&col_input_array->getData()))
-            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, col_result, tokenizer, tokens);
+         /// Array elements may be Nullable(String) or Nullable(FixedString); unwrap and pass the null map.
+        const IColumn * data_col = &col_input_array->getData();
+        const ColumnNullable * nullable_elements = checkAndGetColumn<ColumnNullable>(data_col);
+        const IColumn * actual_data = nullable_elements ? &nullable_elements->getNestedColumn() : data_col;
+
+        if (const auto * input_string = checkAndGetColumn<ColumnString>(actual_data))
+            executeArray<HasTokensTraits>(col_input_array, *input_string, nullable_elements, col_result, tokenizer, tokens);
+        else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(actual_data))
+            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, nullable_elements, col_result, tokenizer, tokens);
     }
 }
 
@@ -361,31 +391,34 @@ template <class HasTokensTraits>
 ColumnPtr ExecutableFunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
-    if (input_rows_count == 0)
-        return ColumnVector<UInt8>::create();
+    ColumnPtr col_input = arguments[arg_input].column;
+
+    /// If the input column is Nullable, unwrap it and run the search on the nested column.
+    /// The null map is then applied to the result so that NULL input rows produce NULL output.
+    const ColumnNullable * nullable_input = checkAndGetColumn<ColumnNullable>(col_input.get());
+    ColumnPtr inner_input = nullable_input ? nullable_input->getNestedColumnPtr() : col_input;
 
     auto col_result = ColumnVector<UInt8>::create();
 
-    if (search_tokens.empty())
+    if (input_rows_count == 0 || search_tokens.empty())
     {
         col_result->getData().assign(input_rows_count, UInt8(0));
-        return col_result;
     }
-
-    ColumnPtr col_input = arguments[arg_input].column;
-
-    if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+    else if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
     {
         /// The sparse gram token extractor stores an internal state which modified during the execution.
         /// This leads to an error while executing this function multi-threaded because that state is not protected.
         /// To avoid this case, a clone of the sparse gram token extractor will be used.
         auto sparse_grams_tokenizer = tokenizer->clone();
-        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
+        executeStringOrArray<HasTokensTraits>(inner_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
     }
     else
     {
-        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, tokenizer.get(), search_tokens);
+        executeStringOrArray<HasTokensTraits>(inner_input, col_result->getData(), input_rows_count, tokenizer.get(), search_tokens);
     }
+
+    if (nullable_input)
+        return ColumnNullable::create(std::move(col_result), nullable_input->getNullMapColumn().clone());
 
     return col_result;
 }
