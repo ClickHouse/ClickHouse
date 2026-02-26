@@ -17,5 +17,3 @@ RUN go mod init none \
     && go get github.com/go-sql-driver/mysql@217d05049 \
     && go build main.go
 
-# Run as non-root to satisfy CIS Docker Benchmark and Docker Scout policy
-USER nobody

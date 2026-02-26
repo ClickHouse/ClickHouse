@@ -16,5 +16,3 @@ WORKDIR /jdbc
 COPY Test.java Test.java
 RUN javac Test.java
 
-# Run as non-root to satisfy CIS Docker Benchmark and Docker Scout policy
-USER nobody

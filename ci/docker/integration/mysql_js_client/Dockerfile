@@ -9,5 +9,3 @@ RUN npm install -g npm@11 && npm install mysql
 
 COPY ./test.js ./test.js
 
-# Run as non-root to satisfy CIS Docker Benchmark and Docker Scout policy
-USER nobody
