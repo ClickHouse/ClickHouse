@@ -137,7 +137,7 @@ public:
     {
         auto load_fn_wrapper = [&]()
         {
-            Iceberg::ManifestFilePtr manifest_file = load_fn();
+            Iceberg::ManifestFileCacheableInfo manifest_file = load_fn();
             return std::make_shared<IcebergMetadataFilesCacheCell>(manifest_file);
         };
         auto result = Base::getOrSet(data_path, load_fn_wrapper);
@@ -145,7 +145,7 @@ public:
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return std::get<Iceberg::ManifestFilePtr>(result.first->cached_element);
+        return std::get<Iceberg::ManifestFileCacheableInfo>(result.first->cached_element);
     }
 
 private:

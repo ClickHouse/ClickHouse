@@ -161,14 +161,13 @@ Plan getPlan(
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
-            auto manifest_file_content = getManifestFile(
+            auto manifest_file_content = getManifestFileAsIterator(
                 object_storage,
                 persistent_table_components,
                 context,
                 log,
-                manifest_file.manifest_file_path,
-                manifest_file.added_sequence_number,
-                manifest_file.added_snapshot_id);
+                manifest_file,
+                static_cast<Int32>(current_schema_id));
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {

@@ -1,4 +1,3 @@
-#include <format>
 #include "config.h"
 
 #if USE_AVRO
@@ -150,7 +149,7 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
 using namespace DB;
 
 ManifestFileIterator::ManifestFileIterator(
-    std::unique_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
+    std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
     const String & manifest_file_name_,
     Int32 format_version_,
     const String & common_path_,
@@ -161,7 +160,7 @@ ManifestFileIterator::ManifestFileIterator(
     DB::ContextPtr context_,
     const String & path_to_manifest_file_,
     bool use_partition_pruning_,
-    std::shared_ptr<ActionsDAG> filter_dag_,
+    std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)

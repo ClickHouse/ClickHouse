@@ -12,7 +12,6 @@
 #include <Core/Field.h>
 
 #include <cstdint>
-#include <mutex>
 
 namespace DB::Iceberg
 {
@@ -176,7 +175,7 @@ public:
     };
 
     explicit ManifestFileIterator(
-        std::unique_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
+        std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
         const String & manifest_file_name,
         Int32 format_version_,
         const String & common_path,
@@ -187,7 +186,7 @@ public:
         DB::ContextPtr context,
         const String & path_to_manifest_file_,
         bool use_partition_pruning_,
-        std::shared_ptr<ActionsDAG> filter_dag_,
+        std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_);
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle(FileContentType content_type) const;
@@ -255,7 +254,7 @@ private:
     std::atomic<std::size_t> min_max_index_pruned_files = 0;
     std::atomic<std::size_t> partition_pruned_files = 0;
     bool use_partition_pruning;
-    const std::shared_ptr<ActionsDAG> filter_dag;
+    const std::shared_ptr<const ActionsDAG> filter_dag;
     const Int32 table_snapshot_schema_id;
 };
 

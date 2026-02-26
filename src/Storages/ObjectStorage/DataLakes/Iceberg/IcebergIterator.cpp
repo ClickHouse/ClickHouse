@@ -79,52 +79,6 @@ extern const SettingsBool use_iceberg_partition_pruning;
 
 using namespace Iceberg;
 
-// struct ManifestFilesAsyncronousIterator
-// {
-//     ConcurrentBoundedQueue<Iceberg::ManifestFilePtr> blocking_queue;
-//     std::atomic<size_t> index;
-//     const Iceberg::ManifestFileContentType manifest_file_content_type;
-//     const DB::ManifestFileCacheKeys manifest_list_entries;
-//     bool use_partition_pruning;
-//     PersistentTableComponents persistent_components;
-//     std::deque<ThreadFromGlobalPool> workers;
-
-//     Iceberg::ManifestFilePtr next();
-
-//     ManifestFilesAsyncronousIterator(
-//         ObjectStoragePtr object_storage_,
-//         ContextPtr local_context_,
-//         Iceberg::ManifestFileContentType manifest_file_content_type_,
-//         size_t number_of_workers_,
-//         size_t max_sum_size_of_manifest_files_in_queue_,
-//         PersistentTableComponents persistent_components_,
-//         bool use_partition_pruning_);
-// };
-
-// ManifestFilesAsyncronousIterator::ManifestFilesAsyncronousIterator(
-//     ObjectStoragePtr object_storage_,
-//     ContextPtr local_context_,
-//     Iceberg::ManifestFileContentType manifest_file_content_type_,
-//     size_t number_of_workers_,
-//     size_t max_sum_size_of_manifest_files_in_queue_,
-//     PersistentTableComponents persistent_components_,
-//     bool use_partition_pruning_)
-//     : index(0)
-//     : manifest_file_content_type(manifest_file_content_type_)
-//     : manifest_list_entries(manifest_list_entries_)
-//     : use_partition_pruning(use_partition_pruning_)
-//     : persistent_components(persistent_components_)
-// {
-//     current_manifest_file_content = Iceberg::getManifestFile(
-//         object_storage,
-//         persistent_components,
-//         local_context,
-//         log,
-//         data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
-//         data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
-//         data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
-// }
-
 template <typename HeavyCPUProcessingFunction>
 size_t HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFileWeightFunction::operator()(
     const Iceberg::ManifestFilePtr & manifest_file) const
@@ -136,11 +90,13 @@ template <typename HeavyCPUProcessingFunction>
 HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncronousIterator::ManifestFilesAsyncronousIterator(
     Iceberg::ManifestFileContentType manifest_file_content_type_,
     const HomogeneousIcebergKeysIterator & parent_,
-    size_t max_sum_size_of_manifest_files_in_queue_)
+    size_t max_sum_size_of_manifest_files_in_queue_,
+    size_t number_of_workers_)
     : blocking_queue(max_sum_size_of_manifest_files_in_queue_)
     , index(0)
     , manifest_file_content_type(manifest_file_content_type_)
     , parent(parent_)
+    , number_of_workers(number_of_workers_)
 {
     for (size_t i = 0; i < number_of_workers; ++i)
     {
@@ -154,7 +110,10 @@ HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncro
                     {
                         break;
                     }
-                    blocking_queue.push(iterator);
+                    if (!blocking_queue.push(iterator))
+                    {
+                        break;
+                    }
                 }
             }));
     }
@@ -200,6 +159,16 @@ Iceberg::ManifestFilePtr HomogeneousIcebergKeysIterator<HeavyCPUProcessingFuncti
             parent.filter_dag,
             parent.table_snapshot->schema_id);
     }
+}
+
+template <typename HeavyCPUProcessingFunction>
+Iceberg::ManifestFilePtr HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncronousIterator::next() {
+    ManifestFilePtr manifest_file;
+    if (!blocking_queue.pop(manifest_file))
+    {
+        return nullptr;
+    }
+    return manifest_file;
 }
 
 namespace
@@ -280,118 +249,36 @@ HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::next()
     {
         {
             std::lock_guard lock(current_manifest_file_mutex);
-            if (current_manifest_file_iterator->isInitialized())
+            if (!current_manifest_file_iterator || current_manifest_file_iterator->isInitialized())
             {
                 current_manifest_file_iterator = manifest_files_asyncronous_iterator.next();
             }
-            reference_to_iterator = current_manifest_file_iterator;
+            if (current_manifest_file_iterator)
+            {
+                reference_to_iterator = current_manifest_file_iterator;
+            } else {
+                return std::nullopt;
+            }
         }
         auto file_entry = reference_to_iterator->next();
         if (!file_entry)
-        {
+        {   
             continue;
         }
-        return file_entry;
+        return processing_function(file_entry);
     }
-    // if (!data_snapshot)
-    // {
-    //     return std::nullopt;
-    // }
-
-    // while (manifest_file_index < data_snapshot->manifest_list_entries.size())
-    // {
-    //     if (!current_manifest_file_content)
-    //     {
-    //         if (persistent_components.format_version > 1 && data_snapshot->manifest_list_entries[manifest_file_index].content_type != manifest_file_content_type)
-    //         {
-    //             ++manifest_file_index;
-    //             continue;
-    //         }
-    //         current_manifest_file_content = Iceberg::getManifestFile(
-    //             object_storage,
-    //             persistent_components,
-    //             local_context,
-    //             log,
-    //             data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
-    //             data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
-    //             data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
-    //         internal_data_index = 0;
-    //         files = files_generator(current_manifest_file_content);
-    //     }
-    //     while (current_manifest_file_content->manifest_file_content_type ==)
-    //         while (internal_data_index < files.size())
-    //         {
-    //             const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
-    //             if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
-    //             {
-    //                 previous_entry_schema = manifest_file_entry->schema_id;
-    //                 if (previous_entry_schema > manifest_file_entry->schema_id)
-    //                 {
-    //                     LOG_WARNING(
-    //                         log,
-    //                         "Manifest entries in file {} are not sorted by schema id",
-    //                         current_manifest_file_content->getPathToManifestFile());
-    //                 }
-    //                 current_pruner.emplace(
-    //                     *persistent_components.schema_processor,
-    //                     table_snapshot->schema_id,
-    //                     manifest_file_entry->schema_id,
-    //                     filter_dag.get(),
-    //                     *current_manifest_file_content,
-    //                     local_context);
-    //             }
-    //             auto pruning_status = current_pruner ? current_pruner->canBePruned(manifest_file_entry) : PruningReturnStatus::NOT_PRUNED;
-    //             insertRowToLogTable(
-    //                 local_context,
-    //                 "",
-    //                 DB::IcebergMetadataLogLevel::ManifestFileEntry,
-    //                 persistent_components.table_path,
-    //                 current_manifest_file_content->getPathToManifestFile(),
-    //                 manifest_file_entry->row_number,
-    //                 pruning_status);
-    //             switch (pruning_status)
-    //             {
-    //                 case PruningReturnStatus::NOT_PRUNED:
-    //                     return manifest_file_entry;
-    //                 case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
-    //                     ++min_max_index_pruned_files;
-    //                     break;
-    //                 }
-    //                 case PruningReturnStatus::PARTITION_PRUNED: {
-    //                     ++partition_pruned_files;
-    //                     break;
-    //                 }
-    //                     return nullptr;
-    //             }
-    //         }
-    //     current_manifest_file_content = nullptr;
-    //     files.clear();
-    //     current_pruner = std::nullopt;
-    //     ++manifest_file_index;
-    //     internal_data_index = 0;
-    //     previous_entry_schema = -1;
-    // }
-
-    // return std::nullopt;
 }
 
-HomogeneousIcebergKeysIterator::~HomogeneousIcebergKeysIterator()
-{
-    if (partition_pruned_files > 0)
-        ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, partition_pruned_files);
-    if (min_max_index_pruned_files > 0)
-        ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles, min_max_index_pruned_files);
-}
-
-HomogeneousIcebergKeysIterator::HomogeneousIcebergKeysIterator(
-    ObjectStoragePtr object_storage_,
-    ContextPtr local_context_,
-    FilesGenerator files_generator_,
-    Iceberg::ManifestFileContentType manifest_file_content_type_,
-    const ActionsDAG * filter_dag_,
-    Iceberg::TableStateSnapshotPtr table_snapshot_,
-    Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+template <typename HeavyCPUProcessingFunction>
+HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::HomogeneousIcebergKeysIterator(
+        ObjectStoragePtr object_storage_,
+        ContextPtr local_context_,
+        Iceberg::ManifestFileContentType manifest_file_content_type_,
+        const ActionsDAG * filter_dag_,
+        TableStateSnapshotPtr table_snapshot_,
+        IcebergDataSnapshotPtr data_snapshot_,
+        PersistentTableComponents persistent_components_,
+        HeavyCPUProcessingFunction processing_function_)
     : object_storage(object_storage_)
     , filter_dag(filter_dag_ ? std::make_shared<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , local_context(local_context_)
@@ -410,9 +297,15 @@ HomogeneousIcebergKeysIterator::HomogeneousIcebergKeysIterator(
               return filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
           }())
     , persistent_components(persistent_components_)
-    , files_generator(files_generator_)
     , log(getLogger("IcebergIterator"))
     , manifest_file_content_type(manifest_file_content_type_)
+    , processing_function(std::move(processing_function_))
+    // TODO: make it configurable
+    , manifest_files_asyncronous_iterator(
+        manifest_file_content_type_,
+        *this,
+        20,
+    5)
 {
 }
 
@@ -429,38 +322,15 @@ IcebergIterator::IcebergIterator(
     , object_storage(std::move(object_storage_))
     , table_state_snapshot(table_snapshot_)
     , persistent_components(persistent_components_)
-    , data_files_iterator(
-          object_storage,
-          local_context_,
-          [](const Iceberg::ManifestFilePtr & manifest_file)
-          { return *manifest_file->getFilesWithoutDeletedHandle(Iceberg::FileContentType::DATA); },
-          Iceberg::ManifestFileContentType::DATA,
-          filter_dag.get(),
-          table_snapshot_,
-          data_snapshot_,
-          persistent_components_)
     , deletes_iterator(
           object_storage,
           local_context_,
-          [](const Iceberg::ManifestFilePtr & manifest_file)
-          {
-              auto position_deletes
-                  = manifest_file->getFilesWithoutDeletedHandle(Iceberg::FileContentType::POSITION_DELETE).getFilesWithoutDeleted();
-              auto equality_deletes
-                  = manifest_file->getFilesWithoutDeletedHandle(Iceberg::FileContentType::EQUALITY_DELETE).getFilesWithoutDeleted();
-              std::vector<ManifestFileEntryPtr> result;
-              result.reserve(position_deletes.size() + equality_deletes.size());
-              result = position_deletes;
-              result.insert(result.end(), equality_deletes.begin(), equality_deletes.end());
-              return result;
-          },
           Iceberg::ManifestFileContentType::DELETE,
           filter_dag.get(),
           table_snapshot_,
           data_snapshot_,
-          persistent_components_)
-    , blocking_queue(100)
-    , producer_task(std::nullopt)
+          persistent_components_,
+        [](Iceberg::ManifestFileEntryPtr manifest_file_entry){return manifest_file_entry;})
     , callback(std::move(callback_))
 {
     auto delete_file = deletes_iterator.next();
@@ -479,49 +349,22 @@ IcebergIterator::IcebergIterator(
     LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
-    producer_task.emplace(
-        [this]()
-        {
-            while (!blocking_queue.isFinished())
-            {
-                std::optional<ManifestFileEntryPtr> entry;
-                try
-                {
-                    entry = data_files_iterator.next();
-                }
-                catch (...)
-                {
-                    std::lock_guard lock(exception_mutex);
-                    if (!exception)
-                    {
-                        exception = std::current_exception();
-                    }
-                    blocking_queue.finish();
-                    break;
-                }
-                if (!entry.has_value())
-                    break;
-                while (!blocking_queue.push(std::move(entry.value())))
-                {
-                    if (blocking_queue.isFinished())
-                    {
-                        break;
-                    }
-                }
-            }
-            blocking_queue.finish();
-        });
+    data_files_iterator.emplace(
+          object_storage,
+          local_context_,
+          Iceberg::ManifestFileContentType::DATA,
+          filter_dag.get(),
+          table_snapshot_,
+          data_snapshot_,
+          persistent_components_,
+          [this](Iceberg::ManifestFileEntryPtr manifest_file_entry){return convertToObjectInfo(manifest_file_entry);});
 }
 
-ObjectInfoPtr IcebergIterator::next(size_t)
+ObjectInfoPtr IcebergIterator::convertToObjectInfo(const Iceberg::ManifestFileEntryPtr & manifest_file_entry)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
-    Iceberg::ManifestFileEntryPtr manifest_file_entry;
-    if (blocking_queue.pop(manifest_file_entry))
-    {
-        IcebergDataObjectInfoPtr object_info
+    IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
-        for (const auto & position_delete :
+    for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
             const auto & data_file_path = object_info->info.data_object_file_path_key;
@@ -582,34 +425,24 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 object_info->info.data_object_file_path_key);
         }
 
-        ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
-        return object_info;
-    }
-    {
-        std::lock_guard lock(exception_mutex);
-        if (exception)
-        {
-            auto exception_message = getExceptionMessage(exception, true, true);
-            auto exception_code = getExceptionErrorCode(exception);
-            throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
-        }
-    }
 
-    return nullptr;
+
+    return object_info;
 }
+
+ObjectInfoPtr IcebergIterator::next(size_t)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
+    
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
+    auto object_info = data_files_iterator->next();
+    return object_info.has_value() ? object_info.value() : nullptr;
+}
+
 
 size_t IcebergIterator::estimatedKeysCount()
 {
     return std::numeric_limits<size_t>::max();
-}
-
-IcebergIterator::~IcebergIterator()
-{
-    blocking_queue.finish();
-    if (producer_task)
-    {
-        producer_task->join();
-    }
 }
 }
 

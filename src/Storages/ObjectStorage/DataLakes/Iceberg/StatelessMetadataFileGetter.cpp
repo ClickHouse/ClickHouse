@@ -102,6 +102,42 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     return create_fn();
 }
 
+Iceberg::ManifestFilePtr getManifestFileAsIterator(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr local_context,
+    LoggerPtr log,
+    const ManifestFileCacheKey & cache_key,
+    Int32 table_snapshot_schema_id)
+{
+    auto cacheable_info = getManifestFile(
+        object_storage,
+        persistent_table_components,
+        local_context,
+        log,
+        cache_key.manifest_file_path,
+        static_cast<size_t>(cache_key.manifest_file_byte_size));
+
+    auto iterator = std::make_shared<Iceberg::ManifestFileIterator>(
+        cacheable_info.deserializer,
+        cache_key.manifest_file_path,
+        persistent_table_components.format_version,
+        persistent_table_components.table_path,
+        *persistent_table_components.schema_processor,
+        cache_key.added_sequence_number,
+        cache_key.added_snapshot_id,
+        persistent_table_components.table_location,
+        local_context,
+        cache_key.manifest_file_path,
+        false,
+        nullptr,
+        table_snapshot_schema_id);
+
+    while (iterator->next()) {}
+
+    return iterator;
+}
+
 ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,

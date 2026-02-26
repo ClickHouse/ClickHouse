@@ -45,16 +45,14 @@ public:
     HomogeneousIcebergKeysIterator(
         ObjectStoragePtr object_storage_,
         ContextPtr local_context_,
-        FilesGenerator files_generator_,
         Iceberg::ManifestFileContentType manifest_file_content_type_,
         const ActionsDAG * filter_dag_,
         TableStateSnapshotPtr table_snapshot_,
         IcebergDataSnapshotPtr data_snapshot_,
-        PersistentTableComponents persistent_components);
+        PersistentTableComponents persistent_components,
+        HeavyCPUProcessingFunction processing_function_);
 
     std::optional<Result> next();
-
-    ~HomogeneousIcebergKeysIterator();
 
 private:
     ObjectStoragePtr object_storage;
@@ -66,18 +64,10 @@ private:
     PersistentTableComponents persistent_components;
     FilesGenerator files_generator;
     LoggerPtr log;
-    std::vector<ManifestFileEntryPtr> files;
-    std::vector<std::pair<Int64, ManifestFilePtr>> currently_pulled_manifest_files;
-
-
-    // By Iceberg design it is difficult to avoid storing position deletes in memory.
-    size_t manifest_file_index = 0;
-    size_t internal_data_index = 0;
-    Iceberg::ManifestFilePtr current_manifest_file_content;
-    Int32 previous_entry_schema = -1;
-    std::optional<Iceberg::ManifestFilesPruner> current_pruner;
-
     const Iceberg::ManifestFileContentType manifest_file_content_type;
+    ManifestFilePtr current_manifest_file_iterator;
+    std::mutex current_manifest_file_mutex;
+    HeavyCPUProcessingFunction processing_function;
 
     struct ManifestFileWeightFunction
     {
@@ -91,7 +81,6 @@ private:
         const Iceberg::ManifestFileContentType manifest_file_content_type;
         const HomogeneousIcebergKeysIterator & parent;
         const size_t number_of_workers;
-        const size_t max_sum_size_of_manifest_files_in_queue;
         std::deque<ThreadFromGlobalPool> workers;
 
         Iceberg::ManifestFilePtr next();
@@ -101,13 +90,9 @@ private:
         ManifestFilesAsyncronousIterator(
             Iceberg::ManifestFileContentType manifest_file_content_type_,
             const HomogeneousIcebergKeysIterator & parent_,
-            size_t max_sum_size_of_manifest_files_in_queue_);
+            size_t max_sum_size_of_manifest_files_in_queue_,
+            size_t number_of_workers_);
     } manifest_files_asyncronous_iterator;
-
-    ManifestFilePtr current_manifest_file_iterator;
-    std::mutex current_manifest_file_mutex;
-
-    HeavyCPUProcessingFunction heavy_cpu_processing_function;
 };
 
 class IcebergIterator : public IObjectIterator
@@ -133,17 +118,17 @@ private:
     ObjectStoragePtr object_storage;
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
     Iceberg::PersistentTableComponents persistent_components;
-    Iceberg::HomogeneousIcebergKeysIterator<std::function<ObjectInfoPtr(const Iceberg::ManifestFilePtr & manifest_file)>>
+    std::optional<Iceberg::HomogeneousIcebergKeysIterator<std::function<ObjectInfoPtr(const Iceberg::ManifestFileEntryPtr & manifest_file)>>>
         data_files_iterator;
-    Iceberg::HomogeneousIcebergKeysIterator<std::function<Iceberg::ManifestFileEntryPtr(const Iceberg::ManifestFilePtr & manifest_file)>>
+    Iceberg::HomogeneousIcebergKeysIterator<std::function<Iceberg::ManifestFileEntryPtr(const Iceberg::ManifestFileEntryPtr & manifest_file)>>
         deletes_iterator;
-    ConcurrentBoundedQueue<Iceberg::ManifestFileEntryPtr> blocking_queue;
-    std::optional<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
     std::vector<Iceberg::ManifestFileEntryPtr> position_deletes_files;
     std::vector<Iceberg::ManifestFileEntryPtr> equality_deletes_files;
     std::exception_ptr exception;
     std::mutex exception_mutex;
+
+    ObjectInfoPtr convertToObjectInfo(const Iceberg::ManifestFileEntryPtr & manifest_file_entry);
 };
 }
 
