@@ -340,6 +340,23 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
                         out.push_back(&func.arguments->children[i]);
         }
     }
+    else if (func.name == "exists")
+    {
+        /// Since exists does not use parameters, and the only
+        /// argument to exists function is a subquery, out
+        /// should not have arguments. Thus, the following lines could
+        /// probably be changed with just `return`. However, we follow
+        /// the style that is provided in the first if.
+        for (auto & child : ast->children)
+        {
+            if (child != func.arguments)
+                out.push_back(&child);
+            else
+                for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
+                    if (i != 0 || !func.arguments->children[i]->as<ASTSubquery>())
+                        out.push_back(&func.arguments->children[i]);
+        }
+    }
     else
         for (auto & child : ast->children)
             out.push_back(&child);

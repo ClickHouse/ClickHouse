@@ -11,14 +11,6 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-static const auto compressSetting = CHSetting(
-    [](RandomGenerator & rg, FuzzConfig &)
-    {
-        static const DB::Strings & choices = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
-        return rg.pickRandomly(choices);
-    },
-    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
-    false);
 
 static const auto bytesRangeSetting
     = CHSetting(bytesRange, {"0", "1", "2", "4", "8", "32", "1024", "2048", "4096", "16384", "'10M'"}, false);
@@ -118,15 +110,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'ignore'", "'throw'", "'drop'", "'rebuild'"},
          false)},
-    {"default_compression_codec",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings & choices = {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'T64'", "'AES_128_GCM_SIV'"};
-             return rg.pickRandomly(choices);
-         },
-         {"'NONE'", "'LZ4'", "'LZ4HC'", "'ZSTD'", "'T64'", "'AES_128_GCM_SIV'"},
-         false)},
     {"detach_not_byte_identical_parts", trueOrFalseSetting},
     {"detach_old_local_parts_when_cloning_replica", trueOrFalseSetting},
     {"disable_detach_partition_for_zero_copy_replication", trueOrFalseSetting},
@@ -137,6 +120,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
          {"0", "1"},
          false)},
+    {"distributed_index_analysis_min_indexes_bytes_to_activate", bytesRangeSetting},
     {"distributed_index_analysis_min_indexes_size_to_activate",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
@@ -161,6 +145,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_vertical_merge_algorithm", trueOrFalseSetting},
     {"enforce_index_structure_match_on_partition_manipulation", trueOrFalseSetting},
     {"escape_index_filenames", trueOrFalseSetting},
+    {"escape_variant_subcolumn_filenames", trueOrFalseSetting},
     {"exclude_deleted_rows_for_part_size_in_merge", trueOrFalseSetting},
     {"exclude_materialize_skip_indexes_on_merge",
      CHSetting(
@@ -201,7 +186,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"load_existing_rows_count_for_old_parts", trueOrFalseSetting},
     {"marks_compress_block_size", highRangeSetting},
-    {"marks_compression_codec", compressSetting},
     {"materialize_skip_indexes_on_merge", trueOrFalseSetting},
     {"materialize_statistics_on_merge", trueOrFalseSetting},
     {"materialize_ttl_recalculate_only", trueOrFalseSetting},
@@ -374,7 +358,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"prewarm_mark_cache", trueOrFalseSetting},
     {"prewarm_primary_key_cache", trueOrFalseSetting},
     {"primary_key_compress_block_size", highRangeSetting},
-    {"primary_key_compression_codec", compressSetting},
     {"primary_key_lazy_load", trueOrFalseSetting},
     {"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns", probRangeSetting},
     {"ratio_of_defaults_for_sparse_serialization", CHSetting(probRange, {"0", "0.0001", "0.001", "0.003", "0.005", "0.01", "0.1"}, false)},
@@ -695,14 +678,27 @@ static std::unordered_map<String, CHSetting> kafkaTableSettings
 static std::unordered_map<String, CHSetting> mergeTreeColumnSettings
     = {{"min_compress_block_size", highRangeSetting}, {"max_compress_block_size", highRangeSetting}};
 
+std::unordered_map<String, CHSetting> allDatabaseSettings = {{"lazy_load_tables", trueOrFalseSetting}};
 
 void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
+    std::unordered_set<String> codecsEscpated;
     std::unordered_map<String, CHSetting> s3Settings;
     std::unordered_map<String, CHSetting> s3QueueTableSettings;
     std::unordered_map<String, CHSetting> azureBlobStorageSettings;
     std::unordered_map<String, CHSetting> azureQueueSettings;
     std::unordered_map<String, CHSetting> logTableSettings;
+
+    for (const auto & codec : codecs)
+    {
+        codecsEscpated.insert("'" + codec + "'");
+    }
+    const auto & compressSetting
+        = CHSetting([](RandomGenerator & rg, FuzzConfig &) { return "'" + generateNextCodecString(rg) + "'"; }, codecsEscpated, false);
+
+    mergeTreeTableSettings.insert({{"default_compression_codec", compressSetting}});
+    mergeTreeTableSettings.insert({{"marks_compression_codec", compressSetting}});
+    mergeTreeTableSettings.insert({{"primary_key_compression_codec", compressSetting}});
 
     if (!fc.storage_policies.empty())
     {
@@ -754,6 +750,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 {"'path'", "'partition'"},
                 false)},
            {"commit_on_select", trueOrFalseSettingNoOracle},
+           {"deduplication_v2", trueOrFalseSettingNoOracle},
            {"enable_hash_ring_filtering", trueOrFalseSetting},
            {"enable_logging_to_queue_log", trueOrFalseSetting},
            {"list_objects_batch_size",

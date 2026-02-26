@@ -196,4 +196,4 @@ Default value: `300`.
 ## See also {#see-also}
 
 - [The mysql table function](../../../sql-reference/table-functions/mysql.md)
-- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources#mysql)
+- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)

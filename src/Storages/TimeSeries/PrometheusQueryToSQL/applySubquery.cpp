@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>

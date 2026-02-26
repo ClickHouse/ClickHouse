@@ -16,7 +16,6 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
-
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
@@ -108,6 +107,7 @@ def run_tests(
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
+    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -433,7 +433,7 @@ def main():
             commands.append(CH.enable_thread_fuzzer_config)
 
         os.environ["MALLOC_CONF"] = (
-            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+            f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
         if not is_coverage:
@@ -516,9 +516,10 @@ def main():
 
         # For flaky check, set a soft time limit so that the test runner stops
         # gracefully before the job hard timeout, allowing results to be posted.
-        # The job timeout is 2.5 hours (9000s); leave a 5-minute margin.
+        # The job timeout is 2.5 hours (9000s); leave a 1-hour margin for cleanup
+        # (server shutdown, system table export, log collection — all slow under sanitizers).
         job_timeout = int(3600 * 2.5)
-        soft_limit_margin = 300
+        soft_limit_margin = 3600
         global_time_limit = 0
         if is_flaky_check or is_targeted_check:
             global_time_limit = max(

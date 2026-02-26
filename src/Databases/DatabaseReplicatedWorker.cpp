@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/sleep.h>
 
 #include <filesystem>
 #include <Core/ServerUUID.h>
