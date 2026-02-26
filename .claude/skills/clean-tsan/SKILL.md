@@ -191,7 +191,7 @@ Both files must be checked for TSan errors.
 **Run all tests in background** with `run_in_background: true`. Wait with `TaskOutput(block=true)`.
 
 **Iteration strategy by test type:**
-- **Unit tests**: Use `--gtest_repeat=5` (single process, multiple iterations — fast).
+- **Unit tests**: Use `--gtest_repeat=20` (single process, multiple iterations — fast; `halt_on_error=1` aborts immediately on first hit so a larger count costs nothing when a race is found early).
 - **Integration tests**: Run **once**. Integration tests are slow under TSan and a single run is usually sufficient to trigger errors. If the first run is clean, optionally run once more to confirm.
 - **Stateless tests**: Run once. If clean, optionally rerun for confidence.
 
@@ -281,42 +281,34 @@ The file `<artifact_dir>/threading-model.md` is a cumulative knowledge base abou
 
 RCA subagents read it before analysis and **update it** with new discoveries. Fix subagents read it and **update it** when their changes alter invariants.
 
-Structure:
+**On the first iteration** (when `<artifact_dir>/threading-model.md` does not exist): create the file with the following self-describing header. This header instructs future subagents on how to maintain the document — it lives in the file itself rather than in subagent prompts.
 
 ```markdown
 # Threading Model
 
-## <ClassName>
-
-### Mutexes
-- `mutex_name` (type) — guards <what>
-  - Fields: `field1`, `field2`
-  - Acquired by: <which threads/methods>
-
-### Lock Ordering
-- `mutex_a` → `mutex_b` (never reverse)
-
-### Cross-Class Calls Under Lock
-- `method` holds `mutex_name` and calls `OtherClass::method` (acquires `other_mutex`)
-
-### Atomics
-- `field_name` (std::atomic<type>) — <semantics>
-
-### Thread Roles
-- <thread_name>: calls `method1`, `method2`
-
-### Condition Variables
-- `cv_name` — waits on <predicate>, signaled by <who>
-
-### Known Safe Patterns
-- <pattern that looks like a race but is safe because X>
+> **Format guide for `/clean-tsan` subagents:** This file is maintained by RCA and Fix subagents
+> across iterations. Read it before analysis to understand what is already known. Update it with
+> new discoveries. When a fix changes an invariant, update the relevant entry rather than appending.
+> If an earlier entry was wrong, correct it.
+>
+> **Per-class structure:** Add a `## ClassName` section for each class involved in TSan alerts.
+> Under each class, use these subsections as needed (omit empty ones):
+>
+> - **Mutexes**: mutex name and type, what fields/state it guards, which threads acquire it
+> - **Lock Ordering**: which mutex must be acquired before which (e.g., `MutexA` → `MutexB`
+>   means A is always acquired before B — never the reverse)
+> - **Cross-Class Calls Under Lock**: method holds mutex X while calling into another class
+>   (which acquires mutex Y)
+> - **Atomics**: field name, type, access semantics
+> - **Thread Roles**: which named thread types call which entry-point methods
+> - **Condition Variables**: name, wait predicate, who signals it
+> - **Known Safe Patterns**: things that look like races but are provably safe (and why)
+>
+> **Conventions:** Use actual mutex names from the code (e.g., `AllocationQueue::mutex`),
+> not abstract labels. One line per item. Keep entries factual — no speculation.
 ```
 
-Rules:
-- Only add classes that appear in TSan alerts or are directly involved in the fix
-- Keep entries factual and concise — one line per item
-- When a fix changes an invariant (e.g., "method no longer calls X under lock"), update the relevant entry rather than appending
-- If an earlier understanding was wrong, correct it and note why
+On subsequent iterations the file already exists — RCA and Fix subagents will update it in place.
 
 ---
 
@@ -326,7 +318,7 @@ Launch a Task with `subagent_type=general-purpose` for the extracted alert. Usin
 
 **Before launching**, prepare the context:
 1. Read `<artifact_dir>/progress.md` (if it exists — skip on first iteration)
-2. Read `<artifact_dir>/threading-model.md` (if it exists — skip on first iteration)
+2. Read `<artifact_dir>/threading-model.md` — always present (created in Phase 4 with format guide)
 3. Generate the diff of all uncommitted changes: `git diff`
 
 If a previous iteration was marked `FAILED` in `progress.md`, add to the prompt: **"IMPORTANT: A previous fix attempt for a similar alert failed. Read the progress file carefully and think deeper about the root cause. The obvious fix did not work — consider less obvious causes such as lock ordering across call chains, re-entrant paths, or indirect mutex acquisitions through callbacks."**
@@ -341,7 +333,7 @@ Prompt: "Perform root cause analysis of this ThreadSanitizer alert in ClickHouse
 <contents of progress.md, or "First iteration — no previous context.">
 
 ## Threading Model
-<contents of threading-model.md, or "First iteration — no model yet.">
+<contents of threading-model.md — the file header describes the format and update conventions; class sections below it are the current knowledge base. If only the header exists, no analysis has been recorded yet.>
 
 ## Changes Already Applied
 <git diff output, or "No changes yet.">
@@ -441,18 +433,7 @@ Key threading concepts:
 **TSA Annotations to Add:** <any TSA_GUARDED_BY, TSA_ACQUIRED_AFTER, etc.>
 
 ### Threading Model Update
-Write updated threading-model.md content for the classes you analyzed. If a threading-model.md was provided in context, merge your findings into it — correct any outdated entries and add new ones.
-
-Use this structure per class:
-- **Mutexes**: name, type, what fields it guards, which threads/methods acquire it
-- **Lock ordering**: which mutex must be acquired before which (never reverse)
-- **Cross-class calls under lock**: method holds mutex X and calls OtherClass::method (acquires mutex Y)
-- **Atomics**: field name, type, semantics
-- **Thread roles**: which named threads call which entry points
-- **Condition variables**: name, wait predicate, who signals
-- **Known safe patterns**: things that look like races but are safe (and why)
-
-Keep entries factual, one line per item. Only include classes involved in the alert."
+Write updated `threading-model.md` content for the classes involved in this alert. The file's own header (in the `>` blockquote at the top) describes the required format, conventions, and update rules — follow it exactly. Only include classes involved in the alert."
 ```
 
 ### Save RCA report and update threading model
@@ -501,7 +482,7 @@ Prompt: "Apply the following TSan fix to the ClickHouse codebase.
 <contents of progress.md, or "First iteration — no previous context.">
 
 ## Threading Model
-<contents of threading-model.md, or "First iteration — no model yet.">
+<contents of threading-model.md — the file header describes the format and update conventions; class sections below it are the current knowledge base.>
 
 ## Changes Already Applied
 <git diff output, or "No changes yet.">
@@ -516,7 +497,7 @@ Prompt: "Apply the following TSan fix to the ClickHouse codebase.
    - Never use sleep to fix race conditions
    - Prefer `std::lock_guard` or `std::unique_lock` for RAII locking
    - Use TSA annotations when adding mutex protection
-6. If your fix changes threading invariants (e.g., a method no longer holds a lock when calling another method), report what threading-model.md entries need updating
+6. If your fix changes threading invariants (e.g., a method no longer holds a lock when calling another method), report what `threading-model.md` entries need updating — follow the format described in that file's header
 7. Report what was changed"
 ```
 
