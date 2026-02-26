@@ -805,15 +805,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self):
-        # Find at most 3 core.* files in the current directory (non-recursive)
-        cmd = "find . -maxdepth 1 -type f -name 'core.*' | head -n 3"
-        core_files = Shell.get_output(cmd, verbose=True).splitlines()
-        if len(core_files) > 3:
-            print(
-                f"WARNING: Only 3 out of {len(core_files)} core files will be uploaded: [{core_files}]"
-            )
-            core_files = core_files[0:3]
-        return [Utils.compress_zst(f) for f in core_files if Path(f).is_file()]
+        return [Utils.compress_zst(f) for f in Path("{temp_dir}").glob("run_r*/core.*")]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -1008,84 +1000,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             else:
                 result.set_status(Result.StatusExtended.FAIL)
         return results
-
-    def collect_core_dumps(self):
-        Shell.check(
-            f"find {self.run_path0}/.. -type f -maxdepth 1 -name 'core.*' | while read -r core; do zstd --threads=0 \"$core\"; done"
-        )
-        core_files = []
-        for core in glob.iglob(f"{self.run_path0}/../core.*.zst"):
-            core_files.append(core)
-        return core_files
-
-    def _prepare_gdb_script(self):
-        rtmin = Shell.get_output("kill -l SIGRTMIN")
-        script = """\
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIG{RTMIN} nostop noprint pass
-info signals
-# safeExit is called if graceful shutdown times out. Print stack traces in that case.
-break safeExit
-continue
-thread apply all backtrace
-backtrace full
-info registers
-p "top 1 KiB of the stack:"
-p/x *(uint64_t[128]*)"'$sp'"
-maintenance info sections
-disassemble /s
-up
-disassemble /s
-up
-disassemble /s
-p \"done\"
-detach
-quit
-""".format(RTMIN=rtmin)
-        with open(f"{temp_dir}/script.gdb", "w") as file:
-            file.write(script)
-        return f"{temp_dir}/script.gdb"
-
-    def attach_gdb(self):
-        Shell.check(f"rm {self.GDB_LOG}", verbose=True)
-        script_path = self._prepare_gdb_script()
-        assert self.pid, "ClickHouse not started"
-        # FIXME Hung check may work incorrectly because of attached gdb
-        # We cannot attach another gdb to get stacktraces if some queries hung
-        command = f"gdb -batch -command {script_path} -p {self.pid}"
-        print(f"Attach gdb to PID {self.pid}, command: [{command}]")
-        with open(self.GDB_LOG, "w") as log_file:
-            self.gdb_proc = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=log_file,
-                stderr=log_file,
-            )
-        time.sleep(2)
-        time.sleep(1000)
-        self.gdb_proc.poll()
-        attached = False
-        if self.gdb_proc.returncode is not None:
-            print("ERROR: Failed to attach gdb")
-        else:
-            for i in range(60):
-                attached = Shell.check(
-                    f"clickhouse-client --query \"SELECT 'Connected to clickhouse-server after attaching gdb'\"",
-                    verbose=True,
-                )
-                if attached:
-                    break
-                time.sleep(1)
-        if not attached:
-            self.debug_artifacts += [script_path]
-        return attached
 
     def dump_system_tables(self):
         # Stop server so we can safely read data with clickhouse-local.

@@ -4,6 +4,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+sudo kill -ABRT $(pgrep -f "^clickhouse-server ") # REMOVEME
+
 echo 'DROP TABLE IF EXISTS long_insert' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @-
 echo 'CREATE TABLE long_insert (str String) ENGINE = Memory' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @-
 for string_size in 1 10 100 1000 10000 100000 1000000; do

@@ -8,6 +8,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -o errexit
 set -o pipefail
 
+sudo kill -ABRT $(pgrep -f "^clickhouse-server ") # REMOVEME
+
 echo "
     DROP TABLE IF EXISTS two_blocks;
     set allow_deprecated_syntax_for_merge_tree=1;
