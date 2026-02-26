@@ -5605,6 +5605,7 @@ class ClickHouseInstance:
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
+        write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
