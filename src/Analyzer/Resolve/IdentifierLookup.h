@@ -95,7 +95,8 @@ enum class IdentifierResolvePlace : UInt8
     CTE,
     /// Valid only for table lookup
     DATABASE_CATALOG,
-    NILADIC_FUNCTION
+    /// Functions that can be used without parentheses
+    NILADIC_FUNCTION,
 };
 
 inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
