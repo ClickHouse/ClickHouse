@@ -542,10 +542,10 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     ///   %foo\%bar% → [%foo\%bar%]     '\%' is literal, stays in group; one group
     ///   %foo\_bar% → [%foo\_bar%]     '\_' is literal, stays in group; one group
 
-    bool left_free = false;        /// current group is preceded by an unescaped '%'
+    bool left_free = false; /// current group is preceded by an unescaped '%'
     bool group_has_content = false; /// current group contains at least one alphanumeric char
-    size_t group_start = 0;        /// start of the current group's content in 'data'
-    size_t group_end = 0;          /// end of the current group's content (exclusive)
+    size_t group_start = 0; /// start of the current group's content in 'data'
+    size_t group_end = 0; /// end of the current group's content (exclusive)
 
     const auto emit_group = [&](bool right_free)
     {
@@ -575,7 +575,7 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
         group_end = new_start;
     };
 
-    for (size_t pos = 0; pos < length; )
+    for (size_t pos = 0; pos < length;)
     {
         unsigned char c = static_cast<unsigned char>(data[pos]);
 
@@ -624,7 +624,6 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
 
     return patterns;
 }
-
 
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
