@@ -9,7 +9,6 @@
 #include <Formats/JSONUtils.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -22,81 +21,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Captures an arbitrary JSON value (object, array, string, or scalar) as a raw string.
-String readRawJSONValue(ReadBuffer & buf)
-{
-    skipWhitespaceIfAny(buf);
-    if (buf.eof())
-        return {};
-
-    WriteBufferFromOwnString out;
-    char c = *buf.position();
-
-    if (c == '{' || c == '[')
-    {
-        char close_char = (c == '{') ? '}' : ']';
-        int depth = 1;
-        bool in_string = false;
-        out.write(c);
-        ++buf.position();
-
-        while (!buf.eof() && depth > 0)
-        {
-            char ch = *buf.position();
-            out.write(ch);
-            ++buf.position();
-
-            if (in_string)
-            {
-                if (ch == '\\' && !buf.eof())
-                {
-                    out.write(*buf.position());
-                    ++buf.position();
-                }
-                else if (ch == '"')
-                    in_string = false;
-            }
-            else if (ch == '"')
-                in_string = true;
-            else if (ch == '{' || ch == '[')
-                ++depth;
-            else if (ch == close_char)
-                --depth;
-        }
-    }
-    else if (c == '"')
-    {
-        out.write(c);
-        ++buf.position();
-        while (!buf.eof())
-        {
-            char ch = *buf.position();
-            out.write(ch);
-            ++buf.position();
-            if (ch == '\\' && !buf.eof())
-            {
-                out.write(*buf.position());
-                ++buf.position();
-            }
-            else if (ch == '"')
-                break;
-        }
-    }
-    else
-    {
-        while (!buf.eof())
-        {
-            char ch = *buf.position();
-            if (ch == ',' || ch == '}' || ch == ']' || isWhitespaceASCII(ch))
-                break;
-            out.write(ch);
-            ++buf.position();
-        }
-    }
-
-    return out.str();
-}
 
 
 /// Reads a GeoJSON position [lon, lat, ...] into a Tuple{Float64, Float64}.
@@ -455,7 +379,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
         else if (key == "coordinates")
         {
             /// Always buffer as raw string so key order doesn't matter.
-            raw_coordinates = readRawJSONValue(buf);
+            readJSONField(raw_coordinates, buf, format_settings.json);
         }
         else
         {
