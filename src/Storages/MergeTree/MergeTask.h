@@ -30,7 +30,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
-#include <Storages/MergeTree/TextIndexSegment.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
 
 namespace ProfileEvents
 {

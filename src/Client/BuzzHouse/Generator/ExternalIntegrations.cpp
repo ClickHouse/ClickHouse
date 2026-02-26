@@ -1397,7 +1397,8 @@ bool MongoDBIntegration::performTableIntegration(
                 if (miss_cols && rg.nextSmallNumber() < 4)
                 {
                     /// Sometimes the column is missing
-                    documentAppendAnyValue(rg, entry.columnPathRef(""), document, entry.getBottomType());
+                    documentAppendAnyValue(rg, entry.getBottomName(), document, entry.getBottomType());
+                    chassert(entry.path.size() == 1);
                 }
             }
             documents.emplace_back(document << bsoncxx::builder::stream::finalize);

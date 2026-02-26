@@ -704,12 +704,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << ')';
     }
 
-    /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
-    /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
-    bool has_nulls_action = getNullsAction() != NullsAction::EMPTY;
-    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action;
-
-    if (need_parens)
+    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
         ostr << '(';
 
     if (arguments)
@@ -785,7 +780,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         }
     }
 
-    if (need_parens)
+    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
         ostr << ')';
 
     finishFormatWithWindow(ostr, settings, state, frame);

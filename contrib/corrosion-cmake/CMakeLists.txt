@@ -146,14 +146,11 @@ else()
     list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
-# Suppress warnings
 list(APPEND RUSTFLAGS
-    # delta-kernel-rs
+    # Suppress warnings in delta-kernel-rs
     "-Adead_code"
-    # skim
+    # Suppress warnings in skim
     "-Amismatched_lifetime_syntaxes"
-    # wasmtime
-    "-Aunused_parens -Aunused_imports"
 )
 
 list(JOIN RUSTFLAGS " " RUSTFLAGS)

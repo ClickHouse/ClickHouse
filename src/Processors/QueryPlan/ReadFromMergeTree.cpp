@@ -185,7 +185,6 @@ namespace Setting
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_primary_key;
-    extern const SettingsBool use_partition_pruning;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -1926,12 +1925,7 @@ void ReadFromMergeTree::buildIndexes(
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
         indexes->minmax_idx_condition.emplace(filter_dag, query_context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(
-            metadata_snapshot,
-            filter_dag,
-            query_context,
-            false /* strict */,
-            !settings[Setting::use_partition_pruning] /* skip_analysis */);
+        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
     }
 
     indexes->part_values
@@ -2053,13 +2047,7 @@ void ReadFromMergeTree::buildIndexes(
                 auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
 
                 for (const auto & substream : format.substreams)
-                {
-                    String stream_name = idx.index->getFileName() + substream.suffix;
-                    /// Check for both original and hashed filenames
-                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, part.data_part->checksums);
-                    if (actual_stream_name)
-                        index_size += part.data_part->getFileSizeOrZero(*actual_stream_name + substream.extension);
-                }
+                    index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
 
                 index_sizes.emplace_back(index_size);
             }
@@ -3553,15 +3541,6 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         expression->describeActions(format_settings.out, prefix);
     }
 
-    if (deferred_prewhere_info || deferred_row_level_filter)
-    {
-        format_settings.out << prefix << "Deferred filters (applied after FINAL)" << '\n';
-        if (deferred_row_level_filter)
-            format_settings.out << prefix << "  Deferred row level filter column: " << deferred_row_level_filter->column_name << '\n';
-        if (deferred_prewhere_info)
-            format_settings.out << prefix << "  Deferred prewhere filter column: " << deferred_prewhere_info->prewhere_column_name << '\n';
-    }
-
     if (virtual_row_conversion)
     {
         format_settings.out << prefix << "Virtual row conversions" << '\n';
@@ -3609,16 +3588,6 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
     if (prewhere_info_map)
         map.add("Prewhere info", std::move(prewhere_info_map));
-
-    if (deferred_prewhere_info || deferred_row_level_filter)
-    {
-        auto deferred_map = std::make_unique<JSONBuilder::JSONMap>();
-        if (deferred_row_level_filter)
-            deferred_map->add("Deferred row level filter column", deferred_row_level_filter->column_name);
-        if (deferred_prewhere_info)
-            deferred_map->add("Deferred prewhere filter column", deferred_prewhere_info->prewhere_column_name);
-        map.add("Deferred filters (applied after FINAL)", std::move(deferred_map));
-    }
 
     if (virtual_row_conversion)
         map.add("Virtual row conversions", virtual_row_conversion->toTree());

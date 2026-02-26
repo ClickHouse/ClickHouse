@@ -2144,10 +2144,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
 {
     for (const auto & index_helper : indices)
     {
-        /// Check for both original and hashed filenames (hashed if the index name is too long)
-        auto index_file_name = IMergeTreeDataPart::getStreamNameOrHash(
-            index_helper->getFileName(), ".idx", part->getDataPartStorage());
-        if (!index_file_name)
+        if (!part->getDataPartStorage().existsFile(index_helper->getFileName() + ".idx"))
         {
             LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
             return ranges;

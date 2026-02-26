@@ -92,6 +92,7 @@ FROM
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyData>>(argument_types);
         },
+        {},
         documentation
     });
 }

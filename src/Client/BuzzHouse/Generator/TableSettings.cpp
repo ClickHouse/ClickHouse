@@ -120,7 +120,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
          {"0", "1"},
          false)},
-    {"distributed_index_analysis_min_indexes_bytes_to_activate", bytesRangeSetting},
     {"distributed_index_analysis_min_indexes_size_to_activate",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
@@ -145,7 +144,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_vertical_merge_algorithm", trueOrFalseSetting},
     {"enforce_index_structure_match_on_partition_manipulation", trueOrFalseSetting},
     {"escape_index_filenames", trueOrFalseSetting},
-    {"escape_variant_subcolumn_filenames", trueOrFalseSetting},
     {"exclude_deleted_rows_for_part_size_in_merge", trueOrFalseSetting},
     {"exclude_materialize_skip_indexes_on_merge",
      CHSetting(
@@ -693,8 +691,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     {
         codecsEscpated.insert("'" + codec + "'");
     }
-    const auto & compressSetting
-        = CHSetting([](RandomGenerator & rg, FuzzConfig &) { return "'" + generateNextCodecString(rg) + "'"; }, codecsEscpated, false);
+    const auto & compressSetting = CHSetting([](RandomGenerator & rg, FuzzConfig &) { return generateNextCodecString(rg); }, codecsEscpated, false);
 
     mergeTreeTableSettings.insert({{"default_compression_codec", compressSetting}});
     mergeTreeTableSettings.insert({{"marks_compression_codec", compressSetting}});
@@ -750,7 +747,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 {"'path'", "'partition'"},
                 false)},
            {"commit_on_select", trueOrFalseSettingNoOracle},
-           {"deduplication_v2", trueOrFalseSettingNoOracle},
            {"enable_hash_ring_filtering", trueOrFalseSetting},
            {"enable_logging_to_queue_log", trueOrFalseSetting},
            {"list_objects_batch_size",
