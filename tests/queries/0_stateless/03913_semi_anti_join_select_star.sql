@@ -6,7 +6,7 @@
 SET allow_experimental_analyzer = 1;
 
 -- Test ANTI JOIN setting
-SET anti_join_select_star_compatibility = 1;
+SET anti_join_compatibility = 1;
 
 -- LEFT ANTI JOIN with false condition: all left rows returned, only left columns
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false;
@@ -24,7 +24,7 @@ SELECT * FROM (SELECT 1 AS a) t1 RIGHT ANTI JOIN (SELECT 2 AS b) t2 ON false;
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
 
 -- Test SEMI JOIN setting
-SET semi_join_select_star_compatibility = 1;
+SET semi_join_compatibility = 1;
 
 -- LEFT SEMI JOIN with true condition: matched rows, only left columns
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
@@ -40,4 +40,4 @@ SELECT t1.*, t2.* FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON f
 
 -- Default behavior (both settings = 0): returns columns from both sides
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false
-SETTINGS anti_join_select_star_compatibility = 0;
+SETTINGS anti_join_compatibility = 0;
