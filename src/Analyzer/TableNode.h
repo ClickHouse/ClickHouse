@@ -43,7 +43,8 @@ public:
 
     /// Construct table node for MATERIALIZED CTE
     explicit TableNode(
-        TemporaryTableHolderPtr temporary_table_holder_,
+        TemporaryTableHolder temporary_table_holder_,
+        const std::string & cte_name_,
         QueryTreeNodePtr materialized_cte_subquery_,
         const ContextPtr & context_);
 

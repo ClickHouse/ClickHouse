@@ -1132,6 +1132,73 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
 
+IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
+    const IdentifierLookup & identifier_lookup,
+    IdentifierResolveScope & scope
+)
+{
+    auto full_name = identifier_lookup.identifier.getFullName();
+    auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+
+    /// CTE may reference table expressions with the same name, e.g.:
+    ///
+    /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
+    ///
+    /// Since recursive CTEs are handled in different place, `test1` identifier inside of CTE
+    /// references to table <default database name>.test1.
+    /// This means that the example above is equivalent to the following query:
+    ///
+    /// SELECT * FROM test1;
+    ///
+    /// To accomplish this behaviour it's not allowed to resolve identifiers to
+    /// CTE that is being resolved.
+    if (cte_query_node_it == scope.cte_name_to_query_node.end() || ctes_in_resolve_process.contains(cte_query_node_it->second))
+        return {};
+
+    auto & cte_node = cte_query_node_it->second;
+    auto * query_node = cte_node->as<QueryNode>();
+    auto * union_node = cte_node->as<UnionNode>();
+
+    bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
+    if (is_materialized_cte && scope.context->getSettingsRef()[Setting::enable_materialized_cte])
+    {
+        resolveExpressionNode(cte_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+        bool is_correlated = (query_node && query_node->isCorrelated()) || (union_node && union_node->isCorrelated());
+        if (is_correlated)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Materialized CTE '{}' cannot be correlated. In scope {}",
+                full_name,
+                scope.scope_node->formatASTForErrorMessage());
+
+        const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+        NamesAndTypesList columns;
+        for (const auto & projection_column : projection_columns)
+            columns.emplace_back(projection_column.name, projection_column.type);
+
+        auto storage_holder = TemporaryTableHolder(
+            scope.context,
+            ColumnsDescription(std::move(columns), false),
+            ConstraintsDescription{},
+            nullptr /*query*/,
+            true /*create_for_global_subquery*/);
+
+        auto table_node = std::make_shared<TableNode>(std::move(storage_holder), full_name, cte_node, scope.context);
+
+        cte_node = table_node;
+    }
+    else if (auto * table_node = cte_node->as<TableNode>())
+    {
+        if (table_node->isMaterializedCTE())
+        {
+            reused_materialized_cte.insert(table_node->getMaterializedCTE());
+        }
+    }
+
+    return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
+}
+
 /** Try to resolve identifier recursively in parent scopes.
   *
   * If identifier is resolved to expression it must be resolved in the context of the current scope.
@@ -1198,10 +1265,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     {
         auto * subquery_node = resolved_identifier->as<QueryNode>();
         auto * union_node = resolved_identifier->as<UnionNode>();
-        auto * table_nope = resolved_identifier->as<TableNode>();
+        auto * table_node = resolved_identifier->as<TableNode>();
 
         /// Resolved to CTE in parent scope.
-        bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE()) || (table_nope && table_nope->isMaterializedCTE());
+        bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE()) || (table_node && table_node->isMaterializedCTE());
         /// Resolved to lambda argument.
         bool is_table_from_expression_arguments = resolve_result.isResolvedFromExpressionArguments() &&
             resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
@@ -1360,70 +1427,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
+    /// Try to resolve identifier from Common Table Expressions (CTE)
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_cte && identifier_lookup.isTableExpressionLookup())
     {
-        auto full_name = identifier_lookup.identifier.getFullName();
-        auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
-
-        /// CTE may reference table expressions with the same name, e.g.:
-        ///
-        /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
-        ///
-        /// Since we don't support recursive CTEs, `test1` identifier inside of CTE
-        /// references to table <default database name>.test1.
-        /// This means that the example above is equivalent to the following query:
-        ///
-        /// SELECT * FROM test1;
-        ///
-        /// To accomplish this behaviour it's not allowed to resolve identifiers to
-        /// CTE that is being resolved.
-        if (cte_query_node_it != scope.cte_name_to_query_node.end()
-            && !ctes_in_resolve_process.contains(cte_query_node_it->second))
-        {
-            auto & cte_node = cte_query_node_it->second;
-            auto * query_node = cte_node->as<QueryNode>();
-            auto * union_node = cte_node->as<UnionNode>();
-
-            bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
-            if (is_materialized_cte && scope.context->getSettingsRef()[Setting::enable_materialized_cte])
-            {
-                resolveExpressionNode(cte_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
-
-                bool is_correlated = (query_node && query_node->isCorrelated()) || (union_node && union_node->isCorrelated());
-                if (is_correlated)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                        "Materialized CTE '{}' cannot be correlated. In scope {}",
-                        full_name,
-                        scope.scope_node->formatASTForErrorMessage());
-
-                const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
-
-                NamesAndTypesList columns;
-                for (const auto & projection_column : projection_columns)
-                    columns.emplace_back(projection_column.name, projection_column.type);
-
-                auto storage_holder = std::make_shared<TemporaryTableHolder>(
-                    scope.context,
-                    ColumnsDescription(std::move(columns), false),
-                    ConstraintsDescription{},
-                    nullptr /*query*/,
-                    true /*create_for_global_subquery*/);
-
-                auto table_node = std::make_shared<TableNode>(std::move(storage_holder), cte_node, scope.context);
-                table_node->setTemporaryTableName(full_name);
-
-                cte_node = table_node;
-            }
-            else if (auto * table_node = cte_node->as<TableNode>())
-            {
-                if (table_node->isMaterializedCTE())
-                {
-                    reused_materialized_cte.insert(table_node->getMaterializedCTE());
-                }
-            }
-
-            resolve_result = { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
-        }
+        resolve_result = tryResolveIdentifierFromCTE(identifier_lookup, scope);
     }
 
     /// Try to resolve identifier from parent scopes

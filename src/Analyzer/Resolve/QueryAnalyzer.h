@@ -205,6 +205,10 @@ private:
         IdentifierResolveScope & scope,
         IdentifierResolveContext identifier_resolve_context);
 
+    IdentifierResolveResult tryResolveIdentifierFromCTE(
+        const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope);
+
     IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveContext identifier_resolve_context);
 
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,

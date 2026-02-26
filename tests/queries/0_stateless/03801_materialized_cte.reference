@@ -22,7 +22,7 @@ QUERY id: 0
   JOIN TREE
     JOIN id: 3, strictness: ALL, kind: INNER
       LEFT TABLE EXPRESSION
-        TABLE id: 4, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: a
+        TABLE id: 4, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID
           MATERIALIZED CTE SUBQUERY
             QUERY id: 5, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
               PROJECTION COLUMNS
@@ -37,7 +37,7 @@ QUERY id: 0
               JOIN TREE
                 TABLE id: 8, alias: __table3, table_name: default.users
       RIGHT TABLE EXPRESSION
-        TABLE id: 11, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: a
+        TABLE id: 11, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID
           MATERIALIZED CTE SUBQUERY
             QUERY id: 12, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
               PROJECTION COLUMNS
@@ -66,7 +66,7 @@ QUERY id: 0
   JOIN TREE
     JOIN id: 3, strictness: ALL, kind: INNER
       LEFT TABLE EXPRESSION
-        TABLE id: 4, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: a
+        TABLE id: 4, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID
           MATERIALIZED CTE SUBQUERY
             QUERY id: 5, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
               PROJECTION COLUMNS
@@ -82,7 +82,7 @@ QUERY id: 0
                 LIST id: 10, nodes: 1
                   COLUMN id: 11, column_name: uid, result_type: Int16, source_id: 8
       RIGHT TABLE EXPRESSION
-        TABLE id: 12, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: a
+        TABLE id: 12, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID
           MATERIALIZED CTE SUBQUERY
             QUERY id: 13, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
               PROJECTION COLUMNS

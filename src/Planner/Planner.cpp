@@ -1570,13 +1570,14 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
 
             auto cte_plan = std::move(cte_planner).extractQueryPlan();
 
+            auto materialized_cte = cte_table_node->getMaterializedCTE();
             auto step = std::make_unique<MaterializingCTEStep>(
                 cte_plan.getCurrentHeader(),
-                cte_table_node->getMaterializedCTE());
-            step->setStepDescription("Materializing CTE: " + cte_table_node->getTemporaryTableName(), 100);
+                materialized_cte);
+            step->setStepDescription("Materializing CTE: " + materialized_cte->cte_name, 100);
             cte_plan.addStep(std::move(step));
 
-            cte_plans.push_back({cte_table_node->getMaterializedCTE(), std::make_unique<QueryPlan>(std::move(cte_plan))});
+            cte_plans.push_back({ materialized_cte, std::make_unique<QueryPlan>(std::move(cte_plan)) });
         }
 
         auto delayed_step = std::make_unique<DelayedMaterializingCTEsStep>(
