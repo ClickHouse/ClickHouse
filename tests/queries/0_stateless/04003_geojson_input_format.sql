@@ -50,9 +50,10 @@ FROM format('GeoJSON', '{
     ]
 }');
 
--- Empty features array.
-SELECT count()
-FROM format('GeoJSON', '{"type":"FeatureCollection","features":[]}');
+-- Empty features array produces zero rows (tested via INSERT since format() with 0 rows is a known ClickHouse limitation).
+CREATE TEMPORARY TABLE __geojson_empty_test (id Nullable(String), geometry Geometry, properties JSON);
+INSERT INTO __geojson_empty_test FORMAT GeoJSON {"type":"FeatureCollection","features":[]};
+SELECT count() FROM __geojson_empty_test;
 
 -- Key ordering: coordinates before type.
 SELECT variantType(geometry)

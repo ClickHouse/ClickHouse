@@ -10,7 +10,7 @@
 #include <Formats/JSONUtils.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromOwnString.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -130,7 +130,7 @@ void skipJSONValue(ReadBuffer & buf, const FormatSettings::JSON & json_settings)
     else if (c == '"')
     {
         String s;
-        readJSONString(s, buf);
+        readJSONString(s, buf, json_settings);
     }
     else
     {
@@ -293,6 +293,7 @@ void GeoJSONRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
     first_row = true;
+    done = false;
 }
 
 void GeoJSONRowInputFormat::readPrefix()
@@ -351,16 +352,23 @@ void GeoJSONRowInputFormat::readSuffix()
 
 bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
+    if (done)
+        return false;
+
     auto & buf = getReadBuffer();
     skipWhitespaceIfAny(buf);
 
     if (!first_row)
     {
         if (buf.eof())
+        {
+            done = true;
             return false;
+        }
         if (*buf.position() == ']')
         {
             ++buf.position();
+            done = true;
             return false;
         }
         if (*buf.position() == ',')
@@ -372,6 +380,7 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     {
         if (!buf.eof())
             ++buf.position();
+        done = true;
         return false;
     }
 
@@ -486,7 +495,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
 
         if (key == "type")
         {
-            readJSONString(geo_type, buf);
+            readJSONString(geo_type, buf, format_settings.json);
         }
         else if (key == "coordinates")
         {

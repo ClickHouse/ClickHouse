@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <Columns/ColumnVariant.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ISchemaReader.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Formats/IRowInputFormat.h>
 
 namespace DB
@@ -36,6 +36,7 @@ private:
 
     const FormatSettings format_settings;
     bool first_row = true;
+    bool done = false;
 
     std::optional<size_t> id_col_idx;
     std::optional<size_t> geometry_col_idx;
