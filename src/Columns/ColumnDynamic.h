@@ -333,6 +333,12 @@ public:
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
 
+    /// Dynamic columns manage their own variant_info type metadata.
+    /// The default convertToFullIfNeeded recurses into subcolumns and strips LowCardinality
+    /// from variant columns, but cannot update variant_info, creating column/type mismatches.
+    /// Override to skip recursion — Dynamic is a self-contained typed container.
+    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
+
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);

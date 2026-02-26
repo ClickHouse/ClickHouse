@@ -18,7 +18,9 @@ class NamedCollection;
 struct YTsaurusSettingsImpl;
 
 #define YTSAURUS_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-    M(CLASS_NAME, Bool)
+    M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, Milliseconds) \
+    M(CLASS_NAME, UInt64) \
 
 YTSAURUS_SETTINGS_SUPPORTED_TYPES(YTsaurusSettings, DECLARE_SETTING_TRAIT)
 
