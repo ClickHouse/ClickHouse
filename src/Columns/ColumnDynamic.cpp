@@ -1147,7 +1147,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
     /// exceed the limit, in this case we will choose the most frequent variants.
 
     /// Collect all variants and their total sizes.
-    std::unordered_map<String, size_t> total_variant_sizes;
+    UnorderedMapWithMemoryTracking<String, size_t> total_variant_sizes;
     DataTypes all_variants;
 
     auto add_variants = [&](const ColumnDynamic & source_dynamic)
@@ -1273,7 +1273,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const VectorWithMemory
     /// We want to construct resulting variant with most frequent variants from source columns and convert the rarest
     /// variants to single String variant if we exceed the limit of variants.
     /// First, collect all variants from all source columns and calculate total sizes.
-    std::unordered_map<String, size_t> total_sizes;
+    UnorderedMapWithMemoryTracking<String, size_t> total_sizes;
     DataTypes all_variants;
     /// Add shared variant type in advance;
     all_variants.push_back(getSharedVariantDataType());

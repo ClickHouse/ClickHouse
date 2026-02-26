@@ -10,13 +10,13 @@
 
 #include <gtest/gtest.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <vector>
 using namespace DB;
 
 TEST(ColumnUnique, InsertRange)
 {
-    std::unordered_map<String, size_t> ref_map;
+    UnorderedMapWithMemoryTracking<String, size_t> ref_map;
     auto data_type = std::make_shared<DataTypeString>();
     auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
     auto column_string = ColumnString::create();
@@ -55,7 +55,7 @@ TEST(ColumnUnique, InsertRange)
 
 TEST(ColumnUnique, InsertRangeWithOverflow)
 {
-    std::unordered_map<String, size_t> ref_map;
+    UnorderedMapWithMemoryTracking<String, size_t> ref_map;
     auto data_type = std::make_shared<DataTypeString>();
     auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
     auto column_string = ColumnString::create();

@@ -61,10 +61,10 @@ public:
 private:
     friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
-    ColumnObject(std::unordered_map<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    ColumnObject(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
     ColumnObject(
-        std::unordered_map<String, MutableColumnPtr> typed_paths_,
-        std::unordered_map<String, MutableColumnPtr> dynamic_paths_,
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
         MutableColumnPtr shared_data_,
         size_t max_dynamic_paths_,
         size_t global_max_dynamic_paths_,
@@ -83,8 +83,8 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
     static Ptr create(
-        const std::unordered_map<String, ColumnPtr> & typed_paths_,
-        const std::unordered_map<String, ColumnPtr> & dynamic_paths_,
+        const UnorderedMapWithMemoryTracking<String, ColumnPtr> & typed_paths_,
+        const UnorderedMapWithMemoryTracking<String, ColumnPtr> & dynamic_paths_,
         const ColumnPtr & shared_data_,
         size_t max_dynamic_paths_,
         size_t global_max_dynamic_paths_,
@@ -92,15 +92,15 @@ public:
         const StatisticsPtr & statistics_ = {});
 
     static MutablePtr create(
-        std::unordered_map<String, MutableColumnPtr> typed_paths_,
-        std::unordered_map<String, MutableColumnPtr> dynamic_paths_,
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
         MutableColumnPtr shared_data_,
         size_t max_dynamic_paths_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
 
-    static MutablePtr create(std::unordered_map<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    static MutablePtr create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
     std::string getName() const override;
 

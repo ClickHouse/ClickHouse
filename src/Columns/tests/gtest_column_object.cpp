@@ -433,7 +433,7 @@ TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
     column_object_with_shared_data_paths.insert(Object{{"d", Field{1u}}, {"b", Field{1u}}});
     column_object_with_shared_data_paths.insert(Object{});
 
-    std::unordered_map<String, MutableColumnPtr> dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths;
     for (const auto & [path, column] : column_object_with_dynamic_paths.getDynamicPaths())
         dynamic_paths[path] = IColumn::mutate(column);
 
