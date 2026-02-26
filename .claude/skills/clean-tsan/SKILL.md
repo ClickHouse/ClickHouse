@@ -25,7 +25,7 @@ Systematically detect and fix ThreadSanitizer (TSan) errors by running a specifi
 4. **Extract** — Extract first TSan alert from logs, save artifact
 5. **RCA** — Root cause analysis with threading analysis (isolated subagent), save artifact
 6. **Fix** — Apply fix based on RCA
-7. **Verify** — Rebuild, retest, loop back to step 4 if more errors remain
+7. **Verify** — Rebuild, retest, update progress, loop back to step 4 if more errors remain
 
 ---
 
@@ -236,7 +236,7 @@ Extract the first alert directly from the log file(s) using Grep or Bash without
 Create the artifact directory (once per skill invocation) and save the alert:
 
 ```bash
-mkdir -p _clean-tsan/$(date +%Y%m%d-%H%M%S)-<test_name>
+mkdir -p _clean-tsan/<test_name>
 ```
 
 Store the directory path for reuse. Save the alert text:
@@ -245,7 +245,26 @@ Store the directory path for reuse. Save the alert text:
 Write alert to: <artifact_dir>/alert-NNN.txt
 ```
 
-Where NNN is the iteration number (001, 002, ...).
+Where NNN is the iteration number (001, 002, ...). If the directory already has artifacts from a previous session, continue numbering from the last NNN.
+
+### Progress file format
+
+The file `<artifact_dir>/progress.md` is the shared memory across subagents — every RCA and Fix subagent reads it before starting work. Create it on the first iteration; entries are written in Phase 7c after each verify cycle.
+
+Each entry is compact (~5 lines):
+
+```markdown
+## Iteration NNN: <OUTCOME>
+- **Alert:** <type> (<key identifiers: mutex names, variable names>)
+- **Root cause:** <one line>
+- **Fix:** <what was changed>
+- **Files:** <list of modified files>
+```
+
+`<OUTCOME>` is one of:
+- `FIXED` — the alert disappeared after the fix
+- `FAILED` — the same or equivalent alert reappeared after the fix (add `- **Why it failed:** <explanation>`)
+- `NEW_ALERT` — a different alert appeared (the fix worked, new issue found)
 
 ---
 
@@ -253,13 +272,27 @@ Where NNN is the iteration number (001, 002, ...).
 
 Launch a Task with `subagent_type=general-purpose` for the extracted alert. Using a separate subagent prevents context pollution. The subagent reads the source files referenced in the stack traces and performs both threading analysis and root cause analysis in one pass.
 
+**Before launching**, prepare the context:
+1. Read `<artifact_dir>/progress.md` (if it exists — skip on first iteration)
+2. Generate the diff of all uncommitted changes: `git diff`
+
+If a previous iteration was marked `FAILED` in `progress.md`, add to the prompt: **"IMPORTANT: A previous fix attempt for a similar alert failed. Read the progress file carefully and think deeper about the root cause. The obvious fix did not work — consider less obvious causes such as lock ordering across call chains, re-entrant paths, or indirect mutex acquisitions through callbacks."**
+
 ```
 Prompt: "Perform root cause analysis of this ThreadSanitizer alert in ClickHouse.
 
 ## TSan Alert
 <full alert text>
 
+## Previous Progress
+<contents of progress.md, or "First iteration — no previous context.">
+
+## Changes Already Applied
+<git diff output, or "No changes yet.">
+
 ## Instructions
+
+**IMPORTANT:** The stack traces reference line numbers in the CURRENT working tree. Read source files directly — do not assume line numbers from previous iterations are still valid.
 
 ### Step 1: Identify source files from the stack traces
 Extract all source file paths and line numbers from the `DB::` stack frames in the alert. These are the files you need to read.
@@ -390,8 +423,14 @@ Prompt: "Apply the following TSan fix to the ClickHouse codebase.
 ## Fix Details
 <RCA report for this alert>
 
+## Previous Progress
+<contents of progress.md, or "First iteration — no previous context.">
+
+## Changes Already Applied
+<git diff output, or "No changes yet.">
+
 ## Instructions
-1. Read the target source files
+1. Read the target source files — use the CURRENT file contents, not cached versions. Do NOT commit changes.
 2. Apply the proposed code change using Edit tool
 3. If adding TSA annotations, use macros from `base/base/defines.h`
 4. If adding includes, place in alphabetical order within their group
@@ -417,7 +456,15 @@ Repeat Phase 2 (incremental TSan build in background).
 
 Repeat Phase 3 (run tests).
 
-### 7c. Check results and loop
+### 7c. Update progress
+
+After checking results, update `<artifact_dir>/progress.md` with the outcome of the current iteration:
+
+- **Same/equivalent alert reappeared** → mark previous iteration as `FAILED`, add `- **Why it failed:** <explanation>`
+- **Different alert appeared** → mark previous iteration as `NEW_ALERT` (the fix worked)
+- **No TSan errors** → mark previous iteration as `FIXED`
+
+### 7d. Check results and loop
 
 - **If no TSan errors:** report "All TSan errors resolved! The test is clean." and stop.
 - **If TSan errors remain:** extract the first alert (Phase 4), perform RCA (Phase 5), present fix (Phase 6), and loop back here.
@@ -501,8 +548,9 @@ TSA_CAPABILITY("mutex")            // Declare a capability type
 | Build logs | `/tmp/tsan_build_XXXXXX.log` |
 | Test logs | `/tmp/tsan_test_XXXXXX.log` |
 | Server stderr (stateless) | `/tmp/tsan_server_stderr_XXXXXX.log` |
-| TSan alerts | `_clean-tsan/<datetime>-<test_name>/alert-NNN.txt` |
-| RCA reports | `_clean-tsan/<datetime>-<test_name>/rca-NNN.txt` |
+| TSan alerts | `_clean-tsan/<test_name>/alert-NNN.txt` |
+| RCA reports | `_clean-tsan/<test_name>/rca-NNN.txt` |
+| Progress log | `_clean-tsan/<test_name>/progress.md` |
 
 ---
 
@@ -524,5 +572,6 @@ TSA_CAPABILITY("mutex")            // Declare a capability type
 - TSan slows execution ~5-15x. Tests take much longer than usual.
 - `THREAD_FUZZER_*` env vars can help provoke races but are not used by default. Mention to user if races are hard to reproduce.
 - Integration tests set `TSAN_OPTIONS="use_sigaltstack=0"` by default.
-- When writing fixes: Allman braces, no sleep for race conditions, use TSA annotations, add new commits (no rebase/amend).
+- When writing fixes: Allman braces, no sleep for race conditions, use TSA annotations.
+- **Do NOT commit changes.** All fixes stay as uncommitted working tree changes. The user will commit when ready.
 - Say "TSan" not "TSAN" in comments and messages.
