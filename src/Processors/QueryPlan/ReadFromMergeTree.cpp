@@ -2623,6 +2623,15 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         }
     }
 
+    if (deferred_prewhere_info || deferred_row_level_filter)
+    {
+        format_settings.out << prefix << "Deferred filters (applied after FINAL)" << '\n';
+        if (deferred_row_level_filter)
+            format_settings.out << prefix << "  Deferred row level filter column: " << deferred_row_level_filter->column_name << '\n';
+        if (deferred_prewhere_info)
+            format_settings.out << prefix << "  Deferred prewhere filter column: " << deferred_prewhere_info->prewhere_column_name << '\n';
+    }
+
     if (virtual_row_conversion)
     {
         format_settings.out << prefix << "Virtual row conversions" << '\n';
@@ -2666,6 +2675,16 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         }
 
         map.add("Prewhere info", std::move(prewhere_info_map));
+    }
+
+    if (deferred_prewhere_info || deferred_row_level_filter)
+    {
+        auto deferred_map = std::make_unique<JSONBuilder::JSONMap>();
+        if (deferred_row_level_filter)
+            deferred_map->add("Deferred row level filter column", deferred_row_level_filter->column_name);
+        if (deferred_prewhere_info)
+            deferred_map->add("Deferred prewhere filter column", deferred_prewhere_info->prewhere_column_name);
+        map.add("Deferred filters (applied after FINAL)", std::move(deferred_map));
     }
 
     if (virtual_row_conversion)
