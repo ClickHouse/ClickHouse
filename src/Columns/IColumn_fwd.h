@@ -10,7 +10,7 @@ namespace DB
 {
 
 struct EqualRange;
-using EqualRanges = std::vector<EqualRange>;
+using EqualRanges = VectorWithMemoryTracking<EqualRange>;
 
 struct ColumnCheckpoint;
 using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
