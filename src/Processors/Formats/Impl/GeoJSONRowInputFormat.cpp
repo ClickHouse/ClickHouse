@@ -99,50 +99,6 @@ String readRawJSONValue(ReadBuffer & buf)
     return out.str();
 }
 
-/// Skips an arbitrary JSON value.
-void skipJSONValue(ReadBuffer & buf, const FormatSettings::JSON & json_settings)
-{
-    skipWhitespaceIfAny(buf);
-    if (buf.eof())
-        return;
-
-    char c = *buf.position();
-    if (c == '{')
-    {
-        ++buf.position();
-        JSONUtils::skipTheRestOfObject(buf, json_settings);
-    }
-    else if (c == '[')
-    {
-        ++buf.position();
-        skipWhitespaceIfAny(buf);
-        while (!buf.eof() && *buf.position() != ']')
-        {
-            skipJSONValue(buf, json_settings);
-            skipWhitespaceIfAny(buf);
-            if (!buf.eof() && *buf.position() == ',')
-                ++buf.position();
-            skipWhitespaceIfAny(buf);
-        }
-        if (!buf.eof())
-            ++buf.position();
-    }
-    else if (c == '"')
-    {
-        String s;
-        readJSONString(s, buf, json_settings);
-    }
-    else
-    {
-        while (!buf.eof())
-        {
-            char ch = *buf.position();
-            if (ch == ',' || ch == '}' || ch == ']' || isWhitespaceASCII(ch))
-                break;
-            ++buf.position();
-        }
-    }
-}
 
 /// Reads a GeoJSON position [lon, lat, ...] into a Tuple{Float64, Float64}.
 Field readGeoJSONPoint(ReadBuffer & buf)
@@ -319,7 +275,7 @@ void GeoJSONRowInputFormat::readPrefix()
             return;
         }
 
-        skipJSONValue(buf, format_settings.json);
+        skipJSONField(buf, "", format_settings.json);
         skipWhitespaceIfAny(buf);
         if (!buf.eof() && *buf.position() == ',')
             ++buf.position();
@@ -342,7 +298,7 @@ void GeoJSONRowInputFormat::readSuffix()
 
         JSONUtils::readFieldName(buf, format_settings.json);
         skipWhitespaceIfAny(buf);
-        skipJSONValue(buf, format_settings.json);
+        skipJSONField(buf, "", format_settings.json);
         skipWhitespaceIfAny(buf);
     }
 
@@ -440,7 +396,7 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         }
         else
         {
-            skipJSONValue(buf, format_settings.json);
+            skipJSONField(buf, "", format_settings.json);
         }
 
         skipWhitespaceIfAny(buf);
@@ -504,7 +460,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
         }
         else
         {
-            skipJSONValue(buf, format_settings.json);
+            skipJSONField(buf, "", format_settings.json);
         }
 
         skipWhitespaceIfAny(buf);
