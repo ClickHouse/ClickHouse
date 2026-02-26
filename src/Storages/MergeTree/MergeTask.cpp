@@ -77,6 +77,7 @@ namespace ProfileEvents
 {
     extern const Event Merge;
     extern const Event MergeSourceParts;
+    extern const Event MergeWrittenRows;
     extern const Event MergedColumns;
     extern const Event GatheredColumns;
     extern const Event MergeTotalMilliseconds;
@@ -1179,6 +1180,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 
         size_t starting_offset = global_ctx->rows_written;
         global_ctx->rows_written += block.rows();
+        ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         if (global_ctx->merge_may_reduce_rows)
@@ -2241,6 +2243,7 @@ public:
         : ITransformingStep(input_header_, output_header_, getTraits())
         , WithContext(context_)
         , transform(std::move(transform_))
+        , original_output_header(output_header_)
     {
     }
 
@@ -2268,7 +2271,11 @@ public:
 
     void updateOutputHeader() override
     {
-        output_header = input_headers.front();
+        /// The output header must be the original header (without extra index
+        /// expression columns), not the input header which may contain extra
+        /// columns added by index expression steps. This is important to keep
+        /// all per-part plan headers compatible in the UnionStep during merge.
+        output_header = original_output_header;
     }
 
     String getName() const override { return "BuildTextIndex"; }
@@ -2290,6 +2297,7 @@ private:
     }
 
     std::shared_ptr<BuildTextIndexTransform> transform;
+    const SharedHeader original_output_header;
 };
 
 void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx)

@@ -321,6 +321,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::ALLOCATE_MEMORY:
+        {
+            ASTPtr ast;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+
+            res->untracked_memory_size = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            break;
+        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
@@ -538,6 +547,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::FREE_MEMORY:
             break;
 
         case Type::TEST_VIEW:
