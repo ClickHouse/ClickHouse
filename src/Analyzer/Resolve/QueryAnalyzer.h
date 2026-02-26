@@ -299,6 +299,7 @@ private:
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
 
+    /// Materialized CTEs that are referenced more than once during query analysis and should be materialized to temporary tables.
     std::unordered_set<MaterializedCTEPtr> reused_materialized_cte;
 
     /// Function name to user defined lambda map

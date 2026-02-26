@@ -1132,6 +1132,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
 
+/* Try to resolve identifier as Common Table Expression (CTE)
+ *
+ * CTE is set to be MATERIALIZED, the corresponding CTE subquery is resolved and
+ * replaced with table node in the CTE map.
+ */
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     const IdentifierLookup & identifier_lookup,
     IdentifierResolveScope & scope

@@ -1463,6 +1463,18 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     {
         auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
+        /// Sets may use Materialized CTEs, so we need to materialize them in order to correctly build set from subquery.
+        /// Normally CTEs are materialized before building sets and running the main query, but in case when
+        /// set is built for primary key analysis, CTEs are not materialized yet.
+        ///
+        /// To build the set correctly, we need to add a DelayedMaterializingCTEsStep for CTEs in the set subquery plan.
+        /// This is done by forceMaterializeCTE() method, which would lead collectMaterializedCTEs() to return non-empty result.
+        ///
+        /// As a result:
+        /// 1. If set is built during primary key analysis FutureSetFromSubquery::buildSetInplace(), we will build plans for used CTEs materialization.
+        ///    Later, when the main query plan is optimized, DelayedMaterializingCTEsStep for these CTEs will not add materialization plans again.
+        /// 2. If set is built during main query execution, we will build plans for used CTEs materialization to be run before the set is built
+        ///    and before the main query is executed.
         subquery_options.forceMaterializeCTE();
         /// I don't know if this is a good decision,
         /// but for now it is done in the same way as in old analyzer.
