@@ -1357,6 +1357,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
 void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropReplica");
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
@@ -1488,6 +1489,7 @@ void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & quer
 DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::restoreDatabaseFromKeeperPath");
     auto zookeeper = getContext()->getZooKeeper();
 
     String metadata_path = zookeeper_path + "/metadata";
@@ -1710,6 +1712,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropDatabaseReplica");
     const String full_replica_name
         = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
     const fs::path & query_replica_zk_path = fs::path(query.replica_zk_path);

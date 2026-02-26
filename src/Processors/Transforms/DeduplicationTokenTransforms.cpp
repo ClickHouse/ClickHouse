@@ -152,8 +152,6 @@ RedefineDeduplicationInfoWithDataHashTransform::RedefineDeduplicationInfoWithDat
 void RedefineDeduplicationInfoWithDataHashTransform::transform(Chunk & chunk)
 {
     auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
-
-    // part hash is used only for the deduplication for one part in the target table partition
-    info->redefineTokensWithDataHash();
+    info->redefineTokensWithDataHash(getOutputPort().getSharedHeader()->cloneWithColumns(chunk.getColumns()));
 }
 }
