@@ -611,21 +611,7 @@ class ClickHouseTypeMapper:
                 fields.append(f"{field_name}:{field_type}")
             return f"STRUCT<{','.join(fields)}>"
         elif type_choice == "variant":
-            # Generate random number of variant members (1-4)
-            num_members = random.randint(1, 4)
-            members = set()
-            while len(members) < num_members:
-                member_type = self.generate_random_spark_sql_type(
-                    max_depth=max_depth,
-                    current_depth=current_depth + 1,
-                    allow_complex=False,
-                )
-                members.add(member_type)
-            inside = ",".join(
-                f'v{i}_{re.split(r"[^a-zA-Z0-9_]", m)[0]}:{m}'
-                for i, m in enumerate(members)
-            )
-            return f"STRUCT<{inside}>"
+            return "VARIANT"
 
     def generate_random_spark_type(
         self, allow_variant=True, max_depth=3, current_depth=0

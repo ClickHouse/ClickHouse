@@ -86,6 +86,7 @@ rocksdb_properties = {
 
 
 possible_properties = {
+    "allow_feature_tier": lambda: random.randint(0, 2),
     "access_control_improvements": {
         "on_cluster_queries_require_cluster_grant": true_false_lambda,
         "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 1, 60, 31),
@@ -124,6 +125,9 @@ possible_properties = {
     "background_message_broker_schedule_pool_size": no_zero_threads_lambda,
     "background_move_pool_size": no_zero_threads_lambda,
     # "background_pool_size": threads_lambda, has to be in a certain range
+    "background_schedule_pool_max_parallel_tasks_per_type_ratio": threshold_generator(
+        0.2, 0.2, 0.0, 1.0
+    ),
     "background_schedule_pool_size": no_zero_threads_lambda,
     "backup_threads": no_zero_threads_lambda,
     "backups_io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -141,6 +145,7 @@ possible_properties = {
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
+    "distributed_ddl_use_initial_user_and_roles": true_false_lambda,
     "dictionaries_lazy_load": true_false_lambda,
     "disable_insertion_and_mutation": true_false_lambda,
     "disable_internal_dns_cache": true_false_lambda,
@@ -148,12 +153,13 @@ possible_properties = {
     "distributed_cache_keep_up_free_connections_ratio": threshold_generator(
         0.2, 0.2, 0.0, 1.0
     ),
+    "dns_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "format_alter_operations_with_parentheses": true_false_lambda,
     "iceberg_catalog_threadpool_pool_size": threads_lambda,
     "iceberg_catalog_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 10000),
+    "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "iceberg_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "iceberg_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -228,7 +234,11 @@ possible_properties = {
         0.2, 0.2, 0.0, 1.0
     ),
     "mlock_executable": true_false_lambda,
+    "mlock_executable_min_total_memory_amount_bytes": threshold_generator(
+        0.2, 0.2, 0, 10 * 1024 * 1024
+    ),
     "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
+    "os_collect_psi_metrics": true_false_lambda,
     "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(
         0.2, 0.2, -20, 19
     ),
@@ -267,14 +277,36 @@ possible_properties = {
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": true_false_lambda,
     "restore_threads": no_zero_threads_lambda,
+    "s3_credentials_provider_max_cache_size": threshold_generator(
+        0.2, 0.2, 0, 104857600
+    ),
     "s3queue_disable_streaming": true_false_lambda,
     "shutdown_wait_backups_and_restores": true_false_lambda,
     "shutdown_wait_unfinished_queries": true_false_lambda,
+    "snapshot_cleaner_pool_size": threads_lambda,
     "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "storage_shared_set_join_use_inner_uuid": true_false_lambda,
     "tables_loader_background_pool_size": threads_lambda,
     "tables_loader_foreground_pool_size": threads_lambda,
     "temporary_data_in_distributed_cache": true_false_lambda,
+    "text_index_dictionary_block_cache_max_entries": threshold_generator(
+        0.2, 0.2, 0, 1024
+    ),
+    "text_index_dictionary_block_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_dictionary_block_cache_size": threshold_generator(
+        0.2, 0.2, 0, 104857600
+    ),
+    "text_index_dictionary_block_cache_size_ratio": threshold_generator(
+        0.2, 0.2, 0.0, 1.0
+    ),
+    "text_index_header_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "text_index_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
+    "text_index_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "text_index_postings_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "text_index_postings_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_postings_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
+    "text_index_postings_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 1, 200),
     "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -288,7 +320,7 @@ possible_properties = {
     "uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_minimalistic_part_header_in_zookeeper": true_false_lambda,
     "validate_tcp_client_information": true_false_lambda,
-    "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1000),
+    "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "vector_similarity_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "vector_similarity_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -400,8 +432,13 @@ cache_storage_properties = {
     "load_metadata_threads": threads_lambda,
     "max_elements": threshold_generator(0.2, 0.2, 3, 10000000),
     "max_file_segment_size": file_size_value(100),
+    "overcommit_eviction_evict_step": threshold_generator(
+        0.2, 0.2, 0, 10 * 1024 * 1024
+    ),
     # "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0), cannot be specified with `max_size` at the same time
     "slru_size_ratio": threshold_generator(0.2, 0.2, 0.01, 0.99),
+    "use_split_cache": true_false_lambda,
+    "split_cache_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "write_cache_per_user_id_directory": true_false_lambda,
 }
 
@@ -1019,8 +1056,8 @@ class LogTablePropertiesGroup(PropertiesGroup):
             "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
             "flush_on_crash": true_false_lambda,
             # Setting these may crash the server
-            #"max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
-            #"reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            # "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            # "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         # Can't use this without the engine parameter?
         # number_policies = 0
@@ -1435,6 +1472,9 @@ keeper_settings = {
         "max_flush_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
         "max_log_file_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
         "max_request_queue_size": threshold_generator(0.2, 0.2, 0, 100000),
+        "max_requests_append_bytes_size": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024
+        ),
         "max_requests_append_size": threshold_generator(0.2, 0.2, 0, 200),
         "max_requests_batch_bytes_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
