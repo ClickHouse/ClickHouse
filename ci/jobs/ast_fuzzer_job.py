@@ -123,8 +123,8 @@ def analyze_job_logs(
                     info.append(
                         f"WARNING: Sanitizer OOM on server {i} - test considered passed"
                     )
-                status = Result.Status.SUCCESS
-                is_failed = False
+                    status = Result.Status.SUCCESS
+                    is_failed = False
         else:
             # Check for OOM in dmesg for non-sanitized builds
             if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
@@ -248,6 +248,7 @@ def run_fuzz_job(check_name: str):
         Result.create_from(
             status=Result.Status.ERROR, info=error_info, stopwatch=sw
         ).complete_job()
+        return
 
     result = analyze_job_logs(
         paths,

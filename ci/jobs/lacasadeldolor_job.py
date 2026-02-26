@@ -267,6 +267,7 @@ def main():
         sqlite_query_log,
         mongodb_query_log,
         Path("./ci/tmp/docker-in-docker.log"),
+        dmesg_log,
     ]
     # Copied server logs from container
     for i in range(number_of_nodes):
@@ -376,6 +377,8 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         ):
             if cont_log.exists():
                 shutil.copy2(cont_log, host_log)
+            else:
+                print(f"WARNING: File {cont_log} already gone!")
 
     # Safety net: detect Python-level crashes in the fuzzer log even if the
     # exit code was somehow swallowed (e.g. future command changes drop pipefail)
