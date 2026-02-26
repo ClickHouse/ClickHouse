@@ -123,6 +123,7 @@ TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement &
     if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS
         || element.function == RPNElement::FUNCTION_AND
         || element.function == RPNElement::FUNCTION_EQUALS
+        || element.function == RPNElement::ALWAYS_TRUE
         || (element.function == RPNElement::FUNCTION_MATCH && element.text_search_queries.size() == 1))
         return TextSearchMode::All;
 
@@ -171,7 +172,8 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         /// exact direct read is only possible with array token extractor, that doesn't
         /// split documents into tokens. Otherwise we can only use direct read as a hint.
         bool is_array_extractor = typeid_cast<const ArrayTokenExtractor *>(token_extractor);
-        return is_array_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        bool has_preprocessor = preprocessor && preprocessor->hasActions();
+        return is_array_extractor && !has_preprocessor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
     if (function_name == "like"
@@ -229,10 +231,8 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
         rpn,
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_NOT_EQUALS,
-         RPNElement::FUNCTION_HAS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
-         RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_NOT_IN,
          RPNElement::FUNCTION_MATCH});
@@ -260,17 +260,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             bool exists_in_granule = granule->hasAnyQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
-        else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS
-            || element.function == RPNElement::FUNCTION_HAS)
+        else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
-        else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY
-            || element.function == RPNElement::FUNCTION_EQUALS
-            || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+        else if (element.function == RPNElement::FUNCTION_EQUALS || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
@@ -491,7 +488,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (is_supported_key_function || is_supported_value_function)
         {
             auto tokens = stringToTokens(value_field);
-            out.function = RPNElement::FUNCTION_HAS;
+            out.function = RPNElement::FUNCTION_EQUALS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
         }
@@ -572,14 +569,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "startsWith")
     {
         auto tokens = substringToTokens(value_field, true, false);
-        out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY;
+        out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "endsWith")
     {
         auto tokens = substringToTokens(value_field, false, true);
-        out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY;
+        out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
@@ -627,7 +624,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "has")
     {
         auto tokens = stringToTokens(value_field);
-        out.function = RPNElement::FUNCTION_HAS;
+        out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
@@ -709,7 +706,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         return false;
 
     auto tokens = stringToTokens(*key_const_value);
-    out.function = RPNElement::FUNCTION_HAS;
+    out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
     return true;
 }
