@@ -6,6 +6,7 @@
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/DatabaseReplicated.h>
 
 namespace DB
@@ -210,6 +211,7 @@ Chunk DistributedQueryStatusSource::generate()
         Strings tmp_hosts;
         Strings tmp_active_hosts;
 
+        auto component_guard = Coordination::setCurrentComponent("DistributedQueryStatusSource::generate");
         {
             auto retries_ctl = ZooKeeperRetriesControl("executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo());
             retries_ctl.retryLoop(
