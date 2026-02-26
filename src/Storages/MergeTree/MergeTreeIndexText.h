@@ -186,6 +186,9 @@ struct TokenPostingsInfo
 {
     UInt64 header = 0;
     UInt32 cardinality = 0;
+
+    /// The majority of tokens have only one block,
+    /// so use inlined vector to avoid heap allocations.
     absl::InlinedVector<UInt64, 1> offsets;
     absl::InlinedVector<RowsRange, 1> ranges;
     PostingListPtr embedded_postings;
@@ -255,21 +258,24 @@ struct TextIndexSerialization
     static void serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr);
 
     static DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr);
+    /// If postings_serialization is null, embedded postings are skipped.
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization);
     static void skipTokenInfo(ReadBuffer & istr);
 
-    /// Deserializes `TokenPostingsInfo` only for tokens at the given sorted indices, skipping postings for others.
-    /// Returns a vector parallel to `matched_indices`.
+    /// Deserializes `TokenPostingsInfo` only for tokens at the given sorted indices,
+    /// skipping postings for others. Returns a vector parallel to `matched_indices`.
     static std::vector<TokenPostingsInfo> deserializeTokenInfos(
         ReadBuffer & istr,
         size_t num_tokens,
         const std::vector<size_t> & matched_indices,
         PostingsSerialization & postings_serialization);
 
-    /// Deserializes tokens from a dictionary block. Returns the tokens column and the tokens format.
+    /// Deserializes tokens from a dictionary block.
+    /// Returns the tokens column and the tokens format.
     static std::pair<ColumnPtr, UInt64> deserializeTokens(ReadBuffer & istr);
 
     /// Deserializes a dictionary block into a new DictionaryBlock.
+    /// If postings_serialization is null, embedded postings are skipped.
     static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, PostingsSerialization * postings_serialization);
 };
 
@@ -284,7 +290,6 @@ public:
     ~MergeTreeIndexGranuleText() override = default;
 
     const MergeTreeIndexTextParams & getParams() const { return params; }
-    PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -312,10 +317,13 @@ public:
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
+    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// Fills tokens and their infos from the cache.
+    /// Returns tokens that are not in the cache and need to be read from the dictionary file.
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
+
     DictionarySparseIndexPtr loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
-    void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state, PostingsSerialization & postings_serialization);
+    void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
@@ -326,8 +334,10 @@ private:
     TokenToPostingsMap rare_tokens_postings;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
     std::optional<RowsRange> current_range;
-    PostingListCodecPtr posting_list_codec;
+    /// Unique identifier for text index in the current data part.
     String index_id_for_caches;
+    /// Serialization for the posting lists.
+    PostingsSerialization postings_serialization;
 };
 
 /// Text index granule created on writing of the index.

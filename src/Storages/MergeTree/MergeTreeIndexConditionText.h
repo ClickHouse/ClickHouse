@@ -156,8 +156,11 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
+    /// Cache for headers of the text index
     TextIndexHeaderCachePtr header_cache;
+    /// Cache for posting lists of tokens.
     TextIndexPostingsCachePtr postings_cache;
 };
 
