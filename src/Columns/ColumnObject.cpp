@@ -488,7 +488,7 @@ void ColumnObject::insert(const Field & x)
         }
         /// We reached the limit on dynamic paths. Add this path to the common data if the value is not Null.
         /// (we cannot distinguish cases when path has Null value or is absent in the row and consider them equivalent).
-        /// Object is actually std::map, so all paths are already sorted and we can add it right now.
+        /// Object is actually map, so all paths are already sorted and we can add it right now.
         else if (!value_field.isNull())
         {
             shared_data_paths->insertData(path.data(), path.size());
@@ -586,7 +586,7 @@ bool ColumnObject::tryInsert(const Field & x)
         }
         /// We reached the limit on dynamic paths. Add this path to the common data if the value is not Null.
         /// (we cannot distinguish cases when path has Null value or is absent in the row and consider them equivalent).
-        /// Object is actually std::map, so all paths are already sorted and we can add it right now.
+        /// Object is actually map, so all paths are already sorted and we can add it right now.
         else if (!value_field.isNull())
         {
             WriteBufferFromOwnString value_buf;

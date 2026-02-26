@@ -23,9 +23,7 @@ void intrusive_ptr_release(const IColumn * c);
 
 using ColumnPtr = COW<IColumn>::Ptr;
 using MutableColumnPtr = COW<IColumn>::MutablePtr;
-using Columns = std::vector<ColumnPtr>;
-using MutableColumns = std::vector<MutableColumnPtr>;
-
-using ColumnRawPtrs = std::vector<const IColumn *>;
-
+using Columns = std::vector<ColumnPtr>; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+using MutableColumns = std::vector<MutableColumnPtr>; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+using ColumnRawPtrs = std::vector<const IColumn *>; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
 }
