@@ -3,8 +3,6 @@
 
 set -x
 
-# core.COMM.PID-TID
-sysctl kernel.core_pattern='core.%e.%p-%P'
 dmesg --clear ||:
 
 set -e
@@ -43,19 +41,6 @@ function configure
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
-</clickhouse>
-EOL
-
-    cat > $CONFIG_DIR/config.d/core.xml <<EOL
-<clickhouse>
-    <core_dump>
-        <!-- 100GiB -->
-        <size_limit>107374182400</size_limit>
-    </core_dump>
-    <!-- NOTE: no need to configure core_path,
-         since clickhouse is not started as daemon (via clickhouse start)
-    -->
-    <core_path>$PWD</core_path>
 </clickhouse>
 EOL
 
