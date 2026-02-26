@@ -42,7 +42,7 @@ SELECT kurtSamp(x) FROM test_data;
     FunctionDocumentation::Category category_samp = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_samp = {description_samp, syntax_samp, arguments_samp, {}, returned_value_samp, examples_samp, introduced_in_samp, category_samp};
 
-    factory.registerFunction("kurtSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionFourthMoment, StatisticsFunctionKind::kurtSamp>, {}, documentation_samp});
+    factory.registerFunction("kurtSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionFourthMoment, StatisticsFunctionKind::kurtSamp>, documentation_samp});
 
     FunctionDocumentation::Description description = R"(
 Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
@@ -74,7 +74,7 @@ SELECT kurtPop(x) FROM test_data;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("kurtPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionFourthMoment, StatisticsFunctionKind::kurtPop>, {}, documentation});
+    factory.registerFunction("kurtPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionFourthMoment, StatisticsFunctionKind::kurtPop>, documentation});
 }
 
 }
