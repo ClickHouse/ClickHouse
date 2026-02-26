@@ -54,7 +54,7 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
 
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
 {
-    if (elements_size != offsets.size())
+    if (!captured_columns.empty() && elements_size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets ({}) doesn't match size of column ({})",
                         offsets.size(), elements_size);
 
