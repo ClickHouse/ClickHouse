@@ -1699,7 +1699,7 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-void ColumnObject::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnObject::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Object column");
@@ -1814,7 +1814,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const Columns & source_
     /// on all resulting dynamic columns.
     for (auto & [path, column] : dynamic_paths)
     {
-        Columns dynamic_path_source_columns;
+        VectorWithMemoryTracking<ColumnPtr> dynamic_path_source_columns;
         for (const auto & source_column : source_columns)
         {
             const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
@@ -1828,7 +1828,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const Columns & source_
     /// Typed paths also can contain types with dynamic structure.
     for (auto & [path, column] : typed_paths)
     {
-        Columns typed_path_source_columns;
+        VectorWithMemoryTracking<ColumnPtr> typed_path_source_columns;
         typed_path_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));

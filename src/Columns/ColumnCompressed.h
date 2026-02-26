@@ -137,7 +137,7 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
     bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &, std::optional<size_t>) override { throwMustBeDecompressed(); }
+    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwMustBeDecompressed(); }
     void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwMustBeDecompressed(); }
     void fixDynamicStructure() override { throwMustBeDecompressed(); }
 

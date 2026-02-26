@@ -1255,7 +1255,7 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnDynamic::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Dynamic column");
@@ -1384,7 +1384,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     /// Variants can also contain Dynamic columns inside, we should collect
     /// all source variants that will be used in the resulting merged column
     /// and call takeDynamicStructureFromSourceColumns on all resulting variants.
-    std::vector<Columns> variants_source_columns;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> variants_source_columns;
     variants_source_columns.resize(variant_info.variant_names.size());
     for (const auto & source_column : source_columns)
     {

@@ -885,9 +885,9 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnTuple::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    std::vector<Columns> nested_source_columns;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> nested_source_columns;
     nested_source_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         nested_source_columns[i].reserve(source_columns.size());

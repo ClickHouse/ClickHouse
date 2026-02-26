@@ -57,7 +57,7 @@ void ColumnGathererStream::updateStats(const IColumn & column)
 
 void ColumnGathererStream::initialize(Inputs inputs)
 {
-    Columns source_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_columns;
     source_columns.reserve(inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
     {

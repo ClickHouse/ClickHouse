@@ -637,9 +637,9 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnReplicated::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    Columns source_nested_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_nested_columns;
     source_nested_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
