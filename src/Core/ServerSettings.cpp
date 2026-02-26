@@ -1272,6 +1272,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Possible values: -20 to 19.
     )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
+    DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
     DECLARE(UInt64, max_open_files, 0, R"(

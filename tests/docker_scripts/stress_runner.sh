@@ -218,21 +218,22 @@ export THREAD_POOL_FAULT_INJECTION=1
 configure
 configure_limits
 
-# But we still need default disk because some tables loaded only into it
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" || "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    default_policy_paths=(
-        /etc/clickhouse-server/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml
-        /etc/clickhouse-server/config.d/azure_encrypted_storage_policy_by_default.xml
-        /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
-        /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-    )
-    for file in "${default_policy_paths[@]}"; do
-        if [[ -e $file ]]; then
-            break
+    # But we still need default disk because some tables loaded only into it
+    if [[ $USE_S3_STORAGE_FOR_MERGE_TREE == "1" ]]; then
+        if [[ $USE_ENCRYPTED_STORAGE == "1" ]]; then
+            file=/etc/clickhouse-server/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml
+        else
+            file=/etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
         fi
-    done
-    if [[ ! -e $file ]]; then
-        echo "Cannot locate file with default storage policy" >&2
+    elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+        if [[ $USE_ENCRYPTED_STORAGE == "1" ]]; then
+            file=/etc/clickhouse-server/config.d/azure_encrypted_storage_policy_by_default.xml
+        else
+            file=/etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
+        fi
+    else
+        echo "ERROR: Failed to find azure storage policy by default file"
         exit 1
     fi
 

@@ -185,6 +185,7 @@ namespace Setting
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_primary_key;
+    extern const SettingsBool use_partition_pruning;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -1925,7 +1926,12 @@ void ReadFromMergeTree::buildIndexes(
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
         indexes->minmax_idx_condition.emplace(filter_dag, query_context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
+        indexes->partition_pruner.emplace(
+            metadata_snapshot,
+            filter_dag,
+            query_context,
+            false /* strict */,
+            !settings[Setting::use_partition_pruning] /* skip_analysis */);
     }
 
     indexes->part_values
