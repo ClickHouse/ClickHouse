@@ -79,15 +79,16 @@ Insert features into a table:
 ```sql title="Query"
 CREATE TABLE cities
 (
-    id       Nullable(String),
-    geometry Geometry,
-    name     String MATERIALIZED JSONExtractString(properties, 'name')
+    id         Nullable(String),
+    geometry   Geometry,
+    properties JSON,
+    name       String MATERIALIZED JSONExtractString(properties, 'name')
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO cities (id, geometry)
-SELECT id, geometry
+INSERT INTO cities
+SELECT id, geometry, properties
 FROM file('cities.geojson', GeoJSON)
 SETTINGS allow_experimental_geojson_format = 1;
 ```
