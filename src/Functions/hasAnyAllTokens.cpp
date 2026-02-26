@@ -391,34 +391,31 @@ template <class HasTokensTraits>
 ColumnPtr ExecutableFunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
-    ColumnPtr col_input = arguments[arg_input].column;
-
-    /// If the input column is Nullable, unwrap it and run the search on the nested column.
-    /// The null map is then applied to the result so that NULL input rows produce NULL output.
-    const ColumnNullable * nullable_input = checkAndGetColumn<ColumnNullable>(col_input.get());
-    ColumnPtr inner_input = nullable_input ? nullable_input->getNestedColumnPtr() : col_input;
+    if (input_rows_count == 0)
+        return ColumnVector<UInt8>::create();
 
     auto col_result = ColumnVector<UInt8>::create();
 
-    if (input_rows_count == 0 || search_tokens.empty())
+    if (search_tokens.empty())
     {
         col_result->getData().assign(input_rows_count, UInt8(0));
+        return col_result;
     }
-    else if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+
+    ColumnPtr col_input = arguments[arg_input].column;
+
+    if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
     {
         /// The sparse gram token extractor stores an internal state which modified during the execution.
         /// This leads to an error while executing this function multi-threaded because that state is not protected.
         /// To avoid this case, a clone of the sparse gram token extractor will be used.
         auto sparse_grams_tokenizer = tokenizer->clone();
-        executeStringOrArray<HasTokensTraits>(inner_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
     }
     else
     {
-        executeStringOrArray<HasTokensTraits>(inner_input, col_result->getData(), input_rows_count, tokenizer.get(), search_tokens);
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, tokenizer.get(), search_tokens);
     }
-
-    if (nullable_input)
-        return ColumnNullable::create(std::move(col_result), nullable_input->getNullMapColumn().clone());
 
     return col_result;
 }
