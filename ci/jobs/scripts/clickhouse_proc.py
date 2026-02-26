@@ -805,7 +805,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self):
-        printf("REMOVEME _collect_core_dumps")
+        print("REMOVEME _collect_core_dumps")
         Shell.check("find / -name core.* -type f", verbose=True)
         time.sleep(5)
         r = [Utils.compress_zst(f) for f in Path("{temp_dir}").glob("run_r*/core.*")]
