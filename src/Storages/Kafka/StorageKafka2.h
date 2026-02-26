@@ -30,6 +30,8 @@ class Configuration;
 namespace DB
 {
 
+namespace AWSMSKIAMAuth { struct OAuthBearerTokenRefreshContext; }
+
 struct KafkaSettings;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
@@ -111,6 +113,9 @@ public:
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
+    AWSMSKIAMAuth::OAuthBearerTokenRefreshContext * getOAuthContextPtr() { return oauth_context.get(); }
+    void setOAuthContext(std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> context) { oauth_context = std::move(context); }
+
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(consumers_mutex), consumers}; }
 
 private:
@@ -152,6 +157,7 @@ private:
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> oauth_context;
 
     std::mutex consumers_mutex;
     std::condition_variable cv;

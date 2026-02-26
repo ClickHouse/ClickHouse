@@ -43,6 +43,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
+#if USE_AWS_S3
+#include <Storages/Kafka/AWSMSKIAMAuth.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric KafkaBackgroundReads;
@@ -231,6 +235,7 @@ StorageKafka::~StorageKafka()
 {
     if (!shutdown_called)
         shutdown(false);
+
 }
 
 void StorageKafka::read(

@@ -792,6 +792,7 @@ NumberOfTables
 NumericIndexedVector
 NumericIndexedVectors
 OAuth
+OAUTHBEARER
 ODBCDriver
 OFNS
 OKLCH
@@ -945,6 +946,7 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
+PrivateLink
 PrivatePreviewBadge
 ProfileEvents
 Profiler
@@ -1095,6 +1097,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+Serverless
 ServerSettings
 SetOperationMode
 ShareAlike

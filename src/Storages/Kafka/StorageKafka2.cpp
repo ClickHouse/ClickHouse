@@ -52,6 +52,10 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 
+#if USE_AWS_S3
+#include <Storages/Kafka/AWSMSKIAMAuth.h>
+#endif
+
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -194,7 +198,9 @@ StorageKafka2::StorageKafka2(
     activating_task->deactivate();
 }
 
-StorageKafka2::~StorageKafka2() = default;
+StorageKafka2::~StorageKafka2()
+{
+}
 
 void StorageKafka2::partialShutdown()
 {
