@@ -292,9 +292,10 @@ SELECT 'test6_after', count() FROM t_ttl_vert_6;
 -- With WHERE clause TTL, delete_ttl_info_min/max should be zero because
 -- the rows_where TTL info only tracks rows that pass the WHERE filter.
 -- Surviving rows (category=0) don't pass WHERE, so their TTL is not tracked.
+-- Cast to UInt32 to get numeric values (DateTime 0 = '1970-01-01 00:00:00' is timezone-dependent).
 SELECT 'test6_ttl_info',
-    delete_ttl_info_min,
-    delete_ttl_info_max
+    toUInt32(delete_ttl_info_min),
+    toUInt32(delete_ttl_info_max)
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_ttl_vert_6' AND active;
 
