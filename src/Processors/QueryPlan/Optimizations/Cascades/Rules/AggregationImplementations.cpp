@@ -88,13 +88,21 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// bridges the gap via GatherExchange — crucially on the PARTIAL output (~25 rows) rather
     /// than the raw input (~1M rows). This produces:
     ///   ParallelRead → Expression → PartialAgg({N nodes}) → GatherExchange → MergeAgg
-    /// We intentionally do NOT create a `{1 node}` variant here: if one existed, it would
-    /// become the best for `{1 node}` immediately, preventing the enforcer from ever running
-    /// and producing the cheaper GatherExchange-on-partial-output plan.
+    /// We intentionally do NOT create a `{1 node}` variant for multi-node clusters: if one
+    /// existed, it would become the best for `{1 node}` immediately, preventing the enforcer
+    /// from ever running and producing the cheaper GatherExchange-on-partial-output plan.
+    /// However, for a single-node cluster we MUST create the `{1 node}` variant because there
+    /// are no multi-node candidates and no enforcer path to bridge the gap.
     if (!agg_step->getFinal())
     {
         std::vector<GroupExpressionPtr> result;
-        for (size_t candidate_node_count : candidate_node_counts)
+
+        /// For single-node clusters, create a {1 node} partial aggregation directly.
+        auto partial_candidates = candidate_node_counts;
+        if (partial_candidates.empty())
+            partial_candidates.push_back(1);
+
+        for (size_t candidate_node_count : partial_candidates)
         {
             auto new_step = agg_step->clone();
             new_step->setStepDescription(*agg_step);
