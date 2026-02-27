@@ -69,6 +69,37 @@ Array readGeoJSONPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONArray(
 /// Reads [[[[lon,lat],...],...]] into Array of Array of Array of Tuple (MultiPolygon coordinates).
 Array readGeoJSONMultiPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONArray(buf, readGeoJSONPolygonCoordinates); }
 
+/// Iterate over every field of a JSON object (opening `{` must already be consumed).
+/// Calls handle_field(key) for each field. If handle_field returns true the value was
+/// consumed by the callback; otherwise the value is skipped automatically.
+template <typename FieldHandler>
+void forEachFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & json_settings, FieldHandler && handle_field)
+{
+    while (!JSONUtils::checkAndSkipObjectEnd(buf))
+    {
+        String key = JSONUtils::readFieldName(buf, json_settings);
+        if (!handle_field(key))
+            skipJSONField(buf, key, json_settings);
+        JSONUtils::checkAndSkipComma(buf);
+    }
+}
+
+/// Scan a JSON object for a specific field, skipping all others.
+/// Returns true and leaves the read position at the start of the field value if found,
+/// or returns false after consuming the closing `}` if not found.
+bool findFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & json_settings, const String & desired_key)
+{
+    while (!JSONUtils::checkAndSkipObjectEnd(buf))
+    {
+        String key = JSONUtils::readFieldName(buf, json_settings);
+        if (key == desired_key)
+            return true;
+        skipJSONField(buf, key, json_settings);
+        JSONUtils::checkAndSkipComma(buf);
+    }
+    return false;
+}
+
 } /// anonymous namespace
 
 
@@ -126,22 +157,9 @@ void GeoJSONRowInputFormat::readPrefix()
 {
     auto & buf = getReadBuffer();
     JSONUtils::skipObjectStart(buf);
-
-    while (!JSONUtils::checkAndSkipObjectEnd(buf))
-    {
-        String key = JSONUtils::readFieldName(buf, format_settings.json);
-
-        if (key == "features")
-        {
-            JSONUtils::skipArrayStart(buf);
-            return;
-        }
-
-        skipJSONField(buf, key, format_settings.json);
-        JSONUtils::checkAndSkipComma(buf);
-    }
-
-    throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: 'features' array not found in FeatureCollection");
+    if (!findFieldInJSONObject(buf, format_settings.json, "features"))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: 'features' array not found in FeatureCollection");
+    JSONUtils::skipArrayStart(buf);
 }
 
 void GeoJSONRowInputFormat::readSuffix()
@@ -173,34 +191,30 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     bool has_properties = false;
 
     JSONUtils::skipObjectStart(buf);
-    while (!JSONUtils::checkAndSkipObjectEnd(buf))
+    forEachFieldInJSONObject(buf, format_settings.json, [&](const String & key)
     {
-        String key = JSONUtils::readFieldName(buf, format_settings.json);
-
         if (key == "id" && id_col_idx.has_value())
         {
             SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
                 *columns[*id_col_idx], buf, format_settings, serializations[*id_col_idx]);
             has_id = true;
+            return true;
         }
-        else if (key == "geometry" && geometry_col_idx.has_value())
+        if (key == "geometry" && geometry_col_idx.has_value())
         {
             readGeometry(*columns[*geometry_col_idx]);
             has_geometry = true;
+            return true;
         }
-        else if (key == "properties" && properties_col_idx.has_value())
+        if (key == "properties" && properties_col_idx.has_value())
         {
             SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
                 *columns[*properties_col_idx], buf, format_settings, serializations[*properties_col_idx]);
             has_properties = true;
+            return true;
         }
-        else
-        {
-            skipJSONField(buf, key, format_settings.json);
-        }
-
-        JSONUtils::checkAndSkipComma(buf);
-    }
+        return false;
+    });
 
     if (!has_id && id_col_idx.has_value())
         columns[*id_col_idx]->insertDefault();
@@ -228,26 +242,13 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
     String geo_type;
     String raw_coordinates;
 
-    while (!JSONUtils::checkAndSkipObjectEnd(buf))
+    forEachFieldInJSONObject(buf, format_settings.json, [&](const String & key)
     {
-        String key = JSONUtils::readFieldName(buf, format_settings.json);
-
-        if (key == "type")
-        {
-            readJSONString(geo_type, buf, format_settings.json);
-        }
-        else if (key == "coordinates")
-        {
-            /// Always buffer as raw string so key order doesn't matter.
-            readJSONField(raw_coordinates, buf, format_settings.json);
-        }
-        else
-        {
-            skipJSONField(buf, key, format_settings.json);
-        }
-
-        JSONUtils::checkAndSkipComma(buf);
-    }
+        if (key == "type") { readJSONString(geo_type, buf, format_settings.json); return true; }
+        /// Always buffer coordinates as raw string so key order doesn't matter.
+        if (key == "coordinates") { readJSONField(raw_coordinates, buf, format_settings.json); return true; }
+        return false;
+    });
 
     if (geo_type == "GeometryCollection")
     {
