@@ -829,14 +829,19 @@ class FunctionBinaryArithmetic : public IFunction
 
     static bool castType(const IDataType * type, auto && f)
     {
-        using NumericTypes = TypeList<
+        using IntegerTypes = TypeList<
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
-            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
-            DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
+            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256>;
+
+        using DecimalTypes = TypeList<DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
 
         using Floats = TypeList<DataTypeFloat32, DataTypeFloat64, DataTypeBFloat16>;
 
         /// Only include extra types that this specific operation actually uses.
+        /// Decimal: needed only when allow_decimal is true (plus, minus, multiply,
+        ///   divide, intDiv, intDivOrZero, modulo, positiveModulo, least, greatest,
+        ///   midpoint). All other operations (bitwise, GCD/LCM, *OrNull division
+        ///   variants, etc.) produce InvalidType for Decimal pairs, so skip them.
         /// Date/DateTime/Time: needed for plus, minus, least, greatest, modulo,
         ///   positive_modulo (see BinaryOperationTraits::ResultDataType).
         ///   All other operations produce InvalidType for these, so skip them.
@@ -845,6 +850,7 @@ class FunctionBinaryArithmetic : public IFunction
         /// Interval: needed for plus/minus (date/time +/- interval arithmetic).
         /// All other operations reject these types in the dispatch lambda anyway,
         /// so we skip them to reduce the template instantiation matrix.
+        static constexpr bool needs_decimal = IsOperation<Op>::allow_decimal;
         static constexpr bool needs_date_time = is_plus || is_minus
             || IsOperation<Op>::least || IsOperation<Op>::greatest
             || is_modulo || IsOperation<Op>::positive_modulo;
@@ -852,6 +858,8 @@ class FunctionBinaryArithmetic : public IFunction
             Op<UInt8, UInt8>::allow_fixed_string || Op<UInt8, UInt8>::allow_string_integer || is_bit_hamming_distance;
         static constexpr bool needs_interval = is_plus || is_minus;
 
+        using NumericTypes = std::conditional_t<needs_decimal,
+            TypeListConcat<IntegerTypes, DecimalTypes>, IntegerTypes>;
         using NumericAndDateTypes = std::conditional_t<needs_date_time,
             TypeListConcat<NumericTypes, TypeList<DataTypeDate, DataTypeDateTime, DataTypeTime>>, NumericTypes>;
         using WithStrings = std::conditional_t<needs_string_types,
