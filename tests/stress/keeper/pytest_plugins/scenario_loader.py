@@ -6,29 +6,8 @@ import pytest
 import yaml
 
 _SCN_BASE = pathlib.Path(__file__).parents[1] / "scenarios"
-_PREFIX_TAGS = {
-    "sem",
-    "cfg",
-    "dur",
-    "dsk",
-    "ldr",
-    "res",
-    "perf",
-    "sec",
-    "obs",
-    "mig",
-    "int",
-    "lin",
-    "cha",
-    "nbank",
-    "bnd",
-    "df",
-    "clk",
-    "soak",
-    "ops",
-    "load",
-    "imp",
-}
+# Prefixes from scenario ids (first segment before '-'). Used for tag filtering (KEEPER_INCLUDE_TAGS / KEEPER_EXCLUDE_TAGS).
+_PREFIX_TAGS = {"baseline", "workload", "latency"}
 
 
 def validate_scenario(s):

@@ -7,10 +7,8 @@ import sys
 import threading
 import time
 import uuid
-import random
 import yaml
 
-from keeper.framework.fuzz import _fault_candidates
 from keeper.faults import apply_step
 from keeper.faults.runner import FaultRunner
 from keeper.framework.core.preflight import ensure_environment
@@ -23,7 +21,6 @@ from keeper.framework.core.settings import (
     keeper_node_names
 )
 from keeper.framework.core.util import sh, ts_ms, parse_bool, env_bool
-from keeper.framework.fuzz import generate_random_faults
 from keeper.framework.io.probes import (
     count_leaders,
     dirs,
@@ -189,49 +186,6 @@ def ensure_default_gates(scenario):
             {"type": "p99_le", "max_ms": int(DEFAULT_P99_MS)},  # Lenient: 10s
         ]
         scenario["gates"] = gates
-
-
-def _generate_default_fault_pool(scenario, seed_val):
-    topology = scenario.get("topology")
-    try:
-        rnd = random.Random(seed_val)
-        scenario_faults = scenario.get("faults", [])
-        scenario_dur = int(scenario.get("duration") or HARD_DEFAULT_TIMEOUT)
-        
-        if scenario_faults:
-            # Use all fault kinds from scenario (generate one of each kind)
-            fault_kinds = list({f.get("kind") for f in scenario_faults if isinstance(f, dict) and f.get("kind")})
-            steps = len(fault_kinds)
-        else:
-            # Use all registered faults, generate random number between 1 and len(all_faults)
-            fault_kinds = None
-            all_faults = _fault_candidates()
-            steps = rnd.randint(1, max(1, len(all_faults)))
-
-        # Calculate fault durations ensuring sum <= scenario duration
-        # Distribute scenario duration across faults, with min 5s per fault
-        min_per_fault = 30
-        max_total = scenario_dur
-        if steps * min_per_fault > max_total:
-            # Not enough time for all faults, reduce steps
-            steps = max(1, max_total // min_per_fault)
-        # Ensure worst case (all faults at dur_max) doesn't exceed total duration
-        # dur_max per fault = max_total / steps (ensures steps * dur_max <= max_total)
-        avg_dur = max(min_per_fault, max_total // steps)
-        dur_min = min_per_fault
-        dur_max = min(avg_dur, max_total // steps)  # Worst case: all dur_max, sum = steps * dur_max <= max_total
-        
-        rnd_faults = generate_random_faults(
-            steps,
-            rnd,
-            dur_min,
-            dur_max,
-            topology=topology,
-            fault_kinds=fault_kinds,
-        )
-        return rnd_faults
-    except Exception:
-        raise Exception(f"Error generating random faults for scenario {scenario.get('id')}")
 
 
 def _build_bench_step(scenario, nodes, ctx, replay_path=""):
@@ -810,19 +764,16 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     topo = scenario.get("topology")
     backend = scenario.get("backend")
     opts = scenario.get("opts", {})
-    fs_effective = scenario.get("faults", [])
-    
+    # Scenario defines faults: if faults is missing or [], no fault injection. Test name (scenario id) is self-describing.
+    fs_effective = list(scenario.get("faults") or [])
+    faults_override = request.config.getoption("--faults")
+    if not faults_override:
+        fs_effective = []
+    seed_val = request.config.getoption("--seed")
+    print(f"[keeper] seed={int(seed_val)} faults={'enabled' if fs_effective else 'disabled'} (scenario={scenario.get('id')})")
+
     run_meta_eff = run_meta
     run_meta_eff["backend"] = backend
-
-    faults_enabled = request.config.getoption("--faults")
-    seed_val = request.config.getoption("--seed")
-    print(f"[keeper] seed={int(seed_val)}")
-
-    if not faults_enabled:
-        fs_effective = []
-    elif not fs_effective:
-        fs_effective = _generate_default_fault_pool(scenario, seed_val)
 
     _set_privileged_env(scenario)
     
@@ -833,7 +784,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
 
     scenario_id = scenario.get("id")
     sink_url = "ci"
-    ctx = _setup_metrics_context(faults_enabled, seed_val, cluster)
+    ctx = _setup_metrics_context(bool(fs_effective), seed_val, cluster)
     
     sampler = None
     leader = None

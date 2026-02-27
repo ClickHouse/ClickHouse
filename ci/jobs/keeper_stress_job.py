@@ -2,6 +2,7 @@
 """Keeper stress test CI job runner."""
 import json
 import os
+import yaml
 import subprocess
 import sys
 import time
@@ -75,9 +76,8 @@ def _abort(job_name, results, stopwatch, status=None, info=None):
 def set_default_env():
     """Defaults for keeper stress (env and pytest)."""
     for k, v in {
-        "KEEPER_INCLUDE_IDS": "CHA-01",
         "KEEPER_DURATION": "1200",
-        "KEEPER_FAULTS": "false",
+        "KEEPER_FAULTS": "true",
         "KEEPER_MATRIX_BACKENDS": "default,rocks",
         "KEEPER_METRICS_INTERVAL_S": "5",
     }.items():
@@ -237,17 +237,35 @@ def validate_metrics_jsonl(metrics_path):
     print(f"metrics file {p} is valid")
     return True
 
+def _load_all_scenario_ids():
+    """Load all scenario IDs from scenario YAML files (when KEEPER_INCLUDE_IDS is unset)."""
+    scn_base = Path(REPO_DIR) / "tests" / "stress" / "keeper" / "scenarios"
+    ids = []
+    for f in sorted(scn_base.glob("*.yaml")):
+        if not f.exists():
+            continue
+        try:
+            d = yaml.safe_load(f.read_text())
+            if isinstance(d, dict) and isinstance(d.get("scenarios"), list):
+                for s in d["scenarios"]:
+                    if isinstance(s, dict) and s.get("id"):
+                        ids.append(str(s["id"]).strip())
+        except Exception as e:
+            print(f"failed to load scenario IDs from {f}: {traceback.format_exc()}")
+            raise Exception(f"failed to load scenario IDs from {f}: {e}")
+    return ids
+
+
 def _scenario_ids_for_grafana():
     """
-    Build full scenario IDs for Grafana (e.g. CHA-01[default|t3], CHA-01[rocks|t3]).
-    Uses KEEPER_INCLUDE_IDS and KEEPER_MATRIX_BACKENDS; topology fixed to 3.
+    Build full scenario IDs for Grafana (e.g. baseline-prod-mix[default], baseline-prod-mix[rocks]).
+    Uses KEEPER_INCLUDE_IDS when set; otherwise loads all scenario IDs from YAML. Matches scenario_loader clone id format.
     """
     include_ids = os.environ.get("KEEPER_INCLUDE_IDS", "").strip()
-    ids = [s.strip() for s in include_ids.split(",") if s.strip()] if include_ids else []
+    ids = [s.strip() for s in include_ids.split(",") if s.strip()] if include_ids else _load_all_scenario_ids()
     backends_raw = os.environ.get("KEEPER_MATRIX_BACKENDS", "default,rocks").strip()
     backends = [b.strip() for b in backends_raw.split(",") if b.strip()] or ["default"]
-    topo = 3
-    return [f"{sid}[{b}|t{topo}]" for sid in ids for b in backends]
+    return [f"{sid}[{b}]" for sid in ids for b in backends]
 
 
 def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None, branch=None):
@@ -261,9 +279,8 @@ def _add_grafana_links(result, commit_sha, stop_watch, scenario_filter=None, bra
     if scenario_filter is None:
         include_ids = os.environ.get("KEEPER_INCLUDE_IDS", "").strip()
         scenario_filter = [s.strip() for s in include_ids.split(",") if s.strip()] if include_ids else []
-    scenario_val = scenario_filter[0] if scenario_filter else ""
-    # Full scenario IDs for Run details (e.g. CHA-01[default|t3], CHA-01[rocks|t3])
-    scenario_ids = _scenario_ids_for_grafana() if scenario_filter else []
+    scenario_ids = _scenario_ids_for_grafana()
+    scenario_val = scenario_filter[0] if scenario_filter else (scenario_ids[0] if scenario_ids else "")
     compare_short = (commit_sha or "")[:8]
 
     def _url(uid, params):

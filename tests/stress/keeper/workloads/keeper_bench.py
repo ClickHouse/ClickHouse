@@ -147,6 +147,10 @@ class KeeperBench:
         """Run keeper-bench on host."""
         cfg_text = yaml.safe_load(Path(self.cfg_path).read_text(encoding="utf-8"))
         clients = int(cfg_text.get("concurrency", DEFAULT_CONCURRENCY))
+        clients_env = os.environ.get("KEEPER_BENCH_CLIENTS", "").strip()
+        if clients_env:
+            print(f"[keeper][bench] Using KEEPER_BENCH_CLIENTS={clients_env} from environment")
+            clients = int(clients_env)
         bench_cfg = _patch_keeper_bench_config(cfg_text, self.servers, clients, self.duration_s)
         
         # Replay mode: remove generator section

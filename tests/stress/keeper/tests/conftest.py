@@ -48,7 +48,7 @@ def pytest_addoption(parser):
         "--faults",
         type=parse_bool,
         default=env_bool("KEEPER_FAULTS", True),
-        help="Enable fault injection (true/false/1/0, default from KEEPER_FAULTS env var)",
+        help="Override: if false, force no faults for all scenarios. If true, use scenario's faults as defined in YAML (faults: [] = no faults).",
     )
     pa(
         "--keeper-include-ids",
