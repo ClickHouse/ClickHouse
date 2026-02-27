@@ -933,7 +933,7 @@ bool Client::buzzHouse()
     {
         LOG_INFO(fuzz_config->log, "End of fuzzing log file reached, stopping fuzzing");
     }
-    return server_up;
+    return no_timeout && server_up;
 }
 #else
 bool Client::buzzHouse()
