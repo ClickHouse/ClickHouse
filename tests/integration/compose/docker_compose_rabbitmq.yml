@@ -1,6 +1,6 @@
 services:
     rabbitmq1:
-        image: rabbitmq:4.2.1-management-alpine
+        image: rabbitmq:4.0.4-alpine
         stop_grace_period: 5s
         hostname: rabbitmq1
         environment:
@@ -8,7 +8,6 @@ services:
         expose:
             - ${RABBITMQ_PORT:-5672}
             - ${RABBITMQ_SECURE_PORT:-5671}
-            - ${RABBITMQ_MANAGEMENT_PORT:-15672}
         volumes:
             - type: ${RABBITMQ_LOGS_FS:-tmpfs}
               source: ${RABBITMQ_LOGS:-}
@@ -25,4 +24,3 @@ services:
             interval: 10s
             retries: 10
             timeout: 2s
-        cpus: 3

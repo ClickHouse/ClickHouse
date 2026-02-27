@@ -4,17 +4,27 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Core/NamesAndTypes.h>
+#include <Core/TypeId.h>
 
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/misc.h>
 
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -28,10 +38,15 @@
 
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Functions/FunctionHelpers.h>
@@ -41,9 +56,9 @@
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/HivePartitioningUtils.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Common/HashTable/HashSet.h>
 
 
 namespace DB
@@ -52,7 +67,6 @@ namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
 }
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -153,35 +167,6 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 NameSet getVirtualNamesForFileLikeStorage()
 {
     return getCommonVirtualsForFileLikeStorage().getNameSet();
-}
-
-std::string_view findHivePartitioningInPath(const String & path)
-{
-    auto key_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-
-    if (key_values.empty())
-        return std::string_view();
-
-    // All keys and values are string_view over 'path', so starts and ends must be inside 'path'
-    auto kv = key_values.begin();
-    const auto * start = kv->first.data();
-    const auto * end = kv->second.data() + kv->second.size();
-    ++kv;
-    while (kv != key_values.end())
-    {
-        start = std::min(kv->first.data(), start);
-        end = std::max(kv->second.data() + kv->second.size(), end);
-        ++kv;
-    }
-
-    if (start < path.data() || start > path.data() + path.size()
-            || end < path.data() || end > path.data() + path.size()
-            || end < start)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "String views are not inside initial string");
-    }
-
-    return std::string_view(start, end - start);
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
@@ -410,7 +395,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 for (size_t i = 0; i < num_indices; ++i)
                     if (!applied_filter.has_value() || applied_filter.value()[i])
                         column->insertValue(i + row_num_offset);
-                auto null_map = ColumnUInt8::create(chunk.getNumRows(), static_cast<UInt8>(0));
+                auto null_map = ColumnUInt8::create(chunk.getNumRows(), 0);
                 chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
                 return;
             }
@@ -644,38 +629,6 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
     }
 
     return result;
-}
-
-DataPartsVector filterDataPartsWithExpression(
-    const DataPartsVector & data_parts,
-    const std::shared_ptr<ExpressionActions> & virtual_columns_filter)
-{
-    if (!virtual_columns_filter)
-        return data_parts;
-
-    auto all_part_names = ColumnString::create();
-    for (const auto & part : data_parts)
-        all_part_names->insert(part->name);
-
-    Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), "part_name"}};
-    filterBlockWithExpression(virtual_columns_filter, filtered_block);
-
-    if (!filtered_block.rows())
-        return {};
-
-    auto part_names = filtered_block.getByPosition(0).column;
-    const auto & part_names_str = assert_cast<const ColumnString &>(*part_names);
-
-    HashSet<std::string_view> part_names_set;
-    for (size_t i = 0; i < part_names_str.size(); ++i)
-        part_names_set.insert(part_names_str.getDataAt(i));
-
-    DataPartsVector filtered_parts;
-    for (const auto & part : data_parts)
-        if (part_names_set.has(part->name))
-            filtered_parts.push_back(part);
-
-    return filtered_parts;
 }
 
 }

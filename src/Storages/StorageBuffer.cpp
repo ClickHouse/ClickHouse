@@ -472,8 +472,9 @@ void StorageBuffer::read(
                     std::move(pipe_from_buffers),
                     *getVirtualsPtr());
 
-            auto interpreter
-                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
+            auto interpreter = InterpreterSelectQueryAnalyzer(
+                    query_info.query, local_context, storage,
+                    SelectQueryOptions(processed_stage));
             interpreter.addStorageLimits(*query_info.storage_limits);
             buffers_plan = std::move(interpreter).extractQueryPlan();
         }
@@ -768,7 +769,6 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            LOG_DEBUG(storage.log, "Flush buffer by threshold");
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
             buffer.metadata_version = metadata_version;
         }
@@ -854,7 +854,6 @@ bool StorageBuffer::optimize(
     if (cleanup)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
 
-    LOG_DEBUG(log, "Running optimize of buffers.");
     flushAllBuffers(false);
     return true;
 }
@@ -939,8 +938,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (runner)
         {
-            /// Passing buf as a reference is fine since it's a reference to this, which outlives the runner
-            runner->enqueueAndKeepTrack([this, &buf, check_thresholds]()
+            runner->enqueueAndKeepTrack([&]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });
@@ -1050,7 +1048,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    auto insert = make_intrusive<ASTInsertQuery>();
+    auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;
 
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
@@ -1085,11 +1083,11 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     if (block_to_write.columns() != block.columns())
         LOG_WARNING(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
 
-    auto list_of_columns = make_intrusive<ASTExpressionList>();
+    auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(block_to_write.columns());
     for (const auto & column : block_to_write)
-        list_of_columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
@@ -1114,7 +1112,6 @@ void StorageBuffer::backgroundFlush()
 {
     try
     {
-        LOG_DEBUG(log, "Running background flush of buffers.");
         flushAllBuffers(true);
     }
     catch (...)

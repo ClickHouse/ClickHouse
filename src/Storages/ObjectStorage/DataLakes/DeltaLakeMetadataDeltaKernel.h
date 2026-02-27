@@ -6,18 +6,15 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
-#include <Common/CacheBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeTableStateSnapshot.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DeltaLake
 {
 class TableSnapshot;
-using TableSnapshotPtr = std::shared_ptr<TableSnapshot>;
 class TableChanges;
 using TableChangesPtr = std::shared_ptr<TableChanges>;
 using TableChangesVersionRange = std::pair<size_t, std::optional<size_t>>;
@@ -30,13 +27,13 @@ class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 {
 public:
     static constexpr auto name = "DeltaLake";
-    using SnapshotVersion = UInt64;
 
     const char * getName() const override { return name; }
 
     DeltaLakeMetadataDeltaKernel(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_);
+        StorageObjectStorageConfigurationWeakPtr configuration_,
+        ContextPtr context);
 
     bool supportsUpdate() const override { return true; }
 
@@ -45,10 +42,6 @@ public:
     void update(const ContextPtr & context) override;
 
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
-
-    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr) const override;
-    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr) const override;
-    bool shouldReloadSchemaForConsistency(ContextPtr) const override;
 
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
@@ -62,16 +55,13 @@ public:
     void modifyFormatSettings(FormatSettings & format_settings, const Context &) const override;
 
     static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration)
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationWeakPtr configuration,
+        ContextPtr context)
     {
         auto configuration_ptr = configuration.lock();
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage_, configuration);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, context);
     }
-
-    std::optional<size_t> totalRows(ContextPtr) const override;
-
-    std::optional<size_t> totalBytes(ContextPtr) const override;
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -92,31 +82,21 @@ public:
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
-        ObjectStoragePtr object_storage_,
+        ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 
 private:
-    using TableSnapshotCache = CacheBase<SnapshotVersion, DeltaLake::TableSnapshot>;
-
     const LoggerPtr log;
     const DeltaLake::KernelHelperPtr kernel_helper;
-    const ObjectStoragePtr object_storage;
+    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
     const std::string format_name;
+    mutable std::mutex table_snapshot_mutex;
 
-    mutable TableSnapshotCache snapshots TSA_GUARDED_BY(snapshots_mutex);
-    mutable std::mutex snapshots_mutex;
-    mutable std::optional<SnapshotVersion> latest_snapshot_version;
-
+    ObjectStoragePtr object_storage_common;
     void logMetadataFiles(ContextPtr context) const;
-
-    /// No version means latest version.
-    DeltaLake::TableSnapshotPtr getTableSnapshot(
-        std::optional<SnapshotVersion> version = std::nullopt) const;
-
-    std::string latestSnapshotVersionToStr() const TSA_REQUIRES(snapshots_mutex);
 };
 
 }

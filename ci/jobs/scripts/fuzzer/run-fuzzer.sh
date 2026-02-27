@@ -59,7 +59,7 @@ EOL
 </clickhouse>
 EOL
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || { echo "Failed to create log export config"; exit 1; }
 }
 
 function filter_exists_and_template
@@ -109,14 +109,12 @@ function fuzz
 
     # server.log -> All server logs, including sanitizer
     # stderr.log -> Process logs (sanitizer) only
-    ( clickhouse-server \
-          --config-file $CONFIG_DIR/config.xml \
-          --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
-          --  --path $CONFIG_DIR \
-              --logger.console=0 \
-              --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1
-      exit "${PIPESTATUS[0]}" ) &
-    server_bg_pid=$!
+    clickhouse-server \
+        --config-file $CONFIG_DIR/config.xml \
+        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+        --  --path $CONFIG_DIR \
+            --logger.console=0 \
+            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
     for _ in {1..30}
     do
         if clickhouse-client --query "select 1"
@@ -185,7 +183,7 @@ function fuzz
 
     echo 'Server started and responded.'
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || echo "Failed to start log exports"
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || { echo "Failed to start log exports"; exit 1; }
 
     # Setup arguments for the fuzzer
     FUZZER_OUTPUT_SQL_FILE=''
@@ -205,7 +203,7 @@ function fuzz
     # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
     # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
     # a reasonable time.
-    timeout --verbose --signal TERM --kill-after=5m --preserve-status "${FUZZ_TIME_LIMIT:-30m}" clickhouse-client \
+    timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
@@ -278,15 +276,12 @@ function fuzz
         fi
     done
 
-    # Stop the server in background so we can wait for the subshell to
-    # finish in the foreground. We wait on server_bg_pid (the subshell running
-    # the server pipeline) rather than server_pid (from the PID file), because
-    # the PID file contains the forked server process which is not a direct
-    # child of this shell, so wait would fail with "not a child of this shell".
-    # The subshell exits with clickhouse-server's exit code via PIPESTATUS.
+    # wait in background to call wait in foreground and ensure that the
+    # process is alive, since w/o job control this is the only way to obtain
+    # the exit code
     stop_server &
     server_exit_code=0
-    wait $server_bg_pid || server_exit_code=$?
+    wait $server_pid || server_exit_code=$?
     echo "Server exit code is $server_exit_code"
 
     echo -e "$server_died\t$server_exit_code\t$fuzzer_exit_code" > status.tsv

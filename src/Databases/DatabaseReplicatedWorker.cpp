@@ -1,5 +1,4 @@
 #include <Databases/DatabaseReplicatedWorker.h>
-#include <base/sleep.h>
 
 #include <filesystem>
 #include <Core/ServerUUID.h>
@@ -9,10 +8,10 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/sleep.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
 
@@ -126,7 +125,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
         catch (...)
         {
             tryLogCurrentException(log, fmt::format("Error on initialization of {}", database->getDatabaseName()));
-            queue_updated_event->tryWait(5000);
+            sleepForSeconds(5);
         }
     }
 
@@ -259,18 +258,6 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
-void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
-{
-    DDLWorker::scheduleTasks(reinitialized);
-    if (need_update_cached_cluster)
-    {
-        database->setCluster(database->getClusterImpl());
-        if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
-        need_update_cached_cluster = false;
-    }
-}
-
 void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
 {
     if (reinitialized || !active_node_holder_zookeeper || active_node_holder_zookeeper->expired())
@@ -314,7 +301,6 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooK
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries");
     auto zookeeper = context->getZooKeeper();
     const auto our_log_ptr_path = database->replica_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
@@ -682,7 +668,9 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     if (task->entry.query.empty())
     {
         /// Some replica is added or removed, let's update cached cluster
-        need_update_cached_cluster = true;
+        database->setCluster(database->getClusterImpl());
+        if (!database->replica_group_name.empty())
+            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }

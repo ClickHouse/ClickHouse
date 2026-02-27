@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -58,7 +57,6 @@ void ReplicatedMergeTreeAttachThread::shutdown()
 void ReplicatedMergeTreeAttachThread::run()
 {
     bool needs_retry{false};
-    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeAttachThread");
     try
     {
         // we delay the first reconnect if the storage failed to connect to ZK initially

@@ -336,12 +336,12 @@ void ColumnMap::protect()
     nested->protect();
 }
 
-void ColumnMap::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnMap::getExtremes(Field & min, Field & max) const
 {
     Field nested_min;
     Field nested_max;
 
-    nested->getExtremes(nested_min, nested_max, start, end);
+    nested->getExtremes(nested_min, nested_max);
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 

@@ -293,9 +293,6 @@ void ColumnTuple::insertDefault()
 
 void ColumnTuple::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
     column_length -= n;
     for (auto & column : columns)
         column->popBack(n);
@@ -496,7 +493,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        size_t result_size = limit ? std::min(limit, perm.size()) : perm.size();
+        size_t result_size = limit ? limit : perm.size();
         if (perm.size() < result_size)
             throw Exception(
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) is less than required ({})", perm.size(), result_size);
@@ -517,7 +514,7 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     if (columns.empty())
     {
-        size_t result_size = limit ? std::min(limit, indexes.size()) : indexes.size();
+        size_t result_size = limit ? limit : indexes.size();
         if (indexes.size() < result_size)
             throw Exception(
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})", indexes.size(), result_size);
@@ -783,7 +780,7 @@ void ColumnTuple::protect()
         column->protect();
 }
 
-void ColumnTuple::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnTuple::getExtremes(Field & min, Field & max) const
 {
     const size_t tuple_size = columns.size();
 
@@ -791,7 +788,7 @@ void ColumnTuple::getExtremes(Field & min, Field & max, size_t start, size_t end
     Tuple max_tuple(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->getExtremes(min_tuple[i], max_tuple[i], start, end);
+        columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
 
     min = min_tuple;
     max = max_tuple;

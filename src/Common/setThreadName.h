@@ -55,7 +55,6 @@ namespace DB
     M(DISTRIBUTED_INIT, "DistInit") \
     M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
     M(DISTRIBUTED_SINK, "DistrOutStrProc") \
-    M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
     M(DROP_TABLES, "DropTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
@@ -65,7 +64,6 @@ namespace DB
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
-    M(ICEBERG_ITERATOR, "IcebergIter") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
     M(IO_URING_MONITOR, "IoUringMonitr") \
     M(KEEPER_HANDLER, "KeeperHandler") \
@@ -158,8 +156,6 @@ namespace DB
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
     M(ZOOKEEPER_RECV, "ZooKeeperRecv") \
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
-    M(BLOB_KILLER_TASK, "BlobKillerTask") \
-    M(BLOB_COPIER_TASK, "BlobCopierTask") \
 
 
 enum class ThreadName : uint8_t

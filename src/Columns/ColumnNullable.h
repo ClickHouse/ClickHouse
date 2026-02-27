@@ -34,7 +34,6 @@ private:
     ColumnNullable(const ColumnNullable &) = default;
 
 public:
-    static constexpr UInt8 IS_NULL_MASK = 1;
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
@@ -95,7 +94,7 @@ public:
     void insertDefault() override
     {
         getNestedColumn().insertDefault();
-        getNullMapData().push_back(true);
+        getNullMapData().push_back(1);
     }
 
     void popBack(size_t n) override;
@@ -141,9 +140,9 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
     // Special function for nullable minmax index
-    void getExtremesNullLast(Field & min, Field & max, size_t start, size_t end) const;
+    void getExtremesNullLast(Field & min, Field & max) const;
 
     ColumnPtr compress(bool force_compression) const override;
 

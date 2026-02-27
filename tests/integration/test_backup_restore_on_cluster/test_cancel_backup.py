@@ -672,16 +672,13 @@ def test_short_disconnection_doesnt_stop_backup():
         backup_id = random_id()
         initiator.query(
             f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} SETTINGS id='{backup_id}' ASYNC",
-            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 30},
+            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 10},
         )
 
         assert get_status(initiator, backup_id=backup_id) == "CREATING_BACKUP"
         assert get_num_system_processes(initiator, backup_id=backup_id) >= 1
 
         # Dropping connection for less than `failure_after_host_disconnected_for_seconds`
-        # When using faster_zk_disconnect_detect.xml (session_timeout_ms=5000),
-        # the drop duration must be short enough to avoid ZK session expiry.
-        max_drop_seconds = 1 if use_faster_zk_disconnect_detect else 4
         with PartitionManager() as pm:
             random_sleep(4)
             node_to_drop_zk_connection = random_node()
@@ -689,7 +686,7 @@ def test_short_disconnection_doesnt_stop_backup():
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
-            random_sleep(max_drop_seconds)
+            random_sleep(4)
             print(
                 f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
@@ -729,16 +726,13 @@ def test_short_disconnection_doesnt_stop_restore():
         restore_id = random_id()
         initiator.query(
             f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {get_backup_name(backup_id)} SETTINGS id='{restore_id}' ASYNC",
-            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 30},
+            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 10},
         )
 
         assert get_status(initiator, restore_id=restore_id) == "RESTORING"
         assert get_num_system_processes(initiator, restore_id=restore_id) >= 1
 
         # Dropping connection for less than `failure_after_host_disconnected_for_seconds`
-        # When using faster_zk_disconnect_detect.xml (session_timeout_ms=5000),
-        # the drop duration must be short enough to avoid ZK session expiry.
-        max_drop_seconds = 1 if use_faster_zk_disconnect_detect else 3
         with PartitionManager() as pm:
             random_sleep(3)
             node_to_drop_zk_connection = random_node()
@@ -746,7 +740,7 @@ def test_short_disconnection_doesnt_stop_restore():
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
-            random_sleep(max_drop_seconds)
+            random_sleep(3)
             print(
                 f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )

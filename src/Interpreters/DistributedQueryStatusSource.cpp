@@ -2,11 +2,13 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/DatabaseReplicated.h>
 
 namespace DB
@@ -200,7 +202,7 @@ Chunk DistributedQueryStatusSource::generate()
             return stopWaitingOfflineHosts();
         }
 
-        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > static_cast<double>(timeout_seconds)))
+        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds))
         {
             return handleTimeoutExceeded();
         }
@@ -211,7 +213,6 @@ Chunk DistributedQueryStatusSource::generate()
         Strings tmp_hosts;
         Strings tmp_active_hosts;
 
-        auto component_guard = Coordination::setCurrentComponent("DistributedQueryStatusSource::generate");
         {
             auto retries_ctl = ZooKeeperRetriesControl("executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo());
             retries_ctl.retryLoop(

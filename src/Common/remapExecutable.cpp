@@ -11,7 +11,6 @@
 
 #include <Common/getMappedArea.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <fmt/format.h>
 
 

@@ -3,132 +3,6 @@
 namespace BuzzHouse
 {
 
-const std::vector<std::vector<OutFormat>> outFormats
-    = {{OutFormat::OUT_Arrow},
-       {OutFormat::OUT_Avro},
-       {OutFormat::OUT_BSONEachRow},
-       {OutFormat::OUT_Buffers},
-       {OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
-       {OutFormat::OUT_CustomSeparated, OutFormat::OUT_CustomSeparatedWithNames, OutFormat::OUT_CustomSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_JSON,
-        OutFormat::OUT_JSONColumns,
-        OutFormat::OUT_JSONColumnsWithMetadata,
-        OutFormat::OUT_JSONCompact,
-        OutFormat::OUT_JSONCompactColumns,
-        OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactEachRowWithNames,
-        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
-        OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
-        OutFormat::OUT_JSONEachRow,
-        OutFormat::OUT_JSONLines,
-        OutFormat::OUT_JSONObjectEachRow,
-        OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_LineAsString},
-       {OutFormat::OUT_MsgPack},
-       {OutFormat::OUT_Native},
-       {OutFormat::OUT_ORC},
-       {OutFormat::OUT_Parquet},
-       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufSingle},
-       {OutFormat::OUT_RawBLOB},
-       {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparated,
-        OutFormat::OUT_TabSeparatedRaw,
-        OutFormat::OUT_TabSeparatedRawWithNames,
-        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
-        OutFormat::OUT_TabSeparatedWithNames,
-        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_TSKV},
-       {OutFormat::OUT_Values}};
-
-const std::unordered_map<OutFormat, InFormat> outIn
-    = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-       {OutFormat::OUT_Avro, InFormat::IN_Avro},
-       {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-       {OutFormat::OUT_Buffers, InFormat::IN_Buffers},
-       {OutFormat::OUT_CSV, InFormat::IN_CSV},
-       {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
-       {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-       {OutFormat::OUT_CustomSeparated, InFormat::IN_CustomSeparated},
-       {OutFormat::OUT_CustomSeparatedWithNames, InFormat::IN_CustomSeparatedWithNames},
-       {OutFormat::OUT_CustomSeparatedWithNamesAndTypes, InFormat::IN_CustomSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_JSON, InFormat::IN_JSON},
-       {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
-       {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
-       {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
-       {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
-       {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
-       {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
-       {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
-       {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
-       {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-       {OutFormat::OUT_JSONLines, InFormat::IN_JSONLines},
-       {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-       {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-       {OutFormat::OUT_LineAsString, InFormat::IN_LineAsString},
-       {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
-       {OutFormat::OUT_Native, InFormat::IN_Native},
-       {OutFormat::OUT_ORC, InFormat::IN_ORC},
-       {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-       {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
-       {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-       {OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB},
-       {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
-       {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
-       {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparated, InFormat::IN_TabSeparated},
-       {OutFormat::OUT_TabSeparatedRaw, InFormat::IN_TabSeparatedRaw},
-       {OutFormat::OUT_TabSeparatedRawWithNames, InFormat::IN_TabSeparatedRawWithNames},
-       {OutFormat::OUT_TabSeparatedRawWithNamesAndTypes, InFormat::IN_TabSeparatedRawWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparatedWithNames, InFormat::IN_TabSeparatedWithNames},
-       {OutFormat::OUT_TabSeparatedWithNamesAndTypes, InFormat::IN_TabSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
-       {OutFormat::OUT_Values, InFormat::IN_Values}};
-
-const std::vector<std::vector<InOutFormat>> inOutFormats = {
-    {InOutFormat::INOUT_Arrow, InOutFormat::INOUT_ArrowStream},
-    {InOutFormat::INOUT_Avro},
-    {InOutFormat::INOUT_BSONEachRow},
-    {InOutFormat::INOUT_Buffers},
-    {InOutFormat::INOUT_CSV, InOutFormat::INOUT_CSVWithNames, InOutFormat::INOUT_CSVWithNamesAndTypes},
-    {InOutFormat::INOUT_CustomSeparated, InOutFormat::INOUT_CustomSeparatedWithNames, InOutFormat::INOUT_CustomSeparatedWithNamesAndTypes},
-    {InOutFormat::INOUT_JSON,
-     InOutFormat::INOUT_JSONColumns,
-     InOutFormat::INOUT_JSONColumnsWithMetadata,
-     InOutFormat::INOUT_JSONCompact,
-     InOutFormat::INOUT_JSONCompactColumns,
-     InOutFormat::INOUT_JSONCompactEachRow,
-     InOutFormat::INOUT_JSONCompactEachRowWithNames,
-     InOutFormat::INOUT_JSONCompactEachRowWithNamesAndTypes,
-     InOutFormat::INOUT_JSONCompactStringsEachRow,
-     InOutFormat::INOUT_JSONCompactStringsEachRowWithNames,
-     InOutFormat::INOUT_JSONCompactStringsEachRowWithNamesAndTypes,
-     InOutFormat::INOUT_JSONEachRow,
-     InOutFormat::INOUT_JSONLines,
-     InOutFormat::INOUT_JSONObjectEachRow,
-     InOutFormat::INOUT_JSONStringsEachRow},
-    {InOutFormat::INOUT_LineAsString},
-    {InOutFormat::INOUT_MsgPack},
-    {InOutFormat::INOUT_Native},
-    {InOutFormat::INOUT_Npy},
-    {InOutFormat::INOUT_ORC},
-    {InOutFormat::INOUT_Parquet},
-    {InOutFormat::INOUT_Protobuf, InOutFormat::INOUT_ProtobufList, InOutFormat::INOUT_ProtobufSingle},
-    {InOutFormat::INOUT_RawBLOB},
-    {InOutFormat::INOUT_RowBinary, InOutFormat::INOUT_RowBinaryWithNames, InOutFormat::INOUT_RowBinaryWithNamesAndTypes},
-    {InOutFormat::INOUT_TabSeparated,
-     InOutFormat::INOUT_TabSeparatedRaw,
-     InOutFormat::INOUT_TabSeparatedRawWithNames,
-     InOutFormat::INOUT_TabSeparatedRawWithNamesAndTypes,
-     InOutFormat::INOUT_TabSeparatedWithNames,
-     InOutFormat::INOUT_TabSeparatedWithNamesAndTypes},
-    {InOutFormat::INOUT_Template},
-    {InOutFormat::INOUT_TSKV},
-    {InOutFormat::INOUT_Values}};
-
 bool SQLColumn::canBeInserted() const
 {
     return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT;
@@ -226,7 +100,7 @@ void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
 
 void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
-    if (!random_engine && isDataLakeCatalogDatabase() && fc.dolor_server.has_value())
+    if (isDataLakeCatalogDatabase())
     {
         const uint32_t glue_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().glue_catalog.has_value());
         const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());
@@ -276,12 +150,12 @@ void SQLBase::setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLB
 
 bool SQLBase::supportsFinal(const TableEngineValues teng)
 {
-    return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::GraphiteMergeTree;
+    return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
 }
 
 bool SQLBase::isMergeTreeFamily() const
 {
-    return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree;
+    return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
 }
 
 bool SQLBase::isLogFamily() const
@@ -515,16 +389,11 @@ bool SQLBase::isAliasEngine() const
     return teng == TableEngineValues::Alias;
 }
 
-bool SQLBase::isKafkaEngine() const
-{
-    return teng == TableEngineValues::Kafka;
-}
-
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
         || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isDictionaryEngine()
-        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine();
+        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
 }
 
 bool SQLBase::isEngineReplaceable() const
@@ -536,7 +405,7 @@ bool SQLBase::isEngineReplaceable() const
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
 {
-    return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine();
+    return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine() || isExternalDistributedEngine();
 }
 
 bool SQLBase::hasDatabasePeer() const
@@ -658,15 +527,14 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             {
                 /// DeltaLake tables on Spark must be on the `spark_catalog` :(
                 next_bucket_path = fmt::format(
-                    "{}{}{}{}t{}{}",
+                    "{}{}{}{}t{}",
                     isOnLocal() ? fc.lakes_path.generic_string() : "",
                     isOnLocal() ? "/" : "",
                     (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
                     (integration == IntegrationCall::Dolor) ? "/test/" : "",
-                    tname,
-                    rg.nextBool() ? "/" : "");
+                    tname);
             }
-            else if (fc.dolor_server.has_value() && fc.minio_server.has_value())
+            else
             {
                 const Catalog * cat = nullptr;
                 const ServerCredentials & sc = fc.dolor_server.value();
@@ -690,20 +558,20 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                         UNREACHABLE();
                 }
                 next_bucket_path = fmt::format(
-                    "http://{}:{}/{}/t{}{}",
-                    fc.minio_server.value().server_hostname,
-                    fc.minio_server.value().port,
-                    cat->warehouse,
-                    tname,
-                    rg.nextBool() ? "/" : "");
+                    "http://{}:{}/{}/t{}/", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
             }
+        }
+        else if (isS3QueueEngine() || isAzureQueueEngine())
+        {
+            next_bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
         }
         else
         {
             /// S3 and Azure engines point to files
             bool used_partition = false;
+            const bool add_before = rg.nextBool();
 
-            chassert(isAnyS3Engine() || isAnyAzureEngine());
+            chassert(isS3Engine() || isAzureEngine());
             if (rg.nextBool())
             {
                 /// Use a subdirectory
@@ -716,54 +584,42 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 }
                 next_bucket_path += "/";
             }
-            if (rg.nextBool())
+            next_bucket_path += "file";
+            next_bucket_path += add_before ? std::to_string(tname) : "";
+            if (has_partition_by && !used_partition && rg.nextBool())
             {
-                const bool add_before = rg.nextBool();
-
-                next_bucket_path += "file";
-                next_bucket_path += add_before ? std::to_string(tname) : "";
-                if (has_partition_by && !used_partition && rg.nextBool())
-                {
-                    next_bucket_path += PARTITION_STR;
-                }
-                next_bucket_path += !add_before ? std::to_string(tname) : "";
-                if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
-                {
-                    next_bucket_path += "/";
-                }
+                next_bucket_path += PARTITION_STR;
             }
-            if (rg.nextBool())
-            {
-                next_bucket_path += "*";
-            }
+            next_bucket_path += !add_before ? std::to_string(tname) : "";
             if (rg.nextBool())
             {
                 next_bucket_path += ".data";
             }
         }
-        bucket_path = std::move(next_bucket_path);
+        bucket_path = next_bucket_path;
     }
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
         static const std::vector<InOutFormat> & formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
 
-        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        file_format = rg.pickRandomly(formats);
     }
     else if (isAnyDeltaLakeEngine() && rg.nextMediumNumber() < 91)
     {
         /// What Delta Lake supports
-        file_format = rg.nextMediumNumber() < 91 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        file_format = INOUT_Parquet;
     }
-    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isKafkaEngine())
+    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
     {
         /// Set other parameters
         if (isFileEngine() || rg.nextMediumNumber() < 91)
         {
-            /// At the moment give more preference for Parquet
-            file_format = rg.nextMediumNumber() < 26 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+            std::uniform_int_distribution<uint32_t> inout_range(1, static_cast<uint32_t>(InOutFormat_MAX));
+
+            file_format = static_cast<InOutFormat>(inout_range(rg.generator));
         }
-        if (!isKafkaEngine() && rg.nextMediumNumber() < 51)
+        if (rg.nextMediumNumber() < 51)
         {
             file_comp = rg.pickRandomly(compressionMethods);
         }
@@ -780,7 +636,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     {
         storage_class_name = rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING";
     }
-    if (isMySQLEngine())
+    if (isExternalDistributedEngine())
+    {
+        integration = (sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
+    }
+    else if (isMySQLEngine())
     {
         integration = IntegrationCall::MySQL;
     }
@@ -804,19 +664,13 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     {
         integration = IntegrationCall::HTTP;
     }
-    else if (has_dolor && isKafkaEngine())
-    {
-        integration = IntegrationCall::Dolor;
-        topic = "t" + std::to_string(rg.randomInt<uint32_t>(0, 19));
-        group = "g" + std::to_string(rg.randomInt<uint32_t>(0, 19));
-    }
 }
 
 String SQLBase::getTablePath(const FuzzConfig & fc) const
 {
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
-        return bucket_path.has_value() ? bucket_path.value() : "test";
+        return bucket_path.value();
     }
     if (isFileEngine())
     {
@@ -824,13 +678,9 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
     }
     if (isURLEngine())
     {
-        if (fc.http_server.has_value())
-        {
-            const ServerCredentials & sc = fc.http_server.value();
+        const ServerCredentials & sc = fc.http_server.value();
 
-            return fmt::format("http://{}:{}/file{}", sc.server_hostname, sc.port, tname);
-        }
-        return "test";
+        return fmt::format("http://{}:{}/file{}", sc.server_hostname, sc.port, tname);
     }
     if (isKeeperMapEngine())
     {
@@ -846,9 +696,9 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
 
 String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
 {
-    if ((isAnyS3Engine() || isAnyAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
+    if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
     {
-        String res = bucket_path.has_value() ? bucket_path.value() : "test";
+        String res = bucket_path.value();
         /// Replace PARTITION BY str
         const size_t partition_pos = res.find(PARTITION_STR);
         if (partition_pos != std::string::npos && rg.nextMediumNumber() < 81)
@@ -858,35 +708,11 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
                 PARTITION_STR.length(),
                 rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
         }
-        /// Replace glob for number
-        const size_t glob_pos = res.rfind('*');
-        if (glob_pos != std::string::npos && rg.nextMediumNumber() < 81)
-        {
-            res.replace(glob_pos, 1, std::to_string(rg.randomInt<uint32_t>(0, 100)));
-        }
         /// Use globs
         const size_t slash_pos = res.rfind('/');
         if (slash_pos != std::string::npos && rg.nextMediumNumber() < 81)
         {
             res.replace(slash_pos + 1, std::string::npos, rg.nextBool() ? "*" : "**");
-        }
-        return res;
-    }
-    if ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 4)
-    {
-        /// Add or remove '/'
-        String res = bucket_path.has_value() ? bucket_path.value() : "test";
-
-        if (endsWith(res, "/"))
-        {
-            while (endsWith(res, "/"))
-            {
-                res.pop_back();
-            }
-        }
-        else
-        {
-            res += "/";
         }
         return res;
     }

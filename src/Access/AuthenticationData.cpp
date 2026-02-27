@@ -161,34 +161,28 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 }
 
 
-void AuthenticationData::setPassword(const String & password_, std::optional<OneTimePasswordSecret> second_factor, bool validate)
+void AuthenticationData::setPassword(const String & password_, bool validate)
 {
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            setPasswordHashBinary(Util::stringToDigest(password_), std::move(second_factor), validate);
+            setPasswordHashBinary(Util::stringToDigest(password_), validate);
             return;
 
         case AuthenticationType::SHA256_PASSWORD:
-            setPasswordHashBinary(Util::encodeSHA256(password_), std::move(second_factor), validate);
+            setPasswordHashBinary(Util::encodeSHA256(password_), validate);
             return;
 
         case AuthenticationType::SCRAM_SHA256_PASSWORD:
-            setPasswordHashBinary(Util::encodeScramSHA256(password_, ""), std::move(second_factor), validate);
+            setPasswordHashBinary(Util::encodeScramSHA256(password_, ""), validate);
             return;
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            setPasswordHashBinary(Util::encodeDoubleSHA1(password_), std::move(second_factor), validate);
+            setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
             return;
 
-        case AuthenticationType::NO_PASSWORD:
-            if (password_.empty())
-            {
-                otp_secret = std::move(second_factor);
-                return;
-            }
-            [[fallthrough]];
         case AuthenticationType::BCRYPT_PASSWORD:
+        case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
@@ -204,25 +198,23 @@ void AuthenticationData::setPassword(const String & password_, std::optional<One
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
-
-void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, std::optional<OneTimePasswordSecret> second_factor, bool validate)
+void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, bool validate)
 {
     if (type != AuthenticationType::BCRYPT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
 
-    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_), std::move(second_factor), validate);
+    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_), validate);
 }
 
 String AuthenticationData::getPassword() const
 {
-    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
-        return String(password_hash.data(), password_hash.data() + password_hash.size());
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password for authentication type {}", type);
+    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
+    return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
 
 
-void AuthenticationData::setPasswordHashHex(const String & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate)
+void AuthenticationData::setPasswordHashHex(const String & hash, bool validate)
 {
     Digest digest;
     digest.resize(hash.size() / 2);
@@ -236,7 +228,7 @@ void AuthenticationData::setPasswordHashHex(const String & hash, std::optional<O
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read password hash in hex, check for valid characters [0-9a-fA-F] and length");
     }
 
-    setPasswordHashBinary(digest, std::move(second_factor), validate);
+    setPasswordHashBinary(digest, validate);
 }
 
 
@@ -252,9 +244,8 @@ String AuthenticationData::getPasswordHashHex() const
 }
 
 
-void AuthenticationData::setPasswordHashBinary(const Digest & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate)
+void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validate)
 {
-    otp_secret = std::move(second_factor);
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
@@ -360,9 +351,9 @@ void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Typ
 }
 #endif
 
-boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
+std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 {
-    auto node = make_intrusive<ASTAuthenticationData>();
+    auto node = std::make_shared<ASTAuthenticationData>();
     auto auth_type = getType();
     node->type = auth_type;
 
@@ -371,42 +362,42 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
             node->contains_password = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(getPassword()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));
             break;
         }
         case AuthenticationType::SHA256_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
 
             if (!getSalt().empty())
-                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
+                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
             break;
         }
         case AuthenticationType::SCRAM_SHA256_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
 
             if (!getSalt().empty())
-                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
+                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
             break;
         }
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
             break;
         }
         case AuthenticationType::BCRYPT_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
+            node->children.push_back(std::make_shared<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
             break;
         }
         case AuthenticationType::LDAP:
         {
-            node->children.push_back(make_intrusive<ASTLiteral>(getLDAPServerName()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
             break;
         }
         case AuthenticationType::JWT:
@@ -418,7 +409,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             const auto & realm = getKerberosRealm();
 
             if (!realm.empty())
-                node->children.push_back(make_intrusive<ASTLiteral>(realm));
+                node->children.push_back(std::make_shared<ASTLiteral>(realm));
 
             break;
         }
@@ -433,7 +424,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
             node->ssl_cert_subject_type = toString(cert_subject_type);
             for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
-                node->children.push_back(make_intrusive<ASTLiteral>(name));
+                node->children.push_back(std::make_shared<ASTLiteral>(name));
 
             break;
 #else
@@ -444,7 +435,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         {
 #if USE_SSH
             for (const auto & key : getSSHKeys())
-                node->children.push_back(make_intrusive<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
+                node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
             break;
 #else
@@ -453,8 +444,8 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::HTTP:
         {
-            node->children.push_back(make_intrusive<ASTLiteral>(getHTTPAuthenticationServerName()));
-            node->children.push_back(make_intrusive<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
+            node->children.push_back(std::make_shared<ASTLiteral>(getHTTPAuthenticationServerName()));
+            node->children.push_back(std::make_shared<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
             break;
         }
 
@@ -472,7 +463,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         WriteBufferFromOwnString out;
         writeDateTimeText(valid_until, out);
 
-        node->valid_until = make_intrusive<ASTLiteral>(out.str());
+        node->valid_until = std::make_shared<ASTLiteral>(out.str());
     }
 
     return node;
@@ -568,7 +559,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
             int workfactor = context->getAccessControl().getBcryptWorkfactor();
-            auth_data.setPasswordBcrypt(value, workfactor, /* second_factor */ {}, validate);
+            auth_data.setPasswordBcrypt(value, workfactor, validate);
             return auth_data;
         }
 
@@ -618,7 +609,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
             auth_data.setSalt(salt);
             auto digest = Util::encodeScramSHA256(value, salt);
-            auth_data.setPasswordHashBinary(digest, /* second_factor */ {}, validate);
+            auth_data.setPasswordHashBinary(digest, validate);
 
             return auth_data;
 #else
@@ -628,7 +619,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         }
 
 
-        auth_data.setPassword(value, /* second_factor */ {}, validate);
+        auth_data.setPassword(value, validate);
         return auth_data;
     }
 
@@ -641,11 +632,11 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
-            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), /* second_factor */ {}, validate);
+            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), validate);
             return auth_data;
         }
 
-        auth_data.setPasswordHashHex(value, /* second_factor */ {}, validate);
+        auth_data.setPasswordHashHex(value, validate);
 
         if ((query.type == AuthenticationType::SHA256_PASSWORD || query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
             && args_size == 2)

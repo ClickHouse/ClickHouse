@@ -196,9 +196,6 @@ public:
 
     void popBack(size_t n) override
     {
-        if (n > size())
-            throwCannotPopBack(n, getName(), size());
-
         size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
         chars.resize(chars.size() - nested_n);
         offsets.resize_assume_reserved(offsets.size() - n);
@@ -296,7 +293,7 @@ public:
     void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
 
     bool canBeInsideNullable() const override { return true; }
 

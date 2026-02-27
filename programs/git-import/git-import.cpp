@@ -20,6 +20,7 @@
 #include <Common/re2.h>
 #include <base/find_symbols.h>
 
+#include <IO/copyData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -334,7 +335,7 @@ struct LineChange
       */
     void setLineInfo(std::string full_line)
     {
-        UInt8 num_spaces = 0;
+        uint32_t num_spaces = 0;
 
         const char * pos = full_line.data();
         const char * end = pos + full_line.size();
@@ -350,7 +351,7 @@ struct LineChange
             ++pos;
         }
 
-        indent = std::min<UInt8>(255U, num_spaces);
+        indent = std::min(255U, num_spaces);
         line.assign(pos, end);
 
         if (pos == end)
@@ -1048,7 +1049,9 @@ static void processDiffs(
         }
 
         if (size_limit && diff_size > *size_limit)
+        {
             return;
+        }
     }
 }
 
@@ -1177,9 +1180,7 @@ static void processLog(const Options & options)
 
     for (size_t i = 0; i < num_commits; ++i)
     {
-        ReadBuffer & show_in = show_commands[i % num_threads]->out;
-        processCommit(show_in, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
-        show_in.ignoreAll();
+        processCommit(show_commands[i % num_threads]->out, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
 
         if (!options.stop_after_commit.empty() && hashes[i] == options.stop_after_commit)
             break;
@@ -1199,7 +1200,7 @@ try
 {
     using namespace DB;
 
-    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+    po::options_description desc("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("skip-commits-without-parents", po::value<bool>()->default_value(true),
@@ -1228,11 +1229,11 @@ try
     if (options.contains("help"))
     {
         std::cout << documentation << '\n'
-            << "Usage: clickhouse git-import\n"
+            << "Usage: " << argv[0] << '\n'
             << desc << '\n'
             << "\nExample:\n"
             << "\nclickhouse git-import --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
-        return 0;
+        return 1;
     }
 
     processLog(Options(options));

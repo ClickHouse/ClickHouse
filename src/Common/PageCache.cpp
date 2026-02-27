@@ -131,25 +131,6 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
     return result;
 }
 
-PageCache::MappedPtr PageCache::get(const PageCacheKey & key, bool inject_eviction)
-{
-    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-
-    if (inject_eviction && thread_local_rng() % 10 == 0)
-        return nullptr;
-
-    Key key_hash = key.hash();
-    Shard & shard = *shards[getShardIdx(key_hash)];
-
-    const auto result = shard.get(key_hash);
-
-    /// Count only hits. On miss, the caller would normally call getOrSet, which will count the miss.
-    if (result)
-        ProfileEvents::increment(ProfileEvents::PageCacheHits);
-
-    return result;
-}
-
 bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
 {
     /// Avoid deadlock if MemoryTracker calls PageCache::autoResize.
@@ -201,7 +182,7 @@ bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
         }
     }
 
-    size_t reduced_limit = size_t(static_cast<double>(memory_limit) * (1. - std::min(free_memory_ratio, 1.)));
+    size_t reduced_limit = size_t(memory_limit * (1. - std::min(free_memory_ratio, 1.)));
     size_t target_size = reduced_limit - std::min(peak, reduced_limit);
     target_size = std::clamp(target_size, min_size_in_bytes, max_size_in_bytes);
 
@@ -260,7 +241,7 @@ PageCacheCell::PageCacheCell(PageCacheKey key_, bool temporary) : key(std::move(
         blocker.emplace();
 
     /// Allow throwing out-of-memory exceptions from here.
-    m_data = reinterpret_cast<char *>(Allocator<false>().alloc(m_size, DEFAULT_AIO_FILE_BLOCK_SIZE));
+    m_data = reinterpret_cast<char *>(Allocator<false>().alloc(m_size));
 }
 
 PageCacheCell::~PageCacheCell()

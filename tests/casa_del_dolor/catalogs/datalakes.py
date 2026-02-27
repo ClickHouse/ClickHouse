@@ -4,13 +4,13 @@ import random
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import threading
 
 from pathlib import Path
 from integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
-from .kafkatest import KafkaHandler
 from .laketables import (
     TableStorage,
     LakeFormat,
@@ -21,6 +21,7 @@ from .tablegenerator import LakeTableGenerator, sample_from_dict, true_false_lam
 from .datagenerator import LakeDataGenerator
 from .tablecheck import SparkAndClickHouseCheck
 
+sys.path.append("..")
 from utils.backgroundworker import BackgroundWorker
 
 
@@ -220,8 +221,6 @@ logger.jetty.level = warn
 
         self.worker = BackgroundWorker(my_task, interval=1)
         self.worker.start()
-        if cluster.with_kafka:
-            self.kafka_handler = KafkaHandler(cluster)
 
     def start_uc_server(self):
         with self.catalogs_lock:
@@ -256,6 +255,17 @@ logger.jetty.level = warn
                         )
                 self.logger.info(f"Starting UC server using pid = {self.uc_server.pid}")
                 if not wait_for_port("localhost", uc_port, timeout=120):
+                    # Print a few lines of output to help debug
+                    try:
+                        for _ in range(50):
+                            line = self.uc_server.stdout.readline()
+                            if not line:
+                                break
+                            self.logger.error(
+                                f"UC server did not start: Here is a line {line}"
+                            )
+                    except Exception:
+                        pass
                     raise TimeoutError(
                         f"UC server did not start on localhost:{uc_port} within timeout"
                     )
@@ -270,19 +280,15 @@ logger.jetty.level = warn
             )
         cmd: list[str] = [str(self.uc_server_dir / "bin" / "uc")]
         cmd.extend(args)
-        result = subprocess.run(
-            cmd,
-            cwd=str(self.uc_server_run_dir),
-            env=os.environ.copy(),
-            text=True,
-            capture_output=True,
+        proc = subprocess.Popen(
+            cmd, cwd=str(self.uc_server_run_dir), env=os.environ.copy(), text=True
         )
-        if result.returncode != 0:
+        if proc.returncode != 0:
             self.logger.error(
-                f"UC CLI failed (exit {result.returncode}).\n"
+                f"UC CLI failed (exit {proc.returncode}).\n"
                 f"Command: {' '.join(cmd)}\n"
-                f"stdout:\n{result.stdout}\n"
-                f"stderr:\n{result.stderr}"
+                f"stdout:\n{proc.stdout}\n"
+                f"stderr:\n{proc.stderr}"
             )
 
     def get_spark(
@@ -334,7 +340,7 @@ logger.jetty.level = warn
             raise Exception("Unknown lake format")
 
         os.environ["PYSPARK_SUBMIT_ARGS"] = (
-            f"--packages {','.join(all_jars)} pyspark-shell"
+            f"--packages {",".join(all_jars)} pyspark-shell"
         )
         for k, val in env.items():
             os.environ[k] = val
@@ -391,7 +397,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -410,7 +416,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.glue.endpoint",
-                        f"http://localhost:{cluster.glue_catalog_port}",
+                        "http://localhost:3000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.glue.region", "us-east-1"
@@ -427,8 +433,7 @@ logger.jetty.level = warn
                 )
 
                 builder.config(
-                    f"spark.sql.catalog.{catalog_name}.uri",
-                    f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
+                    f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -437,7 +442,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -469,7 +474,7 @@ logger.jetty.level = warn
                 )
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
-                    f"http://localhost:{'8085/api/2.1/unity-catalog/iceberg' if catalog == LakeCatalogs.Unity else cluster.iceberg_rest_catalog_port}",
+                    f"http://localhost:{"8085/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -478,7 +483,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -642,7 +647,6 @@ logger.jetty.level = warn
             builder.config(
                 "spark.databricks.delta.retentionDurationCheck.enabled", "false"
             )
-            builder.config("spark.hadoop.zlib.compress.level", "DEFAULT_COMPRESSION")
             # Set timezone to match ClickHouse
             if "TZ" in env:
                 builder.config("spark.sql.session.timeZone", env["TZ"])
@@ -692,14 +696,14 @@ logger.jetty.level = warn
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
+        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_catalog = LakeCatalogs.catalog_from_str(catalog)
         next_catalog_impl = None
 
         # Load catalog if needed
         if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
             params = {
-                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:9000",
                 "s3.access-key-id": cluster.minio_access_key,
                 "s3.secret-access-key": cluster.minio_secret_key,
                 "s3.signing-region": "us-east-1",
@@ -710,14 +714,14 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "rest",
-                        "uri": f"http://localhost:{cluster.iceberg_rest_catalog_port}",
+                        "uri": "http://localhost:8182",
                     }
                 )
             elif next_catalog == LakeCatalogs.Glue:
                 params.update(
                     {
                         "type": "glue",
-                        "glue.endpoint": f"http://localhost:{cluster.glue_catalog_port}",
+                        "glue.endpoint": "http://localhost:3000",
                         "glue.region": "us-east-1",
                         "glue.access-key-id": cluster.minio_access_key,
                         "glue.secret-access-key": cluster.minio_secret_key,
@@ -727,7 +731,7 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "hive",
-                        "uri": f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
+                        "uri": "thrift://0.0.0.0:9083",
                         "client.region": "us-east-1",
                     }
                 )
@@ -776,19 +780,9 @@ logger.jetty.level = warn
 
     def create_lake_table(self, cluster, data) -> bool:
         saved_exception = None
-        if data["engine"] == "kafka":
-            # At the moment, this is an ugly hack
-            return self.kafka_handler.create_kafka_table(
-                cluster,
-                data["database_name"],
-                data["table_name"],
-                data["topic"],
-                data["format"],
-                data["columns"],
-            )
         catalog_name = data["catalog_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
+        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
         catalog_type = LakeCatalogs.NoCatalog
         catalog_impl = None
@@ -864,19 +858,13 @@ logger.jetty.level = warn
 
     def update_or_check_table(self, cluster, data) -> bool:
         res = False
-        next_table = None
-        next_session = None
         saved_exception = None
         catalog_name = data["catalog_name"]
-        catalog_type = LakeCatalogs.NoCatalog
         run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
-
-        if data["engine"] != "kafka":
-            with self.catalogs_lock:
-                next_table = self.catalogs[catalog_name].spark_tables[
-                    data["table_name"]
-                ]
-                catalog_type = self.catalogs[catalog_name].catalog_type
+        catalog_type = LakeCatalogs.NoCatalog
+        with self.catalogs_lock:
+            next_table = self.catalogs[catalog_name].spark_tables[data["table_name"]]
+            catalog_type = self.catalogs[catalog_name].catalog_type
 
         if run_background_worker:
 
@@ -891,43 +879,33 @@ logger.jetty.level = warn
                     command=cluster.client_bin_path,
                 )
                 nloops = random.randint(1, 50)
-                tbl = (
-                    f"{data['catalog_name']}.{data['table_name']}"
-                    if data["engine"] == "kafka"
-                    else next_table.get_clickhouse_path()
-                )
                 for _ in range(nloops):
-                    client.query(f"SELECT * FROM {tbl} LIMIT 100;")
+                    client.query(
+                        f"SELECT * FROM {next_table.get_clickhouse_path()} LIMIT 100;"
+                    )
                     time.sleep(1)
 
             self.worker.set_task_function(my_new_task)
             self.worker.resume()
 
-        if data["engine"] != "kafka":
-            next_session = self.get_next_session(
-                cluster,
-                catalog_name,
-                next_table.storage,
-                next_table.lake_format,
-                catalog_type,
-            )
+        next_session = self.get_next_session(
+            cluster,
+            catalog_name,
+            next_table.storage,
+            next_table.lake_format,
+            catalog_type,
+        )
         try:
-            if data["engine"] == "kafka":
-                res = self.kafka_handler.update_table(
-                    cluster, data["catalog_name"], data["table_name"]
-                )
-            elif data["engine"] in ["iceberg", "deltalake"]:
-                res = (
-                    self.data_generator.update_table(next_session, next_table)
-                    if random.randint(1, 10) < 9
-                    else self.table_check.check_table(cluster, next_session, next_table)
-                )
+            res = (
+                self.data_generator.update_table(next_session, next_table)
+                if random.randint(1, 10) < 9
+                else self.table_check.check_table(cluster, next_session, next_table)
+            )
         except Exception as e:
             saved_exception = e
         if run_background_worker:
             self.worker.pause()
-        if next_session is not None:
-            next_session.stop()
+        next_session.stop()
         if saved_exception is not None:
             raise saved_exception
         return res

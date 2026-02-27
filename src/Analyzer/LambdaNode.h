@@ -4,10 +4,12 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Core/Names.h>
-#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 /** Lambda node represents lambda expression in query tree.
   *

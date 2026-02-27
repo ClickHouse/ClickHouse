@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
-#include <Common/ErrnoException.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -957,7 +956,7 @@ public:
 
         size_t max_blocks_size = (configuration.file_blocks_size + configuration.write_buffer_blocks_size) * configuration.max_partitions_count;
 
-        double load_factor = static_cast<double>(blocks_in_memory + blocks_on_disk) / static_cast<double>(max_blocks_size);
+        double load_factor = static_cast<double>(blocks_in_memory + blocks_on_disk) / max_blocks_size;
         return load_factor;
     }
 
@@ -1413,7 +1412,7 @@ private:
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
 
-    VectorWithMemoryTracking<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
+    std::vector<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
 
     pcg64 rnd_engine;
 

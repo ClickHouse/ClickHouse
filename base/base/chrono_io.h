@@ -3,10 +3,7 @@
 #include <chrono>
 #include <string>
 #include <sstream>
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/time_zone.h>
-#pragma clang diagnostic pop
 #include <fmt/core.h>
 
 

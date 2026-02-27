@@ -2,6 +2,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionDistinct.h>
 
 #include <AggregateFunctions/Helpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

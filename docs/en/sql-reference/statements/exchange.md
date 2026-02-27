@@ -104,4 +104,4 @@ EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
 
 **See Also**
 
-- [Dictionaries](./create/dictionary/overview.md)
+- [Dictionaries](../../sql-reference/dictionaries/index.md)

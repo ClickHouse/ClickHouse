@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include "config.h"
 
 #if USE_YTSAURUS
@@ -13,29 +12,22 @@
 namespace DB
 {
 
-struct StorageID;
-
 struct YTsaurusStorageConfiguration
 {
     YTsaurusSettings settings;
     std::vector<String> http_proxy_urls{};
     String cypress_path{};
     String oauth_token{};
-    std::optional<String> ytsaurus_columns_description{};
 };
 
 /**
  *  Read only.
- *  One stream for dynamic table source.
- *  Multiple stream for static table source.
+ *  One stream only.
  */
 class StorageYTsaurus final : public IStorage
 {
 public:
-    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id = nullptr);
-
-    static YTsaurusStorageConfiguration processNamedCollectionResult(const NamedCollection & named_collection, const YTsaurusSettings & setting, bool is_for_dictionary);
-
+    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context);
 
     StorageYTsaurus(
         const StorageID & table_id_,

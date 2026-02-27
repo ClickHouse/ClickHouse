@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -14,6 +14,9 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+
+#include <h3api.h>
+
 
 namespace DB
 {
@@ -104,8 +107,6 @@ public:
         {
             H3Index h3index = data[row];
             LatLng coord{};
-
-            validateH3Cell(h3index);
 
             cellToLatLng(h3index,&coord);
             lon_data[row] = radsToDegs(coord.lng);
