@@ -8,6 +8,18 @@
 namespace BuzzHouse
 {
 
+String StatementGenerator::getNextAlias(RandomGenerator & rg)
+{
+    /// Most of the times, use a new alias
+    const uint32_t noption = rg.nextMediumNumber();
+
+    if (noption < 81)
+    {
+        return "a" + std::to_string(aliases_counter++);
+    }
+    return (noption < 91 ? "a" : "c") + std::to_string(rg.randomInt<uint32_t>(0, noption < 91 ? 2 : 3));
+}
+
 void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const uint32_t nested_prob)
 {
     if (rg.nextMediumNumber() < nested_prob)
@@ -45,7 +57,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
     if (!has_nested)
     {
-        ColumnPath & cp = const_cast<ColumnPath &>(expr->path());
+        ColumnPath & cp = *expr->mutable_path();
 
         this->depth++;
         if (rg.nextMediumNumber() < nested_prob)
@@ -357,7 +369,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         }
         this->depth--;
     }
-    else if (nopt < 20 && (this->next_type_mask & allow_map) != 0)
+    else if (nopt < 20 && complex && (this->next_type_mask & allow_map) != 0)
     {
         /// Generate a few map key/value pairs
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 4));
@@ -703,6 +715,7 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
+    lexpr->set_paren(rg.nextMediumNumber() < (nparams == 1 ? 51 : 91));
     for (const auto & [key, val] : this->levels)
     {
         levels_backup[key] = val;
@@ -791,7 +804,15 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         /// Most of the times disallow nested aggregates, and window functions inside aggregates
         this->levels[this->current_level].inside_aggregate = rg.nextSmallNumber() < 9;
         this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
-        if (max_params > 0 && max_params >= min_params)
+        if (agg.fnum == SQLFunc::FUNCestimateCompressionRatio && rg.nextSmallNumber() < 9)
+        {
+            func_call->add_params()->mutable_lit_val()->set_no_quote_str("'" + generateNextCodecString(rg) + "'");
+            if (rg.nextBool())
+            {
+                func_call->add_params()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(blockSizes));
+            }
+        }
+        else if (max_params > 0 && max_params >= min_params)
         {
             std::uniform_int_distribution<uint32_t> nparams(min_params, max_params);
             const uint32_t nagg_params = nparams(rg.generator);
@@ -901,7 +922,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         else
         {
             /// Use a default catalog function
-            const CHFunction & func = rg.nextMediumNumber() < 6 ? rg.pickRandomly(CommonCHFuncs) : CHFuncs[nopt];
+            const CHFunction & func = rg.nextMediumNumber() < 10 ? rg.pickRandomly(CommonCHFuncs) : CHFuncs[nopt];
 
             n_lambda = ((func.min_lambda_param == func.max_lambda_param && func.max_lambda_param == 1)
                         || (func.max_lambda_param == 1 && rg.nextBool()))
@@ -1317,7 +1338,6 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                 }
                 this->ids.emplace_back(static_cast<uint32_t>(WINcume_dist));
                 this->ids.emplace_back(static_cast<uint32_t>(WINdense_rank));
-                this->ids.emplace_back(static_cast<uint32_t>(WINnth_value));
                 this->ids.emplace_back(static_cast<uint32_t>(WINpercent_rank));
                 this->ids.emplace_back(static_cast<uint32_t>(WINrank));
                 this->ids.emplace_back(static_cast<uint32_t>(WINrow_number));
@@ -1458,7 +1478,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     if (eca && this->allow_in_expression_alias && !this->inside_projection && rg.nextSmallNumber() < 4)
     {
         SQLRelation rel("");
-        const String ncname = this->getNextAlias();
+        const String ncname = this->getNextAlias(rg);
 
         rel.cols.emplace_back(SQLRelationCol("", {ncname}));
         this->levels[this->current_level].rels.emplace_back(rel);

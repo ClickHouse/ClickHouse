@@ -141,9 +141,9 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
     // Special function for nullable minmax index
-    void getExtremesNullLast(Field & min, Field & max) const;
+    void getExtremesNullLast(Field & min, Field & max, size_t start, size_t end) const;
 
     ColumnPtr compress(bool force_compression) const override;
 

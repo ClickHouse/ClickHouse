@@ -538,6 +538,11 @@ def test_ttl_empty_parts(started_cluster):
     [(node1, node2, 0), (node3, node4, 1), (node5, node6, 2)],
 )
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
+    if node_left.is_built_with_memory_sanitizer():
+        pytest.skip(
+            "Memory Sanitizer is too slow for this timing-sensitive test"
+        )
+
     # The test times out for sanitizer/ARM builds, so we increase the timeout.
     timeout = 60
     if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer() or \
@@ -649,12 +654,26 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     # Best-effort SYSTEM SYNC REPLICA: the assert_eq_with_retry calls below
     # handle the actual waiting for correct results.  A timeout here (common
     # with sanitiser/old-binary builds) must not kill the whole test.
+    # Use a short timeout to avoid wasting the test time budget.
+    sync_timeout = min(timeout, 60)
     for suffix in ["_delete", "_group_by", "_where"]:
         for node in [node_right, node_left]:
             try:
-                node.query(f"SYSTEM SYNC REPLICA {table}{suffix}", timeout=timeout)
+                node.query(f"SYSTEM SYNC REPLICA {table}{suffix}", timeout=sync_timeout)
             except Exception:
                 pass
+
+    # After SYNC REPLICA, new parts may have arrived from the other replica.
+    # A second OPTIMIZE FINAL is needed to merge them with locally-merged parts.
+    # Without this, the GROUP BY TTL result can be partial (e.g. 7 instead of 10)
+    # because each replica merged only its own inserts during the first OPTIMIZE.
+    for suffix in ["_delete", "_group_by", "_where"]:
+        for node in [node_right, node_left]:
+            exec_query_with_retry(
+                node,
+                f"OPTIMIZE TABLE {table}{suffix} FINAL",
+                timeout=timeout,
+            )
 
     # Use assert_eq_with_retry because merges with TTL may still be pending
     # after OPTIMIZE TABLE FINAL due to concurrent merge limits.

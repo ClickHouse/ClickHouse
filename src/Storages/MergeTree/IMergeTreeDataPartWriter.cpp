@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-extern const MergeTreeSettingsString default_compression_codec;
+    extern const MergeTreeSettingsString default_compression_codec;
 }
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)
@@ -112,6 +112,13 @@ PlainMarksByName IMergeTreeDataPartWriter::releaseCachedMarks()
     return res;
 }
 
+PlainMarksByName IMergeTreeDataPartWriter::releaseCachedIndexMarks()
+{
+    PlainMarksByName res;
+    std::swap(cached_index_marks, res);
+    return res;
+}
+
 SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & column_name) const
 {
     auto it = serializations.find(column_name);
@@ -157,7 +164,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -174,7 +180,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -194,7 +199,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -214,7 +218,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             metadata_snapshot,
             virtual_columns,
             indices_to_recalc,
-            stats_to_recalc_,
             marks_file_extension_,
             default_codec_,
             writer_settings,
@@ -231,7 +234,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             metadata_snapshot,
             virtual_columns,
             indices_to_recalc,
-            stats_to_recalc_,
             marks_file_extension_,
             default_codec_,
             writer_settings,
