@@ -20,10 +20,12 @@ namespace ErrorCodes
 
 /// Produces self-referential enforcer expressions that bridge distribution gaps.
 /// Each enforcer expression lives in the same group as the source expression; its
-/// single input points back to the same group with the source expression's properties
-/// as the requirement.  The optimizer recursively satisfies this self-referential
-/// input through the normal task mechanism, enabling natural enforcer composition
-/// (e.g. Sort + Gather compose into Strategy A without bundling steps).
+/// single input points back to the same group with normalized properties (node_count,
+/// is_replicated, and sorting where needed) as the requirement — this lets the optimizer
+/// pick the cheapest source with that distribution shape.  The optimizer recursively
+/// satisfies this self-referential input through the normal task mechanism, enabling
+/// natural enforcer composition (e.g. Sort + Gather compose into Strategy A without
+/// bundling steps).
 class DistributionEnforcer : public IOptimizationRule
 {
 public:
@@ -74,12 +76,16 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
         {
             /// Regular gather: N nodes -> 1 node, sorting NOT preserved.
             {
+                ExpressionProperties input_required;
+                input_required.distribution.node_count = expression->properties.distribution.node_count;
+                input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+
                 auto enforcer_expr = std::make_shared<GroupExpression>(
                     std::make_unique<GatherExchangeStep>(
                         input_header,
                         expression->properties.distribution.node_count));
                 enforcer_expr->group_id = expression->group_id;
-                enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = expression->properties});
+                enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
                 enforcer_expr->properties.distribution = required_properties.distribution;
                 /// Sorting is destroyed by a regular gather.
 
@@ -93,13 +99,19 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             /// the composition SortOnEachNode -> SortedGather yields Strategy B.
             if (!expression->properties.sorting.empty())
             {
+                ExpressionProperties input_required;
+                input_required.distribution.node_count = expression->properties.distribution.node_count;
+                input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+                input_required.sorting = expression->properties.sorting;
+                input_required.sort_limit = expression->properties.sort_limit;
+
                 auto enforcer_expr = std::make_shared<GroupExpression>(
                     std::make_unique<GatherExchangeStep>(
                         input_header,
                         expression->properties.distribution.node_count,
                         expression->properties.sorting));
                 enforcer_expr->group_id = expression->group_id;
-                enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = expression->properties});
+                enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
                 enforcer_expr->properties.distribution = required_properties.distribution;
                 enforcer_expr->properties.sorting = expression->properties.sorting;
 
@@ -133,9 +145,13 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 expression->properties.distribution.node_count,
                 required_properties.distribution.node_count));
 
+        ExpressionProperties input_required;
+        input_required.distribution.node_count = expression->properties.distribution.node_count;
+        input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+
         auto enforcer_expr = std::make_shared<GroupExpression>(std::move(exchange_step));
         enforcer_expr->group_id = expression->group_id;
-        enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = expression->properties});
+        enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
         enforcer_expr->properties.distribution = required_properties.distribution;
         /// Shuffle/scatter destroys sorting.
 

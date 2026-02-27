@@ -68,6 +68,11 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         /// Collect enforcer expressions first, then push tasks in the right order.
         std::vector<GroupExpressionPtr> enforcer_expressions;
 
+        /// Deduplicate enforcers: different source expressions with the same
+        /// (node_count, is_replicated) produce physically identical exchange steps.
+        /// Track which (enforcer, source_distribution_shape) combos we've already applied.
+        std::unordered_set<String> seen_enforcer_keys;
+
         /// Copy the list because enforcers add new physical expressions to the group.
         auto existing_implementations = group->physical_expressions;
         for (auto & expression : existing_implementations)
@@ -80,11 +85,17 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
             for (const auto & enforcer : optimizer_context.getEnforcerRules())
             {
-                if (enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
-                {
-                    auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
-                    enforcer_expressions.insert(enforcer_expressions.end(), new_expressions.begin(), new_expressions.end());
-                }
+                if (!enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
+                    continue;
+
+                String enforcer_key = enforcer->getName()
+                    + ":" + std::to_string(expression->properties.distribution.node_count)
+                    + ":" + std::to_string(expression->properties.distribution.is_replicated);
+                if (!seen_enforcer_keys.insert(enforcer_key).second)
+                    continue;
+
+                auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
+                enforcer_expressions.insert(enforcer_expressions.end(), new_expressions.begin(), new_expressions.end());
             }
         }
 
