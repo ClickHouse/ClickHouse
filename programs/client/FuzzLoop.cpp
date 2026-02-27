@@ -522,7 +522,7 @@ static const String & restart_cmd = "--Reconnecting client";
 static const String & external_cmd = "--External command ";
 static const String & health_check_cmd = "--Health check";
 
-/// Returns false when server is not available.
+/// Returns false when server is not available and the timeout has not been reached.
 bool Client::buzzHouse()
 {
     String full_query;
@@ -933,7 +933,7 @@ bool Client::buzzHouse()
     {
         LOG_INFO(fuzz_config->log, "End of fuzzing log file reached, stopping fuzzing");
     }
-    return no_timeout && server_up;
+    return server_up || !no_timeout;
 }
 #else
 bool Client::buzzHouse()
