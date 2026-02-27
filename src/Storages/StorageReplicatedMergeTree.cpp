@@ -4213,6 +4213,9 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
     auto try_assign_merge = [&]() -> AttemptStatus
     {
+        if (merger_mutator.merges_blocker.isCancelled())
+            return AttemptStatus::CannotSelect;
+
         /// We must select parts for merge under merge_selecting_mutex because other threads
         /// (OPTIMIZE queries) can assign new merges.
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
@@ -4270,7 +4273,11 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
             future_merged_part->uuid = UUIDHelpers::generateV4();
 
-        bool can_assign_merge = max_source_parts_bytes_for_merge > 0;
+        /// Do not schedule new merges while merges are blocked (e.g. via SYSTEM STOP MERGES).
+        /// This prevents pending merge queue entries from marking parts as virtual, which would
+        /// cause selectPartsForMove to skip them and silently block TTL moves.
+        /// Mutations are handled separately below and are intentionally not gated here.
+        bool can_assign_merge = !merger_mutator.merges_blocker.isCancelled() && max_source_parts_bytes_for_merge > 0;
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
@@ -9597,7 +9604,15 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
     if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge
         || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
         || action_type == ActionLocks::ReplicationQueue)
+    {
         background_operations_assignee.trigger();
+        /// When merges are re-enabled, also wake up the merge-selecting task so it
+        /// runs promptly instead of waiting for its next scheduled interval (which can
+        /// be up to `max_merge_selecting_sleep_ms` after an extended period of STOP MERGES
+        /// where the task accumulated backoff from repeated `CannotSelect` results).
+        if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge)
+            merge_selecting_task->schedule();
+    }
     else if (action_type == ActionLocks::PartsMove)
         background_moves_assignee.trigger();
     else if (action_type == ActionLocks::Cleanup)
