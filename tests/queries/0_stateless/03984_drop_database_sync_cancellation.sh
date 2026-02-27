@@ -51,7 +51,7 @@ done
 $CLICKHOUSE_CLIENT \
     --query_id="${DROP_QUERY_ID}" \
     --database_atomic_wait_for_drop_and_detach_synchronously=1 \
-    --query "DROP DATABASE ${DB_NAME}" 2>&1 &
+    --query "DROP DATABASE ${DB_NAME}" 2>/dev/null &
 DROP_PID=$!
 
 # Wait for the DROP query to appear in system.processes
