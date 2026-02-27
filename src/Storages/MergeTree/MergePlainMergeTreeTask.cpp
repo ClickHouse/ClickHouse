@@ -193,6 +193,7 @@ void MergePlainMergeTreeTask::finish()
 
 void MergePlainMergeTreeTask::cancel() noexcept
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::cancel");
     if (merge_task)
         merge_task->cancel();
 
