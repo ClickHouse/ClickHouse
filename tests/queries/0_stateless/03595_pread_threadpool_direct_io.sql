@@ -41,7 +41,7 @@ select queries.ordinal, thread_name, sum(ProfileEvents['OSReadBytes']) > 0 as di
 from system.query_thread_log qtl
     join queries
         on queries.query_id = qtl.query_id
-where current_database = currentDatabase()
+where qtl.event_date >= yesterday() AND qtl.event_time >= now() - 600 AND current_database = currentDatabase()
   and query_id in (select query_id from queries)
   and ProfileEvents['OSReadBytes'] > 0
 group by 1, 2

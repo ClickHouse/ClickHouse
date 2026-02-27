@@ -59,4 +59,4 @@ WITH
 ) AS q_id
 SELECT 'TABLE', view_duration_ms >= 50
 FROM system.query_views_log
-WHERE initial_query_id = q_id;
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = q_id;

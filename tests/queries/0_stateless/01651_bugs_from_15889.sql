@@ -125,7 +125,7 @@ WITH (
     (
         SELECT query_start_time
         FROM system.query_log
-        WHERE current_database = currentDatabase()
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)

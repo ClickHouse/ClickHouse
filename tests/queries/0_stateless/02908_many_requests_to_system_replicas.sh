@@ -95,5 +95,5 @@ SELECT
         'More ZK requests then expected: max_zookeeper_requests=' || max_zookeeper_requests::String || '  total_zk_requests=' || sum(ProfileEvents['ZooKeeperTransactions'])::String
     )
 FROM system.query_log
-WHERE current_database=currentDatabase() AND log_comment='02908_many_requests' AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() AND log_comment='02908_many_requests' AND type = 'QueryFinish';
 "
