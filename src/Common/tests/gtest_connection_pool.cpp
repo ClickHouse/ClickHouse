@@ -10,7 +10,6 @@
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 
-#include <thread>
 #include <gtest/gtest.h>
 
 namespace

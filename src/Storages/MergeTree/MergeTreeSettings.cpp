@@ -1460,6 +1460,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
+    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 300, R"(
+    How often replicas will try to update replica set in background.
+    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
@@ -1935,7 +1938,7 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
+    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
     Enabled cleanup of Keeper entries of empty partition.
     )", 0) \
     DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
@@ -2550,6 +2553,10 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         constraints.get(*this, setting_name, min, max, disallowed_values, writability);
+
+        /// Certain merge tree settings are unconditionally read-only
+        if (isReadonlySetting(setting_name))
+            writability = SettingConstraintWritability::CONST;
 
         /// These two columns can accept strings only.
         if (!min.isNull())

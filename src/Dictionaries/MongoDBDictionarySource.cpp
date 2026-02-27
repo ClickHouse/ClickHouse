@@ -1,6 +1,8 @@
 #include "config.h"
 
 #include <Dictionaries/DictionarySourceFactory.h>
+#include <Common/Exception.h>
+
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -144,7 +146,7 @@ BlockIO MongoDBDictionarySource::loadAll()
     return io;
 }
 
-BlockIO MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO MongoDBDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -159,7 +161,7 @@ BlockIO MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 }
 
 
-BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");

@@ -37,7 +37,7 @@ public:
     virtual String getDescription() const = 0;
 
     /// Fast inplace implementation for regular use.
-    /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
+    /// Gets string (data ptr and len) and start position for extracting next token (state of tokenizer).
     /// Returns false if parsing is finished, otherwise returns true.
     virtual bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const = 0;
 
@@ -269,8 +269,8 @@ private:
 namespace detail
 {
 
-template <bool is_padded, typename TokenExtractorType, typename Callback>
-void forEachTokenImpl(const TokenExtractorType & extractor, const char * __restrict data, size_t length, Callback && callback)
+template <bool is_padded, typename Tokenizer, typename Callback>
+void forEachTokenImpl(const Tokenizer & tokenizer, const char * __restrict data, size_t length, Callback && callback)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -278,7 +278,7 @@ void forEachTokenImpl(const TokenExtractorType & extractor, const char * __restr
 
     if constexpr (is_padded)
     {
-        while (cur < length && extractor.nextInStringPadded(data, length, cur, token_start, token_len))
+        while (cur < length && tokenizer.nextInStringPadded(data, length, cur, token_start, token_len))
         {
             if (callback(data + token_start, token_len))
                 return;
@@ -286,7 +286,7 @@ void forEachTokenImpl(const TokenExtractorType & extractor, const char * __restr
     }
     else
     {
-        while (cur < length && extractor.nextInString(data, length, cur, token_start, token_len))
+        while (cur < length && tokenizer.nextInString(data, length, cur, token_start, token_len))
         {
             if (callback(data + token_start, token_len))
                 return;
@@ -295,22 +295,22 @@ void forEachTokenImpl(const TokenExtractorType & extractor, const char * __restr
 }
 
 template <bool is_padded, typename Callback>
-void forEachTokenCase(const ITokenizer & extractor, const char * __restrict data, size_t length, Callback && callback)
+void forEachTokenCase(const ITokenizer & tokenizer, const char * __restrict data, size_t length, Callback && callback)
 {
     if (length == 0)
         return;
 
-    switch (extractor.getType())
+    switch (tokenizer.getType())
     {
         case ITokenizer::Type::SplitByNonAlpha:
         {
-            const auto & split_by_non_alpha_tokenizer = assert_cast<const SplitByNonAlphaTokenizer &>(extractor);
+            const auto & split_by_non_alpha_tokenizer = assert_cast<const SplitByNonAlphaTokenizer &>(tokenizer);
             forEachTokenImpl<is_padded>(split_by_non_alpha_tokenizer, data, length, callback);
             return;
         }
         case ITokenizer::Type::Ngrams:
         {
-            const auto & ngrams_tokenizer = assert_cast<const NgramsTokenizer &>(extractor);
+            const auto & ngrams_tokenizer = assert_cast<const NgramsTokenizer &>(tokenizer);
 
             if (length < ngrams_tokenizer.getN())
                 return;
@@ -320,7 +320,7 @@ void forEachTokenCase(const ITokenizer & extractor, const char * __restrict data
         }
         case ITokenizer::Type::SplitByString:
         {
-            const auto & split_by_string_tokenizer = assert_cast<const SplitByStringTokenizer &>(extractor);
+            const auto & split_by_string_tokenizer = assert_cast<const SplitByStringTokenizer &>(tokenizer);
             forEachTokenImpl<is_padded>(split_by_string_tokenizer, data, length, callback);
             return;
         }
@@ -331,7 +331,7 @@ void forEachTokenCase(const ITokenizer & extractor, const char * __restrict data
         }
         case ITokenizer::Type::SparseGrams:
         {
-            const auto & sparse_grams_tokenizer = assert_cast<const SparseGramsTokenizer &>(extractor);
+            const auto & sparse_grams_tokenizer = assert_cast<const SparseGramsTokenizer &>(tokenizer);
             forEachTokenImpl<is_padded>(sparse_grams_tokenizer, data, length, callback);
             return;
         }
@@ -343,15 +343,15 @@ void forEachTokenCase(const ITokenizer & extractor, const char * __restrict data
 /// Calls the callback for each token in the data.
 /// Stops searching tokens if the callback returns true.
 template <Fn<bool(const char *, size_t)> Callback>
-void forEachTokenPadded(const ITokenizer & extractor, const char * __restrict data, size_t length, Callback && callback)
+void forEachTokenPadded(const ITokenizer & tokenizer, const char * __restrict data, size_t length, Callback && callback)
 {
-    detail::forEachTokenCase<true>(extractor, data, length, callback);
+    detail::forEachTokenCase<true>(tokenizer, data, length, callback);
 }
 
 template <Fn<bool(const char *, size_t)> Callback>
-void forEachToken(const ITokenizer & extractor, const char * __restrict data, size_t length, Callback && callback)
+void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, size_t length, Callback && callback)
 {
-    detail::forEachTokenCase<false>(extractor, data, length, callback);
+    detail::forEachTokenCase<false>(tokenizer, data, length, callback);
 }
 
 }

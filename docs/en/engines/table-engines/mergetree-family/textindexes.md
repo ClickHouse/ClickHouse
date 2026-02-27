@@ -7,11 +7,7 @@ title: 'Full-text Search with Text Indexes'
 doc_type: 'reference'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
 # Full-text search with text indexes
-
-<BetaBadge/>
 
 Text indexes (also known as [inverted indexes](https://en.wikipedia.org/wiki/Inverted_index)) enable fast full-text search on text data.
 A text index stores a mapping from tokens to the row numbers which contain each token.
@@ -79,13 +75,7 @@ If query
 SELECT value FROM system.settings WHERE name = 'compatibility';
 ```
 
-returns
-
-```text
-25.4
-```
-
-or any other value smaller than 26.2, you will need to set three additional settings to use the text index:
+returns a value smaller than `26.2` (e.g. `25.4`), you will need to set three additional settings to use the text index:
 
 ```sql
 SET enable_full_text_index = true;
@@ -210,35 +200,25 @@ We plan to add specialized language-specific tokenizers to handle these cases be
 Typical use cases for the preprocessor argument include
 1. Lower- or upper-casing to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8) (see the first example below).
 2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
-3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](./sql-reference/functions/string-replace-functions.md/#translate).
+3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](/sql-reference/functions/string-replace-functions.md/#translate).
 
 The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
 
 Examples:
+
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
 
-Also, the preprocessor expression must only reference the column on top of which the text index is defined.
+Also, the preprocessor expression must only reference the column or expression on top of which the text index is defined.
+
+Examples:
+
+- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
+- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
+- Not allowed: `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
+
 Using non-deterministic functions is disallowed.
-
-The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
-In this case, the preprocessor expression transforms the array elements individually.
-
-Example:
-
-```sql
-CREATE TABLE table
-(
-    col Array(String),
-    INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))
-
-    -- This is not legal:
-    INDEX idx_illegal col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(col))
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-```
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
@@ -247,7 +227,6 @@ For example,
 ```sql
 CREATE TABLE table
 (
-    key UInt64,
     str String,
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
@@ -262,7 +241,6 @@ is equivalent to:
 ```sql
 CREATE TABLE table
 (
-    key UInt64,
     str String,
     INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
 )
@@ -271,6 +249,44 @@ ORDER BY tuple();
 
 SELECT count() FROM table WHERE hasToken(str, lower('Foo'));
 ```
+
+The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
+In this case, the preprocessor expression transforms the array elements individually.
+
+Example:
+
+```sql
+CREATE TABLE table
+(
+    arr Array(String),
+    INDEX idx arr TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr))
+
+    -- This is not legal:
+    INDEX idx_illegal arr TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(arr))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasAllTokens(arr, 'foo');
+```
+
+To define a preprocessor in a text index on build [Map](/sql-reference/data-types/map.md)-type columns, users need to decide if the index is
+build on the map keys or values.
+
+Example:
+
+```sql
+CREATE TABLE table
+(
+    map Map(String, String),
+    INDEX idx mapKeys(map)  TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(mapKeys(map)))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
+```
+
 **Other arguments (optional)**.
 
 <details markdown="1">

@@ -12,6 +12,8 @@
 namespace BuzzHouse
 {
 
+extern const std::unordered_set<String> blockSizes;
+
 const auto trueOrFalse = [](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "1" : "0"; };
 
 const auto zeroOneTwo = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
@@ -21,7 +23,7 @@ const auto zeroToThree = [](RandomGenerator & rg, FuzzConfig &) { return std::to
 const auto probRange = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); };
 
 const auto probRangeNoZero
-    = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.01, 0.99)); };
+    = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.001, 0.999)); };
 
 const auto highRange = [](RandomGenerator & rg, FuzzConfig &)
 {
@@ -43,13 +45,13 @@ const auto threadSetting = CHSetting(
     {"0", "1", "2", std::to_string(std::thread::hardware_concurrency())},
     false);
 
-const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
+const auto inline probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
 
-const auto probRangeNoZeroSetting = CHSetting(probRangeNoZero, {"0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999"}, false);
+const auto inline probRangeNoZeroSetting = CHSetting(probRangeNoZero, {"0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999"}, false);
 
-const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
+const auto inline trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
 
-const auto trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
+const auto inline trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
 
 extern std::unordered_map<String, CHSetting> hotSettings;
 
@@ -61,6 +63,8 @@ extern std::unordered_map<String, CHSetting> queryOracleSettings;
 
 extern std::unordered_map<String, CHSetting> formatSettings;
 
+extern std::unordered_map<String, CHSetting> allDatabaseSettings;
+
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;
@@ -69,12 +73,17 @@ extern std::unordered_map<String, CHSetting> backupSettings;
 
 extern std::unordered_map<String, CHSetting> restoreSettings;
 
-extern std::unique_ptr<SQLType> size_tp, null_tp, string_tp;
+extern std::unique_ptr<SQLType> size_tp;
+
+extern std::unique_ptr<SQLType> null_tp;
+
+extern std::unique_ptr<SQLType> string_tp;
 
 extern std::vector<SystemTable> systemTables;
 
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
 
+String generateNextCodecString(RandomGenerator & rg);
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
 void loadSystemTables(FuzzConfig & fc);

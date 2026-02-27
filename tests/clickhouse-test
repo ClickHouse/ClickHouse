@@ -1429,7 +1429,7 @@ def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
 
 
-def _coerce_value(v: str):
+def str_to_numeric(v: str):
     vl = v.lower()
     if vl in ("true", "false"):
         return vl == "true"
@@ -1439,6 +1439,12 @@ def _coerce_value(v: str):
         return int(v)
     except ValueError:
         return v
+
+
+def str_to_bool(v):
+    if isinstance(v, str):
+        return bool(str_to_numeric(v))
+    return bool(v)
 
 
 def parse_settings_cli_blob(blob: str) -> Dict[str, object]:
@@ -1462,7 +1468,7 @@ def parse_settings_cli_blob(blob: str) -> Dict[str, object]:
             out[key] = True
             i += 1
             continue
-        out[key] = _coerce_value(tokens[i + 1])
+        out[key] = str_to_numeric(tokens[i + 1])
         i += 2
     return out
 
@@ -4947,19 +4953,19 @@ def parse_args():
     parser.add_argument(
         "--replace-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("REPLACE_RMT_WITH_SMT", False),
+        default=str_to_bool(os.environ.get("REPLACE_RMT_WITH_SMT", False)),
         help="Replace ReplicatedMergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
         "--replace-non-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("REPLACE_MT_WITH_SMT", False),
+        default=str_to_bool(os.environ.get("REPLACE_MT_WITH_SMT", False)),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
         "--replace-log-memory-with-mergetree",
         action="store_true",
-        default=os.environ.get("REPLACE_LOG_MEM_WITH_MT", False),
+        default=str_to_bool(os.environ.get("REPLACE_LOG_MEM_WITH_MT", False)),
         help="Replace *Log and Memory engines with MergeTree",
     )
     parser.add_argument(
@@ -4971,7 +4977,7 @@ def parse_args():
     parser.add_argument(
         "--shared-catalog",
         action="store_true",
-        default=os.environ.get("USE_SHARED_CATALOG", "0") == "1",
+        default=str_to_bool(os.environ.get("USE_SHARED_CATALOG", False)),
         help="Run tests with Shared Catalog",
     )
     parser.add_argument(

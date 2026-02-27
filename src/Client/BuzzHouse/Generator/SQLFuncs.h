@@ -10,7 +10,11 @@ class CHAggregate
 {
 public:
     const bool support_nulls_clause;
-    const uint32_t fnum, min_params, max_params, min_args, max_args;
+    const uint32_t fnum;
+    const uint32_t min_params;
+    const uint32_t max_params;
+    const uint32_t min_args;
+    const uint32_t max_args;
 
     CHAggregate(const uint32_t f, const uint32_t min_p, const uint32_t max_p, const uint32_t min_a, const uint32_t m_args, const bool snc)
         : support_nulls_clause(snc)
@@ -26,7 +30,11 @@ public:
 class CHFunction
 {
 public:
-    const uint32_t fnum, min_lambda_param, max_lambda_param, min_args, max_args;
+    const uint32_t fnum;
+    const uint32_t min_lambda_param;
+    const uint32_t max_lambda_param;
+    const uint32_t min_args;
+    const uint32_t max_args;
 
     CHFunction(const uint32_t f, const uint32_t min_lambda, const uint32_t max_lambda, const uint32_t min_a, const uint32_t m_args)
         : fnum(f)
@@ -93,7 +101,7 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCapprox_top_sum, 0, 2, 2, 2, false),
     CHAggregate(SQLFunc::FUNCavgWeighted, 0, 0, 2, 2, false),
     CHAggregate(SQLFunc::FUNCtopK, 1, 2, 1, 1, false),
-    CHAggregate(SQLFunc::FUNCtopKWeighted, 1, 2, 1, 1, false),
+    CHAggregate(SQLFunc::FUNCtopKWeighted, 1, 2, 2, 2, false),
     CHAggregate(SQLFunc::FUNCdeltaSum, 0, 0, 1, 1, false),
     CHAggregate(SQLFunc::FUNCdeltaSumTimestamp, 0, 0, 2, 2, false),
     CHAggregate(SQLFunc::FUNCgroupArray, 0, 1, 1, 1, false),
@@ -202,6 +210,7 @@ const std::vector<CHAggregate> CHAggrs = {
 
 const std::vector<CHFunction> CommonCHFuncs
     = {CHFunction(SQLFunc::FUNCarrayJoin, 0, 0, 1, 1),
+       CHFunction(SQLFunc::FUNCif, 0, 0, 3, 3),
        CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1),
        CHFunction(SQLFunc::FUNCtoNullable, 0, 0, 1, 1),
        CHFunction(SQLFunc::FUNCtoLowCardinality, 0, 0, 1, 1)};
@@ -257,7 +266,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCemptyArrayDate, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCemptyArrayDateTime, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCemptyArrayString, 0, 0, 0, 0),
-    CHFunction(SQLFunc::FUNCemptyArrayToSingle, 0, 0, 0, 0),
+    CHFunction(SQLFunc::FUNCemptyArrayToSingle, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCarrayWithConstant, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCarrayConcat, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCarrayElement, 0, 0, 2, 2),
@@ -384,7 +393,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNClessOrEquals, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCgreaterOrEquals, 0, 0, 2, 2),
     /// Conditional functions
-    CHFunction(SQLFunc::FUNCif, 0, 0, 3, 3),
     CHFunction(SQLFunc::FUNCmultiIf, 0, 0, 3, ulimited_params),
     CHFunction(SQLFunc::FUNCgreatest, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCleast, 0, 0, 2, ulimited_params),
@@ -568,6 +576,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmurmurHash3_64, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCmurmurHash3_128, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCxxh3, 0, 0, 1, ulimited_params),
+    CHFunction(SQLFunc::FUNCxxh3_128, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCxxHash32, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCxxHash64, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCngramSimHash, 0, 0, 1, 2),
@@ -666,8 +675,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmapExtractKeyLike, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCmapValues, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCmapContainsValue, 0, 0, 2, 2),
-    CHFunction(SQLFunc::FUNCmapContainsKeyLike, 0, 0, 2, 2),
-    CHFunction(SQLFunc::FUNCmapExtractKeyLike, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCmapApply, 1, 1, 1, 1),
     CHFunction(SQLFunc::FUNCmapFilter, 1, 1, 1, 1),
     CHFunction(SQLFunc::FUNCmapUpdate, 0, 0, 2, 2),
@@ -929,10 +936,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCendsWithCaseInsensitiveUTF8, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCstartsWithCaseInsensitive, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCstartsWithCaseInsensitiveUTF8, 0, 0, 2, 2),
-    /// Timeseries
-    CHFunction(SQLFunc::FUNCseriesOutliersDetectTukey, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCseriesPeriodDetectFFT, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCseriesDecomposeSTL, 0, 0, 2, 2),
     /// Time window
     CHFunction(SQLFunc::FUNCtumble, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCtumbleStart, 0, 0, 2, 3),
@@ -1161,8 +1164,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCIPv4NumToStringClassC, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCIPv6NumToString, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCIPv6StringToNum, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCIPv6StringToNumOrDefault, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCIPv6StringToNumOrNull, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCIPv4ToIPv6, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCcutIPv6, 0, 0, 3, 3),
     CHFunction(SQLFunc::FUNCIPv4CIDRToRange, 0, 0, 2, 2),
@@ -1199,7 +1200,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCareaSpherical, 0, 0, 1, 1),
     /// H3 Index
     CHFunction(SQLFunc::FUNCh3IsValid, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCh3GetResolution, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCh3EdgeAngle, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCh3EdgeLengthM, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCh3EdgeLengthKm, 0, 0, 1, 1),

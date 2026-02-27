@@ -54,22 +54,46 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
     return ret;
 }
 
-static String numberColumn(RandomGenerator & rg, const bool negative, String && typeName)
+static String numberColumnEntry(RandomGenerator & rg, const bool negative, const bool iffunc)
 {
-    String buf = "CAST(";
+    String buf;
 
     buf += negative ? "(-" : "";
     buf += "number";
     buf += negative ? ")" : "";
-    if (rg.nextSmallNumber() < 4)
+    if (iffunc || rg.nextSmallNumber() < 4)
     {
         /// Generate identical numbers
         buf += " % ";
-        buf += std::to_string(rg.randomInt<uint32_t>(2, 100));
+        buf += std::to_string(rg.randomInt<uint32_t>(2, 31));
     }
+    return buf;
+}
+
+static String numberColumn(RandomGenerator & rg, const bool can_negative, String && typeName)
+{
+    String buf;
+    const bool iffunc = rg.nextSmallNumber() < 4;
+
+    if (iffunc)
+    {
+        buf += "if(";
+        buf += numberColumnEntry(rg, false, true);
+        buf += ",";
+    }
+    buf += "CAST(";
+    buf += numberColumnEntry(rg, can_negative && rg.nextBool(), false);
     buf += " AS ";
     buf += typeName;
     buf += ")";
+    if (iffunc)
+    {
+        buf += ",CAST(";
+        buf += numberColumnEntry(rg, can_negative && rg.nextBool(), false);
+        buf += " AS ";
+        buf += typeName;
+        buf += "))";
+    }
     return buf;
 }
 
@@ -208,7 +232,7 @@ String IntType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen
 {
     if (size > 8 && rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, !is_unsigned && rg.nextBool(), typeName(false, false));
+        return numberColumn(rg, !is_unsigned, typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -247,7 +271,7 @@ String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & g
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, rg.nextBool(), typeName(false, false));
+        return numberColumn(rg, true, typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -414,7 +438,7 @@ String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerat
 {
     const bool allow_func = gen.getAllowNotDetermistic();
     String ret
-        = extended ? rg.nextDateTime64("'", allow_func, rg.nextSmallNumber() < 8) : rg.nextDateTime("'", allow_func, precision.has_value());
+        = extended ? rg.nextDateTime64("'", allow_func, precision.has_value()) : rg.nextDateTime("'", allow_func, precision.has_value());
 
     ret += allow_func ? fmt::format("::{}", typeName(false, false)) : "";
     return ret;
@@ -495,7 +519,7 @@ SQLType * DecimalType::typeDeepCopy() const
 String DecimalType::appendDecimalValue(RandomGenerator & rg, const bool use_func, const DecimalType * dt)
 {
     const uint32_t right = dt->scale.value_or(0);
-    const uint32_t left = dt->precision.value_or(10) - right;
+    const uint32_t left = dt->precision.value_or(9) - right;
 
     return appendDecimal(rg, use_func, left, right);
 }
@@ -504,7 +528,7 @@ String DecimalType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, rg.nextBool(), typeName(false, false));
+        return numberColumn(rg, true, typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -569,7 +593,7 @@ String StringType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &,
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, rg.nextBool(), "String");
+        return numberColumn(rg, true, typeName(false, false));
     }
     return rg.nextString("'", true, std::min(max_strlen, precision.value_or(rg.nextStrlen())));
 }
@@ -1486,12 +1510,15 @@ SQLType * AggregateFunctionType::typeDeepCopy() const
 
 String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    /// This doesn't work yet I think
-    if (subtypes.empty())
+    String ret = SQLFunc_Name(aggregate).substr(4);
+
+    ret += "State(";
+    if (!subtypes.empty())
     {
-        return std::to_string(rg.nextRandomUInt64());
+        ret += subtypes[0]->appendRandomRawValue(rg, gen);
     }
-    return subtypes[0]->appendRandomRawValue(rg, gen);
+    ret += ")";
+    return ret;
 }
 
 String AggregateFunctionType::insertNumberEntry(

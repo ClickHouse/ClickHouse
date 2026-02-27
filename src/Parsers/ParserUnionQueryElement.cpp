@@ -3,7 +3,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
