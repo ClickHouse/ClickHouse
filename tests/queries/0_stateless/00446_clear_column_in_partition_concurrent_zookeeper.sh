@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-random-detach
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-random-detach, no-flaky-check
 # no-random-detach: test checks replication state
 # Tag no-replicated-database: Old syntax is not allowed
 # no-shared-merge-tree -- old syntax
