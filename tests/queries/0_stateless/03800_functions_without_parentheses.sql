@@ -49,6 +49,7 @@ DROP VIEW test_param_view;
 
 -- Ensure niladic function names passed as collection keys stay as identifiers
 CREATE NAMED COLLECTION IF NOT EXISTS test_niladic_coll AS currentUser = 'admin_user';
+SELECT collection FROM system.named_collections WHERE name = 'test_niladic_coll';
 DROP NAMED COLLECTION test_niladic_coll;
 
 -- Verify error for functions that don't allow omitting parentheses

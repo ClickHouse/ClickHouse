@@ -211,6 +211,9 @@ struct IdentifierResolveContext
     /// Allow to resolve subquery during identifier resolution
     bool allow_to_resolve_subquery_during_identifier_resolution = true;
 
+    /// Disable resolve of niladic functions without parentheses. Example: SELECT now; instead of SELECT now();
+    bool allow_to_resolve_niladic_functions = true;
+
     /// Initial scope where identifier resolution started.
     /// Should be used to resolve aliased expressions.
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;

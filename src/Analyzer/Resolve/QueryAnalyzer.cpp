@@ -1395,7 +1395,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (!resolve_result.resolved_identifier
         && identifier_lookup.isExpressionLookup()
         && identifier_resolve_settings.scope_to_resolve_alias_expression == nullptr
-        && scope.allow_to_resolve_niladic_functions)
+        && identifier_resolve_settings.allow_to_resolve_niladic_functions)
     {
         const auto & function_factory = FunctionFactory::instance();
         auto identifier_name = identifier_lookup.identifier.getFullName();
@@ -1408,26 +1408,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             function_node->resolveAsFunction(function_resolver->build({}));
             resolve_result.resolved_identifier = std::move(function_node);
             resolve_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
-        }
-        else if (function_resolver)
-        {
-            throw Exception(
-                ErrorCodes::UNKNOWN_IDENTIFIER,
-                "Function '{}' exists but requires parentheses. Use '{}()' instead",
-                identifier_name,
-                identifier_name);
-        }
-        else if (!function_resolver)
-        {
-            const auto & aggregate_factory = AggregateFunctionFactory::instance();
-            if (aggregate_factory.isAggregateFunctionName(identifier_name))
-            {
-                throw Exception(
-                    ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "Aggregate function '{}' requires parentheses. Use '{}()' instead",
-                    identifier_name,
-                    identifier_name);
-            }
         }
     }
 
@@ -2741,7 +2721,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     IdentifierResolveScope & scope,
     bool allow_lambda_expression,
     bool allow_table_expression,
-    bool ignore_alias)
+    bool ignore_alias,
+    bool allow_niladic_functions)
 {
     checkStackSize();
 
@@ -2796,7 +2777,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             IdentifierLookup identifier_lookup{unresolved_identifier, IdentifierLookupContext::EXPRESSION};
             if (node->hasOriginalAST())
                 identifier_lookup.original_ast_node = node->getOriginalAST();
-            auto resolve_identifier_expression_result = tryResolveIdentifier(identifier_lookup, scope);
+            auto resolve_identifier_expression_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
 
             auto resolved_identifier_node = resolve_identifier_expression_result.resolved_identifier;
 
@@ -2809,11 +2790,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             }
 
             if (!resolved_identifier_node && allow_lambda_expression)
-                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
+                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions }).resolved_identifier;
 
             if (!resolved_identifier_node && allow_table_expression)
             {
-                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope).resolved_identifier;
+                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions }).resolved_identifier;
 
                 if (resolved_identifier_node)
                 {
@@ -3796,9 +3777,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     auto & scope_context = scope.context;
 
-    auto old_scope_allow_to_resolve_niladic_functions = scope.allow_to_resolve_niladic_functions;
-    scope.allow_to_resolve_niladic_functions = false;
-
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
@@ -3864,7 +3842,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             auto fake_table_node = std::make_shared<TableNode>(parameterized_view_storage, scope_context);
             fake_table_node->setAlias(table_function_node->getAlias());
             table_function_node = fake_table_node;
-            scope.allow_to_resolve_niladic_functions = old_scope_allow_to_resolve_niladic_functions;
             return;
         }
 
@@ -3900,7 +3877,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         if (auto * identifier_node = table_function_argument->as<IdentifierNode>())
         {
             const auto & unresolved_identifier = identifier_node->getIdentifier();
-            auto identifier_resolve_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
+            auto identifier_resolve_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope, { .allow_to_resolve_niladic_functions = false });
             auto resolved_identifier = std::move(identifier_resolve_result.resolved_identifier);
 
             if (resolved_identifier && resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
@@ -3990,8 +3967,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     auto table_function_ast = table_function_node_typed.toAST();
     table_function_ptr->parseArguments(table_function_ast, scope_context);
-
-    scope.allow_to_resolve_niladic_functions = old_scope_allow_to_resolve_niladic_functions;
 
     uint64_t use_structure_from_insertion_table_in_table_functions
         = scope_context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
