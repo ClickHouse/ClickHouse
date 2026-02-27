@@ -262,7 +262,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
         auto engine = make_intrusive<ASTFunction>();
         engine->name = "Atomic";
-        engine->clearEmptyArgs();
+        engine->setNoEmptyArgs(true);
         create.storage->set(create.storage->engine, engine);
     }
     else if ((create.columns_list
@@ -1187,7 +1187,7 @@ namespace
 
         auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = SettingFieldDefaultTableEngine(engine).toString();
-        engine_ast->clearEmptyArgs();
+        engine_ast->setNoEmptyArgs(true);
         storage.set(storage.engine, engine_ast);
     }
 
@@ -1200,7 +1200,7 @@ namespace
 
         auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = "Null";
-        engine_ast->clearEmptyArgs();
+        engine_ast->setNoEmptyArgs(true);
         storage.set(storage.engine, engine_ast);
     }
 

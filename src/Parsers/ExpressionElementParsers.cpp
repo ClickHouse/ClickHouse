@@ -2575,7 +2575,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     if (parametric.parse(pos, node, expected))
     {
         auto * func = node->as<ASTFunction>();
-        func->clearEmptyArgs();
+        func->setNoEmptyArgs(true);
         return true;
     }
 
@@ -2584,7 +2584,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     {
         auto func = make_intrusive<ASTFunction>();
         tryGetIdentifierNameInto(ident, func->name);
-        func->clearEmptyArgs();
+        func->setNoEmptyArgs(true);
         node = func;
         return true;
     }

@@ -68,7 +68,7 @@ ASTPtr BackupInfo::toAST() const
     if (function_arg)
         list->children.push_back(function_arg);
 
-    func->clearEmptyArgs();
+    func->setNoEmptyArgs(true);
     return func;
 }
 

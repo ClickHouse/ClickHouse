@@ -75,9 +75,9 @@ public:
     NullsAction getNullsAction() const { return static_cast<NullsAction>(flags<ASTFunctionFlags>().nulls_action); }
     void setNullsAction(NullsAction value) { flags<ASTFunctionFlags>().nulls_action = static_cast<UInt32>(value); }
 
-    /// Do not print empty parentheses if there are no args - compatibility with engine names.
-    /// If there are empty arguments, remove the whole arguments child.
-    void clearEmptyArgs();
+    /// do not print empty parentheses if there are no args - compatibility with engine names.
+    bool noEmptyArgs() const { return flags<ASTFunctionFlags>().no_empty_args; }
+    void setNoEmptyArgs(bool value) { flags<ASTFunctionFlags>().no_empty_args = value; }
 
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8

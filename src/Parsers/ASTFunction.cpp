@@ -150,14 +150,6 @@ ASTPtr ASTFunction::clone() const
 }
 
 
-void ASTFunction::clearEmptyArgs()
-{
-    if (arguments && arguments->children.empty())
-    {
-        children.erase(std::remove(children.begin(), children.end(), arguments), children.end());
-        arguments.reset();
-    }
-}
 
 
 void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
