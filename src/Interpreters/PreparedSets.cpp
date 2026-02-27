@@ -311,6 +311,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
+    executor.setCancelCallback(context->getQueryContext()->getInteractiveCancelCallback(), 100);
     executor.execute();
 }
 
@@ -351,6 +352,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
+    executor.setCancelCallback(context->getQueryContext()->getInteractiveCancelCallback(), 100);
     executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
