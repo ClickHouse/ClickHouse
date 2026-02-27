@@ -1543,7 +1543,6 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
       --min_insert_block_size_rows 0 \
       --min_insert_block_size_bytes 0
 ```
-
 )", 0) \
     DECLARE(Bool, input_format_connection_handling, false, R"(
     When this option is enabled, if the connection closes unexpectedly, any remaining data in the buffer will be parsed and processed instead of being treated as an error
