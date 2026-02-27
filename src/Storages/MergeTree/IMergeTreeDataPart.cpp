@@ -2715,13 +2715,19 @@ const IMergeTreeDataPart::ColumnSizeByName & IMergeTreeDataPart::getColumnSizes(
 
 ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) const
 {
+    /// Lazy-init: only allocate the LRU cache on first use (typically only needed
+    /// for tables with dynamic JSON subcolumns). Avoids per-part overhead for the
+    /// common case where subcolumn size lookups never happen.
+    if (!subcolumns_sizes_cache)
+        subcolumns_sizes_cache = std::make_unique<Poco::LRUCache<String, ColumnSize>>(1024);
+
     /// First, check if we already calculated the size of this subcolumn and have it in cache.
-    if (auto size = subcolumns_sizes_cache.get(subcolumn_name))
+    if (auto size = subcolumns_sizes_cache->get(subcolumn_name))
         return *size;
 
     /// If not, calculate the size of the subcolumn on disk and put it to cache.
     auto size = calculateSubcolumnSize(subcolumn_name);
-    subcolumns_sizes_cache.add(subcolumn_name, size);
+    subcolumns_sizes_cache->add(subcolumn_name, size);
     return size;
 }
 

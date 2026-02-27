@@ -681,7 +681,7 @@ private:
     /// Sometimes we need to calculate the size of all files required to read a specific subcolumn.
     /// We do it on the first request and save it in the subcolumns_sizes_cache.
     /// The number of subcolumns can be infinite due to dynamic subcolumns in JSON, so we use LRU cache here.
-    mutable Poco::LRUCache<String, ColumnSize> subcolumns_sizes_cache = Poco::LRUCache<String, ColumnSize>(1024);
+    mutable std::unique_ptr<Poco::LRUCache<String, ColumnSize>> subcolumns_sizes_cache;
 
     /// PackedFilesReader for statistics archive.
     /// Lazily loaded on first access to loadStatistics when packed format is used.
