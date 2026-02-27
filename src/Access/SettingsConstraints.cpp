@@ -217,30 +217,11 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
 {
     /// When `compatibility` is present, keep all settings (even if they match current values). This ensures they're applied
     /// and marked as `changed`, preventing `compatibility` from overriding explicit user values with its own defaults.
-    bool has_compatibility = false;
-    for (const auto & change : changes)
-    {
-        if (change.name == "compatibility")
-        {
-            has_compatibility = true;
-            break;
-        }
-    }
-
-    if (has_compatibility)
-    {
+    if (changes.tryGet("compatibility") == nullptr)
+        std::erase_if(changes, [&](SettingChange & change) { return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source); });
+    else
         for (auto & change : changes)
             checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
-    }
-    else
-    {
-        std::erase_if(
-            changes,
-            [&](SettingChange & change) -> bool
-            {
-                return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
-            });
-    }
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
