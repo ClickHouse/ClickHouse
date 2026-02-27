@@ -294,6 +294,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
+    extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
 }
 
 namespace ErrorCodes
@@ -2985,37 +2986,33 @@ PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
     return getContext()->getPrimaryIndexCache();
 }
 
-PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const
+MergeTreeData::CachesToPrewarm MergeTreeData::getCachesToPrewarm(size_t part_uncompressed_bytes) const
 {
-    if (!(*getSettings())[MergeTreeSetting::prewarm_primary_key_cache])
-        return nullptr;
+    CachesToPrewarm result;
+    auto settings = getSettings();
 
     /// Do not load data to caches for small parts because
     /// they will be likely replaced by merge immediately.
-    size_t min_bytes_to_prewarm = (*getSettings())[MergeTreeSetting::min_bytes_to_prewarm_caches];
-    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
-        return nullptr;
+    size_t min_bytes_to_prewarm = (*settings)[MergeTreeSetting::min_bytes_to_prewarm_caches];
 
-    return getPrimaryIndexCache();
+    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
+        return result;
+
+    if ((*settings)[MergeTreeSetting::prewarm_primary_key_cache])
+        result.primary_index_cache = getPrimaryIndexCache();
+
+    if ((*settings)[MergeTreeSetting::prewarm_mark_cache])
+    {
+        result.mark_cache = getContext()->getMarkCache();
+        result.index_mark_cache = getContext()->getIndexMarkCache();
+    }
+
+    return result;
 }
 
-MarkCachePtr MergeTreeData::getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const
+void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & caches)
 {
-    if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
-        return nullptr;
-
-    /// Do not load data to caches for small parts because
-    /// they will be likely replaced by merge immediately.
-    size_t min_bytes_to_prewarm = (*getSettings())[MergeTreeSetting::min_bytes_to_prewarm_caches];
-    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
-        return nullptr;
-
-    return getContext()->getMarkCache();
-}
-
-void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache)
-{
-    if (!mark_cache && !index_cache)
+    if (!caches.hasAny())
         return;
 
     Stopwatch watch;
@@ -3036,12 +3033,13 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
         return to_tuple(lhs) > to_tuple(rhs);
     });
 
-    double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
     double index_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::primary_index_cache_prewarm_ratio];
+    double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
+    double index_mark_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::index_mark_cache_prewarm_ratio];
 
     Names columns_to_prewarm_marks;
 
-    if (mark_cache)
+    if (caches.mark_cache)
     {
         auto metadata_snaphost = getInMemoryMetadataPtr();
         columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
@@ -3061,33 +3059,40 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
     {
         bool added_task = false;
 
-        if (index_cache && !part->isIndexLoaded() && enough_space(index_cache, index_ratio_to_prewarm))
+        if (caches.primary_index_cache && !part->isIndexLoaded() && enough_space(caches.primary_index_cache, index_ratio_to_prewarm))
         {
             /// Capturing by reference here is fine:
             /// enough_space is created before runner and outlives it
-            /// index_cache is passed as argument to the method and outlives the runner
+            /// caches is passed as const-ref to the method and outlives the runner
             /// part belongs to data_parts, which is created before runner and outlives it
-            runner.enqueueAndKeepTrack([&enough_space, &index_cache, index_ratio_to_prewarm, &part]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_ratio_to_prewarm, &part]
             {
                 /// Check again, because another task may have filled the cache while this task was waiting in the queue.
                 /// The cache still may be filled slightly more than `index_ratio_to_prewarm`, but it's ok.
-                if (enough_space(index_cache, index_ratio_to_prewarm))
-                    part->loadIndexToCache(*index_cache);
+                if (enough_space(caches.primary_index_cache, index_ratio_to_prewarm))
+                    part->loadIndexToCache(*caches.primary_index_cache);
             });
 
             added_task = true;
         }
 
-        if (mark_cache && enough_space(mark_cache, marks_ratio_to_prewarm))
+        if (caches.mark_cache && enough_space(caches.mark_cache, marks_ratio_to_prewarm))
         {
-            /// Same as above, plus:
-            /// mark_cache is passed as argument to the method and outlives the runner
-            runner.enqueueAndKeepTrack([&enough_space, &mark_cache, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks]
             {
-                /// Check again, because another task may have filled the cache while this task was waiting in the queue.
-                /// The cache still may be filled slightly more than `marks_ratio_to_prewarm`, but it's ok.
-                if (enough_space(mark_cache, marks_ratio_to_prewarm))
-                    part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get());
+                if (enough_space(caches.mark_cache, marks_ratio_to_prewarm))
+                    part->loadMarksToCache(columns_to_prewarm_marks, caches.mark_cache.get());
+            });
+
+            added_task = true;
+        }
+
+        if (caches.index_mark_cache && enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
+        {
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_mark_ratio_to_prewarm, &part]
+            {
+                if (enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
+                    part->loadIndexMarksToCache(caches.index_mark_cache.get());
             });
 
             added_task = true;

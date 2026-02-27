@@ -554,11 +554,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
-
-    prewarmCaches(
-        getActivePartsLoadingThreadPool().get(),
-        getMarkCacheToPrewarm(0),
-        getPrimaryIndexCacheToPrewarm(0));
+    prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
@@ -5531,18 +5527,19 @@ bool StorageReplicatedMergeTree::fetchPart(
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
 
-            size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
+            auto prewarm_caches = getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
-            if (auto mark_cache = getMarkCacheToPrewarm(bytes_uncompressed))
+            if (prewarm_caches.mark_cache)
             {
                 auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
-                part->loadMarksToCache(column_names, mark_cache.get());
+                part->loadMarksToCache(column_names, prewarm_caches.mark_cache.get());
             }
 
-            if (auto index_cache = getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
-            {
-                part->loadIndexToCache(*index_cache);
-            }
+            if (prewarm_caches.index_mark_cache)
+                part->loadIndexMarksToCache(prewarm_caches.index_mark_cache.get());
+
+            if (prewarm_caches.primary_index_cache)
+                part->loadIndexToCache(*prewarm_caches.primary_index_cache);
 
             write_part_log({});
         }
