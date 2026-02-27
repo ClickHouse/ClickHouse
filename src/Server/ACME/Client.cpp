@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_SSL
@@ -84,6 +85,7 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
         return std::nullopt;
     }
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::requestCertificate");
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
@@ -121,6 +123,7 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     if (!config.has("acme"))
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::initialize");
     terms_of_service_agreed = config.getBool("acme.terms_of_service_agreed");
     if (!terms_of_service_agreed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ACME certificate provisioning requires accepting the terms of service.");
@@ -191,6 +194,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
     chassert(keys_initialized);
     chassert(api && api->isReady());
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::refreshCertificatesTask");
     try
     {
         auto context = Context::getGlobalContextInstance();
@@ -422,6 +426,8 @@ void Client::refreshKeyTask()
         }
     }
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::refreshKeyTask");
+
     std::string private_key;
 
     try
@@ -473,6 +479,7 @@ std::string Client::requestChallenge(const std::string & uri)
 {
     LOG_TRACE(log, "Challenge requested for uri: {}", uri);
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::requestChallenge");
     /// We may be in a situation when cluster just started,
     /// order is already issued by one of replicas, but some have not loaded private key from Keeper yet.
     /// Routing challenge request to such replica will fail whole order.
