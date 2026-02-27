@@ -1,3 +1,6 @@
+-- Tags: no-random-settings
+-- BAD_GET exception triggered by various randomized optimize_* settings in canSetValuesBeWrappedByDeterministicFunctions
+
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_and_compare_chain = 1;
 SET use_query_condition_cache = 0;
