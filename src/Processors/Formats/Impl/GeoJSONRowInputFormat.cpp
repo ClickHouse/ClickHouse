@@ -30,7 +30,8 @@ Field readGeoJSONPoint(ReadBuffer & buf)
     assertChar('[', buf);
     skipWhitespaceIfAny(buf);
 
-    Float64 lon, lat;
+    Float64 lon;
+    Float64 lat;
     readFloatText(lon, buf);
     skipWhitespaceIfAny(buf);
     assertChar(',', buf);
