@@ -36,11 +36,11 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
     : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_->file_path))
     , info{
-          data_manifest_file_entry_->file_path_key,
+          data_manifest_file_entry_->pure_entry->file_path_key,
           data_manifest_file_entry_->schema_id,
           schema_id_relevant_to_iterator_,
           data_manifest_file_entry_->added_sequence_number,
-          data_manifest_file_entry_->file_format,
+          data_manifest_file_entry_->pure_entry->file_format,
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {}}
 {
@@ -74,15 +74,15 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntryPt
             "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
             info.file_format);
     }
-    info.position_deletes_objects.emplace_back(position_delete_object->file_path, position_delete_object->file_format, std::nullopt);
+    info.position_deletes_objects.emplace_back(position_delete_object->file_path, position_delete_object->pure_entry->file_format, std::nullopt);
 }
 
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ManifestFileEntryPtr & equality_delete_object)
 {
     info.equality_deletes_objects.emplace_back(
         equality_delete_object->file_path,
-        equality_delete_object->file_format,
-        equality_delete_object->equality_ids,
+        equality_delete_object->pure_entry->file_format,
+        equality_delete_object->pure_entry->equality_ids,
         equality_delete_object->schema_id);
 }
 

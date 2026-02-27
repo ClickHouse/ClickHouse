@@ -54,6 +54,9 @@ public:
 
     std::optional<Result> next();
 
+    void cancel() { manifest_files_asyncronous_iterator.cancel(); }
+    ~HomogeneousIcebergKeysIterator() { cancel(); }
+
 private:
     ObjectStoragePtr object_storage;
     std::shared_ptr<const ActionsDAG> filter_dag;
@@ -68,7 +71,6 @@ private:
     ManifestFilePtr current_manifest_file_iterator;
     std::mutex current_manifest_file_mutex;
     HeavyCPUProcessingFunction processing_function;
-
     struct ManifestFileWeightFunction
     {
         size_t operator()(const Iceberg::ManifestFilePtr & manifest_file) const;
@@ -82,10 +84,16 @@ private:
         const HomogeneousIcebergKeysIterator & parent;
         const size_t number_of_workers;
         std::deque<ThreadFromGlobalPool> workers;
+        std::atomic<bool> is_cancelled{false};
+
 
         Iceberg::ManifestFilePtr next();
 
         Iceberg::ManifestFilePtr task();
+
+        void cancel();
+
+        ~ManifestFilesAsyncronousIterator() { cancel(); }
 
         ManifestFilesAsyncronousIterator(
             Iceberg::ManifestFileContentType manifest_file_content_type_,
@@ -109,8 +117,10 @@ public:
 
     ObjectInfoPtr next(size_t) override;
 
+    void cancel();
+    ~IcebergIterator() override { cancel(); }
+
     size_t estimatedKeysCount() override;
-    ~IcebergIterator() override;
 
 private:
     LoggerPtr logger;

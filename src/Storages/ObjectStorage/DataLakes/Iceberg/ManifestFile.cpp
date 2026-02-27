@@ -230,6 +230,7 @@ void ManifestFileIterator::preinitialize(const String & manifest_file_name_, con
 
     schema_processor_ptr->addIcebergTableSchema(schema_object);
 
+    PartitionSpecification partition_spec_vec;
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -244,7 +245,7 @@ void ManifestFileIterator::preinitialize(const String & manifest_file_name_, con
             continue;
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
         auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
-        common_partition_specification.emplace_back(source_id, transform_name, partition_name);
+        partition_spec_vec.emplace_back(source_id, transform_name, partition_name);
         auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
@@ -253,6 +254,7 @@ void ManifestFileIterator::preinitialize(const String & manifest_file_name_, con
         partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
         partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
+    common_partition_specification = std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec));
 
     if (!partition_columns_description.empty())
         this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
@@ -264,45 +266,26 @@ void ManifestFileIterator::preinitialize(const String & manifest_file_name_, con
 
 ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 {
-    insertRowToLogTable(
-        context,
-        manifest_file_deserializer->getContent(row_index),
-        DB::IcebergMetadataLogLevel::ManifestFileEntry,
-        common_path,
-        path_to_manifest_file,
-        row_index,
-        std::nullopt);
-    FileContentType content_type = FileContentType::DATA;
-    if (format_version > 1)
-        content_type = FileContentType(
-            manifest_file_deserializer->getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
-    const auto status
-        = ManifestEntryStatus(manifest_file_deserializer->getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>());
+    auto pure_entry = manifest_file_deserializer->getPureManifestFileEntry(row_index);
 
+    if (!pure_entry)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Got null pure manifest file entry for row {} in manifest file '{}'",
+            row_index,
+            path_to_manifest_file);
 
-    if (status == ManifestEntryStatus::DELETED)
+    if (pure_entry->status == ManifestEntryStatus::DELETED)
         return nullptr;
 
-    const auto snapshot_id_value = manifest_file_deserializer->getValueFromRowByName(row_index, f_snapshot_id);
-    Int64 snapshot_id;
+    /// Compute inherited/resolved fields
+    const auto file_path = getProperFilePathFromMetadataInfo(pure_entry->file_path_key, common_path, table_location);
 
-    if (snapshot_id_value.isNull())
-    {
-        if (status == ManifestEntryStatus::EXISTING)
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without snapshot id",
-                manifest_file_name);
-        }
-        snapshot_id = inherited_snapshot_id;
-    }
-    else
-    {
-        snapshot_id = snapshot_id_value.safeGet<Int64>();
-    }
+    Int64 resolved_snapshot_id = inherited_snapshot_id;
+    if (pure_entry->written_snapshot_id.has_value())
+        resolved_snapshot_id = *pure_entry->written_snapshot_id;
 
-    const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(snapshot_id);
+    const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(resolved_snapshot_id);
     if (!schema_id_opt.has_value())
     {
         /// Error logged but not thrown to avoid breaking whole query because of backward compatibility reasons.
@@ -313,100 +296,50 @@ ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
                 manifest_file_name,
-                snapshot_id);
+                resolved_snapshot_id);
         }
         catch (const Exception &)
         {
             tryLogCurrentException("ICEBERG_SPECIFICATION_VIOLATION", "", LogsLevel::error);
         }
     }
-    const auto schema_id = schema_id_opt.has_value() ? schema_id_opt.value() : manifest_schema_id;
+    const auto resolved_schema_id = schema_id_opt.has_value() ? *schema_id_opt : manifest_schema_id;
 
-    const auto file_path_key
-        = manifest_file_deserializer->getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>();
-    const auto file_path = getProperFilePathFromMetadataInfo(
-        manifest_file_deserializer->getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>(),
-        common_path,
-        table_location);
-
-    /// NOTE: This is weird, because in manifest file partition looks like this:
-    /// {
-    /// ...
-    ///  "data_file": {
-    ///    "partition": {
-    ///      "total_amount_trunc": {
-    ///        "decimal_10_2": "\u0000\u0000\u0000\u0013<U+0086>"
-    ///      }
-    ///    },
-    ///    ....
-    /// However, somehow parser ignores all these nested keys like "total_amount_trunc" or "decimal_10_2" and
-    /// directly returns tuple of partition values. However it's exactly what we need.
-    Field partition_value = manifest_file_deserializer->getValueFromRowByName(row_index, c_data_file_partition);
-    auto tuple = partition_value.safeGet<Tuple>();
-
-    DB::Row partition_key_value;
-    for (const auto & value : tuple)
-        partition_key_value.emplace_back(value);
-
-    std::unordered_map<Int32, ColumnInfo> columns_infos;
-
-    for (const auto & path : {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts})
+    Int64 added_sequence_number = 0;
+    if (format_version > 1)
     {
-        if (manifest_file_deserializer->hasPath(path))
+        switch (pure_entry->status)
         {
-            Field values_count = manifest_file_deserializer->getValueFromRowByName(row_index, path);
-            for (const auto & column_stats : values_count.safeGet<Array>())
-            {
-                const auto & column_number_and_count = column_stats.safeGet<Tuple>();
-                Int32 number = static_cast<Int32>(column_number_and_count[0].safeGet<Int32>());
-                Int64 count = column_number_and_count[1].safeGet<Int64>();
-                if (path == c_data_file_value_counts)
-                    columns_infos[number].rows_count = count;
-                else if (path == c_data_file_column_sizes)
-                    columns_infos[number].bytes_size = count;
-                else
-                    columns_infos[number].nulls_count = count;
+            case ManifestEntryStatus::ADDED:
+                added_sequence_number = inherited_sequence_number;
+                break;
+            case ManifestEntryStatus::EXISTING: {
+                if (!pure_entry->written_sequence_number.has_value())
+                    throw Exception(
+                        DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Data sequence number is null for the file added in another snapshot");
+                added_sequence_number = *pure_entry->written_sequence_number;
+                break;
             }
+            case ManifestEntryStatus::DELETED:
+                added_sequence_number = inherited_sequence_number;
+                break;
         }
     }
 
-    std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
-    for (const auto & path : {c_data_file_lower_bounds, c_data_file_upper_bounds})
+    /// Compute per-column hyperrectangles for DATA files
+    std::unordered_map<Int32, DB::Range> hyperrectangles;
+    if (pure_entry->content_type == FileContentType::DATA)
     {
-        if (manifest_file_deserializer->hasPath(path))
+        for (const auto & [column_id, bounds] : pure_entry->value_bounds)
         {
-            Field bounds = manifest_file_deserializer->getValueFromRowByName(row_index, path);
-            for (const auto & column_stats : bounds.safeGet<Array>())
-            {
-                const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
-                Int32 number = static_cast<Int32>(column_number_and_bound[0].safeGet<Int32>());
-                const Field & bound_value = column_number_and_bound[1];
-
-                if (!value_for_bounds.contains(number))
-                {
-                    value_for_bounds[number] = std::make_pair(Field{}, Field{});
-                }
-
-                if (path == c_data_file_lower_bounds)
-                    value_for_bounds[number].first = bound_value;
-                else
-                    value_for_bounds[number].second = bound_value;
-            }
-        }
-    }
-
-    if (content_type == FileContentType::DATA)
-    {
-        for (const auto & [column_id, bounds] : value_for_bounds)
-        {
-            auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(schema_id, column_id);
+            auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id);
             /// If we don't have column characteristics, bounds don't have any sense.
-            /// This happens if the subfield is inside map ot array, because we don't support
+            /// This happens if the subfield is inside map or array, because we don't support
             /// name generation for such subfields (we support names of nested subfields in structs only).
             if (!field_characteristics)
-            {
                 continue;
-            }
+
             const auto & name_and_type = *field_characteristics;
 
             String left_str;
@@ -424,152 +357,20 @@ ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             if (!left || !right)
                 continue;
 
-            columns_infos[column_id].hyperrectangle.emplace(*left, true, *right, true);
+            hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
         }
     }
 
-    Int64 added_sequence_number = 0;
+    auto entry = std::make_shared<InheritedManifestFileEntry>(InheritedManifestFileEntry{
+        .pure_entry = std::move(pure_entry),
+        .common_partition_specification = common_partition_specification,
+        .file_path = file_path,
+        .added_sequence_number = added_sequence_number,
+        .snapshot_id = resolved_snapshot_id,
+        .schema_id = resolved_schema_id,
+        .hyperrectangles = std::move(hyperrectangles),
+    });
 
-    String file_format
-        = manifest_file_deserializer->getValueFromRowByName(row_index, c_data_file_file_format, TypeIndex::String).safeGet<String>();
-
-    if (format_version > 1)
-    {
-        switch (status)
-        {
-            case ManifestEntryStatus::ADDED:
-                added_sequence_number = inherited_sequence_number;
-                break;
-            case ManifestEntryStatus::EXISTING: {
-                auto value = manifest_file_deserializer->getValueFromRowByName(row_index, f_sequence_number);
-                if (value.isNull())
-                    throw Exception(
-                        DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Data sequence number is null for the file added in another snapshot");
-                else
-                    added_sequence_number = value.safeGet<UInt64>();
-                break;
-            }
-            case ManifestEntryStatus::DELETED:
-                added_sequence_number = inherited_sequence_number;
-                break;
-        }
-    }
-    std::optional<Int32> sort_order_id;
-    if (manifest_file_deserializer->hasPath(c_data_file_sort_order_id))
-    {
-        auto sort_order_id_value = manifest_file_deserializer->getValueFromRowByName(row_index, c_data_file_sort_order_id);
-        if (sort_order_id_value.isNull())
-            sort_order_id = std::nullopt;
-        else
-            sort_order_id = sort_order_id_value.safeGet<Int32>();
-    }
-
-    ManifestFileEntryPtr entry;
-    switch (content_type)
-    {
-        case FileContentType::DATA: {
-            entry = std::make_shared<ManifestFileEntry>(
-                file_path_key,
-                file_path,
-                row_index,
-                status,
-                added_sequence_number,
-                snapshot_id,
-                schema_id,
-                partition_key_value,
-                common_partition_specification,
-                columns_infos,
-                file_format,
-                /*lower_reference_data_file_path_ = */ std::nullopt,
-                /*upper_reference_data_file_path_ = */ std::nullopt,
-                /*equality_ids*/ std::nullopt,
-                sort_order_id);
-            std::lock_guard lock(files_mutex);
-            this->data_files_without_deleted.emplace_back(entry);
-            break;
-        }
-        case FileContentType::POSITION_DELETE: {
-            /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
-            std::optional<String> lower_reference_data_file_path = std::nullopt;
-            std::optional<String> upper_reference_data_file_path = std::nullopt;
-            bool bounds_set_by_referenced_data_file = false;
-            if (manifest_file_deserializer->hasPath(c_data_file_referenced_data_file))
-            {
-                Field reference_file_path_field
-                    = manifest_file_deserializer->getValueFromRowByName(row_index, c_data_file_referenced_data_file);
-                if (!reference_file_path_field.isNull())
-                {
-                    lower_reference_data_file_path = reference_file_path_field.safeGet<String>();
-                    upper_reference_data_file_path = reference_file_path_field.safeGet<String>();
-                    bounds_set_by_referenced_data_file = true;
-                }
-            }
-            if (!bounds_set_by_referenced_data_file)
-            {
-                if (auto it = value_for_bounds.find(IcebergPositionDeleteTransform::data_file_path_column_field_id);
-                    it != value_for_bounds.end())
-                {
-                    auto & [lower, upper] = it->second;
-                    if (!lower.isNull())
-                        lower_reference_data_file_path = lower.safeGet<String>();
-                    if (!upper.isNull())
-                        upper_reference_data_file_path = upper.safeGet<String>();
-                }
-            }
-            entry = std::make_shared<ManifestFileEntry>(
-                file_path_key,
-                file_path,
-                row_index,
-                status,
-                added_sequence_number,
-                snapshot_id,
-                schema_id,
-                partition_key_value,
-                common_partition_specification,
-                columns_infos,
-                file_format,
-                lower_reference_data_file_path,
-                upper_reference_data_file_path,
-                /*equality_ids*/ std::nullopt,
-                /*sort_order_id = */ std::nullopt);
-            std::lock_guard lock(files_mutex);
-            this->position_deletes_files_without_deleted.emplace_back(entry);
-            break;
-        }
-        case FileContentType::EQUALITY_DELETE: {
-            std::vector<Int32> equality_ids;
-            if (manifest_file_deserializer->hasPath(c_data_file_equality_ids))
-            {
-                Field equality_ids_field = manifest_file_deserializer->getValueFromRowByName(row_index, c_data_file_equality_ids);
-                for (const Field & id : equality_ids_field.safeGet<Array>())
-                    equality_ids.push_back(static_cast<Int32>(id.safeGet<Int32>()));
-            }
-            else
-                throw Exception(
-                    DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Couldn't find field {} in equality delete file entry",
-                    c_data_file_equality_ids);
-            entry = std::make_shared<ManifestFileEntry>(
-                file_path_key,
-                file_path,
-                row_index,
-                status,
-                added_sequence_number,
-                snapshot_id,
-                schema_id,
-                partition_key_value,
-                common_partition_specification,
-                columns_infos,
-                file_format,
-                /*lower_reference_data_file_path_ = */ std::nullopt,
-                /*upper_reference_data_file_path_ = */ std::nullopt,
-                equality_ids,
-                /*sort_order_id = */ std::nullopt);
-
-            break;
-        }
-    }
     std::optional<ManifestFilesPruner> current_pruner;
     if (use_partition_pruning)
     {
@@ -588,7 +389,7 @@ ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         case PruningReturnStatus::NOT_PRUNED: {
             std::lock_guard lock(files_mutex);
-            switch (content_type)
+            switch (entry->pure_entry->content_type)
             {
                 case FileContentType::EQUALITY_DELETE: {
                     this->equality_deletes_files.emplace_back(entry);
@@ -658,7 +459,7 @@ bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_i
         // This can happen if:
         // 1. The field is not present in older Iceberg format versions.
         // 2. The data file was written without sort order information.
-        if (!file->sort_order_id.has_value() || (*file->sort_order_id != sort_order_id))
+        if (!file->pure_entry->sort_order_id.has_value() || (*file->pure_entry->sort_order_id != sort_order_id))
             return false;
     }
     /// Empty manifest (no data files) is considered sorted by definition
@@ -666,33 +467,6 @@ bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_i
 
 }
 
-size_t ManifestFileIterator::getSizeInMemory() const
-{
-    size_t total_size = sizeof(ManifestFileIterator);
-    if (partition_key_description)
-        total_size += sizeof(DB::KeyDescription);
-
-    auto data_files_handle = getFilesWithoutDeletedHandle(FileContentType::DATA);
-    auto position_deletes_handle = getFilesWithoutDeletedHandle(FileContentType::POSITION_DELETE);
-    auto equality_deletes_handle = getFilesWithoutDeletedHandle(FileContentType::EQUALITY_DELETE);
-
-    total_size += data_files_handle->capacity() * sizeof(ManifestFileEntry);
-    total_size += position_deletes_handle->capacity() * sizeof(ManifestFileEntry);
-
-    for (const auto & file : *data_files_handle)
-    {
-        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
-    }
-    for (const auto & file : *position_deletes_handle)
-    {
-        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
-    }
-    for (const auto & file : *equality_deletes_handle)
-    {
-        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
-    }
-    return total_size;
-}
 
 std::optional<Int64> ManifestFileIterator::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
@@ -703,7 +477,7 @@ std::optional<Int64> ManifestFileIterator::getRowsCountInAllFilesExcludingDelete
     {
         /// Have at least one column with rows count
         bool found = false;
-        for (const auto & [column, column_info] : file->columns_infos)
+        for (const auto & [column, column_info] : file->pure_entry->columns_infos)
         {
             if (column_info.rows_count.has_value())
             {
@@ -727,7 +501,7 @@ std::optional<Int64> ManifestFileIterator::getBytesCountInAllDataFilesExcludingD
     {
         /// Have at least one column with bytes count
         bool found = false;
-        for (const auto & [column, column_info] : file->columns_infos)
+        for (const auto & [column, column_info] : file->pure_entry->columns_infos)
         {
             if (column_info.bytes_size.has_value())
             {
@@ -769,8 +543,8 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
 
 std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs)
 {
-    return std::tie(lhs->common_partition_specification, lhs->partition_key_value, lhs->added_sequence_number)
-        <=> std::tie(rhs->common_partition_specification, rhs->partition_key_value, rhs->added_sequence_number);
+    return std::tie(*lhs->common_partition_specification, lhs->pure_entry->partition_key_value, lhs->added_sequence_number)
+        <=> std::tie(*rhs->common_partition_specification, rhs->pure_entry->partition_key_value, rhs->added_sequence_number);
 }
 
 String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
@@ -813,12 +587,12 @@ String dumpPartitionKeyValue(const DB::Row & partition_key_value)
 }
 
 
-String ManifestFileEntry::dumpDeletesMatchingInfo() const
+String InheritedManifestFileEntry::dumpDeletesMatchingInfo() const
 {
     return fmt::format(
         "Partition specification: {}, partition key value: {}, added sequence number: {}",
-        dumpPartitionSpecification(common_partition_specification),
-        dumpPartitionKeyValue(partition_key_value),
+        dumpPartitionSpecification(*common_partition_specification),
+        dumpPartitionKeyValue(pure_entry->partition_key_value),
         added_sequence_number);
 }
 }

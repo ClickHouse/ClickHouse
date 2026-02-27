@@ -182,7 +182,7 @@ Plan getPlan(
 
             for (const auto & data_file : *data_files_handle)
             {
-                auto partition_index = plan.partition_encoder.encodePartition(data_file->partition_key_value);
+                auto partition_index = plan.partition_encoder.encodePartition(data_file->pure_entry->partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
@@ -208,7 +208,7 @@ Plan getPlan(
 
     for (const auto & delete_file : all_positional_delete_files)
     {
-        auto partition_index = plan.partition_encoder.encodePartition(delete_file->partition_key_value);
+        auto partition_index = plan.partition_encoder.encodePartition(delete_file->pure_entry->partition_key_value);
         if (partition_index >= plan.partitions.size())
             continue;
 

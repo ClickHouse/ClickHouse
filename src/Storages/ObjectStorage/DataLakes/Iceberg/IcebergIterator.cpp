@@ -103,16 +103,15 @@ HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncro
         workers.push_back(ThreadFromGlobalPool(
             [this]()
             {
-                while (true)
+                while (!is_cancelled)
                 {
                     auto iterator = task();
                     if (!iterator)
                     {
                         break;
                     }
-                    if (!blocking_queue.push(iterator))
+                    while (!is_cancelled.load() && !blocking_queue.push(iterator))
                     {
-                        break;
                     }
                 }
             }));
@@ -120,9 +119,19 @@ HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncro
 }
 
 template <typename HeavyCPUProcessingFunction>
+void HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncronousIterator::cancel()
+{
+    is_cancelled.store(true);
+    for (auto & worker : workers)
+    {
+        worker.join();
+    }
+}
+
+template <typename HeavyCPUProcessingFunction>
 Iceberg::ManifestFilePtr HomogeneousIcebergKeysIterator<HeavyCPUProcessingFunction>::ManifestFilesAsyncronousIterator::task()
 {
-    while (true)
+    while (!is_cancelled.load())
     {
         auto current_index = index.fetch_add(1);
         if (current_index >= parent.data_snapshot->manifest_list_entries.size())
@@ -143,6 +152,11 @@ Iceberg::ManifestFilePtr HomogeneousIcebergKeysIterator<HeavyCPUProcessingFuncti
             parent.data_snapshot->manifest_list_entries[current_index].manifest_file_path,
             parent.data_snapshot->manifest_list_entries[current_index].manifest_file_byte_size);
 
+        if (is_cancelled.load())
+        {
+            return nullptr;
+        }
+
         // TODO: recall what was the difference between file_path and filename
         return std::make_shared<Iceberg::ManifestFileIterator>(
             manifest_file_cacheable_part.deserializer,
@@ -159,6 +173,8 @@ Iceberg::ManifestFilePtr HomogeneousIcebergKeysIterator<HeavyCPUProcessingFuncti
             parent.filter_dag,
             parent.table_snapshot->schema_id);
     }
+
+    return nullptr;
 }
 
 template <typename HeavyCPUProcessingFunction>
@@ -195,8 +211,8 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
         data_object_,
         [](const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs)
         {
-            return std::tie(lhs->common_partition_specification, lhs->partition_key_value)
-                < std::tie(rhs->common_partition_specification, rhs->partition_key_value);
+            return std::tie(*lhs->common_partition_specification, lhs->pure_entry->partition_key_value)
+                < std::tie(*rhs->common_partition_specification, rhs->pure_entry->partition_key_value);
         });
     if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
     {
@@ -336,7 +352,7 @@ IcebergIterator::IcebergIterator(
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
     {
-        if (delete_file.value()->equality_ids.has_value())
+        if (delete_file.value()->pure_entry->equality_ids.has_value())
         {
             equality_deletes_files.emplace_back(std::move(delete_file.value()));
         }
@@ -368,8 +384,8 @@ ObjectInfoPtr IcebergIterator::convertToObjectInfo(const Iceberg::ManifestFileEn
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
             const auto & data_file_path = object_info->info.data_object_file_path_key;
-            const auto & lower = position_delete->lower_reference_data_file_path;
-            const auto & upper = position_delete->upper_reference_data_file_path;
+            const auto & lower = position_delete->pure_entry->lower_reference_data_file_path;
+            const auto & upper = position_delete->pure_entry->upper_reference_data_file_path;
             bool can_contain_data_file_deletes
                 = (!lower.has_value() || lower.value() <= data_file_path) && (!upper.has_value() || upper.value() >= data_file_path);
             /// Skip position deletes that do not match the data file path.
@@ -443,6 +459,14 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 size_t IcebergIterator::estimatedKeysCount()
 {
     return std::numeric_limits<size_t>::max();
+}
+
+
+void IcebergIterator::cancel()
+{
+    if (data_files_iterator)
+        data_files_iterator->cancel();
+    deletes_iterator.cancel();
 }
 }
 

@@ -44,7 +44,6 @@ struct ColumnInfo
     std::optional<Int64> rows_count;
     std::optional<Int64> bytes_size;
     std::optional<Int64> nulls_count;
-    std::optional<DB::Range> hyperrectangle;
 };
 
 struct PartitionSpecsEntry
@@ -62,23 +61,20 @@ struct ManifestFileCacheableInfo
 };
 
 /// Description of Data file in manifest file
-struct ManifestFileEntry : public boost::noncopyable
+struct PureManifestFileEntry
 {
+    FileContentType content_type;
     // It's the original string in the Iceberg metadata
     String file_path_key;
-    // It's a processed file path to be used by Object Storage
-    String file_path;
     Int64 row_number;
 
     ManifestEntryStatus status;
-    Int64 added_sequence_number;
-
-    Int64 snapshot_id;
-    Int32 schema_id;
+    std::optional<Int64> written_sequence_number;
+    std::optional<Int64> written_snapshot_id;
 
     DB::Row partition_key_value;
-    PartitionSpecification common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
+    std::unordered_map<Int32, std::pair<Field, Field>> value_bounds;
 
     String file_format;
     std::optional<String> lower_reference_data_file_path; // For position delete files only.
@@ -88,44 +84,62 @@ struct ManifestFileEntry : public boost::noncopyable
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
 
-    String dumpDeletesMatchingInfo() const;
-
-    ManifestFileEntry(
-        const String& file_path_key_,
-        const String& file_path_,
+    PureManifestFileEntry(
+        FileContentType content_type_,
+        String file_path_key_,
         Int64 row_number_,
         ManifestEntryStatus status_,
-        Int64 added_sequence_number_,
-        Int64 snapshot_id_,
-        Int32 schema_id_,
-        DB::Row& partition_key_value_,
-        PartitionSpecification& common_partition_specification_,
-        std::unordered_map<Int32, ColumnInfo>& columns_infos_,
-        const String& file_format_,
+        std::optional<Int64> written_sequence_number_,
+        std::optional<Int64> written_snapshot_id_,
+        DB::Row partition_key_value_,
+        std::unordered_map<Int32, ColumnInfo> columns_infos_,
+        std::unordered_map<Int32, std::pair<Field, Field>> value_bounds_,
+        String file_format_,
         std::optional<String> lower_reference_data_file_path_,
         std::optional<String> upper_reference_data_file_path_,
         std::optional<std::vector<Int32>> equality_ids_,
         std::optional<Int32> sort_order_id_)
-        : file_path_key(file_path_key_)
-        , file_path(file_path_)
+        : content_type(content_type_)
+        , file_path_key(std::move(file_path_key_))
         , row_number(row_number_)
         , status(status_)
-        , added_sequence_number(added_sequence_number_)
-        , snapshot_id(snapshot_id_)
-        , schema_id(schema_id_)
+        , written_sequence_number(written_sequence_number_)
+        , written_snapshot_id(written_snapshot_id_)
         , partition_key_value(std::move(partition_key_value_))
-        , common_partition_specification(common_partition_specification_)
         , columns_infos(std::move(columns_infos_))
-        , file_format(file_format_)
-        , lower_reference_data_file_path(lower_reference_data_file_path_)
-        , upper_reference_data_file_path(upper_reference_data_file_path_)
+        , value_bounds(std::move(value_bounds_))
+        , file_format(std::move(file_format_))
+        , lower_reference_data_file_path(std::move(lower_reference_data_file_path_))
+        , upper_reference_data_file_path(std::move(upper_reference_data_file_path_))
         , equality_ids(std::move(equality_ids_))
         , sort_order_id(sort_order_id_)
     {
     }
+
+    PureManifestFileEntry(const PureManifestFileEntry &) = delete;
+    PureManifestFileEntry & operator=(const PureManifestFileEntry &) = delete;
 };
 
-using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
+struct InheritedManifestFileEntry
+{
+    std::shared_ptr<const PureManifestFileEntry> pure_entry;
+    std::shared_ptr<const PartitionSpecification> common_partition_specification;
+
+    /// Computed file path for Object Storage (resolved from pure_entry->file_path_key)
+    String file_path;
+
+    /// Inherited or resolved from manifest list level
+    Int64 added_sequence_number;
+    Int64 snapshot_id;
+    Int32 schema_id;
+
+    /// Per-column hyperrectangles computed from value bounds
+    std::unordered_map<Int32, DB::Range> hyperrectangles;
+
+    String dumpDeletesMatchingInfo() const;
+};
+
+using ManifestFileEntryPtr = std::shared_ptr<const InheritedManifestFileEntry>;
 
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
@@ -193,10 +207,6 @@ public:
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
-    /// Get size in bytes of how much memory one instance of this ManifestFileContent class takes.
-    /// Used for in-memory caches size accounting.
-    size_t getSizeInMemory() const;
-
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
     std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
@@ -221,13 +231,12 @@ private:
 
     ManifestFileEntryPtr processRow(size_t row_index);
 
-    PartitionSpecification common_partition_specification;
-
     std::optional<DB::KeyDescription> partition_key_description;
 
     /// Mutex to protect concurrent access to file vectors during iteration
     mutable SharedMutex files_mutex;
 
+    std::shared_ptr<const PartitionSpecification> common_partition_specification;
     // Size - number of files
     std::vector<ManifestFileEntryPtr> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
     // Partition level deletes files

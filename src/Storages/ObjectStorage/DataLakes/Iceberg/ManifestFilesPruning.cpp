@@ -140,7 +140,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr 
 {
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry->partition_key_value;
+        const auto & partition_value = entry->pure_entry->partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (auto & field : index_value)
         {
@@ -168,15 +168,15 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr 
             continue;
         }
 
-        auto it = entry->columns_infos.find(column_id);
-        if (it == entry->columns_infos.end())
-        {
+        auto rect_it = entry->hyperrectangles.find(column_id);
+        if (rect_it == entry->hyperrectangles.end())
             continue;
-        }
 
+        auto info_it = entry->pure_entry->columns_infos.find(column_id);
+        bool has_no_nulls = info_it != entry->pure_entry->columns_infos.end()
+            && info_it->second.nulls_count.has_value() && *info_it->second.nulls_count == 0;
 
-        auto hyperrectangle = it->second.hyperrectangle;
-        if (hyperrectangle.has_value() && it->second.nulls_count.has_value() && *it->second.nulls_count == 0 && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
+        if (has_no_nulls && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, {name_and_type->type}))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }

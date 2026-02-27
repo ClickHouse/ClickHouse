@@ -133,7 +133,9 @@ Iceberg::ManifestFilePtr getManifestFileAsIterator(
         nullptr,
         table_snapshot_schema_id);
 
-    while (iterator->next()) {}
+    while (iterator->next())
+    {
+    }
 
     return iterator;
 }
