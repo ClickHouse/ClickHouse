@@ -52,7 +52,7 @@ try
     metadata = manifest_file_reader->metadata();
     parsed_column = std::move(columns[0]);
     parsed_column_data_type = std::dynamic_pointer_cast<const DataTypeTuple>(data_type);
-    pure_manifest_file_entries.resize(parsed_column->size());
+    parsed_manifest_file_entries.resize(parsed_column->size());
 }
 catch (const std::exception & e)
 {
@@ -86,7 +86,7 @@ Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() con
 }
 
 
-std::shared_ptr<const PureManifestFileEntry> AvroForIcebergDeserializer::createPureManifestFileEntry(size_t row_index) const
+std::shared_ptr<const ParsedManifestFileEntry> AvroForIcebergDeserializer::createParsedManifestFileEntry(size_t row_index) const
 {
     const auto format_version = getFormatVersionFromManifestFileMetadata();
     FileContentType content_type = FileContentType::DATA;
@@ -117,7 +117,7 @@ std::shared_ptr<const PureManifestFileEntry> AvroForIcebergDeserializer::createP
 
     if (format_version > 1)
     {
-        if (!sequence_number_value.isNull())
+        if (sequence_number_value.isNull())
         {
             if (status == ManifestEntryStatus::EXISTING)
             {
@@ -217,7 +217,7 @@ std::shared_ptr<const PureManifestFileEntry> AvroForIcebergDeserializer::createP
     switch (content_type)
     {
         case FileContentType::DATA: {
-            return std::make_shared<const PureManifestFileEntry>(
+            return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::DATA,
                 file_path_key,
                 row_index,
@@ -260,7 +260,7 @@ std::shared_ptr<const PureManifestFileEntry> AvroForIcebergDeserializer::createP
                         upper_reference_data_file_path = upper.safeGet<String>();
                 }
             }
-            return std::make_shared<const PureManifestFileEntry>(
+            return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::POSITION_DELETE,
                 file_path_key,
                 row_index,
@@ -289,7 +289,7 @@ std::shared_ptr<const PureManifestFileEntry> AvroForIcebergDeserializer::createP
                     DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                     "Couldn't find field {} in equality delete file entry",
                     c_data_file_equality_ids);
-            return std::make_shared<const PureManifestFileEntry>(
+            return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::EQUALITY_DELETE,
                 file_path_key,
                 row_index,
@@ -309,20 +309,20 @@ std::shared_ptr<const PureManifestFileEntry> AvroForIcebergDeserializer::createP
 }
 
 
-std::shared_ptr<const PureManifestFileEntry> AvroForIcebergDeserializer::getPureManifestFileEntry(size_t row_index) const
+std::shared_ptr<const ParsedManifestFileEntry> AvroForIcebergDeserializer::getParsedManifestFileEntry(size_t row_index) const
 {
     SharedLockGuard lock(cache_mutex);
-    if (row_index >= pure_manifest_file_entries.size())
+    if (row_index >= parsed_manifest_file_entries.size())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Row number {} is out of bounds", row_index);
-    if (!pure_manifest_file_entries[row_index])
+    if (!parsed_manifest_file_entries[row_index])
     {
         lock.unlock();
-        auto entry = createPureManifestFileEntry(row_index);
+        auto entry = createParsedManifestFileEntry(row_index);
         UniqueLock exclusive_lock(cache_mutex);
-        pure_manifest_file_entries[row_index] = std::move(entry);
-        return pure_manifest_file_entries[row_index];
+        parsed_manifest_file_entries[row_index] = std::move(entry);
+        return parsed_manifest_file_entries[row_index];
     }
-    return pure_manifest_file_entries[row_index];
+    return parsed_manifest_file_entries[row_index];
 }
 
 std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::extractSubcolumnWithType(const std::string & path) const
@@ -448,6 +448,7 @@ String AvroForIcebergDeserializer::getMetadataContent() const
     metadata_object->stringify(oss);
     return removeAllSlashes(oss.str());
 }
+
 }
 
 #endif

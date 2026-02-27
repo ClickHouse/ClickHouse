@@ -19,7 +19,7 @@
 namespace DB::Iceberg
 {
 
-struct PureManifestFileEntry;
+struct ParsedManifestFileEntry;
 
 /// In Iceberg manifest files and manifest lists are store in Avro format: https://avro.apache.org/
 /// This format is some kind of mix between JSON and binary schemaful format like protobuf.
@@ -52,7 +52,10 @@ private:
     /// Helper to format a row as JSON. Assumes cache_parsed_columns is initialized and lock is held.
     String formatRowAsJSON(const ColumnsWithTypeAndName & parsed_columns, size_t row_number) const TSA_REQUIRES_SHARED(cache_mutex);
 
-    mutable std::vector<std::shared_ptr<const PureManifestFileEntry>> pure_manifest_file_entries TSA_GUARDED_BY(cache_mutex);
+    mutable std::vector<std::shared_ptr<const ParsedManifestFileEntry>> parsed_manifest_file_entries TSA_GUARDED_BY(cache_mutex);
+
+    Int64 getFormatVersionFromManifestFileMetadata() const;
+
 
 public:
     AvroForIcebergDeserializer(
@@ -71,10 +74,8 @@ public:
 
     std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;
 
-    std::shared_ptr<const PureManifestFileEntry> getPureManifestFileEntry(size_t row_index) const;
-    std::shared_ptr<const PureManifestFileEntry> createPureManifestFileEntry(size_t row_index) const;
-
-    Int64 getFormatVersionFromManifestFileMetadata() const;
+    std::shared_ptr<const ParsedManifestFileEntry> getParsedManifestFileEntry(size_t row_index) const;
+    std::shared_ptr<const ParsedManifestFileEntry> createParsedManifestFileEntry(size_t row_index) const;
 
     String getContent(size_t row_number) const;
     String getMetadataContent() const;

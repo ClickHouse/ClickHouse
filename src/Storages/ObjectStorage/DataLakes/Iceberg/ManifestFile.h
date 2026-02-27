@@ -61,7 +61,7 @@ struct ManifestFileCacheableInfo
 };
 
 /// Description of Data file in manifest file
-struct PureManifestFileEntry
+struct ParsedManifestFileEntry
 {
     FileContentType content_type;
     // It's the original string in the Iceberg metadata
@@ -84,7 +84,7 @@ struct PureManifestFileEntry
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
 
-    PureManifestFileEntry(
+    ParsedManifestFileEntry(
         FileContentType content_type_,
         String file_path_key_,
         Int64 row_number_,
@@ -116,16 +116,16 @@ struct PureManifestFileEntry
     {
     }
 
-    PureManifestFileEntry(const PureManifestFileEntry &) = delete;
-    PureManifestFileEntry & operator=(const PureManifestFileEntry &) = delete;
+    ParsedManifestFileEntry(const ParsedManifestFileEntry &) = delete;
+    ParsedManifestFileEntry & operator=(const ParsedManifestFileEntry &) = delete;
 };
 
-struct InheritedManifestFileEntry
+struct ProcessedManifestFileEntry
 {
-    std::shared_ptr<const PureManifestFileEntry> pure_entry;
+    std::shared_ptr<const ParsedManifestFileEntry> parsed_entry;
     std::shared_ptr<const PartitionSpecification> common_partition_specification;
 
-    /// Computed file path for Object Storage (resolved from pure_entry->file_path_key)
+    /// Computed file path for Object Storage (resolved from parsed_entry->file_path_key)
     String file_path;
 
     /// Inherited or resolved from manifest list level
@@ -139,7 +139,7 @@ struct InheritedManifestFileEntry
     String dumpDeletesMatchingInfo() const;
 };
 
-using ManifestFileEntryPtr = std::shared_ptr<const InheritedManifestFileEntry>;
+using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;
 
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
@@ -172,23 +172,23 @@ class ManifestFileIterator : public boost::noncopyable
 public:
     struct ManifestFileEntriesHandle
     {
-        const std::vector<ManifestFileEntryPtr> & getFilesWithoutDeleted() const { return *files; }
+        const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted() const { return *files; }
 
-        ManifestFileEntriesHandle(const std::vector<ManifestFileEntryPtr> * files_, SharedLockGuard<SharedMutex> shared_lock_)
+        ManifestFileEntriesHandle(const std::vector<ProcessedManifestFileEntryPtr> * files_, SharedLockGuard<SharedMutex> shared_lock_)
             : files(files_)
             , lock(std::move(shared_lock_))
         {
         }
 
-        const std::vector<ManifestFileEntryPtr> & operator*() const { return getFilesWithoutDeleted(); }
-        const std::vector<ManifestFileEntryPtr> * operator->() const { return files; }
+        const std::vector<ProcessedManifestFileEntryPtr> & operator*() const { return getFilesWithoutDeleted(); }
+        const std::vector<ProcessedManifestFileEntryPtr> * operator->() const { return files; }
 
     private:
-        const std::vector<ManifestFileEntryPtr> * files;
+        const std::vector<ProcessedManifestFileEntryPtr> * files;
         SharedLockGuard<SharedMutex> lock;
     };
 
-    explicit ManifestFileIterator(
+    static std::shared_ptr<ManifestFileIterator> create(
         std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
         const String & manifest_file_name,
         Int32 format_version_,
@@ -199,7 +199,6 @@ public:
         const std::string & table_location,
         DB::ContextPtr context,
         const String & path_to_manifest_file_,
-        bool use_partition_pruning_,
         std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_);
 
@@ -218,8 +217,9 @@ public:
 
     /// Returns true if all manifest file entries have been processed
     bool isInitialized() const;
-    /// Process the next manifest file entry and return it. Returns nullptr if all entries have been processed.
-    ManifestFileEntryPtr next();
+    /// Process the next manifest file entry and return it. Skips pruned entries.
+    /// Returns nullptr only when all entries have been processed (iterator is fully initialized).
+    ProcessedManifestFileEntryPtr next();
 
     ManifestFileIterator(ManifestFileIterator &&) = delete;
     ManifestFileIterator & operator=(ManifestFileIterator &&) = delete;
@@ -227,44 +227,59 @@ public:
     size_t getFileBytesSize() const { return file_bytes_size; }
 
 private:
-    void preinitialize(const String & manifest_file_name, const String & common_path, DB::ContextPtr context);
+    ManifestFileIterator(
+        std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
+        const String & path_to_manifest_file,
+        const String & manifest_file_name,
+        Int32 format_version,
+        const String & common_path,
+        const String & table_location,
+        IcebergSchemaProcessor & schema_processor,
+        Int64 inherited_sequence_number,
+        Int64 inherited_snapshot_id,
+        DB::ContextPtr context,
+        Int32 manifest_schema_id,
+        size_t file_bytes_size,
+        std::shared_ptr<const PartitionSpecification> common_partition_specification,
+        std::optional<DB::KeyDescription> partition_key_description,
+        size_t total_rows,
+        std::shared_ptr<const ActionsDAG> filter_dag,
+        Int32 table_snapshot_schema_id);
 
-    ManifestFileEntryPtr processRow(size_t row_index);
+    ProcessedManifestFileEntryPtr processRow(size_t row_index);
 
-    std::optional<DB::KeyDescription> partition_key_description;
+    /// Constant properties of this manifest file
+    const std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer;
+    const String path_to_manifest_file;
+    const String manifest_file_name;
+    const Int32 format_version;
+    const String common_path;
+    const String table_location;
+    IcebergSchemaProcessor * const schema_processor_ptr;
+    const Int64 inherited_sequence_number;
+    const Int64 inherited_snapshot_id;
+    const DB::ContextPtr context;
+    const Int32 manifest_schema_id;
+    const size_t file_bytes_size;
+    const std::shared_ptr<const PartitionSpecification> common_partition_specification;
+    const std::optional<DB::KeyDescription> partition_key_description;
 
-    /// Mutex to protect concurrent access to file vectors during iteration
+    /// Iteration state
+    const size_t total_rows;
+    std::atomic<size_t> current_row_index{0};
+    std::atomic<bool> fully_initialized{false};
+
+    /// Cached results accumulated during iteration
     mutable SharedMutex files_mutex;
+    std::vector<ProcessedManifestFileEntryPtr> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
+    std::vector<ProcessedManifestFileEntryPtr> position_deletes_files_without_deleted TSA_GUARDED_BY(files_mutex);
+    std::vector<ProcessedManifestFileEntryPtr> equality_deletes_files TSA_GUARDED_BY(files_mutex);
 
-    std::shared_ptr<const PartitionSpecification> common_partition_specification;
-    // Size - number of files
-    std::vector<ManifestFileEntryPtr> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
-    // Partition level deletes files
-    std::vector<ManifestFileEntryPtr> position_deletes_files_without_deleted TSA_GUARDED_BY(files_mutex);
-    std::vector<ManifestFileEntryPtr> equality_deletes_files TSA_GUARDED_BY(files_mutex);
-
-    // State for iterative initialization
-    std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer;
-    size_t file_bytes_size;
-    String path_to_manifest_file;
-    size_t total_rows = 0;
-    std::atomic<size_t> current_row_index = 0;
-    std::atomic<bool> fully_initialized = false;
-    Int32 format_version = 0;
-    String common_path;
-    IcebergSchemaProcessor * schema_processor_ptr = nullptr;
-    Int64 inherited_sequence_number = 0;
-    Int64 inherited_snapshot_id = 0;
-    String table_location;
-    DB::ContextPtr context;
-    String manifest_file_name;
-    Int32 manifest_schema_id = 0;
-
-    std::atomic<std::size_t> min_max_index_pruned_files = 0;
-    std::atomic<std::size_t> partition_pruned_files = 0;
-    bool use_partition_pruning;
+    /// Filtering (partition and min-max index pruning)
     const std::shared_ptr<const ActionsDAG> filter_dag;
     const Int32 table_snapshot_schema_id;
+    std::atomic<std::size_t> partition_pruned_files{0};
+    std::atomic<std::size_t> min_max_index_pruned_files{0};
 };
 
 using ManifestFilePtr = std::shared_ptr<ManifestFileIterator>;
@@ -273,7 +288,7 @@ bool operator<(const PartitionSpecification & lhs, const PartitionSpecification 
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
 
-std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs);
+std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs);
 }
 
 #endif

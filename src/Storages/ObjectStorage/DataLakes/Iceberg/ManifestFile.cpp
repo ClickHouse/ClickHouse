@@ -136,7 +136,7 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
     if (!fully_initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
 
-    const std::vector<ManifestFileEntryPtr> * ptr;
+    const std::vector<ProcessedManifestFileEntryPtr> * ptr;
     if (content_type == FileContentType::DATA)
         ptr = &data_files_without_deleted;
     else if (content_type == FileContentType::POSITION_DELETE)
@@ -148,7 +148,7 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
 
 using namespace DB;
 
-ManifestFileIterator::ManifestFileIterator(
+std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
     const String & manifest_file_name_,
     Int32 format_version_,
@@ -159,51 +159,32 @@ ManifestFileIterator::ManifestFileIterator(
     const String & table_location_,
     DB::ContextPtr context_,
     const String & path_to_manifest_file_,
-    bool use_partition_pruning_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
-    : manifest_file_deserializer(std::move(manifest_file_deserializer_))
-    , path_to_manifest_file(path_to_manifest_file_)
-    , format_version(format_version_)
-    , common_path(common_path_)
-    , schema_processor_ptr(&schema_processor)
-    , inherited_sequence_number(inherited_sequence_number_)
-    , inherited_snapshot_id(inherited_snapshot_id_)
-    , table_location(table_location_)
-    , context(context_)
-    , manifest_file_name(manifest_file_name_)
-    , use_partition_pruning(use_partition_pruning_)
-    , filter_dag(std::move(filter_dag_))
-    , table_snapshot_schema_id(table_snapshot_schema_id_)
-{
-    preinitialize(manifest_file_name_, common_path_, context_);
-}
-
-void ManifestFileIterator::preinitialize(const String & manifest_file_name_, const String & common_path_, DB::ContextPtr context_)
 {
     insertRowToLogTable(
         context_,
-        manifest_file_deserializer->getMetadataContent(),
+        manifest_file_deserializer_->getMetadataContent(),
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         common_path_,
-        path_to_manifest_file,
+        path_to_manifest_file_,
         std::nullopt,
         std::nullopt);
 
     for (const auto & column_name : {f_status, f_data_file})
     {
-        if (!manifest_file_deserializer->hasPath(column_name))
+        if (!manifest_file_deserializer_->hasPath(column_name))
             throw Exception(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
-    if (format_version > 1 && !manifest_file_deserializer->hasPath(f_sequence_number))
+    if (format_version_ > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
     Poco::JSON::Parser parser;
 
-    auto partition_spec_json_string = manifest_file_deserializer->tryGetAvroMetadataValue("partition-spec");
+    auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec");
     if (!partition_spec_json_string.has_value())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No partition-spec in iceberg manifest file");
 
@@ -216,7 +197,7 @@ void ManifestFileIterator::preinitialize(const String & manifest_file_name_, con
     partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
     partition_key_ast->children.push_back(partition_key_ast->arguments);
 
-    auto schema_json_string = manifest_file_deserializer->tryGetAvroMetadataValue(f_schema);
+    auto schema_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema);
     if (!schema_json_string.has_value())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -226,9 +207,9 @@ void ManifestFileIterator::preinitialize(const String & manifest_file_name_, con
 
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    manifest_schema_id = schema_object->getValue<int>(f_schema_id);
+    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    schema_processor_ptr->addIcebergTableSchema(schema_object);
+    schema_processor.addIcebergTableSchema(schema_object);
 
     PartitionSpecification partition_spec_vec;
     for (size_t i = 0; i != partition_specification->size(); ++i)
@@ -240,7 +221,7 @@ void ManifestFileIterator::preinitialize(const String & manifest_file_name_, con
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
         std::optional<DB::NameAndTypePair> manifest_file_column_characteristics
-            = schema_processor_ptr->tryGetFieldCharacteristics(manifest_schema_id, source_id);
+            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id);
         if (!manifest_file_column_characteristics.has_value())
             continue;
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
@@ -254,36 +235,92 @@ void ManifestFileIterator::preinitialize(const String & manifest_file_name_, con
         partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
         partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
-    common_partition_specification = std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec));
 
+    std::optional<DB::KeyDescription> partition_key_description;
     if (!partition_columns_description.empty())
-        this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
+        partition_key_description.emplace(
+            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context_));
 
-    total_rows = manifest_file_deserializer->rows();
-    current_row_index = 0;
-    fully_initialized = false;
+    size_t total_rows = manifest_file_deserializer_->rows();
+
+    return std::shared_ptr<ManifestFileIterator>(new ManifestFileIterator(
+        std::move(manifest_file_deserializer_),
+        path_to_manifest_file_,
+        manifest_file_name_,
+        format_version_,
+        common_path_,
+        table_location_,
+        schema_processor,
+        inherited_sequence_number_,
+        inherited_snapshot_id_,
+        context_,
+        manifest_schema_id,
+        0,
+        std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec)),
+        std::move(partition_key_description),
+        total_rows,
+        std::move(filter_dag_),
+        table_snapshot_schema_id_));
 }
 
-ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
+ManifestFileIterator::ManifestFileIterator(
+    std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
+    const String & path_to_manifest_file_,
+    const String & manifest_file_name_,
+    Int32 format_version_,
+    const String & common_path_,
+    const String & table_location_,
+    IcebergSchemaProcessor & schema_processor,
+    Int64 inherited_sequence_number_,
+    Int64 inherited_snapshot_id_,
+    DB::ContextPtr context_,
+    Int32 manifest_schema_id_,
+    size_t file_bytes_size_,
+    std::shared_ptr<const PartitionSpecification> common_partition_specification_,
+    std::optional<DB::KeyDescription> partition_key_description_,
+    size_t total_rows_,
+    std::shared_ptr<const ActionsDAG> filter_dag_,
+    Int32 table_snapshot_schema_id_)
+    : manifest_file_deserializer(std::move(manifest_file_deserializer_))
+    , path_to_manifest_file(path_to_manifest_file_)
+    , manifest_file_name(manifest_file_name_)
+    , format_version(format_version_)
+    , common_path(common_path_)
+    , table_location(table_location_)
+    , schema_processor_ptr(&schema_processor)
+    , inherited_sequence_number(inherited_sequence_number_)
+    , inherited_snapshot_id(inherited_snapshot_id_)
+    , context(context_)
+    , manifest_schema_id(manifest_schema_id_)
+    , file_bytes_size(file_bytes_size_)
+    , common_partition_specification(std::move(common_partition_specification_))
+    , partition_key_description(std::move(partition_key_description_))
+    , total_rows(total_rows_)
+    , filter_dag(std::move(filter_dag_))
+    , table_snapshot_schema_id(table_snapshot_schema_id_)
 {
-    auto pure_entry = manifest_file_deserializer->getPureManifestFileEntry(row_index);
+}
 
-    if (!pure_entry)
+ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
+{
+    auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
+
+    if (!parsed_entry)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Got null pure manifest file entry for row {} in manifest file '{}'",
             row_index,
             path_to_manifest_file);
 
-    if (pure_entry->status == ManifestEntryStatus::DELETED)
+    if (parsed_entry->status == ManifestEntryStatus::DELETED)
         return nullptr;
 
     /// Compute inherited/resolved fields
-    const auto file_path = getProperFilePathFromMetadataInfo(pure_entry->file_path_key, common_path, table_location);
+    const auto file_path = getProperFilePathFromMetadataInfo(parsed_entry->file_path_key, common_path, table_location);
 
     Int64 resolved_snapshot_id = inherited_snapshot_id;
-    if (pure_entry->written_snapshot_id.has_value())
-        resolved_snapshot_id = *pure_entry->written_snapshot_id;
+    if (parsed_entry->written_snapshot_id.has_value())
+        resolved_snapshot_id = *parsed_entry->written_snapshot_id;
 
     const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(resolved_snapshot_id);
     if (!schema_id_opt.has_value())
@@ -308,17 +345,17 @@ ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     Int64 added_sequence_number = 0;
     if (format_version > 1)
     {
-        switch (pure_entry->status)
+        switch (parsed_entry->status)
         {
             case ManifestEntryStatus::ADDED:
                 added_sequence_number = inherited_sequence_number;
                 break;
             case ManifestEntryStatus::EXISTING: {
-                if (!pure_entry->written_sequence_number.has_value())
+                if (!parsed_entry->written_sequence_number.has_value())
                     throw Exception(
                         DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                         "Data sequence number is null for the file added in another snapshot");
-                added_sequence_number = *pure_entry->written_sequence_number;
+                added_sequence_number = *parsed_entry->written_sequence_number;
                 break;
             }
             case ManifestEntryStatus::DELETED:
@@ -329,9 +366,9 @@ ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
     /// Compute per-column hyperrectangles for DATA files
     std::unordered_map<Int32, DB::Range> hyperrectangles;
-    if (pure_entry->content_type == FileContentType::DATA)
+    if (parsed_entry->content_type == FileContentType::DATA)
     {
-        for (const auto & [column_id, bounds] : pure_entry->value_bounds)
+        for (const auto & [column_id, bounds] : parsed_entry->value_bounds)
         {
             auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id);
             /// If we don't have column characteristics, bounds don't have any sense.
@@ -361,8 +398,8 @@ ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         }
     }
 
-    auto entry = std::make_shared<InheritedManifestFileEntry>(InheritedManifestFileEntry{
-        .pure_entry = std::move(pure_entry),
+    auto entry = std::make_shared<ProcessedManifestFileEntry>(ProcessedManifestFileEntry{
+        .parsed_entry = std::move(parsed_entry),
         .common_partition_specification = common_partition_specification,
         .file_path = file_path,
         .added_sequence_number = added_sequence_number,
@@ -372,7 +409,7 @@ ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     });
 
     std::optional<ManifestFilesPruner> current_pruner;
-    if (use_partition_pruning)
+    if (filter_dag)
     {
         current_pruner.emplace(*schema_processor_ptr, table_snapshot_schema_id, entry->schema_id, filter_dag.get(), *this, context);
     }
@@ -389,7 +426,7 @@ ManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         case PruningReturnStatus::NOT_PRUNED: {
             std::lock_guard lock(files_mutex);
-            switch (entry->pure_entry->content_type)
+            switch (entry->parsed_entry->content_type)
             {
                 case FileContentType::EQUALITY_DELETE: {
                     this->equality_deletes_files.emplace_back(entry);
@@ -422,20 +459,23 @@ bool ManifestFileIterator::isInitialized() const
     return fully_initialized;
 }
 
-ManifestFileEntryPtr ManifestFileIterator::next()
+ProcessedManifestFileEntryPtr ManifestFileIterator::next()
 {
     if (fully_initialized.load())
         return nullptr;
 
-    size_t row_index = current_row_index.fetch_add(1);
-    if (row_index >= total_rows)
+    while (true)
     {
-        fully_initialized.store(true);
-        return nullptr;
+        size_t row_index = current_row_index.fetch_add(1);
+        if (row_index >= total_rows)
+        {
+            fully_initialized.store(true);
+            return nullptr;
+        }
+        auto entry = processRow(row_index);
+        if (entry)
+            return entry;
     }
-    auto entry = processRow(row_index);
-
-    return entry;
 }
 
 bool ManifestFileIterator::hasPartitionKey() const
@@ -459,7 +499,7 @@ bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_i
         // This can happen if:
         // 1. The field is not present in older Iceberg format versions.
         // 2. The data file was written without sort order information.
-        if (!file->pure_entry->sort_order_id.has_value() || (*file->pure_entry->sort_order_id != sort_order_id))
+        if (!file->parsed_entry->sort_order_id.has_value() || (*file->parsed_entry->sort_order_id != sort_order_id))
             return false;
     }
     /// Empty manifest (no data files) is considered sorted by definition
@@ -477,7 +517,7 @@ std::optional<Int64> ManifestFileIterator::getRowsCountInAllFilesExcludingDelete
     {
         /// Have at least one column with rows count
         bool found = false;
-        for (const auto & [column, column_info] : file->pure_entry->columns_infos)
+        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
         {
             if (column_info.rows_count.has_value())
             {
@@ -501,7 +541,7 @@ std::optional<Int64> ManifestFileIterator::getBytesCountInAllDataFilesExcludingD
     {
         /// Have at least one column with bytes count
         bool found = false;
-        for (const auto & [column, column_info] : file->pure_entry->columns_infos)
+        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
         {
             if (column_info.bytes_size.has_value())
             {
@@ -541,10 +581,10 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
     return less(lhs, rhs);
 }
 
-std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs)
+std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
 {
-    return std::tie(*lhs->common_partition_specification, lhs->pure_entry->partition_key_value, lhs->added_sequence_number)
-        <=> std::tie(*rhs->common_partition_specification, rhs->pure_entry->partition_key_value, rhs->added_sequence_number);
+    return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value, lhs->added_sequence_number)
+        <=> std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value, rhs->added_sequence_number);
 }
 
 String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
@@ -587,12 +627,12 @@ String dumpPartitionKeyValue(const DB::Row & partition_key_value)
 }
 
 
-String InheritedManifestFileEntry::dumpDeletesMatchingInfo() const
+String ProcessedManifestFileEntry::dumpDeletesMatchingInfo() const
 {
     return fmt::format(
         "Partition specification: {}, partition key value: {}, added sequence number: {}",
         dumpPartitionSpecification(*common_partition_specification),
-        dumpPartitionKeyValue(pure_entry->partition_key_value),
+        dumpPartitionKeyValue(parsed_entry->partition_key_value),
         added_sequence_number);
 }
 }

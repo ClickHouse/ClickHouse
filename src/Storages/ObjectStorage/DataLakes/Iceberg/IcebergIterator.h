@@ -45,7 +45,7 @@ public:
         IcebergDataSnapshotPtr data_snapshot_,
         PersistentTableComponents persistent_components);
 
-    std::optional<DB::Iceberg::ManifestFileEntryPtr> next();
+    std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
 
 private:
     ObjectStoragePtr object_storage;
@@ -53,7 +53,6 @@ private:
     ContextPtr local_context;
     Iceberg::TableStateSnapshotPtr table_snapshot;
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
-    bool use_partition_pruning;
     PersistentTableComponents persistent_components;
     LoggerPtr log;
 
@@ -90,11 +89,11 @@ private:
     Iceberg::PersistentTableComponents persistent_components;
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
     Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
-    ConcurrentBoundedQueue<Iceberg::ManifestFileEntryPtr> blocking_queue;
+    ConcurrentBoundedQueue<Iceberg::ProcessedManifestFileEntryPtr> blocking_queue;
     std::optional<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
-    std::vector<Iceberg::ManifestFileEntryPtr> position_deletes_files;
-    std::vector<Iceberg::ManifestFileEntryPtr> equality_deletes_files;
+    std::vector<Iceberg::ProcessedManifestFileEntryPtr> position_deletes_files;
+    std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
     std::exception_ptr exception;
     std::mutex exception_mutex;
 };

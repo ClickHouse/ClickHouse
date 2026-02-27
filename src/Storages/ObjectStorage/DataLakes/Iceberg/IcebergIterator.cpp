@@ -81,8 +81,11 @@ using namespace Iceberg;
 
 namespace
 {
-std::span<const ManifestFileEntryPtr> defineDeletesSpan(
-    ManifestFileEntryPtr data_object_, const std::vector<ManifestFileEntryPtr> & deletes_objects, bool is_equality_delete, LoggerPtr logger)
+std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+    ProcessedManifestFileEntryPtr data_object_,
+    const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
+    bool is_equality_delete,
+    LoggerPtr logger)
 {
     if (deletes_objects.empty())
     {
@@ -101,10 +104,10 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
         deletes_objects.begin(),
         deletes_objects.end(),
         data_object_,
-        [](const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs)
+        [](const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
         {
-            return std::tie(*lhs->common_partition_specification, lhs->pure_entry->partition_key_value)
-                < std::tie(*rhs->common_partition_specification, rhs->pure_entry->partition_key_value);
+            return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value)
+                < std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value);
         });
     if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
     {
@@ -148,7 +151,7 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
 
 }
 
-std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
+std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
 {
     if (!data_snapshot)
     {
@@ -164,17 +167,8 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
             if (entry)
                 return entry;
 
-            /// Current manifest file is exhausted, move to next.
-            if (current_manifest_file_iterator->isInitialized())
-            {
-                current_manifest_file_iterator = nullptr;
-            }
-            else
-            {
-                /// next() returned nullptr but manifest file is not fully initialized,
-                /// this means the entry was pruned or deleted, try again.
-                continue;
-            }
+            /// next() returned nullptr, meaning the manifest file is fully exhausted.
+            current_manifest_file_iterator = nullptr;
         }
 
         /// Find the next manifest file with matching content type.
@@ -192,7 +186,7 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 mle.manifest_file_path,
                 mle.manifest_file_byte_size);
 
-            current_manifest_file_iterator = std::make_shared<Iceberg::ManifestFileIterator>(
+            current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
                 manifest_file_cacheable_part.deserializer,
                 mle.manifest_file_path,
                 persistent_components.format_version,
@@ -203,7 +197,6 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 persistent_components.table_location,
                 local_context,
                 mle.manifest_file_path,
-                use_partition_pruning,
                 filter_dag,
                 table_snapshot->schema_id);
             break;
@@ -223,22 +216,25 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : object_storage(object_storage_)
-    , filter_dag(filter_dag_ ? std::make_shared<ActionsDAG>(filter_dag_->clone()) : nullptr)
-    , local_context(local_context_)
-    , table_snapshot(table_snapshot_)
-    , data_snapshot(data_snapshot_)
-    , use_partition_pruning(
-          [this]()
+    , filter_dag(
+          [&]() -> std::shared_ptr<const ActionsDAG>
           {
-              if (!local_context && filter_dag)
+              if (!filter_dag_)
+                  return nullptr;
+              if (!local_context_)
               {
                   throw DB::Exception(
                       DB::ErrorCodes::LOGICAL_ERROR,
                       "Context is required with non-empty filter_dag to implement "
                       "partition pruning for Iceberg table");
               }
-              return filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value;
+              if (!local_context_->getSettingsRef()[Setting::use_iceberg_partition_pruning].value)
+                  return nullptr;
+              return std::make_shared<ActionsDAG>(filter_dag_->clone());
           }())
+    , local_context(local_context_)
+    , table_snapshot(table_snapshot_)
+    , data_snapshot(data_snapshot_)
     , persistent_components(persistent_components_)
     , log(getLogger("IcebergIterator"))
     , manifest_file_content_type(manifest_file_content_type_)
@@ -281,7 +277,7 @@ IcebergIterator::IcebergIterator(
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
     {
-        if (delete_file.value()->pure_entry->equality_ids.has_value())
+        if (delete_file.value()->parsed_entry->equality_ids.has_value())
         {
             equality_deletes_files.emplace_back(std::move(delete_file.value()));
         }
@@ -300,7 +296,7 @@ IcebergIterator::IcebergIterator(
             DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
             while (!blocking_queue.isFinished())
             {
-                std::optional<ManifestFileEntryPtr> entry;
+                std::optional<ProcessedManifestFileEntryPtr> entry;
                 try
                 {
                     entry = data_files_iterator.next();
@@ -332,7 +328,7 @@ IcebergIterator::IcebergIterator(
 ObjectInfoPtr IcebergIterator::next(size_t)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
-    Iceberg::ManifestFileEntryPtr manifest_file_entry;
+    Iceberg::ProcessedManifestFileEntryPtr manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
         IcebergDataObjectInfoPtr object_info
@@ -341,8 +337,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
             const auto & data_file_path = object_info->info.data_object_file_path_key;
-            const auto & lower = position_delete->pure_entry->lower_reference_data_file_path;
-            const auto & upper = position_delete->pure_entry->upper_reference_data_file_path;
+            const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
+            const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
             bool can_contain_data_file_deletes
                 = (!lower.has_value() || lower.value() <= data_file_path) && (!upper.has_value() || upper.value() >= data_file_path);
             /// Skip position deletes that do not match the data file path.

@@ -118,7 +118,7 @@ Iceberg::ManifestFilePtr getManifestFileAsIterator(
         cache_key.manifest_file_path,
         static_cast<size_t>(cache_key.manifest_file_byte_size));
 
-    auto iterator = std::make_shared<Iceberg::ManifestFileIterator>(
+    auto iterator = Iceberg::ManifestFileIterator::create(
         cacheable_info.deserializer,
         cache_key.manifest_file_path,
         persistent_table_components.format_version,
@@ -129,7 +129,6 @@ Iceberg::ManifestFilePtr getManifestFileAsIterator(
         persistent_table_components.table_location,
         local_context,
         cache_key.manifest_file_path,
-        false,
         nullptr,
         table_snapshot_schema_id);
 

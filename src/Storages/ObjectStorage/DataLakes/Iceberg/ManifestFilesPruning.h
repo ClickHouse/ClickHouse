@@ -28,7 +28,7 @@ enum class PruningReturnStatus
 namespace DB::Iceberg
 {
 
-struct InheritedManifestFileEntry;
+struct ProcessedManifestFileEntry;
 class ManifestFileIterator;
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
@@ -58,7 +58,7 @@ public:
         const ManifestFileIterator & manifest_file,
         DB::ContextPtr context);
 
-    PruningReturnStatus canBePruned(const ManifestFileEntryPtr & entry) const;
+    PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry) const;
 };
 
 }
