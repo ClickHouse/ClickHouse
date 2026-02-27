@@ -301,18 +301,27 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
-    bool is_aggregate = [&]
+    auto query_tree = buildQueryTree(result.query_ast, mut_context);
+    auto & query_node = query_tree->as<QueryNode &>();
+    query_node.getJoinTree() = std::make_shared<TableNode>(storage, mut_context);
+
+    QueryTreePassManager query_tree_pass_manager(mut_context);
+    addQueryTreePasses(query_tree_pass_manager);
+    query_tree_pass_manager.runOnlyResolve(query_tree);
+
+    bool is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
+
+    /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
+    /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
+    /// so the last resolved projection column has aliases fully expanded.
+    if (projection_order_by)
     {
-        auto query_tree = buildQueryTree(result.query_ast, mut_context);
-        auto & query_node = query_tree->as<QueryNode &>();
-        query_node.getJoinTree() = std::make_shared<TableNode>(storage, mut_context);
-
-        QueryTreePassManager query_tree_pass_manager(mut_context);
-        addQueryTreePasses(query_tree_pass_manager);
-        query_tree_pass_manager.runOnlyResolve(query_tree);
-
-        return query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
-    }();
+        auto & projection_nodes = query_node.getProjection().getNodes();
+        ConvertToASTOptions ast_options;
+        ast_options.fully_qualified_identifiers = false;
+        projection_order_by = projection_nodes.back()->toAST(ast_options);
+        projection_order_by->setAlias({});
+    }
 
     InterpreterSelectQuery select(
         result.query_ast,
