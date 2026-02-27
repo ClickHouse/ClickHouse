@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
@@ -39,7 +34,7 @@ public:
         return convertToFullColumn();
     }
 
-    ColumnPtr removeLowCardinality() const;
+    ColumnPtr convertToFullColumnIfLowCardinality() const override;
 
     std::string getName() const override
     {
@@ -127,11 +122,12 @@ public:
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void insertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #else
-    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
+        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
@@ -174,13 +170,7 @@ public:
         ++s;
     }
 
-    void popBack(size_t n) override
-    {
-        if (n > s)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
-        s -= n;
-    }
+    void popBack(size_t n) override;
 
     std::string_view
     serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override

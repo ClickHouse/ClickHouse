@@ -493,17 +493,17 @@ ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(
 /** Try to get lambda node from sql user defined functions if sql user defined function with function name exists.
   * Returns lambda node if function exists, nullptr otherwise.
   */
-QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context)
+QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromUserDefinedSQLFunctions(const ASTPtr & create_function_ast, ContextPtr context)
 {
-    auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
-    if (!user_defined_function)
-        return {};
+    const auto * create_function_query = typeid_cast<const ASTCreateSQLFunctionQuery *>(create_function_ast.get());
+    if (!create_function_query)
+        return nullptr;
 
+    const auto & function_name = create_function_query->getFunctionName();
     auto it = function_name_to_user_defined_lambda.find(function_name);
     if (it != function_name_to_user_defined_lambda.end())
         return it->second;
 
-    const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
     auto result_node = buildQueryTree(create_function_query->function_core, context);
     if (result_node->getNodeType() != QueryTreeNodeType::LAMBDA)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -3866,6 +3866,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             continue;
         }
+        /// Argument is already a resolved TableFunctionNode (e.g. when the parent table function node
+        /// is re-analyzed in a synthetic subquery created by `analyzer_compatibility_join_using_top_level_identifier`).
+        if (table_function_argument->as<TableFunctionNode>())
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+            continue;
+        }
+
         if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();

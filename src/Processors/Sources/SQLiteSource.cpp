@@ -57,6 +57,8 @@ SQLiteSource::SQLiteSource(
 
 Chunk SQLiteSource::generate()
 {
+    LOG_TEST(getLogger("SQLiteSource"), "Generate a chuck");
+
     if (!compiled_statement)
         return {};
 
@@ -66,6 +68,12 @@ Chunk SQLiteSource::generate()
     while (true)
     {
         int status = sqlite3_step(compiled_statement.get());
+
+        if (status == SQLITE_INTERRUPT)
+        {
+            compiled_statement.reset();
+            break;
+        }
 
         if (status == SQLITE_BUSY)
         {
@@ -122,6 +130,21 @@ Chunk SQLiteSource::generate()
     }
 
     return Chunk(std::move(columns), num_rows);
+}
+
+void SQLiteSource::onCancel() noexcept
+{
+    try
+    {
+        if (sqlite_db)
+        {
+            sqlite3_interrupt(sqlite_db.get());
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx, const IDataType & data_type)

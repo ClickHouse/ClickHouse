@@ -10,6 +10,7 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -55,6 +56,7 @@ TransactionLog::TransactionLog()
     , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
     , fault_probability_after_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0))
 {
+    auto compoment_guard = Coordination::setCurrentComponent("TransactionLog::TransactionLog");
     loadLogFromZooKeeper();
 
     updating_thread = ThreadFromGlobalPool(&TransactionLog::runUpdatingThread, this);
@@ -210,6 +212,7 @@ void TransactionLog::loadLogFromZooKeeper()
 
 void TransactionLog::runUpdatingThread()
 {
+    auto component_guard = Coordination::setCurrentComponent("TransactionLog::runUpdatingThread");
     while (true)
     {
         try
@@ -404,6 +407,7 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
 
 CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool throw_on_unknown_status)
 {
+    auto component_guard = Coordination::setCurrentComponent("TransactionLog::commitTransaction");
     /// Some precommit checks, may throw
     auto state_guard = txn->beforeCommit();
 
@@ -643,6 +647,7 @@ TransactionLog::TransactionsList TransactionLog::getTransactionsList() const
 
 void TransactionLog::sync() const
 {
+    auto component_guard = Coordination::setCurrentComponent("TransactionLog::sync");
     Strings entries_list = getZooKeeper()->getChildren(zookeeper_path_log);
     chassert(!entries_list.empty());
     ::sort(entries_list.begin(), entries_list.end());

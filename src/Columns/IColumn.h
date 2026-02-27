@@ -89,6 +89,10 @@ struct ColumnsWithRowNumbers
     std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
 };
 
+/// Helper throw functions so Column headers don't need to include Exception.h.
+[[noreturn]] void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size);
+[[noreturn]] void throwColumnConvertNotSupported(std::string_view type_name, const char * as_type);
+
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {
@@ -130,7 +134,32 @@ public:
 
     [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
-        return convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
+        Ptr converted = convertToFullColumnIfConst()
+            ->convertToFullColumnIfReplicated()
+            ->convertToFullColumnIfSparse()
+            ->convertToFullColumnIfLowCardinality();
+
+        Columns new_subcolumns;
+        bool any_changed = false;
+
+        converted->forEachSubcolumn([&](const WrappedPtr & subcolumn)
+        {
+            auto new_sub = subcolumn->convertToFullIfNeeded();
+            any_changed |= (new_sub.get() != subcolumn.get());
+            new_subcolumns.push_back(std::move(new_sub));
+        });
+
+        if (!any_changed)
+            return converted;
+
+        auto mutable_column = IColumn::mutate(std::move(converted));
+        size_t i = 0;
+        mutable_column->forEachMutableSubcolumn([&](WrappedPtr & subcolumn)
+        {
+            subcolumn = std::move(new_subcolumns[i++]);
+        });
+
+        return std::move(mutable_column);
     }
 
     /// Creates empty column with the same type.

@@ -1,9 +1,12 @@
 -- Tags: no-parallel-replicas
 
+--- Verifies that direct read on partially materialized text indexes
+
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+-- add_minmax_index_for_numeric_columns=0: Changes conditions for materialized index bytes
 
 SELECT 'Fully materialized';
 
@@ -13,10 +16,11 @@ CREATE TABLE tab_fully (
     text String
 )
 Engine = MergeTree()
-ORDER BY id;
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns=0;
 
-ALTER TABLE tab_fully drop index if exists idx;
-ALTER TABLE tab_fully add index idx(text) TYPE text(tokenizer = ngrams(3));
+ALTER TABLE tab_fully DROP INDEX IF exists idx;
+ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3));
 
 SYSTEM STOP MERGES tab_fully;
 
@@ -43,7 +47,8 @@ CREATE TABLE tab_partially (
     text String
 )
 Engine = MergeTree()
-ORDER BY id;
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
 
