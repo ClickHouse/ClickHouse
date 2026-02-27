@@ -2088,7 +2088,7 @@ message ExprWhenThen {
 
 message ExprExists {
     required bool not = 1;
-    required ExplainQuery select = 3;
+    required ExplainQuery select = 2;
 }
 
 message ExprLike {
@@ -2111,8 +2111,9 @@ message CondExpr {
 }
 
 message LambdaExpr {
-    repeated Column args = 1;
-    required Expr expr = 2;
+    optional bool paren = 1;
+    repeated Column args = 2;
+    required Expr expr = 3;
 }
 
 message SQLFuncArg {
@@ -2184,8 +2185,8 @@ message FrameSpecSubRightExpr {
 
 message ExprFrameSpec {
     enum RangeRows {
-        RANGE = 0;
-        ROWS = 1;
+        RANGE = 1;
+        ROWS = 2;
     }
     required RangeRows range_rows = 1;
     required FrameSpecSubLeftExpr left_expr = 2;
@@ -3275,23 +3276,13 @@ message IndexParam {
     }
 }
 
-message CodecParam {
-    required CompressionCodec codec = 1;
-    repeated IndexParam params = 2;
-}
-
-message CodecList {
-    required CodecParam codec = 1;
-    repeated CodecParam other_codecs = 2;
-}
-
 message ColumnDef {
     required ColumnPath col = 1;
     required TypeName type = 2;
     optional bool nullable = 3;
     optional DefaultModifier defaultv = 4;
     optional string comment = 5;
-    optional CodecList codecs = 6;
+    optional string codecs = 6;
     optional ColumnStatistics stats = 7;
     optional Expr ttl_expr = 8;
     optional bool is_pkey = 9;
@@ -3459,7 +3450,7 @@ message TTLDelete {
 message TTLUpdate {
     oneof ttlupdate_oneof {
         TTLDelete del = 1;
-        CodecList codecs = 2;
+        string codecs = 2;
         Storage storage = 3;
     }
     optional WhereStatement where = 4;
@@ -3693,11 +3684,12 @@ message OptimizeTable {
     optional Cluster cluster = 2;
     optional SinglePartitionExpr single_partition = 3;
     optional bool use_force = 4;
-    optional bool final = 5;
-    optional DeduplicateExpr dedup = 6;
-    optional bool cleanup = 7;
-    optional SettingValues setting_values = 8;
-    optional OutFormat format = 9;
+    repeated PartitionExpr dry_run_parts = 5;
+    optional bool final = 6;
+    optional DeduplicateExpr dedup = 7;
+    optional bool cleanup = 8;
+    optional SettingValues setting_values = 9;
+    optional OutFormat format = 10;
 }
 
 message Exchange {
@@ -4078,6 +4070,14 @@ message DropDatabaseReplica {
     optional Database database = 3;
 }
 
+enum DeltaKernelTraceLevel {
+    ERROR = 1;
+    WARN = 2;
+    INFO = 3;
+    DEBUG = 4;
+    TRACE = 5;
+}
+
 message SystemCommand {
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
@@ -4123,44 +4123,44 @@ message SystemCommand {
         ExprSchemaTable load_pk = 40;
         bool unload_pks = 41;
         ExprSchemaTable unload_pk = 42;
-        bool refresh_views = 43;
-        ExprSchemaTable refresh_view = 44;
-        bool stop_views = 45;
-        ExprSchemaTable stop_view = 46;
-        bool start_views = 47;
-        ExprSchemaTable start_view = 48;
-        ExprSchemaTable cancel_view = 49;
-        ExprSchemaTable wait_view = 50;
-        ExprSchemaTable prewarm_cache = 51;
-        ExprSchemaTable prewarm_primary_index_cache = 52;
-        bool drop_connections_cache = 53;
-        bool drop_primary_index_cache = 54;
-        bool drop_index_mark_cache = 55;
-        bool drop_index_uncompressed_cache = 56;
-        bool drop_mmap_cache = 57;
-        bool drop_page_cache = 58;
-        bool drop_schema_cache = 59;
-        bool drop_s3_client_cache = 60;
-        bool flush_async_insert_queue = 61;
-        bool sync_filesystem_cache = 62;
-        bool drop_vector_similarity_index_cache = 63;
-        ExprSchemaTable reload_dictionary = 64;
-        ExprSchemaTable flush_distributed = 65;
-        ExprSchemaTable stop_distributed_sends = 66;
-        ExprSchemaTable start_distributed_sends = 67;
-        bool drop_query_condition_cache = 68;
-        string enable_failpoint = 69;
-        string disable_failpoint = 70;
-        bool iceberg_metadata_cache = 71;
-        bool reconnect_keeper = 72;
-        bool drop_text_index_dictionary_cache = 73;
-        bool drop_text_index_header_cache = 74;
-        bool drop_text_index_postings_cache = 75;
-        bool drop_text_index_caches = 76;
-        bool reset_ddl_worker = 77;
-        bool drop_parquet_metadata_cache = 78;
-        string wait_failpoint = 79;
-        string notify_failpoint = 80;
+        ExprSchemaTable refresh_view = 43;
+        bool stop_views = 44;
+        ExprSchemaTable stop_view = 45;
+        bool start_views = 46;
+        ExprSchemaTable start_view = 47;
+        ExprSchemaTable cancel_view = 48;
+        ExprSchemaTable wait_view = 49;
+        ExprSchemaTable prewarm_cache = 50;
+        ExprSchemaTable prewarm_primary_index_cache = 51;
+        bool drop_connections_cache = 52;
+        bool drop_primary_index_cache = 53;
+        bool drop_index_mark_cache = 54;
+        bool drop_index_uncompressed_cache = 55;
+        bool drop_mmap_cache = 56;
+        bool drop_page_cache = 57;
+        bool drop_schema_cache = 58;
+        bool drop_s3_client_cache = 59;
+        bool flush_async_insert_queue = 60;
+        bool sync_filesystem_cache = 61;
+        bool drop_vector_similarity_index_cache = 62;
+        ExprSchemaTable reload_dictionary = 63;
+        ExprSchemaTable flush_distributed = 64;
+        ExprSchemaTable stop_distributed_sends = 65;
+        ExprSchemaTable start_distributed_sends = 66;
+        bool drop_query_condition_cache = 67;
+        string enable_failpoint = 68;
+        string disable_failpoint = 69;
+        bool iceberg_metadata_cache = 70;
+        bool reconnect_keeper = 71;
+        bool drop_text_index_dictionary_cache = 72;
+        bool drop_text_index_header_cache = 73;
+        bool drop_text_index_postings_cache = 74;
+        bool drop_text_index_caches = 75;
+        bool reset_ddl_worker = 76;
+        bool drop_parquet_metadata_cache = 77;
+        string wait_failpoint = 78;
+        string notify_failpoint = 79;
+        DeltaKernelTraceLevel reload_delta_kernel_tracing = 80;
         Database restore_database_replica = 81;
         ExprSchemaTable stop_replicated_view = 82;
         ExprSchemaTable start_replicated_view = 83;
