@@ -593,7 +593,7 @@ String StringType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &,
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, true, typeName(false, false));
+        return numberColumn(rg, true, "String");
     }
     return rg.nextString("'", true, std::min(max_strlen, precision.value_or(rg.nextStrlen())));
 }
