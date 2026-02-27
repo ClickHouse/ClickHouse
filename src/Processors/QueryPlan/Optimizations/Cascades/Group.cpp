@@ -132,8 +132,10 @@ void Group::dump(WriteBuffer & out, String indent) const
     {
         out << indent << "Best for " << best->properties.dump() << ":\n"
             << indent << indent
-            << "Cost: " << best->cost->cost.total() << " (subtree: " << best->cost->subtree_cost.total() << ") : "
-            << best->getDescription() << "\n";
+            << "Cost: " << best->cost->cost.total() << " (subtree: " << best->cost->subtree_cost.total();
+        if (best->cost->cost.sequential > 0)
+            out << ", seq: " << best->cost->cost.sequential;
+        out << ") : " << best->getDescription() << "\n";
     }
 }
 

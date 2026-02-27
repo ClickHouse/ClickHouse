@@ -39,6 +39,8 @@ CostConfig parseCostConfig(const String & json_str)
         config.network_weight = object->getValue<Float64>("network_weight");
     if (object->has("io_weight"))
         config.io_weight = object->getValue<Float64>("io_weight");
+    if (object->has("sequential_weight"))
+        config.sequential_weight = object->getValue<Float64>("sequential_weight");
     if (object->has("exchange_fixed_overhead"))
         config.exchange_fixed_overhead = object->getValue<Float64>("exchange_fixed_overhead");
     return config;
@@ -51,6 +53,7 @@ String CostConfig::dump() const
     obj.set("memory_weight", memory_weight);
     obj.set("network_weight", network_weight);
     obj.set("io_weight", io_weight);
+    obj.set("sequential_weight", sequential_weight);
     obj.set("exchange_fixed_overhead", exchange_fixed_overhead);
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     obj.stringify(oss);
@@ -123,27 +126,35 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         /// Merging intermediate aggregate states: CPU proportional to input + output rows.
         total_cost.cost.cpu = group->statistics->estimated_row_count + input_group->statistics->estimated_row_count;
+        /// Merge phase is sequential (single-threaded merge of partial states).
+        total_cost.cost.sequential += input_group->statistics->estimated_row_count;
     }
     else if (auto * broadcast = dynamic_cast<BroadcastExchangeStep *>(expression_plan_step))
     {
         auto result_count = static_cast<Float64>(broadcast->getResultBucketCount());
         auto bytes_per_row = group->statistics->estimated_bytes_per_row;
         /// Broadcast replicates all rows to every destination node; cost is proportional to data volume.
-        total_cost.cost.network += memo.getCostConfig().exchange_fixed_overhead + group->statistics->estimated_row_count * bytes_per_row * result_count;
+        total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row * result_count;
         /// Each destination materializes the full dataset in memory.
         total_cost.cost.memory += group->statistics->estimated_row_count * bytes_per_row * result_count;
+        /// Fixed overhead for connection setup / metadata exchange is sequential.
+        total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
     }
     else if (dynamic_cast<LogicalExchangeStep *>(expression_plan_step))
     {
         auto bytes_per_row = group->statistics->estimated_bytes_per_row;
         /// Gather, Shuffle, Scatter: each row is sent exactly once; cost is proportional to data volume.
-        total_cost.cost.network += memo.getCostConfig().exchange_fixed_overhead + group->statistics->estimated_row_count * bytes_per_row;
+        total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row;
+        /// Fixed overhead for connection setup / metadata exchange is sequential.
+        total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
     }
     else if (typeid_cast<SortingStep *>(expression_plan_step))
     {
-        /// Sorting: N log N CPU cost.
+        /// Sorting: N log N CPU cost (parallel partial sort across streams).
         Float64 rows = group->statistics->estimated_row_count;
         total_cost.cost.cpu += rows * std::max(1.0, std::log2(rows));
+        /// Final N-way merge (`MergingSortedTransform`) is single-threaded.
+        total_cost.cost.sequential += rows;
     }
     else
     {
@@ -187,12 +198,16 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
         /// Network cost is already modeled by the BroadcastExchange expression.
         /// Memory is proportional to data volume of the build side.
         join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row * distribution_node_count;
+        /// Build phase is sequential: each node inserts the full right table into the hash table.
+        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0;
     }
     else if (is_shuffle)
     {
         /// Hash table is built from right_rows/N on each node, total = right_rows.
         /// Network cost is already modeled by ShuffleExchange expressions.
         join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
+        /// Build phase is sequential: each node inserts right_rows/N into the hash table.
+        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0 / distribution_node_count;
     }
     else
     {
@@ -201,6 +216,8 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
             2.0 * right_statistics.estimated_row_count;     /// Right table contributes more because we build hash table from it
 
         join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
+        /// Build phase is sequential: single-node hash table construction.
+        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0;
     }
 
     return join_cost;
