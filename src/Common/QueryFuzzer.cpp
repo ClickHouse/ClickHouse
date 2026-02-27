@@ -588,12 +588,12 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     if (create.columns_list && create.columns_list->indices)
     {
         /// No-arg index types: safe to swap to and clear any existing arguments.
-        static const Strings & simple_index_types = {"minmax", "set", "bloom_filter"};
+        static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
         /// BF index types: require positional arguments — swap name only, keep args.
         static const std::unordered_set<String> & bf_index_types = {"ngrambf_v1", "tokenbf_v1"};
         /// Simple no-arg tokenizers valid as text index tokenizer values.
-        static const Strings & simple_tokenizers = {"splitByNonAlpha", "splitByString", "array"};
-        static const Strings & posting_list_codecs = {"none", "bitpacking"};
+        static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array"};
+        static const Strings posting_list_codecs = {"none", "bitpacking"};
 
         for (auto & ast : create.columns_list->indices->children)
         {
@@ -713,7 +713,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     /// For MergeTree family engines, inject hot table settings with low probability.
     if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
     {
-        static const Strings & hot_bool_settings
+        static const Strings hot_bool_settings
             = {"add_minmax_index_for_numeric_columns",
                "add_minmax_index_for_string_columns",
                "add_minmax_index_for_temporal_columns",
@@ -813,7 +813,7 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
     if (auto stats = column.getStatisticsDesc())
     {
-        static const Strings & stat_types = {"tdigest", "countmin", "minmax", "uniq"};
+        static const Strings stat_types = {"tdigest", "countmin", "minmax", "uniq"};
         auto * stats_decl = stats->as<ASTStatisticsDeclaration>();
         if (stats_decl && stats_decl->types)
         {
@@ -854,7 +854,7 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
     if (column.default_specifier != ColumnDefaultSpecifier::Empty && column.default_specifier != ColumnDefaultSpecifier::AutoIncrement
         && column.getDefaultExpression() && fuzz_rand() % 5 == 0)
     {
-        static const std::vector<ColumnDefaultSpecifier> & expr_specifiers = {
+        static const std::vector<ColumnDefaultSpecifier> expr_specifiers = {
             ColumnDefaultSpecifier::Default,
             ColumnDefaultSpecifier::Materialized,
             ColumnDefaultSpecifier::Alias,
@@ -1936,7 +1936,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (fuzz_rand() % 30 == 0)
                 {
                     /// Add or remove distinct to aggregate
-                    static const String & distinctSuffix = "Distinct";
+                    static const String distinctSuffix = "Distinct";
 
                     if (endsWith(fn->name, distinctSuffix))
                     {
