@@ -51,6 +51,8 @@ FROM format('GeoJSON', '{
 }');
 
 -- Empty features array produces zero rows (tested via INSERT since format() with 0 rows is a known ClickHouse limitation).
+-- async_insert causes the client to disconnect after a FORMAT-data INSERT in multiquery mode, so disable it here.
+SET async_insert = 0;
 CREATE TEMPORARY TABLE __geojson_empty_test (id String, geometry Geometry, properties JSON);
 INSERT INTO __geojson_empty_test FORMAT GeoJSON {"type":"FeatureCollection","features":[]};
 SELECT count() FROM __geojson_empty_test;
