@@ -301,6 +301,17 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
         if (nodes.size() < 2)
             continue;
 
+        /// Require at least 2 distinct function names (e.g. sum + count, sum + avg).
+        /// ORDER BY ALL can duplicate a single aggregate function node, making nodes.size() >= 2
+        /// even though there is only one unique function — fusing in that case is wrong.
+        {
+            std::unordered_set<String> distinct_names;
+            for (auto * node : nodes)
+                distinct_names.insert((*node)->as<const FunctionNode &>().getFunctionName());
+            if (distinct_names.size() < 2)
+                continue;
+        }
+
         if (isNullableOrLowCardinalityNullable(argument.first.node->getResultType()))
             /// Do not apply to functions with Nullable/LowCardinality(Nullable) arguments, because `sumCount` handles it different from `sum` and `avg`.
             continue;
