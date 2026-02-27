@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <IO/ReadBufferFromString.h>
@@ -45,50 +46,28 @@ Field readGeoJSONPoint(ReadBuffer & buf)
     return Tuple{lon, lat};
 }
 
-/// Reads [[lon,lat],...] into an Array of Tuple{Float64, Float64} (Ring / LineString coordinates).
-Array readGeoJSONLinearRing(ReadBuffer & buf)
+/// Helper to read a JSON array of items produced by read_element into an Array Field.
+template <typename ElementReader>
+Array readGeoJSONArray(ReadBuffer & buf, ElementReader read_element)
 {
     JSONUtils::skipArrayStart(buf);
-
-    Array points;
+    Array items;
     while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
-        points.push_back(readGeoJSONPoint(buf));
+        items.push_back(read_element(buf));
         JSONUtils::checkAndSkipComma(buf);
     }
-
-    return points;
+    return items;
 }
+
+/// Reads [[lon,lat],...] into an Array of Tuple{Float64, Float64} (Ring / LineString coordinates).
+Array readGeoJSONLinearRing(ReadBuffer & buf) { return readGeoJSONArray(buf, readGeoJSONPoint); }
 
 /// Reads [[[lon,lat],...]] into Array of Array of Tuple (Polygon / MultiLineString coordinates).
-Array readGeoJSONPolygonCoordinates(ReadBuffer & buf)
-{
-    JSONUtils::skipArrayStart(buf);
-
-    Array rings;
-    while (!JSONUtils::checkAndSkipArrayEnd(buf))
-    {
-        rings.push_back(readGeoJSONLinearRing(buf));
-        JSONUtils::checkAndSkipComma(buf);
-    }
-
-    return rings;
-}
+Array readGeoJSONPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONArray(buf, readGeoJSONLinearRing); }
 
 /// Reads [[[[lon,lat],...],...]] into Array of Array of Array of Tuple (MultiPolygon coordinates).
-Array readGeoJSONMultiPolygonCoordinates(ReadBuffer & buf)
-{
-    JSONUtils::skipArrayStart(buf);
-
-    Array polygons;
-    while (!JSONUtils::checkAndSkipArrayEnd(buf))
-    {
-        polygons.push_back(readGeoJSONPolygonCoordinates(buf));
-        JSONUtils::checkAndSkipComma(buf);
-    }
-
-    return polygons;
-}
+Array readGeoJSONMultiPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONArray(buf, readGeoJSONPolygonCoordinates); }
 
 } /// anonymous namespace
 
@@ -200,15 +179,8 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
 
         if (key == "id" && id_col_idx.has_value())
         {
-            if (!buf.eof() && *buf.position() == 'n')
-            {
-                assertString("null", buf);
-                columns[*id_col_idx]->insertDefault();
-            }
-            else
-            {
-                serializations[*id_col_idx]->deserializeTextJSON(*columns[*id_col_idx], buf, format_settings);
-            }
+            SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
+                *columns[*id_col_idx], buf, format_settings, serializations[*id_col_idx]);
             has_id = true;
         }
         else if (key == "geometry" && geometry_col_idx.has_value())
@@ -218,16 +190,8 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         }
         else if (key == "properties" && properties_col_idx.has_value())
         {
-            if (!buf.eof() && *buf.position() == 'n')
-            {
-                assertString("null", buf);
-                columns[*properties_col_idx]->insertDefault();
-            }
-            else
-            {
-                serializations[*properties_col_idx]->deserializeTextJSON(
-                    *columns[*properties_col_idx], buf, format_settings);
-            }
+            SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
+                *columns[*properties_col_idx], buf, format_settings, serializations[*properties_col_idx]);
             has_properties = true;
         }
         else
@@ -254,12 +218,9 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
     auto & buf = getReadBuffer();
     auto & variant_col = assert_cast<ColumnVariant &>(col);
 
-    skipWhitespaceIfAny(buf);
-
-    if (buf.eof() || *buf.position() == 'n')
+    if (!JSONUtils::checkAndSkipObjectStart(buf))
     {
-        if (!buf.eof())
-            assertString("null", buf);
+        assertString("null", buf);
         variant_col.insertDefault();
         return;
     }
@@ -267,7 +228,6 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
     String geo_type;
     String raw_coordinates;
 
-    JSONUtils::skipObjectStart(buf);
     while (!JSONUtils::checkAndSkipObjectEnd(buf))
     {
         String key = JSONUtils::readFieldName(buf, format_settings.json);
