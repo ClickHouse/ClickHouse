@@ -55,8 +55,6 @@
 
 namespace ProfileEvents
 {
-extern const Event IcebergPartitionPrunedFiles;
-extern const Event IcebergMinMaxIndexPrunedFiles;
 extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;

@@ -37,10 +37,6 @@ namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
-extern const Event IcebergMetadataReadWaitTimeMicroseconds;
-extern const Event IcebergMetadataReturnedObjectInfos;
-extern const Event IcebergMinMaxNonPrunedDeleteFiles;
-extern const Event IcebergMinMaxPrunedDeleteFiles;
 };
 
 namespace DB::Iceberg
@@ -358,7 +354,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             case ManifestEntryStatus::ADDED:
                 added_sequence_number = inherited_sequence_number;
                 break;
-            case ManifestEntryStatus::EXISTING: {
+            case ManifestEntryStatus::EXISTING:
+            {
                 if (!parsed_entry->written_sequence_number.has_value())
                     throw Exception(
                         DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -406,7 +403,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         }
     }
 
-    auto entry = std::make_shared<ProcessedManifestFileEntry>(ProcessedManifestFileEntry{
+    auto entry = std::make_shared<ProcessedManifestFileEntry>(ProcessedManifestFileEntry
+    {
         .parsed_entry = std::move(parsed_entry),
         .common_partition_specification = common_partition_specification,
         .file_path = file_path,
