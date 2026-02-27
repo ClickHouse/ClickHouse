@@ -161,3 +161,43 @@ SELECT * FROM tab_part FINAL ORDER BY x;
 
 DROP ROW POLICY pol_part ON tab_part;
 DROP TABLE tab_part;
+
+SELECT '';
+SELECT '= PARTITION BY time ORDER BY toDate(time) — pruning is UNSAFE =';
+
+DROP TABLE IF EXISTS tab_unsafe;
+
+CREATE TABLE tab_unsafe (time DateTime, x UInt32, version UInt32)
+ENGINE = ReplacingMergeTree(version) PARTITION BY time ORDER BY toDate(time);
+
+INSERT INTO tab_unsafe VALUES ('2024-01-01 10:00:00', 1, 1);
+INSERT INTO tab_unsafe VALUES ('2024-01-01 11:00:00', 1, 2);
+
+SELECT '--- FINAL (should pick version 2)';
+SELECT * FROM tab_unsafe FINAL ORDER BY toDate(time);
+
+SELECT '--- FINAL WHERE time != 2024-01-01 10:00:00 (must not prune partition with winner)';
+SELECT * FROM tab_unsafe FINAL WHERE time != '2024-01-01 10:00:00' ORDER BY toDate(time);
+
+DROP TABLE tab_unsafe;SELECT '';
+SELECT '= row policy on toDate(time) with ORDER BY toDate(time) — prewhere should NOT be deferred =';
+
+DROP TABLE IF EXISTS tab_todate_policy;
+DROP ROW POLICY IF EXISTS pol_todate ON tab_todate_policy;
+
+CREATE TABLE tab_todate_policy (time DateTime, y String, version UInt32)
+ENGINE = ReplacingMergeTree(version) ORDER BY toDate(time);
+
+INSERT INTO tab_todate_policy VALUES ('2024-01-01 10:00:00', 'aaa', 1), ('2024-01-02 12:00:00', 'bbb', 1);
+INSERT INTO tab_todate_policy VALUES ('2024-01-01 11:00:00', 'ccc', 2), ('2024-01-02 13:00:00', 'ddd', 2);
+
+CREATE ROW POLICY pol_todate ON tab_todate_policy USING toDate(time) = '2024-01-01' TO ALL;
+
+SET apply_row_policy_after_final = 1;
+-- rp is over sorting key toDate(time), so only row policy itself should be deferred, not prewhere
+SELECT '--- toDate(time) row policy: only row filter deferred, not prewhere';
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time) WHERE explain LIKE '%Deferred%';
+
+DROP ROW POLICY pol_todate ON tab_todate_policy;
+SET apply_row_policy_after_final = 0;
+DROP TABLE tab_todate_policy;
