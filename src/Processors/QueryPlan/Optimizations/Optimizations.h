@@ -183,7 +183,7 @@ void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
-void pushDownVolumeReducingFunctions(QueryPlan::Node * root_node, const QueryPlanOptimizationSettings & optimization_settings);
+void pushDownVolumeReducingFunctions(QueryPlan::Node * root_node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
