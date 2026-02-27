@@ -1,7 +1,8 @@
 #include <Functions/FunctionsConversion.h>
 
 #if USE_EMBEDDED_COMPILER
-#    include "DataTypes/Native.h"
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
 #endif
 
 

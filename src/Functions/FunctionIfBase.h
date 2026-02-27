@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Functions/IFunction.h>
-#include <DataTypes/Native.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {

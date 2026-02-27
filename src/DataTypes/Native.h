@@ -7,7 +7,14 @@
 #    include <Common/Exception.h>
 #    include <Core/ValueWithType.h>
 #    include <DataTypes/IDataType.h>
-#    include <llvm/IR/IRBuilder.h>
+
+namespace llvm
+{
+    class IRBuilderBase;
+    class Type;
+    class Value;
+    class Constant;
+}
 
 
 namespace DB
@@ -52,34 +59,9 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
 /// Cast type to native LLVM type
 llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type);
 
+/// Cast type to native LLVM type (template version, defined in Native.cpp)
 template <typename ToType>
-static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
-{
-    if constexpr (std::is_same_v<ToType, Int8> || std::is_same_v<ToType, UInt8>)
-        return builder.getInt8Ty();
-    else if constexpr (std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16>)
-        return builder.getInt16Ty();
-    else if constexpr (std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32> || std::is_same_v<ToType, Decimal32>)
-        return builder.getInt32Ty();
-    else if constexpr (
-        std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64> || std::is_same_v<ToType, DateTime64>
-        || std::is_same_v<ToType, Decimal64>)
-        return builder.getInt64Ty();
-    else if constexpr (std::is_same_v<ToType, Float32>)
-        return builder.getFloatTy();
-    else if constexpr (std::is_same_v<ToType, Float64>)
-        return builder.getDoubleTy();
-    else if constexpr (std::is_same_v<ToType, Int128> || std::is_same_v<ToType, UInt128> || std::is_same_v<ToType, Decimal128>)
-    /// There is one problem: LLVM uses "preferred alignment" for this type as 16 bytes,
-    /// and will generate aligned loads/stores by default
-    /// While our Int128, UInt128 types have only 8 bytes alignment.
-    /// When working with values of these types in LLVM, don't forget to do setAlignment(llvm::Align(8)) for all loads/stores.
-        return builder.getInt128Ty();
-    else if constexpr (std::is_same_v<ToType, Int256> || std::is_same_v<ToType, UInt256> || std::is_same_v<ToType, Decimal256>)
-        return builder.getIntNTy(256);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native type");
-}
+llvm::Type * toNativeType(llvm::IRBuilderBase & builder);
 
 template <typename ToType>
 static inline DataTypePtr toNativeDataType()
