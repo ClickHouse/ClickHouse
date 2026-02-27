@@ -229,7 +229,7 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
