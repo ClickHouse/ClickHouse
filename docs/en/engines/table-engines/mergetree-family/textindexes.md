@@ -86,7 +86,7 @@ SET use_skip_indexes_on_data_read = true;
 Alternatively, you can increment the [compatibility](../../../operations/settings/settings#compatibility) setting to `26.2` or newer but this affects many settings and typically requires prior testing.
 :::
 
-To define a text index use the following syntax:
+To create a text index use the following syntax:
 
 ```sql
 CREATE TABLE table
@@ -113,8 +113,14 @@ ENGINE = MergeTree
 ORDER BY key
 ```
 
-Text indexes can be defined on [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md), and [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) map functions) columns.
-The [Nullable(String)](/sql-reference/data-types/nullable.md) and [LowCardinality(String)](/sql-reference/data-types/lowcardinality.md) wrapped alternatives are also supported including `Array(Nullable(String))` and `Array(Nullable(FixedString))`.
+Text indexes can be defined on:
+- [String](/sql-reference/data-types/string.md)
+- [FixedString](/sql-reference/data-types/fixedstring.md)
+- [Array(String)](/sql-reference/data-types/array.md)
+- [Array(FixedString)](/sql-reference/data-types/array.md)
+- [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) map functions) columns.
+
+The [Nullable(\[Fixed\]String)](/sql-reference/data-types/nullable.md) and [LowCardinality(\[Fixed\]String)](/sql-reference/data-types/lowcardinality.md) wrapped alternatives are also supported including `Array(Nullable([Fixed]String))`.
 
 Alternatively, to add a text index to an existing table:
 
@@ -205,7 +211,8 @@ Typical use cases for the preprocessor argument include
 2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
 3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](/sql-reference/functions/string-replace-functions.md/#translate).
 
-The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type. In case of [Nullable](/sql-reference/data-types/nullable.md) wrapped variants of these types the preprocessor expression should also support `Nullable` arguments as input.
+The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
+If the text index was build on a column of type `Nullable(T)` or `LowCardinality(T)` column, then the preprocessor expression should accept nullable or low-cardinality values (i.e. not throw an exception).
 
 Examples:
 
@@ -253,7 +260,6 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasToken(str, lower('Foo'));
 ```
 
-The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md), `Array(Nullable(String))` and `Array(Nullable(FixedString)) columns.
 In this case, the preprocessor expression transforms the array elements individually.
 
 Example:
