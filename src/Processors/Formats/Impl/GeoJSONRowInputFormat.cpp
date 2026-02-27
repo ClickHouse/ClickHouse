@@ -26,100 +26,67 @@ namespace
 /// Reads a GeoJSON position [lon, lat, ...] into a Tuple{Float64, Float64}.
 Field readGeoJSONPoint(ReadBuffer & buf)
 {
-    skipWhitespaceIfAny(buf);
-    assertChar('[', buf);
-    skipWhitespaceIfAny(buf);
+    JSONUtils::skipArrayStart(buf);
 
     Float64 lon;
     Float64 lat;
     readFloatText(lon, buf);
-    skipWhitespaceIfAny(buf);
-    assertChar(',', buf);
-    skipWhitespaceIfAny(buf);
+    JSONUtils::skipComma(buf);
     readFloatText(lat, buf);
-    skipWhitespaceIfAny(buf);
 
     /// Skip optional extra coordinates (e.g. altitude).
-    while (!buf.eof() && *buf.position() != ']')
+    while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
-        if (*buf.position() == ',')
-            ++buf.position();
-        skipWhitespaceIfAny(buf);
+        JSONUtils::skipComma(buf);
         Float64 ignored;
         readFloatText(ignored, buf);
-        skipWhitespaceIfAny(buf);
     }
 
-    assertChar(']', buf);
     return Tuple{lon, lat};
 }
 
 /// Reads [[lon,lat],...] into an Array of Tuple{Float64, Float64} (Ring / LineString coordinates).
 Array readGeoJSONLinearRing(ReadBuffer & buf)
 {
-    skipWhitespaceIfAny(buf);
-    assertChar('[', buf);
-    skipWhitespaceIfAny(buf);
+    JSONUtils::skipArrayStart(buf);
 
     Array points;
-    while (!buf.eof() && *buf.position() != ']')
+    while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
         points.push_back(readGeoJSONPoint(buf));
-        skipWhitespaceIfAny(buf);
-        if (!buf.eof() && *buf.position() == ',')
-        {
-            ++buf.position();
-            skipWhitespaceIfAny(buf);
-        }
+        JSONUtils::checkAndSkipComma(buf);
     }
 
-    assertChar(']', buf);
     return points;
 }
 
 /// Reads [[[lon,lat],...]] into Array of Array of Tuple (Polygon / MultiLineString coordinates).
 Array readGeoJSONPolygonCoordinates(ReadBuffer & buf)
 {
-    skipWhitespaceIfAny(buf);
-    assertChar('[', buf);
-    skipWhitespaceIfAny(buf);
+    JSONUtils::skipArrayStart(buf);
 
     Array rings;
-    while (!buf.eof() && *buf.position() != ']')
+    while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
         rings.push_back(readGeoJSONLinearRing(buf));
-        skipWhitespaceIfAny(buf);
-        if (!buf.eof() && *buf.position() == ',')
-        {
-            ++buf.position();
-            skipWhitespaceIfAny(buf);
-        }
+        JSONUtils::checkAndSkipComma(buf);
     }
 
-    assertChar(']', buf);
     return rings;
 }
 
 /// Reads [[[[lon,lat],...],...]] into Array of Array of Array of Tuple (MultiPolygon coordinates).
 Array readGeoJSONMultiPolygonCoordinates(ReadBuffer & buf)
 {
-    skipWhitespaceIfAny(buf);
-    assertChar('[', buf);
-    skipWhitespaceIfAny(buf);
+    JSONUtils::skipArrayStart(buf);
 
     Array polygons;
-    while (!buf.eof() && *buf.position() != ']')
+    while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
         polygons.push_back(readGeoJSONPolygonCoordinates(buf));
-        skipWhitespaceIfAny(buf);
-        if (!buf.eof() && *buf.position() == ',')
-        {
-            ++buf.position();
-            skipWhitespaceIfAny(buf);
-        }
+        JSONUtils::checkAndSkipComma(buf);
     }
 
-    assertChar(']', buf);
     return polygons;
 }
 
@@ -179,55 +146,29 @@ void GeoJSONRowInputFormat::resetParser()
 void GeoJSONRowInputFormat::readPrefix()
 {
     auto & buf = getReadBuffer();
-    skipWhitespaceIfAny(buf);
-    assertChar('{', buf);
+    JSONUtils::skipObjectStart(buf);
 
-    while (true)
+    while (!JSONUtils::checkAndSkipObjectEnd(buf))
     {
-        skipWhitespaceIfAny(buf);
-        if (buf.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: unexpected end of input, 'features' array not found");
-        if (*buf.position() == '}')
-            throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: 'features' array not found in FeatureCollection");
-
         String key = JSONUtils::readFieldName(buf, format_settings.json);
-        skipWhitespaceIfAny(buf);
 
         if (key == "features")
         {
-            assertChar('[', buf);
+            JSONUtils::skipArrayStart(buf);
             return;
         }
 
-        skipJSONField(buf, "", format_settings.json);
-        skipWhitespaceIfAny(buf);
-        if (!buf.eof() && *buf.position() == ',')
-            ++buf.position();
+        skipJSONField(buf, key, format_settings.json);
+        JSONUtils::checkAndSkipComma(buf);
     }
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: 'features' array not found in FeatureCollection");
 }
 
 void GeoJSONRowInputFormat::readSuffix()
 {
     auto & buf = getReadBuffer();
-    skipWhitespaceIfAny(buf);
-
-    /// Skip any remaining keys in the FeatureCollection after the features array.
-    while (!buf.eof() && *buf.position() != '}')
-    {
-        if (*buf.position() == ',')
-            ++buf.position();
-        skipWhitespaceIfAny(buf);
-        if (buf.eof() || *buf.position() == '}')
-            break;
-
-        JSONUtils::readFieldName(buf, format_settings.json);
-        skipWhitespaceIfAny(buf);
-        skipJSONField(buf, "", format_settings.json);
-        skipWhitespaceIfAny(buf);
-    }
-
-    if (!buf.eof() && *buf.position() == '}')
-        ++buf.position();
+    JSONUtils::skipTheRestOfObject(buf, format_settings.json);
 }
 
 bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
@@ -236,55 +177,26 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         return false;
 
     auto & buf = getReadBuffer();
-    skipWhitespaceIfAny(buf);
 
     if (!first_row)
-    {
-        if (buf.eof())
-        {
-            done = true;
-            return false;
-        }
-        if (*buf.position() == ']')
-        {
-            ++buf.position();
-            done = true;
-            return false;
-        }
-        if (*buf.position() == ',')
-            ++buf.position();
-        skipWhitespaceIfAny(buf);
-    }
+        JSONUtils::checkAndSkipComma(buf);
 
-    if (buf.eof() || *buf.position() == ']')
+    if (JSONUtils::checkAndSkipArrayEnd(buf))
     {
-        if (!buf.eof())
-            ++buf.position();
         done = true;
         return false;
     }
 
     first_row = false;
 
-    assertChar('{', buf);
-
     bool has_id = false;
     bool has_geometry = false;
     bool has_properties = false;
 
-    while (true)
+    JSONUtils::skipObjectStart(buf);
+    while (!JSONUtils::checkAndSkipObjectEnd(buf))
     {
-        skipWhitespaceIfAny(buf);
-        if (buf.eof())
-            break;
-        if (*buf.position() == '}')
-        {
-            ++buf.position();
-            break;
-        }
-
         String key = JSONUtils::readFieldName(buf, format_settings.json);
-        skipWhitespaceIfAny(buf);
 
         if (key == "id" && id_col_idx.has_value())
         {
@@ -320,12 +232,10 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         }
         else
         {
-            skipJSONField(buf, "", format_settings.json);
+            skipJSONField(buf, key, format_settings.json);
         }
 
-        skipWhitespaceIfAny(buf);
-        if (!buf.eof() && *buf.position() == ',')
-            ++buf.position();
+        JSONUtils::checkAndSkipComma(buf);
     }
 
     if (!has_id && id_col_idx.has_value())
@@ -354,24 +264,13 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
         return;
     }
 
-    assertChar('{', buf);
-
     String geo_type;
     String raw_coordinates;
 
-    while (true)
+    JSONUtils::skipObjectStart(buf);
+    while (!JSONUtils::checkAndSkipObjectEnd(buf))
     {
-        skipWhitespaceIfAny(buf);
-        if (buf.eof())
-            break;
-        if (*buf.position() == '}')
-        {
-            ++buf.position();
-            break;
-        }
-
         String key = JSONUtils::readFieldName(buf, format_settings.json);
-        skipWhitespaceIfAny(buf);
 
         if (key == "type")
         {
@@ -384,12 +283,10 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
         }
         else
         {
-            skipJSONField(buf, "", format_settings.json);
+            skipJSONField(buf, key, format_settings.json);
         }
 
-        skipWhitespaceIfAny(buf);
-        if (!buf.eof() && *buf.position() == ',')
-            ++buf.position();
+        JSONUtils::checkAndSkipComma(buf);
     }
 
     if (geo_type == "GeometryCollection")
