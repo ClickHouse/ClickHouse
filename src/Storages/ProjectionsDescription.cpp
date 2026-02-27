@@ -301,9 +301,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
+    /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
+    /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
+    /// (which may fail when session settings like allow_nonconst_timezone_arguments are unavailable,
+    /// e.g. during ATTACH TABLE), while still allowing the projection query to reference any column
+    /// including table-level ALIAS columns by name.
+    StoragePtr analyzer_storage = std::make_shared<StorageProjectionSource>(ColumnsDescription(columns.getAll()));
+
     auto query_tree = buildQueryTree(result.query_ast, mut_context);
     auto & query_node = query_tree->as<QueryNode &>();
-    query_node.getJoinTree() = std::make_shared<TableNode>(storage, mut_context);
+    query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
 
     QueryTreePassManager query_tree_pass_manager(mut_context);
     addQueryTreePasses(query_tree_pass_manager);
