@@ -2,6 +2,7 @@
 
 #if USE_JEMALLOC
 
+#include <mutex>
 #include <Common/FramePointers.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
@@ -53,22 +54,6 @@ void checkProfilingEnabled()
             "set: MALLOC_CONF=background_thread:true,prof:true");
 }
 
-void setProfileActive(bool value)
-{
-    checkProfilingEnabled();
-    bool active = true;
-    size_t active_size = sizeof(active);
-    mallctl("prof.active", &active, &active_size, nullptr, 0);
-    if (active == value)
-    {
-        LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is already {}", active ? "enabled" : "disabled");
-        return;
-    }
-
-    setValue("prof.active", value);
-    LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
-}
-
 std::string_view flushProfile(const char * file_prefix)
 {
     checkProfilingEnabled();
@@ -101,17 +86,11 @@ void setMaxBackgroundThreads(size_t max_threads)
 
 void setProfileSamplingRate(size_t lg_prof_sample)
 {
-    checkProfilingEnabled();
-
     size_t current = getValue<size_t>("prof.lg_sample");
     if (current == lg_prof_sample)
-    {
-        LOG_TRACE(getLogger("SystemJemalloc"), "Profiler sampling rate is already {}", current);
         return;
-    }
 
     mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
-    LOG_INFO(getLogger("SystemJemalloc"), "Profiler sampling rate changed from {} to {}", current, lg_prof_sample);
 }
 
 
@@ -195,24 +174,52 @@ void setup(
     bool collect_global_profile_samples_in_trace_log,
     size_t profiler_sampling_rate)
 {
-    if (enable_global_profiler)
+    static std::once_flag once;
+    bool did_setup = false;
+
+    std::call_once(once, [&]
     {
-        getThreadProfileInitMib().setValue(true);
-        getThreadProfileActiveMib().setValue(true);
+        if (enable_global_profiler)
+        {
+            getThreadProfileInitMib().setValue(true);
+            getThreadProfileActiveMib().setValue(true);
+        }
+
+        setBackgroundThreads(enable_background_threads);
+
+        if (max_background_threads_num)
+            setValue("max_background_threads", max_background_threads_num);
+
+        if (profiler_sampling_rate != default_profiler_sampling_rate)
+            setProfileSamplingRate(profiler_sampling_rate);
+
+        collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
+        setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
+        setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
+        setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
+
+        did_setup = true;
+    });
+
+    if (!did_setup)
+    {
+        /// Verify that the settings match what was configured on the first call.
+        auto log_warning = [](std::string_view setting)
+        {
+            LOG_WARNING(&Poco::Logger::get("Jemalloc"), "Jemalloc::setup called with different `{}` value", setting);
+        };
+
+        if (getThreadProfileInitMib().getValue() != enable_global_profiler)
+            log_warning("enable_global_profiler");
+        if (getValue<bool>("background_thread") != enable_background_threads)
+            log_warning("enable_background_threads");
+        if (max_background_threads_num && getValue<size_t>("max_background_threads") != max_background_threads_num)
+            log_warning("max_background_threads_num");
+        if (profiler_sampling_rate != default_profiler_sampling_rate && getValue<size_t>("prof.lg_sample") != profiler_sampling_rate)
+            log_warning("profiler_sampling_rate");
+        if (collect_global_profiles_in_trace_log != collect_global_profile_samples_in_trace_log)
+            log_warning("collect_global_profile_samples_in_trace_log");
     }
-
-    setBackgroundThreads(enable_background_threads);
-
-    if (max_background_threads_num)
-        setValue("max_background_threads", max_background_threads_num);
-
-    if (profiler_sampling_rate != 19)
-        setProfileSamplingRate(profiler_sampling_rate);
-
-    collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
-    setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
-    setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
-    setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
 }
 
 

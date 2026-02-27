@@ -20,8 +20,6 @@ void purgeArenas();
 
 void checkProfilingEnabled();
 
-void setProfileActive(bool value);
-
 std::string_view flushProfile(const char * file_prefix);
 
 void setBackgroundThreads(bool enabled);
@@ -44,6 +42,12 @@ T getValue(const char * name)
     mallctl(name, &value, &value_size, nullptr, 0);
     return value;
 }
+
+constexpr bool default_enable_global_profiler = false;
+constexpr bool default_enable_background_threads = true;
+constexpr size_t default_max_background_threads_num = 0;
+constexpr bool default_collect_global_profile_samples_in_trace_log = false;
+constexpr size_t default_profiler_sampling_rate = 19;
 
 void setup(
     bool enable_global_profiler,
