@@ -16,6 +16,49 @@
 #include <immintrin.h>
 #endif
 
+
+// =============================================================================
+//  ByteStreamSplit codec
+//
+//  A preprocessing transform that improves compression of fixed-width
+//  columnar data. Given N elements of W bytes each, it transposes the
+//  byte layout so that all first bytes are contiguous, then all second
+//  bytes, and so on — producing W streams of N bytes each.
+//
+//  Example with W=4 (Float32), 3 elements:
+//
+//    Input  (row-major):  [A0 A1 A2 A3] [B0 B1 B2 B3] [C0 C1 C2 C3]
+//    Output (transposed): [A0 B0 C0] [A1 B1 C1] [A2 B2 C2] [A3 B3 C3]
+//
+//  Bytes at the same position within each element tend to have similar
+//  values (e.g. exponent bytes of floats are nearly identical across
+//  rows), so grouping them together creates long runs of similar bytes
+//  that compress dramatically better with a subsequent codec like LZ4
+//  or ZSTD.
+//
+//  This is the same transform used by Apache Parquet/Arrow's
+//  BYTE_STREAM_SPLIT encoding and is especially effective for:
+//    - Floating point: Float32, Float64
+//    - Fixed-width types: UUID, IPv6, Decimal128, FixedString
+//    - Any type where adjacent elements share byte-level structure
+// =============================================================================
+// =============================================================================
+//  Throughput reference (GB/s)
+//  Hardware: Intel i7-12500H (12th gen Alder Lake)
+//  Data: 500 MiB, 40 rounds × 8 inner iterations, averaged over 2 runs
+//
+//                    ENCODE            DECODE
+//  W     path        min    avg        min    avg
+//  ---   ----------  -----  -----      -----  -----
+//   2    loopswap     10.6   11.1       10.7   11.1
+//   4    loopswap     10.4   10.6       11.0   11.3
+//   8    loopswap      8.9   9.3        10.2   10.6
+//  16    AVX2 SIMD     6.7   6.7         9.3    9.5
+//  20    u64x2 Rt      4.6   4.9         4.3    4.4
+//  32    u64x2 Rt      4.7   4.8         4.3    4.4
+//  64    u64x2 Rt      4.7   4.8         4.5    4.5
+// 128    u64x2 Rt      4.2   4.6         4.3    4.4
+// =============================================================================
 namespace DB
 {
 
@@ -321,8 +364,6 @@ static void decodeLoopswap16SSE2(
 //  Encode helpers
 // =============================================================================
 
-/// Generic encode: simple nested loop. Fast enough for small W where the
-/// compiler can fully unroll (W <= 8), or as a scalar fallback.
 template <int W>
 ALWAYS_INLINE void encodeLoopswap(
     const char * __restrict__ src,
@@ -514,10 +555,6 @@ ALWAYS_INLINE void decodeLoopswap<16>(
 
 }
 
-/// W > 16, runtime W: tile-based decode. Copies a W×W block of the
-/// transposed streams into a scratch tile, then scatters it into the
-/// destination — benchmarked to be faster than a plain scalar loop for
-/// large strides.
 ALWAYS_INLINE void decodeU64Rt(
     const char * __restrict__ src,
     char       * __restrict__ dst,
