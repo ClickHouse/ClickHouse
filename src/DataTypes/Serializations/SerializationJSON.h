@@ -29,10 +29,8 @@ public:
         std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
     {
         auto ptr = SerializationPtr(new SerializationJSON(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, std::move(json_extract_tree_)));
-        // return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
-        return ptr;
+        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
-
 
     UInt128 getHash() const override;
 
