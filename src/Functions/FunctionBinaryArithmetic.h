@@ -829,24 +829,31 @@ class FunctionBinaryArithmetic : public IFunction
 
     static bool castType(const IDataType * type, auto && f)
     {
-        using NumericAndDateTypes = TypeList<
+        using NumericTypes = TypeList<
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
-            DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
-            DataTypeDate, DataTypeDateTime, DataTypeTime>;
+            DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
 
         using Floats = TypeList<DataTypeFloat32, DataTypeFloat64, DataTypeBFloat16>;
 
         /// Only include extra types that this specific operation actually uses.
+        /// Date/DateTime/Time: needed for plus, minus, least, greatest, modulo,
+        ///   positive_modulo (see BinaryOperationTraits::ResultDataType).
+        ///   All other operations produce InvalidType for these, so skip them.
         /// String/FixedString: needed for bitwise ops (allow_fixed_string/allow_string_integer)
         ///   and bitHammingDistance.
         /// Interval: needed for plus/minus (date/time +/- interval arithmetic).
         /// All other operations reject these types in the dispatch lambda anyway,
         /// so we skip them to reduce the template instantiation matrix.
+        static constexpr bool needs_date_time = is_plus || is_minus
+            || IsOperation<Op>::least || IsOperation<Op>::greatest
+            || is_modulo || IsOperation<Op>::positive_modulo;
         static constexpr bool needs_string_types =
             Op<UInt8, UInt8>::allow_fixed_string || Op<UInt8, UInt8>::allow_string_integer || is_bit_hamming_distance;
         static constexpr bool needs_interval = is_plus || is_minus;
 
+        using NumericAndDateTypes = std::conditional_t<needs_date_time,
+            TypeListConcat<NumericTypes, TypeList<DataTypeDate, DataTypeDateTime, DataTypeTime>>, NumericTypes>;
         using WithStrings = std::conditional_t<needs_string_types,
             TypeListConcat<NumericAndDateTypes, TypeList<DataTypeFixedString, DataTypeString>>, NumericAndDateTypes>;
         using WithInterval = std::conditional_t<needs_interval,
