@@ -6,7 +6,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
-#include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
 
