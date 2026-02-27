@@ -40,7 +40,10 @@ fi
 
 cd ci/tmp
 
-mv llvm_coverage.info current_llvm_coverage.info
+if [[ ! -f "llvm_coverage.info" ]]; then
+  echo "llvm_coverage.info not found"
+  exit 1
+fi
 
 # Try to find .info file from S3, checking up to 30 ancestor commits
 FOUND=0

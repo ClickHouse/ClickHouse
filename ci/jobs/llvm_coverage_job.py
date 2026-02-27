@@ -12,6 +12,7 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 import ci.praktika.cidb as CIDB
 from ci.praktika.settings import Settings
+from ci.praktika.gh import GH
 from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 
 WORKFLOW = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
@@ -278,6 +279,27 @@ if __name__ == "__main__":
                 coverage_report_url=f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
                 diff_coverage_report_url=f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index.html",
                 uncovered_code_url=f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}",
+            )
+
+            _diff_url = f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
+            _pr_changed_lines_info = print_res.ext.get("comment", "")
+            _pr_changed_lines_row = (
+                f"\n**PR changed lines:** {_pr_changed_lines_info}"
+                if _pr_changed_lines_info
+                else ""
+            )
+            GH.post_fresh_comment(
+                tag="llvm-coverage",
+                body=(
+                    f"## LLVM Coverage Report\n"
+                    f"| Metric | Baseline | Current | Δ |\n"
+                    f"|--------|----------|---------|---|\n"
+                    f"| Lines | {b_line_cov:.2f}% | {c_line_cov:.2f}% | {c_line_cov - b_line_cov:+.2f}% |\n"
+                    f"| Functions | {b_function_cov:.2f}% | {c_function_cov:.2f}% | {c_function_cov - b_function_cov:+.2f}% |\n"
+                    f"| Branches | {b_branch_cov:.2f}% | {c_branch_cov:.2f}% | {c_branch_cov - b_branch_cov:+.2f}% |\n"
+                    f"{_pr_changed_lines_row}"
+                    f"\n[Diff coverage report]({_diff_url})"
+                ),
             )
         else:
             print("Local run, skipping CI DB update with coverage results")
