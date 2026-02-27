@@ -17,6 +17,7 @@
 namespace DB::ErrorCodes
 {
 extern const int DATALAKE_DATABASE_ERROR;
+extern const int NO_HIVEMETASTORE;
 }
 
 namespace DataLake
@@ -68,20 +69,90 @@ std::pair<String, Int32> parseHostPort(const String & url)
 
 HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr)
     : ICatalog(warehouse_)
-    , socket(new apache::thrift::transport::TSocket(parseHostPort(base_url_).first, parseHostPort(base_url_).second))
-    , transport(new apache::thrift::transport::TBufferedTransport(socket))
-    , protocol(new apache::thrift::protocol::TBinaryProtocol(transport))
-    , client(protocol)
+    , base_url(base_url_)
 {
+    // Initialize connection
+    reconnect();
+}
+
+void HiveCatalog::reconnect() const
+{
+    std::lock_guard lock(client_mutex);
+    
+    // Close existing connection if any
+    if (transport && transport->isOpen())
+    {
+        try
+        {
+            transport->close();
+        }
+        catch (const std::exception & ex)
+        {
+            // Ignore errors during close, but log them
+            LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Error closing transport: {}", ex.what());
+        }
+    }
+    
+    // Parse host and port from base_url
+    auto [host, port] = parseHostPort(base_url);
+    
+    // Create new connection
+    socket = std::make_shared<apache::thrift::transport::TSocket>(host, port);
+    transport = std::make_shared<apache::thrift::transport::TBufferedTransport>(socket);
+    protocol = std::make_shared<apache::thrift::protocol::TBinaryProtocol>(transport);
+    client = std::make_unique<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>(protocol);
+    
     transport->open();
+}
+
+template <typename Func>
+void HiveCatalog::executeWithRetry(Func && func) const
+{
+    constexpr int max_retries = 3;
+    String err_msg;
+    
+    int i = 0;
+    for (; i < max_retries; ++i)
+    {
+        try
+        {
+            std::lock_guard lock(client_mutex);
+            func();
+            return;
+        }
+        catch (apache::thrift::transport::TTransportException & e)
+        {
+            err_msg = e.what();
+            
+            // Reconnect for next attempt
+            try
+            {
+                reconnect();
+            }
+            catch (const std::exception & ex)
+            {
+                // If reconnect fails, log and continue to next attempt
+                LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Reconnect failed: {}", ex.what());
+            }
+        }
+    }
+
+    throw DB::Exception(
+        DB::ErrorCodes::NO_HIVEMETASTORE,
+        "Hive Metastore connection failed after {} attempts. Last error: {}",
+        max_retries,
+        err_msg);
 }
 
 bool HiveCatalog::empty() const
 {
     std::vector<std::string> result;
-
-    std::lock_guard lock(client_mutex);
-    client.get_all_databases(result);
+    
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        client->get_all_databases(result);
+    });
+    
     return result.empty();
 }
 
@@ -89,18 +160,20 @@ DB::Names HiveCatalog::getTables() const
 {
     DB::Names result;
     DB::Names databases;
+    
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        std::lock_guard lock(client_mutex);
-        client.get_all_databases(databases);
-    }
+        client->get_all_databases(databases);
+    });
 
     for (const auto & db : databases)
     {
         DB::Names current_tables;
+        executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS
         {
-            std::lock_guard lock(client_mutex);
-            client.get_all_tables(current_tables, db);
-        }
+            client->get_all_tables(current_tables, db);
+        });
+        
         for (const auto & table : current_tables)
             result.push_back(db + "." + table);
     }
@@ -110,10 +183,11 @@ DB::Names HiveCatalog::getTables() const
 bool HiveCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
 {
     Apache::Hadoop::Hive::Table table;
+    
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        std::lock_guard lock(client_mutex);
-        client.get_table(table, namespace_name, table_name);
-    }
+        client->get_table(table, namespace_name, table_name);
+    });
 
     if (table.tableName.empty())
         return false;
@@ -131,10 +205,10 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
 {
     Apache::Hadoop::Hive::Table table;
 
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        std::lock_guard lock(client_mutex);
-        client.get_table(table, namespace_name, table_name);
-    }
+        client->get_table(table, namespace_name, table_name);
+    });
 
     if (table.tableName.empty())
         return false;
