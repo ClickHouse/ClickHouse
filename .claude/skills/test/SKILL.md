@@ -1,9 +1,9 @@
 ---
 name: test
 description: Run ClickHouse stateless or integration tests. Use when the user wants to run or execute tests.
-argument-hint: [test-name] [--flags]
+argument-hint: "[test-name] [--flags]"
 disable-model-invocation: false
-allowed-tools: Task, Bash(./tests/clickhouse-test:*), Bash(pgrep:*), Bash(./build/*/programs/clickhouse:*), Bash(python:*), Bash(python3:*), Bash(mktemp:*), Bash(export:*)
+allowed-tools: Task, Bash(./tests/clickhouse-test:*), Bash(pgrep:*), Bash(./build/*/programs/clickhouse:*), Bash(./build*/programs/clickhouse:*), Bash(python:*), Bash(python3:*), Bash(mktemp:*), Bash(export:*), Bash(ls:*), Bash(test:*)
 ---
 
 # ClickHouse Test Runner Skill
@@ -46,6 +46,35 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
   - Stateless examples: `03312_issue_63093`, `00029_test_zookeeper`
   - Integration examples: `test_keeper_three_nodes_start`, `test_access_control_on_cluster`
 
+## Build Directory Auto-Detection
+
+Before running any test, the skill must locate a valid build directory containing the `clickhouse` binary. This is used for stateless tests (server binary + PATH) and integration tests (binary path).
+
+**Search for `programs/clickhouse` binary in the following locations, in order. Stop at the first match:**
+
+1. `build/programs/clickhouse`
+2. `build/RelWithDebInfo/programs/clickhouse`
+3. `build/Debug/programs/clickhouse`
+4. `build_debug/programs/clickhouse`
+5. `build_asan/programs/clickhouse`
+6. `build_tsan/programs/clickhouse`
+7. `build_msan/programs/clickhouse`
+8. `build_ubsan/programs/clickhouse`
+
+The **build directory** is the path up to and including the parent of `programs/` (e.g., if `build/RelWithDebInfo/programs/clickhouse` is found, the build directory is `build/RelWithDebInfo`).
+
+**If no binary is found:**
+- Use `AskUserQuestion` to ask:
+  - Question: "No ClickHouse binary found in well-known build directories. Where is your build directory?"
+  - Option 1: "Build first" - Description: "Run /build to compile ClickHouse first"
+  - Option 2: "Specify path" - Description: "Enter the path to an existing build directory containing programs/clickhouse"
+- Do NOT proceed without a valid build directory.
+
+**If a binary is found:**
+- **Convert the path to an absolute path** (e.g., using `$(pwd)/build/RelWithDebInfo` or `realpath`). Integration tests require absolute paths because the praktika Docker container resolves paths relative to a different working directory.
+- Report to the user: "Using build directory: `<absolute_path>`"
+- Use this absolute path for all subsequent steps (server check, PATH, binary path).
+
 ## Test Execution Process
 
 ### For Stateless Tests
@@ -59,7 +88,7 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
      - Test if server responds to a simple query: `SELECT 1`
      - Report status: "Server is running and healthy" or "Server is not running" or "Server is running but not responding"
 
-   Example Task prompt:
+   Example Task prompt (using the auto-detected `[build_directory]`):
    ```
    Check if the ClickHouse server is running and responding to queries.
 
@@ -68,7 +97,7 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
       Command: pgrep -f "clickhouse[- ]server" | xargs -I {} ps -p {} -o pid,cmd --no-headers 2>/dev/null | grep -v "cmake\|ninja\|Building"
 
    2. Test if the server responds to a simple query: SELECT 1
-      Command: ./build/RelWithDebInfo/programs/clickhouse client -q "SELECT 1" 2>/dev/null
+      Command: ./[build_directory]/programs/clickhouse client -q "SELECT 1" 2>/dev/null
 
    Report:
    - Whether a server process is running (show PID and command if found)
@@ -78,7 +107,7 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 
    - **If server is not running or not responding:**
      - Report the Task agent's finding
-     - Provide instructions: "Start the server with: `./build/RelWithDebInfo/programs/clickhouse server --config-file ./programs/server/config.xml`"
+     - Provide instructions: "Start the server with: `./[build_directory]/programs/clickhouse server --config-file ./programs/server/config.xml`"
      - Use `AskUserQuestion` to prompt: "Did you start the ClickHouse server?"
        - Option 1: "Yes, server is running now" - Run the liveness check Task again to verify
        - Option 2: "No, I'll start it later" - Exit without running the test
@@ -87,8 +116,6 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 
    - **If server is running and healthy:**
      - Proceed to run the test
-
-   - Note: Build directory path is configured via `/install-skills` (currently: `build/RelWithDebInfo`)
 
 2. **Determine test name and type:**
    - If `$ARGUMENTS` is provided, use it as the test name
@@ -113,10 +140,10 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 
    **Step 3b: Start the stateless test:**
    ```bash
-   # Add clickhouse binary to PATH
-   # Configured via /install-skills (currently: build/RelWithDebInfo)
-   export PATH="./build/RelWithDebInfo/programs:$PATH" && ./tests/clickhouse-test <test_name> [flags] > [log file path] 2>&1
+   # Add clickhouse binary to PATH using auto-detected build directory
+   export PATH="./[build_directory]/programs:$PATH" && ./tests/clickhouse-test <test_name> [flags] > [log file path] 2>&1
    ```
+   Where `[build_directory]` is the path found during auto-detection.
 
    **Important:**
    - Run from repository root directory
@@ -161,7 +188,7 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 
    **Step 2b: Start the integration test with praktika:**
    ```bash
-   python -u -m ci.praktika run "integration" --test <test_name> [--path <binary_path>] > [log file path] 2>&1
+   python -u -m ci.praktika run "integration" --test <test_name> [--path <absolute_binary_path>] > [log file path] 2>&1
    ```
 
    **Important:**
@@ -176,9 +203,10 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 
    **Custom binary path (--path option):**
    - Use `--path <binary_path>` to specify a custom ClickHouse binary location
+   - **CRITICAL: The path MUST be absolute.** Relative paths will be resolved incorrectly inside the Docker container (pytest runs from `tests/integration/`, not the repo root), causing "command not found" errors.
    - Useful for testing with different builds (e.g., debug build to trigger assertions)
-   - Example: `--path ./build_debug/programs/clickhouse` for debug build
-   - Default search order without `--path`: `./ci/tmp/clickhouse`, `./build/programs/clickhouse`, `./clickhouse`
+   - Example: `--path /home/user/ClickHouse/build_debug/programs/clickhouse` for debug build
+   - Default: uses the auto-detected build directory from the auto-detection step, converted to an absolute path
 
 3. **Wait for integration test completion:**
    - Use TaskOutput with `block=true` to wait for the background task to finish
@@ -318,7 +346,7 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 ### Integration Tests
 - `/test test_keeper_three_nodes_start` - Run specific integration test
 - `/test test_access_control_on_cluster` - Run integration test by name
-- `/test test_named_collections --path ./build_debug/programs/clickhouse` - Run with debug build (to trigger assertions)
+- `/test test_named_collections --path /home/user/ClickHouse/build_debug/programs/clickhouse` - Run with debug build (absolute path required)
 - `/test` - If viewing `tests/integration/test_*/test.py`, automatically detect and run that integration test
 
 ## Environment Variables
@@ -341,8 +369,7 @@ The test runner automatically detects and sets the necessary environment variabl
 - The server check protects against running tests when the server has crashed or been stopped
 - Test runner creates temporary database with random name for isolation
 - Reference files use `default` database name, not the random test database
-- Build directory used: `build/RelWithDebInfo` (configured with `/install-skills`)
-- Use `/install-skills test` to reconfigure which build directory to use for testing
+- Build directory is auto-detected at the start of each test run (see "Build Directory Auto-Detection" section)
 
 ### Integration Tests
 - Test names are directory names (use `test_keeper_three_nodes_start`, not `test.py`)
@@ -352,5 +379,11 @@ The test runner automatically detects and sets the necessary environment variabl
 - Docker daemon must be running and accessible
 - Requires Python dependencies from `tests/integration/` directory
 - Tests are run via praktika: `python -m ci.praktika run "integration" --test <test_name>`
-- Use `--path <binary_path>` to specify a custom ClickHouse binary (e.g., debug build)
+- **CRITICAL:** The `--path` argument MUST use an absolute path to the clickhouse binary. Relative paths break because they are resolved inside Docker relative to `tests/integration/`, not the repo root.
 - Debug builds (`build_debug`) enable `chassert` assertions - useful for reproducing race conditions
+- **Debugging failures:** When an integration test fails, check the `_instances*` directories inside the test directory (e.g., `tests/integration/test_reload_client_certificate/_instances*/`). These contain per-node logs, configs, and data created during the test run, which are invaluable for diagnosing failures.
+- **Permission issues with `_instances*` directories:** Integration tests run in Docker as root, so files in `_instances*` are owned by root and may not be readable. If you encounter "Permission denied" errors when trying to read logs or configs from these directories, suggest the user run the following command (in a copyable code block):
+  ```bash
+  sudo chown -R $(id -u):$(id -g) tests/integration/<test_name>/_instances*/
+  ```
+  Replace `<test_name>` with the actual test directory name. Then retry reading the files.

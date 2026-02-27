@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>

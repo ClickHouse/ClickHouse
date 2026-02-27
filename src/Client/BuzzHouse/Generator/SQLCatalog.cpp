@@ -524,7 +524,7 @@ bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
         || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isDictionaryEngine()
-        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
+        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine();
 }
 
 bool SQLBase::isEngineReplaceable() const
@@ -536,7 +536,7 @@ bool SQLBase::isEngineReplaceable() const
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
 {
-    return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine() || isExternalDistributedEngine();
+    return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine();
 }
 
 bool SQLBase::hasDatabasePeer() const
@@ -780,11 +780,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     {
         storage_class_name = rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING";
     }
-    if (isExternalDistributedEngine())
-    {
-        integration = (sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
-    }
-    else if (isMySQLEngine())
+    if (isMySQLEngine())
     {
         integration = IntegrationCall::MySQL;
     }

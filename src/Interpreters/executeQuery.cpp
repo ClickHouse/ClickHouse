@@ -81,10 +81,14 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Common/QueryFuzzer.h>
+#include <Common/randomSeed.h>
+
 #include <Poco/Net/SocketAddress.h>
 
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <random>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -104,6 +108,7 @@ namespace ProfileEvents
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
+    extern const Event ASTFuzzerQueries;
 }
 
 namespace DB
@@ -114,6 +119,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool ast_fuzzer_any_query;
+    extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
@@ -1375,8 +1382,10 @@ static BlockIO executeQueryImpl(
     {
         if (auto txn = context->getCurrentTransaction())
         {
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            if (txn->getState() == MergeTreeTransaction::COMMITTING)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} is in a committing state", txn->tid);
+            if (txn->getState() == MergeTreeTransaction::COMMITTED)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has been already committed", txn->tid);
             bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
@@ -1948,6 +1957,103 @@ static BlockIO executeQueryImpl(
     return res;
 }
 
+
+std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer()
+{
+    static std::mutex mutex;
+    static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(randomSeed());
+    return {fuzzer, std::unique_lock(mutex)};
+}
+
+
+static bool isReadOnlyQuery(const ASTPtr & ast)
+{
+    auto kind = ast->getQueryKind();
+    return kind == IAST::QueryKind::Select
+        || kind == IAST::QueryKind::Explain
+        || kind == IAST::QueryKind::Show
+        || kind == IAST::QueryKind::Describe
+        || kind == IAST::QueryKind::Exists;
+}
+
+
+static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr & context, Float64 ast_fuzzer_runs_value, bool any_query)
+{
+    if (!any_query && !isReadOnlyQuery(ast))
+        return;
+
+    size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
+    double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
+    if (fractional > 0)
+    {
+        std::bernoulli_distribution dist(fractional);
+        if (dist(thread_local_rng))
+            ++num_runs;
+    }
+
+    if (num_runs == 0)
+        return;
+
+    auto logger = getLogger("ASTFuzzer");
+
+    ASTPtr base_ast = ast;
+
+    for (size_t i = 0; i < num_runs; ++i)
+    {
+        ASTPtr fuzzed_ast;
+        {
+            auto [fuzzer, lock] = getGlobalASTFuzzer();
+            fuzzed_ast = base_ast->clone();
+            fuzzer->fuzzMain(fuzzed_ast);
+        }
+
+        WriteBufferFromOwnString fuzzed_query_buf;
+        fuzzed_ast->format(fuzzed_query_buf, IAST::FormatSettings(/*one_line=*/true));
+        String fuzzed_query = fuzzed_query_buf.str();
+
+        if (fuzzed_query.size() > 10000)
+        {
+            LOG_TRACE(logger, "Fuzzed query too long ({} chars), skipping", fuzzed_query.size());
+            continue;
+        }
+
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
+        LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
+
+        try
+        {
+            /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
+            context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
+            context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+            auto fuzz_context = Context::createCopy(context);
+            fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
+            fuzz_context->setCurrentQueryId("");
+
+            auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
+
+            if (result.second.pipeline.initialized())
+            {
+                if (result.second.pipeline.pulling())
+                {
+                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                }
+                CompletedPipelineExecutor executor(result.second.pipeline);
+                executor.execute();
+            }
+
+            base_ast = fuzzed_ast;
+        }
+        catch (...)
+        {
+            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            auto [fuzzer, lock] = getGlobalASTFuzzer();
+            fuzzer->notifyQueryFailed(fuzzed_ast);
+        }
+    }
+}
+
+
 std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
@@ -2011,6 +2117,27 @@ std::pair<ASTPtr, BlockIO> executeQuery(
             std::vector<int> v;
             (void)v[0];
         });
+    }
+
+    if (!flags.internal && ast)
+    {
+        Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
+        if (ast_fuzzer_runs_value > 0)
+        {
+            bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
+            res.finish_callbacks.emplace_back(
+                [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
+                {
+                    try
+                    {
+                        executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("ASTFuzzer");
+                    }
+                });
+        }
     }
 
     return std::make_pair(std::move(ast), std::move(res));
@@ -2291,6 +2418,23 @@ void executeQuery(
         else
         {
             /// It's possible to have queries without input and output.
+        }
+
+        if (!flags.internal && ast)
+        {
+            Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
+            if (ast_fuzzer_runs_value > 0)
+            {
+                bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
+                try
+                {
+                    executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ASTFuzzer");
+                }
+            }
         }
 
     }

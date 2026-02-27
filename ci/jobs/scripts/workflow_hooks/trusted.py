@@ -11,6 +11,7 @@ TRUSTED_CONTRIBUTORS = {
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
         "canhld94",
+        "uladzislauNestsiaruk",  # Student working on https://github.com/ClickHouse/ClickHouse/pull/91416, remove by 05/2026
     ]
 }
 
