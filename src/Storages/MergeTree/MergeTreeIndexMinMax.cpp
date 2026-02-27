@@ -229,9 +229,9 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (checksums.files.contains(relative_path_prefix + ".idx2"))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2"))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
-    if (checksums.files.contains(relative_path_prefix + ".idx"))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx"))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
     return {0 /* unknown */, {}};
 }

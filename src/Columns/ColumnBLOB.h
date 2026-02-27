@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/castColumn.h>
 #include <base/defines.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/WeakHash.h>
 

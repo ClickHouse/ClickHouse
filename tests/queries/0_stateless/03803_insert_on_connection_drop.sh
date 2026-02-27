@@ -34,9 +34,12 @@ PIPELINE_PID=$!
 
 sleep 15
 
-kill -9 $PIPELINE_PID 2>/dev/null
-
-wait $PIPELINE_PID 2>/dev/null
+# Temporarily redirect the shell's own stderr to suppress expected
+# "Broken pipe" and "Killed" job notification messages from bash.
+exec {_stderr}>&2 2>/dev/null
+kill -9 $PIPELINE_PID
+wait $PIPELINE_PID
+exec 2>&$_stderr {_stderr}>&-
 
 
 sleep 5

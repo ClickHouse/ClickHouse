@@ -9,6 +9,7 @@
 #include <Common/AtomicLogger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ExceptionExt.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
@@ -135,7 +136,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
-    : Poco::Exception(msg_masked.msg, code)
+    : Poco::Exception(std::move(msg_masked.msg), code)
     , remote(remote_)
 {
     if (terminate_on_any_exception)

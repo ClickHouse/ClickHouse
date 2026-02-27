@@ -1,6 +1,8 @@
 #include "config.h"
 
 #include <Dictionaries/DictionarySourceFactory.h>
+#include <Common/Exception.h>
+
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>

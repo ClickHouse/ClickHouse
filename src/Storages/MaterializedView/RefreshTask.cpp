@@ -24,6 +24,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 
 
@@ -83,6 +84,7 @@ RefreshTask::RefreshTask(
     , refresh_schedule(strategy)
     , refresh_append(strategy.append)
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::RefreshTask");
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
 
@@ -231,6 +233,7 @@ void RefreshTask::drop(ContextPtr context)
 {
     if (coordination.coordinated)
     {
+        auto component_guard = Coordination::setCurrentComponent("RefreshTask::drop");
         auto zookeeper = context->getZooKeeper();
 
         zookeeper->tryRemove(coordination.path + "/replicas/" + coordination.replica_name);
@@ -332,6 +335,7 @@ void RefreshTask::stop()
 
 void RefreshTask::startReplicated()
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::startReplicated");
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
 
@@ -354,6 +358,7 @@ void RefreshTask::stopReplicated(const String & reason)
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
 
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::stopReplicated");
     const auto zookeeper = [this]()
     {
         std::lock_guard guard(mutex);
@@ -467,6 +472,7 @@ void RefreshTask::setFakeTime(std::optional<Int64> t)
 
 void RefreshTask::refreshTask()
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::refreshTask");
     std::unique_lock lock(mutex);
 
     auto schedule_keeper_retry = [&] {

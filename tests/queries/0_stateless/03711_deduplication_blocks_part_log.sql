@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas, no-async-insert
+-- Tags: long, no-sanitizers, no-parallel, no-parallel-replicas, no-async-insert
 
 -- no-parallel-replicas -- https://github.com/ClickHouse/ClickHouse/issues/90063
 

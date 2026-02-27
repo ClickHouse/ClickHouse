@@ -8,6 +8,7 @@
 #include <memory>
 
 #include <boost/noncopyable.hpp>
+#include <fmt/format.h>
 
 class SipHash;
 
@@ -18,12 +19,6 @@ struct DataTypeCustomDesc;
 using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
 class IDataTypeCustomName;
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 class ReadBuffer;
 class WriteBuffer;
@@ -371,15 +366,10 @@ protected:
         bool throw_if_null);
 
     virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
-        std::string_view /*subcolumn_name*/,
-        const SubstreamData & /*data*/,
-        size_t /*initial_array_level*/,
-        bool throw_if_null) const
-    {
-        if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
-        return nullptr;
-    }
+        std::string_view subcolumn_name,
+        const SubstreamData & data,
+        size_t initial_array_level,
+        bool throw_if_null) const;
 };
 
 

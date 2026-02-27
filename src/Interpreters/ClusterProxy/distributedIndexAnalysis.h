@@ -30,7 +30,7 @@ using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const 
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const ActionsDAG * filter_actions_dag,
-    const Names & primary_key_column_names,
+    const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
     const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,

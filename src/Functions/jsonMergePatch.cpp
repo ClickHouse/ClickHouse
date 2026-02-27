@@ -168,19 +168,19 @@ namespace
 REGISTER_FUNCTION(JSONMergePatch)
 {
     /// jsonMergePatch documentation
-    FunctionDocumentation::Description description_jsonMergePatch = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the merged JSON object string which is formed by merging multiple JSON objects.
     )";
-    FunctionDocumentation::Syntax syntax_jsonMergePatch = "jsonMergePatch(json1[, json2, ...])";
-    FunctionDocumentation::Arguments arguments_jsonMergePatch = {
+    FunctionDocumentation::Syntax syntax = "JSONMergePatch(json1[, json2, ...])";
+    FunctionDocumentation::Arguments arguments = {
         {"json1[, json2, ...]", "One or more strings with valid JSON.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_jsonMergePatch = {"Returns the merged JSON object string, if the JSON object strings are valid.", {"String"}};
-    FunctionDocumentation::Examples examples_jsonMergePatch = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the merged JSON object string, if the JSON object strings are valid.", {"String"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
-SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res;
+SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res;
         )",
         R"(
 ┌─res───────────────────┐
@@ -189,11 +189,11 @@ SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_jsonMergePatch = {23, 10};
-    FunctionDocumentation::Category category_jsonMergePatch = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation_jsonMergePatch = {description_jsonMergePatch, syntax_jsonMergePatch, arguments_jsonMergePatch, {}, returned_value_jsonMergePatch, examples_jsonMergePatch, introduced_in_jsonMergePatch, category_jsonMergePatch};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionJSONMergePatch>(documentation_jsonMergePatch);
+    factory.registerFunction<FunctionJSONMergePatch>(documentation);
 
     factory.registerAlias("jsonMergePatch", "JSONMergePatch");
 }

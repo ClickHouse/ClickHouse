@@ -1089,11 +1089,66 @@ bool applyFunctionChainToColumn(
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
         auto func_result_type = func->getResultType();
+
+        /// DateTime64/Date32 are signed, but Date and DateTime are unsigned, so converting
+        /// values outside the unsigned range wraps around via static_cast, this can produce wrong pruning
+        ///
+        /// we check the constant BEFORE execution to catch obvious out-of-range inputs,
+        /// and AFTER execution to catch boundary values where the next value would wrap
+        /// (toDate returns day 65535 — the next day overflows to 0)
+        auto result_type_inner = removeLowCardinality(removeNullable(func_result_type));
+        if (isDate(result_type_inner) || isDateTime(result_type_inner))
+        {
+            auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
+            if (isDateTime64(arg_type_inner))
+            {
+                Int64 value = (*result_column)[0].safeGet<DateTime64>().getValue();
+
+                /// negative timestamps after cast -> large unsigned values
+                if (value < 0)
+                    return false;
+
+                UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale();
+                Int64 seconds = value / intExp10OfSize<Int64>(scale);
+
+                /// timestamps beyond the target range -> small values
+                if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
+                    return false;
+                if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
+                    return false;
+            }
+            else if (isDate32(arg_type_inner))
+            {
+                /// day numbers as Int32 -> Date only fits [0, 65535],
+                /// DateTime only fits seconds up to DATE_LUT_MAX
+                auto value = (*result_column)[0].safeGet<Int32>();
+                if (value < 0)
+                    return false;
+                if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
+                    return false;
+                if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
+                    return false;
+            }
+        }
+
         result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
         result_type = removeLowCardinality(func_result_type);
 
-        /// Transforming nullable columns to the nested ones, in case no nulls found
+        /// the result itself sits at the type's max — next value wraps so any >= / <= condition on
+        /// it would give wrong partition ranges -> this catches timezone edge cases that pre-execution check might miss
+        if (isDate(result_type_inner))
+        {
+            if (result_column->getUInt(0) >= DATE_LUT_MAX_DAY_NUM)
+                return false;
+        }
+        else if (isDateTime(result_type_inner))
+        {
+            if (result_column->get64(0) >= DATE_LUT_MAX)
+                return false;
+        }
+
+        // Transforming nullable columns to the nested ones, in case no nulls found
         if (result_column->isNullable())
         {
             const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
@@ -1332,8 +1387,7 @@ bool applyDeterministicDagToColumn(
     DataTypePtr & out_type)
 {
     ColumnPtr input_column = in_column->convertToFullIfNeeded();
-    DataTypePtr input_type = removeLowCardinality(in_type);
-    const DataTypePtr dag_input_type = removeLowCardinality(dag.input_type);
+    DataTypePtr input_type = recursiveRemoveLowCardinality(in_type);
 
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)
@@ -1342,7 +1396,7 @@ bool applyDeterministicDagToColumn(
     auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
     {
         column = column->convertToFullIfNeeded();
-        type = removeLowCardinality(type);
+        type = recursiveRemoveLowCardinality(type);
 
         if (column->isNullable())
         {
@@ -1387,7 +1441,7 @@ bool applyDeterministicDagToColumn(
         return true;
     };
 
-    if (!input_type->equals(*dag_input_type))
+    if (!input_type->equals(*dag.input_type))
     {
         /// Fast-path: consume leading CAST(...) that are no-op for current type
         /// or can be applied directly to the CAST result type. This avoids the
@@ -1436,7 +1490,7 @@ bool applyDeterministicDagToColumn(
             if (!cast_arg || cast_arg->type != ActionsDAG::ActionType::INPUT || cast_arg->result_name != input_name)
                 return false;
 
-            const auto cast_result_type = removeLowCardinality(output_node->result_type);
+            const auto cast_result_type = recursiveRemoveLowCardinality(output_node->result_type);
 
             out_column = input_column;
             out_type = input_type;
@@ -1450,7 +1504,7 @@ bool applyDeterministicDagToColumn(
         if (try_apply_direct_cast_fast_path())
             return true;
 
-        if (!cast_without_nulls(input_column, input_type, dag_input_type))
+        if (!cast_without_nulls(input_column, input_type, dag.input_type))
             return false;
     }
 

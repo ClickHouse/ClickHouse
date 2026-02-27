@@ -455,4 +455,10 @@ IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
     {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
      {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
      {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
+
+IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"raw", JemallocProfileFormat::Raw},
+     {"symbolized", JemallocProfileFormat::Symbolized},
+     {"collapsed", JemallocProfileFormat::Collapsed}})
+
 }

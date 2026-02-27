@@ -59,6 +59,9 @@ public:
 
     UInt64 getSeed() const { return seed; }
 
+    /// Returns the total number of accumulated AST fragments (column-like + table-like).
+    size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
+
     void setSeed(const UInt64 new_seed)
     {
         seed = new_seed;

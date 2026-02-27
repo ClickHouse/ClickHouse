@@ -11,10 +11,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+[[noreturn]] void throwUnexpectedLowCardinalityIndexType(size_t size);
 
 /**
  * How data is stored (in a nutshell):
@@ -104,6 +101,8 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
@@ -309,7 +308,7 @@ public:
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
-            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+            default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
         }
     }
 

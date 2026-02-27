@@ -30,7 +30,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
-#include <Storages/MergeTree/TextIndexUtils.h>
+#include <Storages/MergeTree/TextIndexSegment.h>
 
 namespace ProfileEvents
 {
@@ -163,6 +163,13 @@ public:
         return res;
     }
 
+    PlainMarksByName releaseCachedIndexMarks() const
+    {
+        PlainMarksByName res;
+        std::swap(global_ctx->cached_index_marks, res);
+        return res;
+    }
+
     bool execute();
 
     void cancel() noexcept;
@@ -258,6 +265,7 @@ private:
 
         WrittenOffsetSubstreams written_offset_substreams{};
         PlainMarksByName cached_marks;
+        PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;

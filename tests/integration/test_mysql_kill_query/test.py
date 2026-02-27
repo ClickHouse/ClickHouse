@@ -104,15 +104,6 @@ END"""
     yield mysql_conn, cluster
 
 
-# Stop clickhouse-client by SIGINT signal that is the same as pressing Ctrl+C
-def stop_clickhouse_client():
-    client_pid = node1.get_process_pid("clickhouse client")
-    node1.exec_in_container(
-        ["bash", "-c", f"kill -INT {client_pid}"],
-        user="root",
-    )
-
-
 def test_kill_infinite_query(setup_infinite_query):
     mysql_conn, cluster = setup_infinite_query
     query_id = str(uuid.uuid4())
@@ -224,7 +215,7 @@ def test_cancel_infinite_query(setup_infinite_query):
     node1.wait_for_log_line("Get data from database")
     time.sleep(2)
 
-    stop_clickhouse_client()
+    node1.stop_clickhouse_client()
     node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 
@@ -260,7 +251,7 @@ SETTINGS max_block_size = 10000"""
     node1.wait_for_log_line("Generate a chuck")
     time.sleep(2)
 
-    stop_clickhouse_client()
+    node1.stop_clickhouse_client()
     node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 

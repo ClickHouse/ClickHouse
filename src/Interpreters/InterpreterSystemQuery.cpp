@@ -62,6 +62,7 @@
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/HostResolvePool.h>
 #include <Common/ShellCommand.h>
@@ -75,6 +76,8 @@
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <base/sleep.h>
 
+#include "config.h"
+
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
 #endif
@@ -84,10 +87,9 @@
 #endif
 
 #if USE_JEMALLOC
-#include <Common/Jemalloc.h>
+#    include <Processors/Sources/JemallocProfileSource.h>
+#    include <Common/Jemalloc.h>
 #endif
-
-#include "config.h"
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <delta_kernel_ffi.hpp>
@@ -112,6 +114,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 keeper_max_retries;
+#if USE_JEMALLOC
+    extern const SettingsJemallocProfileFormat jemalloc_profile_text_output_format;
+    extern const SettingsBool jemalloc_profile_text_symbolize_with_inline;
+#endif
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -1051,13 +1057,29 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            auto context = getContext();
+            context->checkAccess(AccessType::SYSTEM_JEMALLOC);
             auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
-            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
-            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
-            filename += ".symbolized";
+            auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
+            auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
+
+            std::string output_filename;
+            if (format == JemallocProfileFormat::Raw)
+            {
+                output_filename = filename;
+            }
+            else if (format == JemallocProfileFormat::Symbolized)
+            {
+                output_filename = filename + ".symbolized";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
+            else
+            {
+                output_filename = filename + ".collapsed";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
             auto col = ColumnString::create();
-            col->insertData(filename.data(), filename.size());
+            col->insertData(output_filename.data(), output_filename.size());
             Columns columns;
             columns.emplace_back(std::move(col));
             Chunk chunk(std::move(columns), 1);
@@ -1327,6 +1349,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
 void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropReplica");
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
@@ -1456,9 +1479,10 @@ void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & quer
 }
 
 DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
-    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
+    const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
-    auto zookeeper = getContext()->getZooKeeper();
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::restoreDatabaseFromKeeperPath");
+    auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 
     String metadata_path = zookeeper_path + "/metadata";
     if (!zookeeper->exists(metadata_path))
@@ -1680,6 +1704,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropDatabaseReplica");
     const String full_replica_name
         = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
     const fs::path & query_replica_zk_path = fs::path(query.replica_zk_path);
@@ -1705,7 +1730,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -1732,7 +1758,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1769,6 +1796,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 executeQuery(drop_query, drop_ctx);
             });
             auto database = restoreDatabaseFromKeeperPath(
+                /*zookeeper_name=*/query.zk_name,
                 /*zookeeper_path=*/query.replica_zk_path,
                 /*full_replica_name=*/full_replica_name,
                 /*restoring_database_name=*/restoring_database_name);
@@ -1779,8 +1807,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
         }
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
-        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
+        DatabaseReplicated::dropReplica(nullptr, query.zk_name, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
+        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.full_replica_zk_path);
     }
 }
 
@@ -2054,17 +2082,16 @@ void InterpreterSystemQuery::prewarmMarkCache()
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
-    auto mark_cache = getContext()->getMarkCache();
-    if (!mark_cache)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
-
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
         CurrentMetrics::MergeTreePartsLoaderThreadsActive,
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+    MergeTreeData::CachesToPrewarm caches;
+    caches.mark_cache = getContext()->getMarkCache();
+    caches.index_mark_cache = getContext()->getIndexMarkCache();
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 void InterpreterSystemQuery::prewarmPrimaryIndexCache()
@@ -2089,7 +2116,9 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
+    MergeTreeData::CachesToPrewarm caches;
+    caches.primary_index_cache = index_cache;
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 

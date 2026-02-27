@@ -3,6 +3,7 @@
 #include <Common/BitHelpers.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/VersionNumber.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>

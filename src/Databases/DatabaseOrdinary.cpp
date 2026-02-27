@@ -129,6 +129,7 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
     info.table_id = table_id;
     info.expand_special_macros_only = false;
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::checkReplicaPathExists");
     const auto & server_settings = local_context->getServerSettings();
     String replica_path = server_settings[ServerSetting::default_replica_path];
     String zookeeper_path = local_context->getMacros()->expand(replica_path, info);
@@ -263,6 +264,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
     auto process_metadata = [&metadata, is_startup, local_context, db_disk, this](const String & file_name)
     {
+        auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::loadTablesMetadata");
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
         fs::path full_path = path / file_path;
@@ -703,6 +705,7 @@ Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::alterTable");
     auto db_disk = getDisk();
     waitDatabaseStarted();
 

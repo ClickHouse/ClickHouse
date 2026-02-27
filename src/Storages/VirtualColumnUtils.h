@@ -15,6 +15,10 @@ class Block;
 class Chunk;
 class NamesAndTypesList;
 
+class ExpressionActions;
+class IMergeTreeDataPart;
+using DataPartsVector = std::vector<std::shared_ptr<const IMergeTreeDataPart>>;
+
 namespace VirtualColumnUtils
 {
 
@@ -140,6 +144,12 @@ void addRequestedFileLikeStorageVirtualsToChunk(
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
 std::string_view findHivePartitioningInPath(const String & path);
+
+/// Filter data parts by part_name using a precomputed filter expression.
+/// Returns all parts if virtual_columns_filter is null.
+DataPartsVector filterDataPartsWithExpression(
+    const DataPartsVector & data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
 
 }
 

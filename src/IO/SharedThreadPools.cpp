@@ -1,5 +1,6 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/Field.h>

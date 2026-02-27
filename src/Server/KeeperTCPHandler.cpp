@@ -1,4 +1,5 @@
 #include <Server/KeeperTCPHandler.h>
+#include <Common/ErrnoException.h>
 
 #if USE_NURAFT
 

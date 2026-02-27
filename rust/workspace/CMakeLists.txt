@@ -36,3 +36,5 @@ if (ENABLE_SKIM)
     target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
 endif()
+
+add_subdirectory (wasmtime)

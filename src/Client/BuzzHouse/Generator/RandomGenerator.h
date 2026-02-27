@@ -123,7 +123,7 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
-        , subseconds(0, UINT32_C(1000000000))
+        , subseconds(0, UINT32_C(999999999))
         , strlens(min_string_length, max_string_length)
         , ints64(limited ? -50 : std::numeric_limits<int64_t>::min(), limited ? 50 : std::numeric_limits<int64_t>::max())
         , uints64(limited ? 0 : std::numeric_limits<uint64_t>::min(), limited ? 100 : std::numeric_limits<uint64_t>::max())

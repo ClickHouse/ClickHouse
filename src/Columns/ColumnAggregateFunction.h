@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 
 namespace DB

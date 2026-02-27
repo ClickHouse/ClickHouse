@@ -109,6 +109,12 @@ When reading diffs, scan for these classes of bugs:
 - Accidental O(N²) patterns on large inputs.
 - Extra syscalls, unnecessary fsyncs, sleeps, or polling in hot paths.
 
+**7) Compilation time & build impact**
+- Adding non-trivial code (function bodies, method implementations, template definitions) to widely-included headers instead of moving it to `.cpp` files. Large function bodies in headers force recompilation of every translation unit that includes them. Prefer keeping only declarations, forward declarations, and truly trivial inline functions in `.h` files.
+- Adding or pulling heavy transitive includes into high-fan-out headers. When a header is included by hundreds or thousands of translation units, every extra `#include` it carries multiplies across the entire build. Watch for headers like `Exception.h`, `IColumn.h`, `IDataType.h`, and other foundational headers gaining new includes. Prefer forward declarations, dedicated lightweight `_fwd.h` headers, or moving the dependency into `.cpp` files.
+- Unnecessary template instantiations: template code that unconditionally instantiates specializations for cases that are statically known to be unreachable. Use `if constexpr` to prune template variants that do not apply (e.g., instantiating a `division_by_nullable=true` variant for non-division operations). Each unnecessary instantiation multiplies compile time and binary size.
+- Large `constexpr` evaluation in headers: complex `constexpr` loops or recursive `constexpr` functions in headers that the compiler must evaluate in every translation unit. Extract them into `.cpp` files or break them into smaller units.
+
 CLICKHOUSE-SPECIFIC RULES (MANDATORY)
 - **Deletion logging**  
   All data deletion events (files, parts, metadata, ZooKeeper/Keeper entries, etc.) must be logged at an appropriate level.
@@ -125,8 +131,10 @@ CLICKHOUSE-SPECIFIC RULES (MANDATORY)
   Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
 - **Backward compatibility**  
   New versions must be configurable to behave like older versions via `compatibility` settings. Ensure `SettingsHistory.cpp` is updated when settings change.
-- **Cloud/OSS alignment**  
+- **Cloud/OSS alignment**
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
+- **Header hygiene & compilation time**
+  ClickHouse has ~10k translation units; compilation time is a key developer productivity concern. Non-trivial function bodies, template definitions, and `constexpr` logic should live in `.cpp` files, not in headers. Do not add heavy `#include` directives to foundational headers (e.g. `Exception.h`, `IColumn.h`, `IDataType.h`, `typeid_cast.h`, `assert_cast.h`, `Context_fwd.h`); prefer forward declarations or `_fwd.h` headers. Use `if constexpr` to avoid instantiating template specializations that are statically unreachable.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 
@@ -146,6 +154,7 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - Hidden magic constants that should be settings.
 - Confusing or incomplete user-visible behavior/docs.
 - Missing or unclear comments in complex logic that future maintainers must understand.
+- Compilation time regressions: non-trivial code added to widely-included headers, heavy new transitive includes in high-fan-out headers, or unnecessary template instantiations that significantly increase build times.
 
 **Nits** – only mention if they materially improve robustness or clarity
 - Minor refactors that clearly reduce future bug risk.

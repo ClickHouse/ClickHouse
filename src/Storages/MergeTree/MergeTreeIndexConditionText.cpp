@@ -110,7 +110,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             all_search_queries[search_query->getHash().get128()] = search_query;
         }
 
-        if (getTextSearchMode(element) == TextSearchMode::Any)
+        if (requiresReadingAllTokens(element))
             global_search_mode = TextSearchMode::Any;
     }
 
@@ -118,16 +118,33 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
 }
 
-TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
+bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & element)
 {
-    if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS
-        || element.function == RPNElement::FUNCTION_AND
-        || element.function == RPNElement::FUNCTION_EQUALS
-        || element.function == RPNElement::ALWAYS_TRUE
-        || (element.function == RPNElement::FUNCTION_MATCH && element.text_search_queries.size() == 1))
-        return TextSearchMode::All;
-
-    return TextSearchMode::Any;
+    switch (element.function)
+    {
+        case RPNElement::FUNCTION_OR:
+        case RPNElement::FUNCTION_NOT:
+        case RPNElement::FUNCTION_NOT_IN:
+        case RPNElement::FUNCTION_NOT_EQUALS:
+        case RPNElement::FUNCTION_HAS_ANY_TOKENS:
+        {
+            return true;
+        }
+        case RPNElement::FUNCTION_AND:
+        case RPNElement::FUNCTION_EQUALS:
+        case RPNElement::FUNCTION_HAS_ALL_TOKENS:
+        case RPNElement::FUNCTION_UNKNOWN:
+        case RPNElement::ALWAYS_TRUE:
+        case RPNElement::ALWAYS_FALSE:
+        {
+            return false;
+        }
+        case RPNElement::FUNCTION_IN:
+        case RPNElement::FUNCTION_MATCH:
+        {
+            return element.text_search_queries.size() != 1;
+        }
+    }
 }
 
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)

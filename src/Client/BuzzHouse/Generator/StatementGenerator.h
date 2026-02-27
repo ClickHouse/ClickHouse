@@ -171,6 +171,7 @@ private:
     uint32_t cache_counter = 0;
     uint32_t aliases_counter = 0;
     uint32_t id_counter = 0;
+    uint32_t freeze_counter = 0;
 
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
@@ -474,7 +475,6 @@ private:
     void flatColumnPath(uint32_t flags, const std::unordered_map<uint32_t, std::unique_ptr<SQLType>> & centries);
     void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, Expr * expr);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
-    void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
     void generateTableExpression(RandomGenerator & rg, std::optional<SQLRelation> & rel, bool use_global_agg, bool pred, Expr * expr);
     void generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr);
     void generateNextTTL(RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr);
@@ -627,7 +627,7 @@ private:
     void dropDatabase(uint32_t dname, bool all);
 
     void generateNextTablePartition(
-        RandomGenerator & rg, bool allow_parts, bool detached, bool supports_all, const SQLTable & t, PartitionExpr * pexpr);
+        RandomGenerator & rg, uint32_t allow_parts, bool detached, bool supports_all, const SQLTable & t, PartitionExpr * pexpr);
 
     void generateNextBackup(RandomGenerator & rg, BackupRestore * br);
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
@@ -823,6 +823,10 @@ public:
     const std::function<bool(const SQLTable &)> detached_tables = [](const SQLTable & t) { return t.isDettached(); };
     const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return v.isDettached(); };
     const std::function<bool(const SQLDictionary &)> detached_dictionaries = [](const SQLDictionary & d) { return d.isDettached(); };
+    const std::function<bool(const std::shared_ptr<SQLDatabase> &)> replicated_databases
+        = [](const std::shared_ptr<SQLDatabase> & db) { return db->isAttached() && (db->shard_counter > 0 || db->replica_counter > 0); };
+    const std::function<bool(const SQLTable &)> replicated_tables
+        = [](const SQLTable & t) { return t.isAttached() && (t.shard_counter > 0 || t.replica_counter > 0); };
 
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const

@@ -229,7 +229,7 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
@@ -332,6 +332,12 @@ public:
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+
+    /// Dynamic columns manage their own variant_info type metadata.
+    /// The default convertToFullIfNeeded recurses into subcolumns and strips LowCardinality
+    /// from variant columns, but cannot update variant_info, creating column/type mismatches.
+    /// Override to skip recursion — Dynamic is a self-contained typed container.
+    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
 
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {

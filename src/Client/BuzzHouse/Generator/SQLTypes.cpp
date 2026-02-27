@@ -78,7 +78,7 @@ static String numberColumn(RandomGenerator & rg, const bool can_negative, String
     if (iffunc)
     {
         buf += "if(";
-        buf += numberColumnEntry(rg, can_negative && rg.nextBool(), true);
+        buf += numberColumnEntry(rg, false, true);
         buf += ",";
     }
     buf += "CAST(";
@@ -438,7 +438,7 @@ String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerat
 {
     const bool allow_func = gen.getAllowNotDetermistic();
     String ret
-        = extended ? rg.nextDateTime64("'", allow_func, rg.nextSmallNumber() < 8) : rg.nextDateTime("'", allow_func, precision.has_value());
+        = extended ? rg.nextDateTime64("'", allow_func, precision.has_value()) : rg.nextDateTime("'", allow_func, precision.has_value());
 
     ret += allow_func ? fmt::format("::{}", typeName(false, false)) : "";
     return ret;
@@ -519,7 +519,7 @@ SQLType * DecimalType::typeDeepCopy() const
 String DecimalType::appendDecimalValue(RandomGenerator & rg, const bool use_func, const DecimalType * dt)
 {
     const uint32_t right = dt->scale.value_or(0);
-    const uint32_t left = dt->precision.value_or(10) - right;
+    const uint32_t left = dt->precision.value_or(9) - right;
 
     return appendDecimal(rg, use_func, left, right);
 }
@@ -593,7 +593,7 @@ String StringType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &,
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, true, "String");
+        return numberColumn(rg, true, typeName(false, false));
     }
     return rg.nextString("'", true, std::min(max_strlen, precision.value_or(rg.nextStrlen())));
 }
@@ -1510,12 +1510,15 @@ SQLType * AggregateFunctionType::typeDeepCopy() const
 
 String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    /// This doesn't work yet I think
-    if (subtypes.empty())
+    String ret = SQLFunc_Name(aggregate).substr(4);
+
+    ret += "State(";
+    if (!subtypes.empty())
     {
-        return std::to_string(rg.nextRandomUInt64());
+        ret += subtypes[0]->appendRandomRawValue(rg, gen);
     }
-    return subtypes[0]->appendRandomRawValue(rg, gen);
+    ret += ")";
+    return ret;
 }
 
 String AggregateFunctionType::insertNumberEntry(

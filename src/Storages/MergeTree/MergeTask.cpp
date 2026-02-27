@@ -1551,6 +1551,10 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     for (auto & [name, marks] : cached_marks)
         global_ctx->cached_marks.emplace(name, std::move(marks));
 
+    auto cached_index_marks = ctx->column_to->releaseCachedIndexMarks();
+    for (auto & [name, marks] : cached_index_marks)
+        global_ctx->cached_index_marks.emplace(name, std::move(marks));
+
     ctx->delayed_streams.emplace_back(std::move(ctx->column_to));
 
     while (ctx->delayed_streams.size() > ctx->max_delayed_streams)
@@ -1705,6 +1709,10 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
         global_ctx->cached_marks.emplace(name, std::move(marks));
+
+    auto cached_index_marks = global_ctx->to->releaseCachedIndexMarks();
+    for (auto & [name, marks] : cached_index_marks)
+        global_ctx->cached_index_marks.emplace(name, std::move(marks));
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
@@ -2243,6 +2251,7 @@ public:
         : ITransformingStep(input_header_, output_header_, getTraits())
         , WithContext(context_)
         , transform(std::move(transform_))
+        , original_output_header(output_header_)
     {
     }
 
@@ -2270,7 +2279,11 @@ public:
 
     void updateOutputHeader() override
     {
-        output_header = input_headers.front();
+        /// The output header must be the original header (without extra index
+        /// expression columns), not the input header which may contain extra
+        /// columns added by index expression steps. This is important to keep
+        /// all per-part plan headers compatible in the UnionStep during merge.
+        output_header = original_output_header;
     }
 
     String getName() const override { return "BuildTextIndex"; }
@@ -2292,6 +2305,7 @@ private:
     }
 
     std::shared_ptr<BuildTextIndexTransform> transform;
+    const SharedHeader original_output_header;
 };
 
 void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx)

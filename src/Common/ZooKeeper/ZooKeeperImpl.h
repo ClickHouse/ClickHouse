@@ -265,6 +265,7 @@ private:
     bool use_compression = false;
     bool use_xid_64 = false;
     bool pass_opentelemetry_tracing_context = false;
+    bool enforce_component_tracking = false;
 
     int64_t close_xid = CLOSE_XID;
 

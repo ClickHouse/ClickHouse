@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>

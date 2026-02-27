@@ -35,6 +35,7 @@
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>

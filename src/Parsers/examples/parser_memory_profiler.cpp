@@ -79,6 +79,7 @@
 
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
+#include <Processors/Sources/JemallocProfileSource.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -365,8 +366,8 @@ try
         {
             std::string sym_before = profile_before_path + ".sym";
             std::string sym_after = profile_after_path + ".sym";
-            Jemalloc::symbolizeHeapProfile(profile_before_path, sym_before);
-            Jemalloc::symbolizeHeapProfile(profile_after_path, sym_after);
+            symbolizeJemallocHeapProfile(profile_before_path, sym_before);
+            symbolizeJemallocHeapProfile(profile_after_path, sym_after);
             std::cerr << "Symbolized before: " << sym_before << "\n";
             std::cerr << "Symbolized after:  " << sym_after << "\n";
         }

@@ -222,6 +222,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::~BucketHolder()
     if (!released)
         LOG_TEST(log, "Releasing bucket ({}) holder in destructor", bucket_info->bucket);
 
+    auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueOrderedFileMetadata::~BucketHolder");
     try
     {
         release();

@@ -102,6 +102,7 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
     extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
     extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
@@ -159,13 +160,12 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
-        std::string app_name = (commandName() == "clickhouse-keeper") ? "clickhouse-keeper" : "clickhouse keeper";
         auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
                                       "{0} client [OPTION]\n"
 #endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      app_name);
+                                      commandName());
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -328,7 +328,8 @@ try
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
+        server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
     Poco::Logger * log = &logger();
 

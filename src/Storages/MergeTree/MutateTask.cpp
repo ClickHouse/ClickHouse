@@ -965,13 +965,18 @@ static NameToNameVector collectFilesForRenames(
                 for (const auto & extension : extensions)
                 {
                     const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
-                    const String filename = index_filename + substream + extension;
-                    const String filename_mrk = index_filename + substream + mrk_extension;
+                    const String stream_name = index_filename + substream;
 
-                    if (source_part->checksums.has(filename))
+                    /// Check for both original and hashed filenames (hashed if the index name is too long)
+                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
+                    if (actual_stream_name)
                     {
-                        add_rename(filename, "");
-                        add_rename(filename_mrk, "");
+                        add_rename(*actual_stream_name + extension, "");
+
+                        /// Also try to remove the mark file (check for both original and hashed)
+                        auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
+                        if (actual_mark_name)
+                            add_rename(*actual_mark_name + mrk_extension, "");
                     }
                 }
             }
@@ -2180,8 +2185,16 @@ private:
             auto index_substreams = index->getSubstreams();
             for (const auto & index_substream : index_substreams)
             {
-                ctx->new_data_part->checksums.remove(index->getFileName() + index_substream.suffix + index_substream.extension);
-                ctx->new_data_part->checksums.remove(index->getFileName() + index_substream.suffix + ctx->mrk_extension);
+                String stream_name = index->getFileName() + index_substream.suffix;
+
+                /// Check for both original and hashed filenames
+                auto actual_data_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, ctx->source_part->checksums);
+                if (actual_data_stream_name)
+                    ctx->new_data_part->checksums.remove(*actual_data_stream_name + index_substream.extension);
+
+                auto actual_mark_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, ctx->source_part->checksums);
+                if (actual_mark_stream_name)
+                    ctx->new_data_part->checksums.remove(*actual_mark_stream_name + ctx->mrk_extension);
             }
         }
 

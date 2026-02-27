@@ -924,6 +924,9 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (settings[Setting::parallel_distributed_insert_select])
         {
+            /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
+            auto saved_select = query.select->clone();
+
             auto distributed = table->distributedWrite(query, context);
             if (distributed)
             {
@@ -940,6 +943,8 @@ BlockIO InterpreterInsertQuery::execute()
                 if (pipeline)
                     res.pipeline = std::move(*pipeline);
             }
+
+            query.select = std::move(saved_select);
         }
         if (!res.pipeline.initialized())
             res.pipeline = buildInsertSelectPipeline(query, table);

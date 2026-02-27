@@ -159,6 +159,8 @@ public:
     String target_function;
     String replica;
     String shard;
+    String zk_name;
+    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};

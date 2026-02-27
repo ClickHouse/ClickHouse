@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace MergeTreeSetting
@@ -501,17 +502,22 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
 {
     static constexpr size_t marks_count = 1;
 
+    /// Check for both original and hashed filenames (hashed if the index name is too long)
+    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *data_part_storage);
+    if (!actual_stream_name)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + extension);
+
     /// Use reader stream that doesn't read marks,
     /// because text index always has one mark.
     return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
         data_part_storage,
-        stream_name,
+        *actual_stream_name,
         extension,
         marks_count,
         MarkRanges{{0, marks_count}},
         reader_settings,
         /*uncompressed_cache=*/ nullptr,
-        data_part_storage->getFileSize(stream_name + extension),
+        data_part_storage->getFileSize(*actual_stream_name + extension),
         /*marks_loader=*/ nullptr,
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);

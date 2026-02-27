@@ -99,14 +99,57 @@ bool removedAnyInput(const IQueryPlanStep::RemovedUnusedColumns & result)
     return result == IQueryPlanStep::RemovedUnusedColumns::OutputAndInput;
 }
 
+/// When the parent step removed some inputs but the child step couldn't fully reduce its output
+/// to match (e.g., ReadFromMergeTree with FINAL must keep columns required for merging),
+/// adjust the parent step to accept the extra columns from the child by adding them as
+/// consumed DAG inputs and setting the input header to match the child's output exactly.
+/// Also sets the `prevent_input_removal` flag on the ExpressionStep to ensure these absorbed
+/// columns are not removed on subsequent optimization passes.
+bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
+{
+    auto * expr_step = typeid_cast<ExpressionStep *>(node.step.get());
+    if (!expr_step)
+        return false;
+
+    const auto & parent_input = node.step->getInputHeaders()[child_id];
+    const auto & child_output = node.children[child_id]->step->getOutputHeader();
+
+    NameSet parent_input_names;
+    for (const auto & col : *parent_input)
+        parent_input_names.insert(col.name);
+
+    bool added_any = false;
+    for (const auto & col : *child_output)
+    {
+        if (!parent_input_names.contains(col.name))
+        {
+            expr_step->getExpression().addInput(col.name, col.type);
+            added_any = true;
+        }
+    }
+
+    if (!added_any)
+        return false;
+
+    /// Use the child's output header directly as the new input header
+    /// to ensure column order matches exactly.
+    node.step->updateInputHeader(child_output, child_id);
+
+    /// Prevent future optimization passes from removing these absorbed inputs,
+    /// which would re-create the mismatch and cause infinite optimization loops.
+    expr_step->setPreventInputRemoval();
+
+    return true;
+}
+
 RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, QueryPlan::Node & node)
 {
     bool updated = false;
     bool added_any_discarding_step = false;
-    const auto & parent_inputs = node.step->getInputHeaders();
 
     for (auto child_id = 0U; child_id < node.children.size(); ++child_id)
     {
+        const auto & parent_inputs = node.step->getInputHeaders();
         auto & child_step = node.children[child_id]->step;
         chassert(child_step->canRemoveUnusedColumns());
 
@@ -132,10 +175,24 @@ RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, Query
                 added_any_discarding_step = true;
             }
         }
-        /// Here child_step might have been replaced by a discarding step, so let's get the newest output headers
+
+        /// The child step may have extra columns in its output that the parent doesn't need
+        /// (e.g. ReadFromMergeTree with FINAL must keep sort key / version columns).
+        /// If the parent is an ExpressionStep, absorb these extra columns as consumed DAG inputs
+        /// so the step's output is unchanged but input headers match.
+        {
+            const auto & current_parent_input = node.step->getInputHeaders()[child_id];
+            const auto & child_output = node.children[child_id]->step->getOutputHeader();
+            if (child_output->columns() != current_parent_input->columns())
+                absorbExtraChildColumns(node, child_id);
+        }
+
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        assertBlocksHaveEqualStructure(
-            *node.children[child_id]->step->getOutputHeader(), *parent_inputs[child_id], "after removing unused columns");
+        {
+            const auto & final_parent_inputs = node.step->getInputHeaders();
+            assertBlocksHaveEqualStructure(
+                *node.children[child_id]->step->getOutputHeader(), *final_parent_inputs[child_id], "after removing unused columns");
+        }
 #endif
 
         if (updated_anything)

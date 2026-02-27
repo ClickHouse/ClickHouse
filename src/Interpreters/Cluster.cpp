@@ -1,6 +1,8 @@
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
 #include <base/range.h>
 #include <base/sort.h>

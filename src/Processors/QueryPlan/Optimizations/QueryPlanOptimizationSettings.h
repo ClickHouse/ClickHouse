@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
+#include <chrono>
 #include <cstddef>
 
 namespace DB

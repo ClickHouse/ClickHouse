@@ -140,6 +140,11 @@ IQueryPlanStep::RemovedUnusedColumns ExpressionStep::removeUnusedColumns(NameMul
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
 
+    /// When extra columns were absorbed from a child step that cannot reduce its output,
+    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
+    if (prevent_input_removal)
+        remove_inputs = false;
+
     const auto required_output_count = required_outputs.size();
     auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));
     const auto actions_dag_input_count_before = actions_dag.getInputs().size();

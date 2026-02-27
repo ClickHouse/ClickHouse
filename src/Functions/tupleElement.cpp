@@ -388,6 +388,11 @@ private:
         /// return this nested object as JSON column, so nested tupleElement(..., path2) can be applied to it.
         auto literal_subcolumn_type = object_type.getSubcolumnType(element_name);
         auto literal_subcolumn = object_type.getSubcolumn(element_name, object_column);
+        /// The only exception is when requested path had type hint, in this case we consider that this path is present in all rows
+        /// and we should return it as a literal subcolumn with the hint type.
+        if (object_type.getTypedPaths().contains(element_name))
+            return literal_subcolumn;
+
         auto sub_object_subcolumn_name = "^`" + element_name + "`";
         auto sub_object_subcolumn_type = object_type.getSubcolumnType(sub_object_subcolumn_name);
         auto sub_object_subcolumn = object_type.getSubcolumn(sub_object_subcolumn_name, object_column);

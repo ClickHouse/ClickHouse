@@ -23,6 +23,7 @@
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
 #include <Core/Types.h>
 

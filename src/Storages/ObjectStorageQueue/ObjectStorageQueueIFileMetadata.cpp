@@ -151,6 +151,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
 
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
+    auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata");
     if (created_processing_node)
     {
         std::string current_exception;

@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -82,6 +83,17 @@ MergeTreeReadTask::MergeTreeReadTask(
     , size_predictor(std::move(size_predictor_))
     , updater(std::move(updater_))
 {
+    if (updater)
+    {
+        dataflow_cache_update_cb
+            = [&](const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling) -> void
+        {
+            chassert(updater);
+            const auto & part_columns = info->data_part->getColumns();
+            const auto & column_sizes = info->data_part->getColumnSizes();
+            updater->recordInputColumns(columns, part_columns, column_sizes, read_bytes, should_continue_sampling);
+        };
+    }
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
@@ -350,13 +362,14 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeReadTask::read");
     if (size_predictor)
         size_predictor->startBlock();
 
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges);
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
@@ -398,10 +411,6 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
-
-    if (updater)
-        updater->recordInputColumns(
-            block.getColumnsWithTypeAndName(), info->data_part->getColumns(), info->data_part->getColumnSizes(), num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),

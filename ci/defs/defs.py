@@ -344,7 +344,7 @@ class JobNames:
     DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
     SQLANCER = "SQLancer"
-    LLVM_COVERAGE_MERGE = "LLVM Coverage Merge"
+    LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"

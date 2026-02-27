@@ -2,6 +2,7 @@
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/Logger_fwd.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <boost/noncopyable.hpp>
@@ -12,8 +13,6 @@ namespace Util
 {
     class AbstractConfiguration;
 }
-
-class Logger;
 }
 
 namespace DB

@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -386,7 +387,10 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     }
 
     /// GeoParquet types like Point or Polygon can't be inside Nullable.
-    if (typeid_cast<const DataTypeArray *>(inferred_type.get()) || typeid_cast<const DataTypeTuple *>(inferred_type.get()))
+    /// Geometry (Variant) is also not Nullable-compatible.
+    if (typeid_cast<const DataTypeArray *>(inferred_type.get())
+        || typeid_cast<const DataTypeTuple *>(inferred_type.get())
+        || typeid_cast<const DataTypeVariant *>(inferred_type.get()))
     {
         output_nullable = false;
         output_nullable_if_not_json = false;

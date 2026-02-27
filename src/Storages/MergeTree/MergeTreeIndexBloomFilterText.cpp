@@ -500,7 +500,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         if (function_name == "has" || function_name == "mapContainsKey" || function_name == "mapContains")
         {
-            out.key_column = *key_index;
+            out.key_column = *map_key_index;
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             auto & value = const_value.safeGet<String>();
@@ -509,7 +509,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
         if (function_name == "mapContainsKeyLike")
         {
-            out.key_column = *key_index;
+            out.key_column = *map_key_index;
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             auto & value = const_value.safeGet<String>();

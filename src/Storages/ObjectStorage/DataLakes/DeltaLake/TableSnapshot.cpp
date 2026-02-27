@@ -53,6 +53,7 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DeltaLakePartitionPrunedFiles;
+    extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
 }
 
@@ -308,7 +309,7 @@ public:
     {
         while (true)
         {
-            DB::ObjectInfoPtr object;
+            std::optional<ScannedDataFile> scan_item;
             {
                 std::unique_lock lock(next_mutex);
 
@@ -333,15 +334,16 @@ public:
 
                 LOG_TEST(log, "Current data files: {}", data_files.size());
 
-                ScannedDataFile scan_item = std::move(data_files.front());
+                scan_item = std::move(data_files.front());
                 data_files.pop_front();
-                schedule_next_batch_cv.notify_one();
-
-                object = std::move(scan_item.object);
-                parseHandles(scan_item, object);
             }
 
-            chassert(object);
+            schedule_next_batch_cv.notify_one();
+
+            auto object = std::move(scan_item->object);
+
+            /// Needed for partition values.
+            parseTransformHandle(*scan_item, object);
             if (pruner.has_value() && pruner->canBePruned(*object))
             {
                 ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
@@ -350,6 +352,7 @@ public:
                 continue;
             }
 
+            parseDVHandle(*scan_item, object);
             object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
 
             if (callback)
@@ -361,7 +364,7 @@ public:
         }
     }
 
-    void parseHandles(ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
+    void parseTransformHandle(ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
     {
         auto & metadata = object->data_lake_metadata;
         chassert(metadata.has_value());
@@ -383,6 +386,12 @@ public:
                     metadata->schema_transform->dumpNames());
             }
         }
+    }
+
+    void parseDVHandle(ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
+    {
+        auto & metadata = object->data_lake_metadata;
+        chassert(metadata.has_value());
 
         if (auto * dv_info_ptr = scan_item.dv_info_handle.get(); dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr))
         {
@@ -719,6 +728,8 @@ void TableSnapshot::initOrUpdateSnapshot() const
 {
     if (kernel_snapshot_state)
         return;
+
+    ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
     LOG_TEST(log, "Initializing snapshot");
 

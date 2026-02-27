@@ -3,6 +3,7 @@
 #include <optional>
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/WeakHash.h>
 #include <IO/BufferWithOwnMemory.h>
 

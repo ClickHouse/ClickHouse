@@ -9,10 +9,10 @@ doc_type: 'reference'
 # Functions for Working with Dictionaries
 
 :::note
-For dictionaries created with [DDL queries](../statements/create/dictionary/index.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
+For dictionaries created with [DDL queries](../statements/create/dictionary/overview.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
 :::
 
-For information on connecting and configuring dictionaries, see [Dictionaries](../statements/create/dictionary/index.md).
+For information on connecting and configuring dictionaries, see [Dictionaries](../statements/create/dictionary/overview.md).
 
 ## Example dictionaries {#example-dictionary}
 

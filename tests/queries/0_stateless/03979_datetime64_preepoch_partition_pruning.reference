@@ -1,0 +1,20 @@
+DateTime64: without filter
+p1	a
+DateTime64: with pre-epoch filter
+p1	a
+DateTime64: with epoch filter
+p1	a
+Date32: without filter
+a
+Date32: with pre-epoch filter
+a
+DateTime64 upper: data beyond Date max, filter at boundary
+1
+DateTime64 upper: data beyond Date max, filter also beyond
+1
+Date32 upper: data beyond Date max
+1
+DateTime64 timezone shift: pre-epoch after tz conversion
+1
+toDateTime(DateTime64): pre-epoch filter
+[1]

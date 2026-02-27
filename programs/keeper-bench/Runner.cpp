@@ -26,6 +26,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ShuffleHost.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>

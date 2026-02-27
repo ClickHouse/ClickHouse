@@ -1530,7 +1530,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
 
                     for (uint32_t i = 0; i < nclauses; i++)
                     {
-                        addWhereSide(rg, available_cols, elist->mutable_expr());
+                        addWhereSide(rg, available_cols, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
                     }
                 }
                 else
@@ -1822,7 +1822,10 @@ bool StatementGenerator::generateGroupBy(
             if ((ssc->has_pre_where() || ssc->has_where()) && rg.nextMediumNumber() < 16)
             {
                 /// Sometimes use the same predicate for having and where
-                whr->CopyFrom((!ssc->has_pre_where() || rg.nextBool()) ? ssc->where() : ssc->pre_where());
+                if (ssc->has_pre_where() && ssc->has_where())
+                    whr->CopyFrom(rg.nextBool() ? ssc->where() : ssc->pre_where());
+                else
+                    whr->CopyFrom(ssc->has_where() ? ssc->where() : ssc->pre_where());
             }
             else
             {
@@ -1938,13 +1941,17 @@ void StatementGenerator::generateOrderBy(
                     {
                         generateExpression(rg, eowf->mutable_staleness_expr());
                     }
-                    if (rg.nextSmallNumber() < 4)
+                    /// STALENESS is mutually exclusive with TO/STEP
+                    if (nopt < 4 || nopt >= 7)
                     {
-                        generateExpression(rg, eowf->mutable_to_expr());
-                    }
-                    if (rg.nextSmallNumber() < 4)
-                    {
-                        generateExpression(rg, eowf->mutable_step_expr());
+                        if (rg.nextSmallNumber() < 4)
+                        {
+                            generateExpression(rg, eowf->mutable_to_expr());
+                        }
+                        if (rg.nextSmallNumber() < 4)
+                        {
+                            generateExpression(rg, eowf->mutable_step_expr());
+                        }
                     }
                 }
             }
@@ -2314,14 +2321,16 @@ void StatementGenerator::generateSelect(
             if ((ssc->has_pre_where() || ssc->has_where() || (ssc->has_groupby() && ssc->groupby().has_having_expr()))
                 && rg.nextMediumNumber() < 16)
             {
-                const uint32_t choice = rg.nextSmallNumber();
+                std::vector<std::function<const WhereStatement &()>> candidates;
 
                 /// Sometimes use the same predicate for having and where
-                whr->CopyFrom(
-                    ((!ssc->has_pre_where() && (!ssc->has_groupby() || !ssc->groupby().has_having_expr())) || choice < 5) ? ssc->where()
-                        : ((ssc->has_pre_where() && (!ssc->has_groupby() || !ssc->groupby().has_having_expr())) || choice < 8)
-                        ? ssc->pre_where()
-                        : ssc->groupby().having_expr());
+                if (ssc->has_pre_where())
+                    candidates.push_back([&]() -> const WhereStatement & { return ssc->pre_where(); });
+                if (ssc->has_where())
+                    candidates.push_back([&]() -> const WhereStatement & { return ssc->where(); });
+                if (ssc->has_groupby() && ssc->groupby().has_having_expr())
+                    candidates.push_back([&]() -> const WhereStatement & { return ssc->groupby().having_expr(); });
+                whr->CopyFrom(rg.pickRandomly(candidates)());
             }
             else
             {

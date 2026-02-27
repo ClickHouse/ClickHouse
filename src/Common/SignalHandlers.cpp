@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
 #include <Common/FramePointers.h>
+#include <Common/ErrnoException.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -571,6 +572,8 @@ try
             exception_trace, exception_trace_size);
     }
 
+    if (daemon)
+         daemon->flushTextLogs();
     Context::getGlobalContextInstance()->handleCrash();
 
     /// Send crash report to developers (if configured)

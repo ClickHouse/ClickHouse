@@ -32,6 +32,12 @@ If `zoo_path` contains macro `{uuid}`, it is required to specify explicit UUID o
 
 For [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
 
+Auxiliary ZooKeeper cluster is also supported for storing metadata of a replicated database instead of using the default ZooKeeper cluster. We can use SQL to create the replicated database with auxiliary ZooKeeper cluster as follows:
+
+```sql
+CREATE DATABASE database_name ENGINE = Replicated('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'shard_name', 'replica_name')
+```
+
 ## Specifics and recommendations {#specifics-and-recommendations}
 
 DDL queries with `Replicated` database work in a similar way to [ON CLUSTER](../../sql-reference/distributed-ddl.md) queries, but with minor differences.

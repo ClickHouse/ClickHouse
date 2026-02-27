@@ -714,6 +714,9 @@ void alter(
             case AlterCommand::Type::MODIFY_COLUMN:
                 metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
                 break;
+            case AlterCommand::Type::RENAME_COLUMN:
+                metadata_json_generator.generateRenameColumnMetadata(params[0].column_name, params[0].rename_to);
+                break;
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
         }

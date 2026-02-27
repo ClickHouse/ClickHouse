@@ -52,6 +52,9 @@ bool makeFilterNodeOnTopOf(
     return makeExpressionNodeOnTopOfImpl<FilterStep>(node, std::move(actions_dag), nodes, std::move(step_description), filter_column_name, remove_filer);
 }
 
+namespace QueryPlanOptimizations
+{
+
 FilterResult getFilterResult(const ColumnWithTypeAndName & column)
 {
     if (!column.column)
@@ -108,6 +111,5 @@ FilterResult filterResultForNotMatchedRows(
 
     return getFilterResult(filter_output[0]);
 }
-
-
+}
 }

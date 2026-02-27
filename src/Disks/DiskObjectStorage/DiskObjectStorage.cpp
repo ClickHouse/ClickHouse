@@ -259,6 +259,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
 {
+    auto component_guard = Coordination::setCurrentComponent("DiskObjectStorage::copyFile");
     if (getDataSourceDescription() == to_disk.getDataSourceDescription())
     {
         /// It may use s3-server-side copy

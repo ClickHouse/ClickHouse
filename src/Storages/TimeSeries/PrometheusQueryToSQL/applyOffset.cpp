@@ -40,6 +40,7 @@ namespace
 
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::CONST_STRING:
+            case StoreMethod::SINGLE_SCALAR:
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
@@ -108,12 +109,11 @@ namespace
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Expression {} is expected to be calculated at a fixed evaluation time",
-                            getPromQLQuery(expression, context));
+                            getPromQLText(expression, context));
         }
 
         auto node_range = context.node_range_getter.get(offset_node);
-
-        if (node_range.start_time > node_range.end_time)
+        if (node_range.empty())
             return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
 
         expression.node = offset_node;
@@ -127,6 +127,7 @@ namespace
 
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::CONST_STRING:
+            case StoreMethod::SINGLE_SCALAR:
             {
                 expression.start_time = node_range.start_time;
                 expression.end_time = node_range.end_time;

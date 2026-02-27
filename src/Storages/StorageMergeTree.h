@@ -51,6 +51,7 @@ public:
         std::unique_ptr<MergeTreeSettings> settings_);
 
     void startup() override;
+    void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
     ~StorageMergeTree() override;

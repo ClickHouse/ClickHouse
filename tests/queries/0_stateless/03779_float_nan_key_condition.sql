@@ -1,6 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+-- add_minmax_index_for_numeric_columns=0: Changes the plan
 
 DROP TABLE IF EXISTS test_negate_nan_ne_float;
 
@@ -10,7 +11,7 @@ CREATE TABLE test_negate_nan_ne_float
 )
 ENGINE = MergeTree
 ORDER BY negate(p)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO test_negate_nan_ne_float VALUES (1.0), (toFloat64('nan')), (2.0);
 
@@ -28,7 +29,7 @@ CREATE TABLE test_nan_ne_float
 )
 ENGINE = MergeTree
 ORDER BY negate(p)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO test_nan_ne_float VALUES (1.0), (toFloat64('nan')), (2.0);
 
@@ -54,7 +55,7 @@ CREATE TABLE test_nan_ne_nan
 )
 ENGINE = MergeTree
 ORDER BY toString(p)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO test_nan_ne_nan
 SELECT if(number < 5, toFloat64('nan'), toFloat64(number))
@@ -77,7 +78,7 @@ CREATE TABLE test_normal_less_nan
 )
 ENGINE = MergeTree
 ORDER BY x
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO test_normal_less_nan
 SELECT toFloat64(number)

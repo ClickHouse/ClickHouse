@@ -118,16 +118,23 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_lparen.ignore(pos, expected))
     {
         if (!columns_p.parse(pos, columns, expected))
-            return false;
-
-        /// Optional trailing comma
-        ParserToken(TokenType::Comma).ignore(pos);
-
-        /// If this fails, we want to rewind to before the lparen so we can later check for (SELECT ...)
-        if (!s_rparen.ignore(pos, expected))
         {
+            /// Column list parsing failed entirely (e.g. "((SELECT ..." where the second '(' is not a valid column name).
+            /// Rewind to before the '(' so it can be parsed as part of a SELECT query later.
             columns.reset();
             pos = before_lparen;
+        }
+        else
+        {
+            /// Optional trailing comma
+            ParserToken(TokenType::Comma).ignore(pos);
+
+            /// If this fails, we want to rewind to before the lparen so we can later check for (SELECT ...)
+            if (!s_rparen.ignore(pos, expected))
+            {
+                columns.reset();
+                pos = before_lparen;
+            }
         }
     }
 

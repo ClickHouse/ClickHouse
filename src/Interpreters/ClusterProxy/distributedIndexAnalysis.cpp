@@ -204,11 +204,10 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     return res;
 }
 
-ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const Names & primary_key_column_names, ContextMutablePtr & context, Tables * external_tables)
+ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const NameSet & indexes_column_names, ContextMutablePtr & context, Tables * external_tables)
 {
-    NameSet primary_key_columns_names_set(primary_key_column_names.begin(), primary_key_column_names.end());
     ASTPtr predicate = tryBuildAdditionalFilterAST(filter_actions_dag,
-        /*projection_names=*/ primary_key_columns_names_set,
+        /*projection_names=*/ indexes_column_names,
         /*execution_name_to_projection_query_tree=*/ {},
         /*external_tables=*/ external_tables,
         context);
@@ -226,7 +225,7 @@ namespace DB
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const ActionsDAG * filter_actions_dag,
-    const Names & primary_key_column_names,
+    const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
     const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
@@ -278,7 +277,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     std::optional<std::string> filter_query = std::nullopt;
     if (filter_actions_dag)
     {
-        auto filter_ast = getFilterAST(*filter_actions_dag, primary_key_column_names, execution_context, &external_tables);
+        auto filter_ast = getFilterAST(*filter_actions_dag, indexes_column_names, execution_context, &external_tables);
         if (filter_ast)
             filter_query = filter_ast->formatWithSecretsOneLine();
     }
