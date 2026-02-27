@@ -348,7 +348,7 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         {
             static const std::vector<char> repeat_chars = {'a', '0', ' ', '\t', '\n', '%', '_', '\\', '"', '/', '-'};
 
-            ret += String(this->randomInt<uint32_t>(1, std::min(limit, UINT32_C(65536))), this->pickRandomly(repeat_chars));
+            ret += String(this->randomInt<uint32_t>(0, std::min(limit, UINT32_C(65536))), this->pickRandomly(repeat_chars));
         }
         else
         {
