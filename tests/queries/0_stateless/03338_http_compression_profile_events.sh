@@ -25,7 +25,7 @@ done
 # There is a race between HTTP response being sent and the query_log entry being written.
 for _ in $(seq 1 60); do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS system.query_log"
-    count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id LIKE '$CLICKHOUSE_TEST_UNIQUE_NAME%' AND type != 'QueryStart'")
+    count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id LIKE '$CLICKHOUSE_TEST_UNIQUE_NAME%' AND type != 'QueryStart'")
     [ "$count" -ge 4 ] && break
     sleep 0.5
 done
