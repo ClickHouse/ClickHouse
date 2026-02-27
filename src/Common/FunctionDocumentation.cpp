@@ -15,7 +15,6 @@ namespace ErrorCodes
 
 namespace
 {
-VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
 /// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
