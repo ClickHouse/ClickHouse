@@ -426,7 +426,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
 
     if (geo_type == "Point")
         coordinates_field = readGeoJSONPoint(coord_buf);
-    else if (geo_type == "LineString" || geo_type == "Ring" || geo_type == "MultiPoint")
+    else if (geo_type == "LineString" || geo_type == "Ring")
         coordinates_field = readGeoJSONLinearRing(coord_buf);
     else if (geo_type == "Polygon" || geo_type == "MultiLineString")
         coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);

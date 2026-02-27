@@ -54,13 +54,6 @@ void registerDataTypeDomainGeo(DataTypeFactory & factory)
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeMultiPolygonName>()));
     });
 
-    // Custom type for multiple points stored as Array(Point)
-    factory.registerSimpleDataTypeCustom("MultiPoint", []
-    {
-        return std::make_pair(DataTypeFactory::instance().get("Array(Point)"),
-            std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeMultiPointName>()));
-    });
-
     factory.registerSimpleDataTypeCustom("Geometry", []
     {
         auto point_type = DataTypeFactory::instance().get(DataTypePointName().getName());
@@ -69,9 +62,8 @@ void registerDataTypeDomainGeo(DataTypeFactory & factory)
         auto multipolygon_type = DataTypeFactory::instance().get(DataTypeMultiPolygonName().getName());
         auto ring_type = DataTypeFactory::instance().get(DataTypeRingName().getName());
         auto multi_linestring_type = DataTypeFactory::instance().get(DataTypeMultiLineStringName().getName());
-        auto multipoint_type = DataTypeFactory::instance().get(DataTypeMultiPointName().getName());
 
-        auto variant_type = std::make_shared<DataTypeVariant>(std::vector{point_type, linestring_type, polygon_type, multipolygon_type, ring_type, multi_linestring_type, multipoint_type});
+        auto variant_type = std::make_shared<DataTypeVariant>(std::vector{point_type, linestring_type, polygon_type, multipolygon_type, ring_type, multi_linestring_type});
 
         return std::make_pair(variant_type,
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeGeometryName>()));
