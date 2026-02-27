@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -33,8 +34,10 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "In non-replicated tables, block numbers in all partitions form a single sequence. "
             "This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation."
         },
+        { "parts_in_progress_names",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are currently being mutated."},
         { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
         { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete."},
+        { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},
         { "is_done",                       std::make_shared<DataTypeUInt8>(),
             "The flag whether the mutation is done or not. Possible values: "
             "1 if the mutation is completed, "
@@ -68,10 +71,10 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
@@ -152,6 +155,21 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             for (const String & part_name : status.parts_to_do_names)
                 parts_to_do_names.emplace_back(part_name);
 
+            Array parts_in_progress_names;
+            parts_to_do_names.reserve(status.parts_in_progress_names.size());
+            for (const String & part_name : status.parts_in_progress_names)
+                parts_in_progress_names.emplace_back(part_name);
+
+            Map parts_postpone_reasons_map;
+            parts_postpone_reasons_map.reserve(status.parts_postpone_reasons.size());
+            for (const auto & [part_name, reason] : status.parts_postpone_reasons)
+            {
+                Tuple key_value;
+                key_value.emplace_back(part_name);
+                key_value.emplace_back(reason);
+                parts_postpone_reasons_map.emplace_back(std::move(key_value));
+            }
+
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
@@ -161,8 +179,10 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(UInt64(status.create_time));
             res_columns[col_num++]->insert(block_partition_ids);
             res_columns[col_num++]->insert(block_numbers);
+            res_columns[col_num++]->insert(parts_in_progress_names);
             res_columns[col_num++]->insert(parts_to_do_names);
             res_columns[col_num++]->insert(parts_to_do_names.size());
+            res_columns[col_num++]->insert(parts_postpone_reasons_map);
             res_columns[col_num++]->insert(status.is_done);
             res_columns[col_num++]->insert(status.is_killed);
             res_columns[col_num++]->insert(status.latest_failed_part);

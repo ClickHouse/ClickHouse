@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/FramePointers.h>
 
 #include <string>
 #include <array>
@@ -34,15 +35,10 @@ public:
         std::optional<std::string> object;
         std::optional<std::string> file;
         std::optional<UInt64> line;
+        std::optional<UInt64> column;
     };
 
-    /* NOTE: It cannot be larger right now, since otherwise it
-     * will not fit into minimal PIPE_BUF (512) in TraceCollector.
-     */
-    static constexpr size_t capacity = 45;
-
-    using FramePointers = std::array<void *, capacity>;
-    using Frames = std::array<Frame, capacity>;
+    using Frames = std::array<Frame, FRAMEPOINTER_CAPACITY>;
 
     /// Tries to capture stack trace
     /// NO_INLINE to get correct line of StackTrace() caller in captured stack trace
@@ -91,6 +87,10 @@ protected:
 };
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
+
+std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info);
+std::string getFaultMemoryAccessType(int sig, const ucontext_t & context);
+std::string getSignalCodeDescription(int sig, int si_code);
 
 /// Special handling for errors during asynchronous stack unwinding,
 /// Which is used in Query Profiler

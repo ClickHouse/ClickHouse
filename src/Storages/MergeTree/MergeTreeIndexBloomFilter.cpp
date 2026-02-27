@@ -216,76 +216,84 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_NOT_IN});
 }
 
-bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const
+bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const
 {
     std::vector<BoolMask> rpn_stack;
     const auto & filters = granule->getFilters();
 
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        switch (element.function)
         {
-            rpn_stack.emplace_back(true, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_IN
-            || element.function == RPNElement::FUNCTION_NOT_IN
-            || element.function == RPNElement::FUNCTION_EQUALS
-            || element.function == RPNElement::FUNCTION_NOT_EQUALS
-            || element.function == RPNElement::FUNCTION_HAS
-            || element.function == RPNElement::FUNCTION_HAS_ANY
-            || element.function == RPNElement::FUNCTION_HAS_ALL)
-        {
-            bool match_rows = true;
-            bool match_all = element.function == RPNElement::FUNCTION_HAS_ALL;
-            const auto & predicate = element.predicate;
-            for (size_t index = 0; match_rows && index < predicate.size(); ++index)
+            case RPNElement::FUNCTION_UNKNOWN:
+                rpn_stack.emplace_back(true, true);
+                break;
+            case RPNElement::FUNCTION_IN:
+            case RPNElement::FUNCTION_NOT_IN:
+            case RPNElement::FUNCTION_EQUALS:
+            case RPNElement::FUNCTION_NOT_EQUALS:
+            case RPNElement::FUNCTION_HAS:
+            case RPNElement::FUNCTION_HAS_ANY:
+            case RPNElement::FUNCTION_HAS_ALL:
             {
-                const auto & query_index_hash = predicate[index];
-                const auto & filter = filters[query_index_hash.first];
-                const ColumnPtr & hash_column = query_index_hash.second;
+                bool match_rows = true;
+                bool match_all = element.function == RPNElement::FUNCTION_HAS_ALL;
+                const auto & predicate = element.predicate;
+                for (size_t index = 0; match_rows && index < predicate.size(); ++index)
+                {
+                    const auto & query_index_hash = predicate[index];
+                    const auto & filter = filters[query_index_hash.first];
+                    const ColumnPtr & hash_column = query_index_hash.second;
 
-                match_rows = maybeTrueOnBloomFilter(&*hash_column,
-                                                    filter,
-                                                    hash_functions,
-                                                    match_all);
+                    match_rows = maybeTrueOnBloomFilter(&*hash_column,
+                                                        filter,
+                                                        hash_functions,
+                                                        match_all);
+                }
+
+                rpn_stack.emplace_back(match_rows, true);
+                if (element.function == RPNElement::FUNCTION_NOT_EQUALS || element.function == RPNElement::FUNCTION_NOT_IN)
+                    rpn_stack.back() = !rpn_stack.back();
+                break;
             }
-
-            rpn_stack.emplace_back(match_rows, true);
-            if (element.function == RPNElement::FUNCTION_NOT_EQUALS || element.function == RPNElement::FUNCTION_NOT_IN)
+            case RPNElement::FUNCTION_NOT:
                 rpn_stack.back() = !rpn_stack.back();
+                break;
+            case RPNElement::FUNCTION_OR:
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 | arg2;
+                break;
+            }
+            case RPNElement::FUNCTION_AND:
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 & arg2;
+                break;
+            }
+            case RPNElement::ALWAYS_TRUE:
+                rpn_stack.emplace_back(true, false);
+                break;
+            case RPNElement::ALWAYS_FALSE:
+                rpn_stack.emplace_back(false, true);
+                break;
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
-        else if (element.function == RPNElement::FUNCTION_NOT)
+
+        if (update_partial_result_disjuntion_fn)
         {
-            rpn_stack.back() = !rpn_stack.back();
+            update_partial_result_disjuntion_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            ++element_idx;
         }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 | arg2;
-        }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 & arg2;
-        }
-        else if (element.function == RPNElement::ALWAYS_TRUE)
-        {
-            rpn_stack.emplace_back(true, false);
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.emplace_back(false, true);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::mayBeTrueInRange");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
 }
@@ -878,7 +886,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, index.column_names.size());
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }
@@ -912,9 +920,9 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 {
     double false_positive_rate = 0.025;
 
-    if (!index.arguments.empty())
+    if (index.arguments && !index.arguments->children.empty())
     {
-        const auto & argument = index.arguments[0];
+        auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
         false_positive_rate = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
     }
 
@@ -928,15 +936,15 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
 {
     assertIndexColumnsType(index.sample_block);
 
-    if (index.arguments.size() > 1)
+    if (index.arguments && index.arguments->children.size() > 1)
     {
         if (!attach) /// This is for backward compatibility.
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "BloomFilter index cannot have more than one parameter.");
     }
 
-    if (!index.arguments.empty())
+    if (index.arguments && !index.arguments->children.empty())
     {
-        const auto & argument = index.arguments[0];
+        auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
 
         if (!attach && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");

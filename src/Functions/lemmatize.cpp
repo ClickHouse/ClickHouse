@@ -132,7 +132,24 @@ public:
 
 REGISTER_FUNCTION(Lemmatize)
 {
-    factory.registerFunction<FunctionLemmatize>();
+    FunctionDocumentation::Description description = R"(
+Performs lemmatization on a given word.
+This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models). For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/sql-reference/dictionaries#local-file).
+)";
+    FunctionDocumentation::Syntax syntax = "lemmatize(lang, word)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lang", "Language which rules will be applied.", {"String"}},
+        {"word", "Lowercase word that needs to be lemmatized.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the lemmatized form of the word", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"English lemmatization", "SELECT lemmatize('en', 'wolves')", "wolf"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionLemmatize>(documentation);
 }
 
 }

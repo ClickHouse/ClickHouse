@@ -28,7 +28,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/named_collections.xml", "configs/schema_cache.xml"],
+            main_configs=["configs/named_collections.xml", "configs/schema_cache.xml", "configs/blob_log.xml"],
             user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
             with_azurite=True,
         )
@@ -1818,3 +1818,83 @@ def test_hive_partition_strategy(cluster):
     assert "cont/test_hive_partition_strategy/year=2020/country=Brazil/<snowflakeid>.parquet\t1\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t2\ncont/test_hive_partition_strategy/year=2021/country=Russia/<snowflakeid>.parquet\t3\n" == res
 
     azure_query(node, "DROP TABLE IF EXISTS test_hive_partition_strategy")
+
+
+def test_blob_storage_log(cluster):
+    node = cluster.instances["node"]
+
+    azure_query(
+        node,
+        f"CREATE TABLE test_blob_storage_log (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_blob_storage_log.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    query_id = "blob_storage_log_test_" + str(random.randint(1, 1000000))
+    azure_query(
+        node,
+        "INSERT INTO test_blob_storage_log VALUES (1, 'a'), (2, 'b'), (3, 'c')",
+        settings={"query_id": query_id},
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    blob_storage_log = node.query("SELECT * FROM system.blob_storage_log")
+
+    result = node.query(
+        f"""SELECT
+            countIf(event_type == 'Upload'),
+            countIf(remote_path == 'test_blob_storage_log.csv'),
+            countIf(bucket == 'cont'),
+            countIf(error == ''),
+            count()
+        FROM system.blob_storage_log WHERE query_id = '{query_id}'"""
+    )
+    r = result.strip().split("\t")
+    assert int(r[0]) >= 1, blob_storage_log  # At least one Upload event
+    assert int(r[1]) >= 1, blob_storage_log  # Remote path matches
+    assert int(r[2]) >= 1, blob_storage_log  # Bucket (container) matches
+    assert int(r[3]) >= 1, blob_storage_log  # At least one successful operation
+    assert int(r[4]) >= 1, blob_storage_log  # At least one log entry
+
+    azure_query(node, "DROP TABLE test_blob_storage_log")
+
+
+def test_blob_storage_log_multipart(cluster):
+    node = cluster.instances["node"]
+
+    azure_query(
+        node,
+        f"CREATE TABLE test_blob_storage_log_multipart (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_blob_storage_log_multipart.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    query_id = "blob_storage_log_multipart_" + str(random.randint(1, 1000000))
+    # Insert enough data to trigger multipart upload
+    azure_query(
+        node,
+        "INSERT INTO test_blob_storage_log_multipart SELECT number, randomString(100) FROM numbers(10000)",
+        settings={
+            "query_id": query_id,
+            "azure_max_single_part_upload_size": 100,  # Force multipart upload
+        },
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    blob_storage_log = node.query("SELECT * FROM system.blob_storage_log")
+
+    result = node.query(
+        f"""SELECT
+            countIf(event_type == 'MultiPartUploadWrite'),
+            countIf(event_type == 'MultiPartUploadComplete'),
+            countIf(bucket == 'cont'),
+            count()
+        FROM system.blob_storage_log WHERE query_id = '{query_id}'"""
+    )
+    r = result.strip().split("\t")
+    assert int(r[0]) >= 1, blob_storage_log  # At least one MultiPartUploadWrite event
+    assert int(r[1]) >= 1, blob_storage_log  # At least one MultiPartUploadComplete event
+    assert int(r[2]) >= 1, blob_storage_log  # Bucket (container) matches
+    assert int(r[3]) >= 1, blob_storage_log  # At least one log entry
+
+    azure_query(node, "DROP TABLE test_blob_storage_log_multipart")

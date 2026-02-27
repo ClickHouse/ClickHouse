@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <boost/noncopyable.hpp>
 
@@ -9,7 +10,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 
 #include <Disks/IVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -38,23 +38,31 @@ class TemporaryFileHolder;
 
 class FileCache;
 
+struct TemporaryDataMetrics
+{
+    CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
+    std::optional<ProfileEvents::Event> bytes_compressed = {};
+    std::optional<ProfileEvents::Event> bytes_uncompressed = {};
+    std::optional<ProfileEvents::Event> num_files = {};
+};
+
 struct TemporaryDataOnDiskSettings
 {
     /// Max size on disk, if 0 there will be no limit
     size_t max_size_on_disk = 0;
 
     /// Compression codec for temporary data, if empty no compression will be used. LZ4 by default
-    String compression_codec = "LZ4";
+    String compression_codec = {};
 
     /// Read/Write internal buffer size
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
-    /// Metrics counter to increment when temporary file in current scope are created
-    CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
+    /// Counters to update when files are created or data is written
+    TemporaryDataMetrics metrics;
 };
 
 /// Creates temporary files located on specified resource (disk, fs_cache, etc.)
-using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(size_t)>;
+using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(const TemporaryDataOnDiskSettings &, size_t)>;
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
 TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache);
 
@@ -94,7 +102,7 @@ public:
         , settings(std::move(settings_))
     {}
 
-    TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric);
+    TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {});
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
 protected:
@@ -161,7 +169,7 @@ protected:
 class TemporaryFileHolder
 {
 public:
-    TemporaryFileHolder();
+    explicit TemporaryFileHolder(const TemporaryDataMetrics &);
 
     virtual std::unique_ptr<WriteBuffer> write() = 0;
     virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
@@ -173,6 +181,9 @@ public:
     virtual String describeFilePath() const = 0;
 
     virtual ~TemporaryFileHolder() = default;
+
+private:
+    CurrentMetrics::Increment metric_increment;
 };
 
 /// Reads raw data from temporary file
@@ -199,7 +210,7 @@ public:
         size_t uncompressed_size = 0;
     };
 
-    explicit TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
+    explicit TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size = 0);
     ~TemporaryDataBuffer() override;
 
     void nextImpl() override;
@@ -219,23 +230,30 @@ public:
 
 private:
     void updateAllocAndCheck();
+    void freeAlloc();
 
-    TemporaryDataOnDiskScope * parent;
+    std::shared_ptr<TemporaryDataOnDiskScope> parent;
     std::unique_ptr<TemporaryFileHolder> file_holder;
     WrapperGuard<CompressedWriteBuffer, WriteBuffer> out_compressed_buf;
     std::once_flag write_finished;
 
     Stat stat;
+    TemporaryDataMetrics metrics;
 };
 
 
 /// High level interfaces for reading and writing temporary data by blocks.
-using TemporaryBlockStreamReaderHolder = WrapperGuard<NativeReader, ReadBuffer>;
+class TemporaryBlockStreamReaderHolder : public WrapperGuard<NativeReader, ReadBuffer>
+{
+public:
+    using WrapperGuard<NativeReader, ReadBuffer>::WrapperGuard;
+};
+
 
 class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDataBuffer>
 {
 public:
-    TemporaryBlockStreamHolder(SharedHeader header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
+    TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size = 0);
 
     TemporaryBlockStreamReaderHolder getReadStream() const;
 

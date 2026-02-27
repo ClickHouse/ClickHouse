@@ -73,13 +73,13 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        WhichDataType which_first(arguments[0]->getTypeId());
+        FunctionArgumentDescriptors mandatory_arguments{
+            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isIntegerOrDecimal), nullptr, "(U)Int* or Decimal"}, // Adds float
+        };
 
-        if (!which_first.isInt() && !which_first.isUInt() && !which_first.isDecimal())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+        validateFunctionArguments(*this, arguments, mandatory_arguments);
 
         return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
@@ -134,18 +134,18 @@ private:
             if constexpr (is_decimal<T>)
             {
                 auto value = src_data[i].value;
-                if (unlikely(value < 0))
-                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                if (value < 0) [[unlikely]]
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-value)));
                 else
-                    dst_data[i] = digits10<NativeT>(value);
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }
             else
             {
                 auto value = src_data[i];
-                if (unlikely(value < 0))
-                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                if (value < 0) [[unlikely]]
+                    dst_data[i] = static_cast<UInt8>(digits10(static_cast<NativeT>(-static_cast<NativeT>(value))));
                 else
-                    dst_data[i] = digits10<NativeT>(value);
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }
         }
     }
@@ -155,7 +155,7 @@ private:
 
 REGISTER_FUNCTION(CountDigits)
 {
-    FunctionDocumentation::Description description_countDigits = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the number of decimal digits needed to represent a value.
 
 :::note
@@ -172,12 +172,12 @@ You can check decimal overflow for `Decimal64` with `countDigits(x) > 18`,
 although it is slower than [`isDecimalOverflow`](#isDecimalOverflow).
 :::
 )";
-    FunctionDocumentation::Syntax syntax_countDigits = "countDigits(x)";
-    FunctionDocumentation::Arguments arguments_countDigits = {
+    FunctionDocumentation::Syntax syntax = "countDigits(x)";
+    FunctionDocumentation::Arguments arguments = {
         {"x", "An integer or decimal value.", {"(U)Int*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_countDigits = {"Returns the number of digits needed to represent `x`.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_countDigits = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of digits needed to represent `x`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -192,11 +192,11 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_countDigits = {20, 8};
-    FunctionDocumentation::Category category_countDigits = FunctionDocumentation::Category::Decimal;
-    FunctionDocumentation documentation_countDigits = {description_countDigits, syntax_countDigits, arguments_countDigits, returned_value_countDigits, examples_countDigits, introduced_in_countDigits, category_countDigits};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionCountDigits>(documentation_countDigits);
+    factory.registerFunction<FunctionCountDigits>(documentation);
 }
 
 }

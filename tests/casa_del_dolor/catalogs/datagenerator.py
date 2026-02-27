@@ -1,10 +1,14 @@
 import random
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta, date
-import math
+import json
 import logging
+import math
 import string
+import threading
+import traceback
 from pyspark.sql import Row, SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType,
     StructField,
@@ -26,7 +30,16 @@ from pyspark.sql.types import (
     MapType,
     DataType,
 )
+
+try:
+    from pyspark.sql.types import VariantType, VariantVal
+
+    HAS_VARIANT_TYPE = True
+except ImportError:
+    HAS_VARIANT_TYPE = False
+
 from .tablegenerator import LakeTableGenerator
+from .clickhousetospark import ClickHouseTypeMapper
 
 from .laketables import SparkTable
 
@@ -166,14 +179,39 @@ SOME_STRINGS = [
 ]
 
 
+def _to_json_safe(obj):
+    """Recursively convert a value to JSON-safe types."""
+    if obj is None:
+        return None
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, (int, float, str)):
+        return obj
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, bytes):
+        return obj.hex()
+    if isinstance(obj, Row):
+        return {k: _to_json_safe(v) for k, v in obj.asDict().items()}
+    if isinstance(obj, dict):
+        return {str(_to_json_safe(k)): _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(v) for v in obj]
+    return str(obj)
+
+
 class LakeDataGenerator:
     def __init__(self, query_logger):
-        self._min_nested = 0
-        self._max_nested = 100
-        self._min_str_len = 0
-        self._max_str_len = 100
+        self._thread_local = threading.local()
+        self._thread_local._min_nested = 0
+        self._thread_local._max_nested = 100
+        self._thread_local._min_str_len = 0
+        self._thread_local._max_str_len = 100
         self.logger = logging.getLogger(__name__)
         self.spark_query_logger = query_logger
+        self.type_generator = ClickHouseTypeMapper()
 
     # ============================================================
     # Random data
@@ -207,12 +245,18 @@ class LakeDataGenerator:
         return bytes(random.getrandbits(8) for _ in range(nlen))
 
     def _rand_date(self):
+        if random.randint(1, 100) < 16:
+            # Today's date
+            return date.today()
         reduced_limit = random.randint(1, 2) == 1
         start = date(2000 if reduced_limit else 1, 1, 1).toordinal()
         end = date(2000 if reduced_limit else 9999, 12, 31).toordinal()
         return date.fromordinal(self._rand_int(start, end))
 
     def _rand_timestamp(self):
+        if random.randint(1, 100) < 21:
+            # Timestamp related to now
+            return datetime.now() + timedelta(seconds=random.randint(-60, 60))
         reduced_limit = random.randint(1, 2) == 1
         start = datetime(2000 if reduced_limit else 1, 1, 1)
         end = datetime(2000 if reduced_limit else 9999, 12, 31)
@@ -263,27 +307,40 @@ class LakeDataGenerator:
             return self._rand_decimal(dtype.precision, dtype.scale)
         if isinstance(dtype, StringType):
             return self._rand_string(
-                random.randint(self._min_str_len, self._max_str_len)
+                random.randint(
+                    self._thread_local._min_str_len, self._thread_local._max_str_len
+                )
             )
         if isinstance(dtype, (CharType, VarcharType)):
             return self._rand_string(
                 random.randint(
-                    min(dtype.length, self._min_str_len),
-                    min(dtype.length, self._max_str_len),
+                    min(dtype.length, self._thread_local._min_str_len),
+                    min(dtype.length, self._thread_local._max_str_len),
                 )
             )
         if isinstance(dtype, BinaryType):
             return self._rand_binary(
-                random.randint(self._min_str_len, self._max_str_len)
+                random.randint(
+                    self._thread_local._min_str_len, self._thread_local._max_str_len
+                )
             )
         if isinstance(dtype, DateType):
             return self._rand_date()
         if isinstance(dtype, TimestampType):
             return self._rand_timestamp()
+        if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
+            # Spark stores variants as self-describing values, so any type works.
+            inner_type = self.type_generator.generate_random_spark_type(
+                allow_variant=False, max_depth=random.randint(1, 5)
+            )
+            val = self._random_value_for_type(inner_type, null_rate)
+            return None if val is None else json.dumps(_to_json_safe(val))
         if isinstance(dtype, ArrayType):
             # Arrays of variable length
             elem_null_rate = null_rate if dtype.containsNull else 0.0
-            n = random.randint(self._min_nested, self._max_nested)
+            n = random.randint(
+                self._thread_local._min_nested, self._thread_local._max_nested
+            )
             return [
                 self._random_value_for_type(dtype.elementType, elem_null_rate)
                 for _ in range(n)
@@ -291,7 +348,9 @@ class LakeDataGenerator:
         if isinstance(dtype, MapType):
             # Keys: must be non-null and hashable; values may be null only if allowed
             value_null_rate = null_rate if dtype.valueContainsNull else 0.0
-            n = random.randint(self._min_nested, self._max_nested)
+            n = random.randint(
+                self._thread_local._min_nested, self._thread_local._max_nested
+            )
             out = {}
             attempts = 0
             # Keep drawing until we have n unique, non-null keys (cap attempts)
@@ -312,11 +371,17 @@ class LakeDataGenerator:
                 nr = null_rate if f.nullable else 0.0
                 obj[f.name] = self._random_value_for_type(f.dataType, nr)
             return Row(**obj)
-        return self._rand_string(random.randint(self._min_str_len, self._max_str_len))
+        return self._rand_string(
+            random.randint(
+                self._thread_local._min_str_len, self._thread_local._max_str_len
+            )
+        )
 
     def _map_type_to_insert(self, dtype):
         # Char and Varchar have to be Strings
-        if isinstance(dtype, (CharType, VarcharType)):
+        if isinstance(dtype, (CharType, VarcharType)) or (
+            HAS_VARIANT_TYPE and isinstance(dtype, VariantType)
+        ):
             return StringType()
         if isinstance(dtype, ArrayType):
             return ArrayType(
@@ -342,15 +407,70 @@ class LakeDataGenerator:
             )
         return dtype
 
+    def _contains_variant(self, dtype):
+        """Check if a type contains VariantType anywhere in its tree."""
+        if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
+            return True
+        if isinstance(dtype, StructType):
+            return any(self._contains_variant(f.dataType) for f in dtype.fields)
+        if isinstance(dtype, ArrayType):
+            return self._contains_variant(dtype.elementType)
+        if isinstance(dtype, MapType):
+            return self._contains_variant(dtype.keyType) or self._contains_variant(
+                dtype.valueType
+            )
+        return False
+
+    def _build_variant_conversion(self, col_expr, original_dtype):
+        """Build a Column expression that recursively converts string placeholders to VariantType."""
+        if HAS_VARIANT_TYPE and isinstance(original_dtype, VariantType):
+            return F.parse_json(col_expr)
+
+        if isinstance(original_dtype, StructType):
+            if not self._contains_variant(original_dtype):
+                return col_expr
+            fields = []
+            for field in original_dtype.fields:
+                converted = self._build_variant_conversion(
+                    col_expr[field.name], field.dataType
+                )
+                fields.append(converted.alias(field.name))
+            return F.struct(*fields)
+
+        if isinstance(original_dtype, ArrayType):
+            if not self._contains_variant(original_dtype.elementType):
+                return col_expr
+            return F.transform(
+                col_expr,
+                lambda x: self._build_variant_conversion(x, original_dtype.elementType),
+            )
+
+        if isinstance(original_dtype, MapType):
+            # Keys shouldn't be variant, but handle values
+            if not self._contains_variant(original_dtype.valueType):
+                return col_expr
+            return F.transform_values(
+                col_expr,
+                lambda k, v: self._build_variant_conversion(
+                    v, original_dtype.valueType
+                ),
+            )
+
+        return col_expr
+
     def _create_random_df(self, spark: SparkSession, table: SparkTable, n_rows: int):
         """
         Build a DataFrame of random rows for the given schema (types as strings are fine).
         """
         # Set limits
-        self._min_nested = random.randint(0, 100)
-        self._max_nested = max(self._min_nested, random.randint(0, 100))
-        self._min_str_len = random.randint(0, 100)
-        self._max_str_len = max(self._min_str_len, random.randint(0, 100))
+        self._thread_local._min_nested = random.randint(0, 100)
+        self._thread_local._max_nested = max(
+            self._thread_local._min_nested, random.randint(0, 100)
+        )
+        self._thread_local._min_str_len = random.randint(0, 100)
+        self._thread_local._max_str_len = max(
+            self._thread_local._min_str_len, random.randint(0, 100)
+        )
         null_rate: float = 0.05 if random.randint(1, 2) == 1 else 0.0
 
         struct1 = StructType(
@@ -361,6 +481,7 @@ class LakeDataGenerator:
                     nullable=val.nullable,
                 )
                 for cname, val in table.columns.items()
+                if not val.generated
             ]
         )
         struct2 = StructType(
@@ -371,6 +492,7 @@ class LakeDataGenerator:
                     nullable=val.nullable,
                 )
                 for cname, val in table.columns.items()
+                if not val.generated
             ]
         )
         rows = []
@@ -381,7 +503,15 @@ class LakeDataGenerator:
                 rec[f.name] = self._random_value_for_type(f.dataType, nr)
             rows.append(Row(**rec))
         # Use explicit schema so types match exactly
-        return spark.createDataFrame(rows, schema=struct2)
+        df = spark.createDataFrame(rows, schema=struct2)
+        if HAS_VARIANT_TYPE:
+            for f in struct1.fields:
+                if self._contains_variant(f.dataType):
+                    df = df.withColumn(
+                        f.name,
+                        self._build_variant_conversion(F.col(f.name), f.dataType),
+                    )
+        return df
 
     def insert_random_data(self, spark: SparkSession, table: SparkTable):
         nrows: int = random.randint(0, 100)
@@ -391,8 +521,9 @@ class LakeDataGenerator:
 
     def run_query(self, session, query: str):
         self.logger.info(f"Running query: {query}")
-        with open(self.spark_query_logger, "a") as f:
-            f.write(query + "\n")
+        # Ignore spark_query_logger at the moment because this is multithreaded
+        # with open(self.spark_query_logger, "a") as f:
+        #    f.write(query + "\n")
         session.sql(query)
 
     def merge_into_table(self, spark: SparkSession, table: SparkTable):
@@ -400,7 +531,7 @@ class LakeDataGenerator:
         df = self._create_random_df(spark, table, nrows)
         df.createOrReplaceTempView("updates")
 
-        to_update = list(table.columns.keys())
+        to_update = list(table.flat_columns().keys())
         random.shuffle(to_update)
         next_pick = random.choice(to_update)
         if random.randint(1, 100) <= 70:
@@ -409,20 +540,20 @@ class LakeDataGenerator:
         match_options = [
             "DELETE",
             "UPDATE SET *",
-            f"UPDATE SET {",".join([f"t.{cname} = s.{cname}" for cname in to_update])}",
+            f"UPDATE SET {','.join([f't.{cname} = s.{cname}' for cname in to_update])}",
         ]
 
         self.logger.info(f"Merging {nrows} row(s) into {table.get_table_full_path()}")
         self.run_query(
             spark,
             f"MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
- WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET THEN INSERT *" if random.randint(1, 4) == 1 else ""}\
-{f" WHEN NOT MATCHED BY SOURCE THEN DELETE" if random.randint(1, 4) == 1 else ""};",
+ WHEN MATCHED THEN {random.choice(match_options)}{' WHEN NOT MATCHED BY TARGET THEN INSERT *' if random.randint(1, 4) == 1 else ''}\
+{f' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
-        delete_key = random.choice(list(table.columns.keys()))
-        predicate = f"{delete_key} IS{random.choice([""," NOT"])} NULL"
+        delete_key = random.choice(list(table.flat_columns().keys()))
+        predicate = f"{delete_key} IS{random.choice(['',' NOT'])} NULL"
 
         self.logger.info(f"Delete from table {table.get_table_full_path()}")
         self.run_query(
@@ -436,30 +567,37 @@ class LakeDataGenerator:
     def update_table(self, spark: SparkSession, table: SparkTable) -> bool:
         next_operation = random.randint(1, 1000)
 
-        if next_operation <= 400:
-            # Insert
-            self.insert_random_data(spark, table)
-        elif next_operation <= 600:
-            # Update and delete
-            self.merge_into_table(spark, table)
-        elif next_operation <= 650:
-            # Delete
-            self.delete_table(spark, table)
-        elif next_operation <= 700:
-            # Truncate
-            self.truncate_table(spark, table)
-        elif next_operation <= 850:
-            # SQL Procedures or other statements specific for the lake
-            next_table_generator = LakeTableGenerator.get_next_generator(
-                table.lake_format
-            )
-            self.run_query(spark, next_table_generator.generate_extra_statement(table))
-        else:
-            # Alter statements
-            next_table_generator = LakeTableGenerator.get_next_generator(
-                table.lake_format
-            )
-            self.run_query(
-                spark, next_table_generator.generate_alter_table_statements(table)
-            )
+        try:
+            if next_operation <= 400:
+                # Insert
+                self.insert_random_data(spark, table)
+            elif next_operation <= 600:
+                # Update and delete
+                self.merge_into_table(spark, table)
+            elif next_operation <= 650:
+                # Delete
+                self.delete_table(spark, table)
+            elif next_operation <= 700:
+                # Truncate
+                self.truncate_table(spark, table)
+            elif next_operation <= 850:
+                # SQL Procedures or other statements specific for the lake
+                next_table_generator = LakeTableGenerator.get_next_generator(
+                    table.lake_format
+                )
+                self.run_query(
+                    spark, next_table_generator.generate_extra_statement(spark, table)
+                )
+            else:
+                # Alter statements
+                next_table_generator = LakeTableGenerator.get_next_generator(
+                    table.lake_format
+                )
+                self.run_query(
+                    spark, next_table_generator.generate_alter_table_statements(table)
+                )
+        except Exception as e:
+            # If an error happens, ignore it, but log it
+            traceback.print_exc()
+            self.logger.exception(e)
         return True

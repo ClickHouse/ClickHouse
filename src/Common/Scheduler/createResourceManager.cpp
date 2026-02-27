@@ -55,6 +55,16 @@ private:
                 return ResourceLink{};
         }
 
+        WorkloadSettings getWorkloadSettings(const String & resource_name) const override
+        {
+            for (const auto & classifier : classifiers)
+            {
+                if (classifier->has(resource_name))
+                    return classifier->getWorkloadSettings(resource_name);
+            }
+            return {};
+        }
+
     private:
         const ClassifierSettings settings;
         std::vector<ClassifierPtr> classifiers; // should be constant after initialization to avoid races

@@ -200,6 +200,11 @@ std::shared_ptr<ActionsDAG> JoinExpressionActions::getActionsDAG() const
     return std::shared_ptr<ActionsDAG>(data, &data->actions_dag);
 }
 
+void JoinExpressionActions::resetNodeSources(NodeToSourceMapping expression_sources)
+{
+    data->expression_sources = std::move(expression_sources);
+}
+
 void JoinExpressionActions::setNodeSources(const NodeToSourceMapping & expression_sources)
 {
     data->expression_sources.insert(expression_sources.begin(), expression_sources.end());
@@ -396,6 +401,13 @@ bool JoinActionRef::fromNone() const
     return getSourceRelations().none();
 }
 
+bool JoinActionRef::isFromSameActions(const JoinActionRef & other) const
+{
+    auto data_ptr = getData();
+    auto other_data_ptr = other.getData();
+    return data_ptr.get() == other_data_ptr.get();
+}
+
 std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> JoinActionRef::asBinaryPredicate() const
 {
     auto data_ptr = getData();
@@ -459,8 +471,6 @@ static FunctionOverloadResolverPtr operatorToFunction(JoinConditionOperator op)
             return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         case JoinConditionOperator::Or:
             return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
-        case JoinConditionOperator::NullSafeEquals:
-            return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>());
         default:
             auto function_name = operatorToFunctionName(op);
             return FunctionFactory::instance().get(function_name, nullptr);

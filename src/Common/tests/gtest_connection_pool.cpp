@@ -10,7 +10,6 @@
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 
-#include <thread>
 #include <gtest/gtest.h>
 
 namespace
@@ -274,7 +273,7 @@ TEST_F(ConnectionPoolTest, CanConnect)
     ASSERT_EQ(1, getServer().currentConnections());
     ASSERT_EQ(1, getServer().totalConnections());
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());
@@ -293,7 +292,7 @@ TEST_F(ConnectionPoolTest, CanRequest)
     ASSERT_EQ(1, getServer().totalConnections());
     ASSERT_EQ(1, getServer().currentConnections());
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());
@@ -359,7 +358,7 @@ TEST_F(ConnectionPoolTest, CanReuse)
         ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
         ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
 
-        connection->reset();
+        (*connection).reset();
     }
 
     ASSERT_EQ(0, CurrentMetrics::get(pool->getMetrics().active_count));
@@ -388,7 +387,7 @@ TEST_F(ConnectionPoolTest, CanReuse10)
 
     {
         auto connection = pool->getConnection(timeouts, nullptr);
-        connection->reset(); // reset just not to wait its expiration here
+        (*connection).reset(); // reset just not to wait its expiration here
     }
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
@@ -455,7 +454,7 @@ TEST_F(ConnectionPoolTest, CanReuse5)
     {
         // just to trigger pool->wipeExpired();
         auto connection = pool->getConnection(timeouts, nullptr);
-        connection->reset();
+        (*connection).reset();
     }
 
     ASSERT_EQ(6, DB::CurrentThread::getProfileEvents()[metrics.created]);
@@ -546,7 +545,7 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
 
     echoRequest("Hello", *connection);
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());
@@ -662,7 +661,7 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
 }
 
-TEST_F(ConnectionPoolTest, HardLimit)
+TEST_F(ConnectionPoolTest, StoreLimit)
 {
     DB::HTTPConnectionPools::Limits zero_limits {0, 0, 0};
     DB::HTTPConnectionPools::instance().setLimits(zero_limits, zero_limits, zero_limits);
@@ -682,6 +681,29 @@ TEST_F(ConnectionPoolTest, HardLimit)
 
     ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+TEST_F(ConnectionPoolTest, HardLimit)
+{
+    DB::HTTPConnectionPools::Limits limits {0, 0, 1, 1};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection1 = pool->getConnection(timeouts, nullptr);
+        ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr));
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired]);
+
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
 }
 
 TEST_F(ConnectionPoolTest, NoReceiveCall)

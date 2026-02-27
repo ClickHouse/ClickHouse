@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -160,8 +161,8 @@ Chunk NATSSource::generate()
                 if (exception_message)
                 {
                     const auto & current_message = consumer->getCurrentMessage();
-                    virtual_columns[1]->insertData(current_message.data(), current_message.size());
-                    virtual_columns[2]->insertData(exception_message->data(), exception_message->size());
+                    virtual_columns[1]->insertData(current_message);
+                    virtual_columns[2]->insertData(*exception_message);
 
                 }
                 else

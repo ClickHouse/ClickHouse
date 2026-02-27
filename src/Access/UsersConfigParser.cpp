@@ -6,6 +6,8 @@
 #include <Access/SettingsProfile.h>
 #include <Access/AccessControl.h>
 #include <Access/resolveSetting.h>
+#include <Access/Common/AuthenticationType.h>
+#include <Access/Common/OneTimePassword.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
@@ -27,7 +29,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <cstring>
-#include <filesystem>
 #include <base/FnTraits.h>
 #include <base/range.h>
 #include <unordered_set>
@@ -48,7 +49,7 @@ namespace ErrorCodes
 namespace
 {
     template <typename T>
-    void parseGrant(T & entity, const String & string_query, const std::unordered_set<UUID> & allowed_role_ids)
+    void parseGrant(T & entity, const String & string_query, const std::unordered_set<UUID> & role_ids_from_users_config, const AccessControl & access_control, LoggerPtr log)
     {
         ParserGrantQuery parser;
         parser.setParseWithoutGrantees();
@@ -87,8 +88,13 @@ namespace
             for (const auto & role_name : query.roles->names)
             {
                 auto role_id = UsersConfigParser::generateID(AccessEntityType::ROLE, role_name);
-                if (!allowed_role_ids.contains(role_id))
-                    throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Role {} was not found", role_name);
+                if (!role_ids_from_users_config.contains(role_id))
+                {
+                    if (const auto role = access_control.find<Role>(role_name))
+                        role_id = *role;
+                    else
+                        LOG_WARNING(log, "Role {} is not defined and will be ignored for grant query '{}'.", role_name, string_query);
+                }
 
                 roles_to_grant.push_back(role_id);
             }
@@ -104,9 +110,11 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         String user_name,
         const std::unordered_set<UUID> & allowed_profile_ids,
-        const std::unordered_set<UUID> & allowed_role_ids,
+        const std::unordered_set<UUID> & role_ids_from_users_config,
+        const AccessControl & access_control,
         bool allow_no_password,
-        bool allow_plaintext_password)
+        bool allow_plaintext_password,
+        LoggerPtr log)
     {
         const bool validate = true;
         auto user = std::make_shared<User>();
@@ -148,25 +156,47 @@ namespace
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
                             "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
 
-        if (has_password_plaintext)
+        std::optional<OneTimePasswordSecret> otp_secret;
+        if (config.has(user_config + ".time_based_one_time_password"))
+        {
+            bool is_password_based = has_no_password || has_password_plaintext || has_password_sha256_hex
+                || has_password_double_sha1_hex || has_scram_password_sha256_hex;
+            if (!is_password_based)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "One-time password can be used only with password based authentication for user {}.", user_name);
+
+            String otp_secret_key = config.getString(user_config + ".time_based_one_time_password.secret");
+            OneTimePasswordParams otp_config(
+                config.getInt(user_config + ".time_based_one_time_password.digits", {}),
+                config.getInt(user_config + ".time_based_one_time_password.period", {}),
+                config.getString(user_config + ".time_based_one_time_password.algorithm", {}));
+
+            otp_secret.emplace(otp_secret_key, otp_config);
+        }
+
+        if (has_no_password && otp_secret)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::NO_PASSWORD);
+            user->authentication_methods.back().setPassword("", otp_secret, validate);
+        }
+        else if (has_password_plaintext)
         {
             user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
-            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"), validate);
+            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"), otp_secret, validate);
         }
         else if (has_password_sha256_hex)
         {
             user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), validate);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), otp_secret, validate);
         }
         else if (has_scram_password_sha256_hex)
         {
             user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), validate);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), otp_secret, validate);
         }
         else if (has_password_double_sha1_hex)
         {
             user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), otp_secret, validate);
         }
         else if (has_ldap)
         {
@@ -378,7 +408,7 @@ namespace
         if (grant_queries)
         {
             for (const auto & string_query : *grant_queries)
-                parseGrant(*user, string_query, allowed_role_ids);
+                parseGrant(*user, string_query, role_ids_from_users_config, access_control, log);
         }
         else
         {
@@ -429,7 +459,9 @@ namespace
     RolePtr parseRole(
         const Poco::Util::AbstractConfiguration & config,
         const String & role_name,
-        const std::unordered_set<UUID> & allowed_role_ids)
+        const std::unordered_set<UUID> & role_ids_from_users_config,
+        const AccessControl & access_control,
+        LoggerPtr log)
     {
         auto role = std::make_shared<Role>();
         role->setName(role_name);
@@ -444,7 +476,7 @@ namespace
             for (const auto & key : keys)
             {
                 const auto query = config.getString(grants_config + "." + key);
-                parseGrant(*role, query, allowed_role_ids);
+                parseGrant(*role, query, role_ids_from_users_config, access_control, log);
             }
         }
 
@@ -611,7 +643,11 @@ namespace
 }
 
 
-UsersConfigParser::UsersConfigParser(AccessControl & access_control_) : access_control(access_control_) {}
+UsersConfigParser::UsersConfigParser(AccessControl & access_control_)
+    : access_control(access_control_)
+    , log(getLogger("UsersConfigParser"))
+{
+}
 
 UUID UsersConfigParser::generateID(AccessEntityType type, const String & name)
 {
@@ -632,7 +668,7 @@ UUID UsersConfigParser::generateID(const IAccessEntity & entity) { return genera
 std::vector<AccessEntityPtr> UsersConfigParser::parseUsers(
     const Poco::Util::AbstractConfiguration & config,
     const std::unordered_set<UUID> & allowed_profile_ids,
-    const std::unordered_set<UUID> & allowed_role_ids) const
+    const std::unordered_set<UUID> & role_ids_from_users_config) const
 {
     Poco::Util::AbstractConfiguration::Keys user_names;
     config.keys("users", user_names);
@@ -646,7 +682,7 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseUsers(
     {
         try
         {
-            users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, no_password_allowed, plaintext_password_allowed));
+            users.push_back(parseUser(config, user_name, allowed_profile_ids, role_ids_from_users_config, access_control, no_password_allowed, plaintext_password_allowed, log));
         }
         catch (Exception & e)
         {
@@ -660,7 +696,7 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseUsers(
 
 std::vector<AccessEntityPtr> UsersConfigParser::parseRoles(
     const Poco::Util::AbstractConfiguration & config,
-    const std::unordered_set<UUID> & allowed_role_ids) const
+    const std::unordered_set<UUID> & role_ids_from_users_config) const
 {
     Poco::Util::AbstractConfiguration::Keys role_names;
     config.keys("roles", role_names);
@@ -671,7 +707,7 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRoles(
     {
         try
         {
-            roles.push_back(parseRole(config, role_name, allowed_role_ids));
+            roles.push_back(parseRole(config, role_name, role_ids_from_users_config, access_control, log));
         }
         catch (Exception & e)
         {

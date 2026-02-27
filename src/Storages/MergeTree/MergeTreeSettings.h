@@ -36,6 +36,7 @@ struct MutableColumnsAndConstraints;
 
 /// List of available types supported in MergeTreeSettings object
 #define MERGETREE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, AlterColumnSecondaryIndexMode) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CleanDeletedRows) \
     M(CLASS_NAME, DeduplicateMergeProjectionMode) \
@@ -48,7 +49,12 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, UInt64Auto) \
+    M(CLASS_NAME, MergeTreeSerializationInfoVersion) \
+    M(CLASS_NAME, MergeTreeStringSerializationVersion) \
+    M(CLASS_NAME, MergeTreeNullableSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \

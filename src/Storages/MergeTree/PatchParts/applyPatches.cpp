@@ -230,9 +230,13 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
 
     for (const auto & patch_block : all_patch_blocks)
     {
+        const auto & patch_column = patch_block.getByName(column_name).column;
+        if (!patch_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has null data in patch block", column_name);
+
         IColumn::Patch::Source source =
         {
-            .column = *patch_block.getByName(column_name).column,
+            .column = *patch_column,
             .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
         };
 
@@ -249,7 +253,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
     };
 }
 
-Block getUpdatedHeader(const PatchesToApply & patches, const Block & result_block)
+Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_columns)
 {
     std::vector<Block> headers;
 
@@ -266,9 +270,8 @@ Block getUpdatedHeader(const PatchesToApply & patches, const Block & result_bloc
 
         for (const auto & column : patch->patch_blocks[0])
         {
-            /// System columns may differ in patches because we allow to apply combined patches
-            /// with different modes. Ignore columns that are not present in result block.
-            if (isPatchPartSystemColumn(column.name) || !result_block.has(column.name))
+            /// Ignore columns that are not updated or have no data.
+            if (!updated_columns.contains(column.name) || !column.column)
                 header.erase(column.name);
         }
 
@@ -294,7 +297,7 @@ bool canApplyPatchesRaw(const PatchesToApply & patches)
         {
             for (const auto & column : patch->patch_blocks.front())
             {
-                if (!isPatchPartSystemColumn(column.name) && !canApplyPatchInplace(*column.column))
+                if (!isPatchPartSystemColumn(column.name) && column.column && !canApplyPatchInplace(*column.column))
                     return false;
             }
         }
@@ -319,16 +322,23 @@ void applyPatchesToBlockRaw(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        result_column.column = recursiveRemoveSparse(result_column.column);
+        result_column.column = removeSpecialRepresentations(result_column.column);
 
         for (const auto & patch_to_apply : patches)
         {
             chassert(patch_to_apply->patch_blocks.size() == 1);
             const auto & patch_block = patch_to_apply->patch_blocks.front();
 
+            if (!patch_block.has(result_column.name))
+                continue;
+
+            const auto & patch_column = patch_block.getByName(result_column.name).column;
+            if (!patch_column)
+                continue;
+
             IColumn::Patch::Source source =
             {
-                .column = *patch_block.getByName(result_column.name).column,
+                .column = *patch_column,
                 .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
             };
 
@@ -368,7 +378,7 @@ void applyPatchesToBlockCombined(
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
         auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions);
-        result_column.column = recursiveRemoveSparse(result_column.column);
+        result_column.column = removeSpecialRepresentations(result_column.column);
 
         if (canApplyPatchInplace(*result_column.column))
             result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);
@@ -568,13 +578,15 @@ void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Names & updated_columns,
     UInt64 source_data_version)
 {
     if (patches.empty())
         return;
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
-    auto updated_header = getUpdatedHeader(patches, result_block);
+    NameSet updated_columns_set(updated_columns.begin(), updated_columns.end());
+    auto updated_header = getUpdatedHeader(patches, updated_columns_set);
 
     if (canApplyPatchesRaw(patches))
         applyPatchesToBlockRaw(result_block, versions_block, patches, updated_header, source_data_version);

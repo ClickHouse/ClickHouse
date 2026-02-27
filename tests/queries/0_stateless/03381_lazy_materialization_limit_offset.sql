@@ -3,7 +3,6 @@
 
 -- test is derived from 03246_alter_from_string_to_json.sql
 
-set allow_experimental_json_type = 1;
 set max_block_size = 20000;
 
 drop table if exists test;

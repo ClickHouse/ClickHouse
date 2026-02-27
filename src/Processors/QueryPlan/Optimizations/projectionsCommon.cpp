@@ -28,6 +28,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool force_aggregation_in_order;
+    extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
+    extern const SettingsUInt64 min_table_rows_to_use_projection_index;
 }
 
 namespace ErrorCodes
@@ -151,17 +153,16 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
+        if (const auto & row_level_filter = reading->getRowLevelFilter())
+        {
+            appendExpression(row_level_filter->actions);
+            if (const auto * filter_expression = findInOutputs(*dag, row_level_filter->column_name, row_level_filter->do_remove_column))
+                filter_nodes.push_back(filter_expression);
+            else
+                return false;
+        }
         if (const auto & prewhere_info = reading->getPrewhereInfo())
         {
-            if (prewhere_info->row_level_filter)
-            {
-                appendExpression(*prewhere_info->row_level_filter);
-                if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->row_level_column_name, false))
-                    filter_nodes.push_back(filter_expression);
-                else
-                    return false;
-            }
-
             appendExpression(prewhere_info->prewhere_actions);
             if (const auto * filter_expression
                 = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
@@ -311,7 +312,7 @@ bool analyzeProjectionCandidate(
     if (projection_parts.empty())
         return false;
 
-    auto projection_result_ptr = reader.estimateNumMarksToRead(
+    ReadFromMergeTree::AnalysisResultPtr projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
         empty_mutations_snapshot,
         required_column_names,
@@ -319,6 +320,10 @@ bool analyzeProjectionCandidate(
         projection_query_info,
         context,
         context->getSettingsRef()[Setting::max_threads]);
+
+    /// If projection analysis exceeded limits, skip this candidate
+    if (!projection_result_ptr->isUsable())
+        return false;
 
     std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
     for (auto & part : projection_result_ptr->parts_with_ranges)
@@ -339,12 +344,14 @@ bool analyzeProjectionCandidate(
     return true;
 }
 
-void filterPartsUsingProjection(
+void filterPartsAndCollectProjectionCandidates(
+    ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
+    const ActionsDAG::Node * filter_node,
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
@@ -361,6 +368,16 @@ void filterPartsUsingProjection(
                 part_with_ranges.data_part,
                 part_with_ranges.part_index_in_query,
                 part_with_ranges.part_starting_offset_in_query);
+
+            projection_part.parent_ranges.reserve(part_with_ranges.ranges.size());
+            for (const auto & range : part_with_ranges.ranges)
+            {
+                size_t begin = part_with_ranges.data_part->index_granularity->getMarkStartingRow(range.begin);
+                size_t end = part_with_ranges.data_part->index_granularity->getMarkStartingRow(range.end);
+                projection_part.parent_ranges.emplace_back(begin, end);
+                projection_part.parent_ranges.total_rows += end - begin;
+            }
+            projection_part.parent_ranges.max_part_offset = part_with_ranges.data_part->rows_count - 1;
             projection_parts.push_back(std::move(projection_part));
         }
         else
@@ -373,10 +390,14 @@ void filterPartsUsingProjection(
         return;
 
     auto projection_marks_to_read = projection_parts.getMarksCountAllParts();
+
+    /// Always request `_parent_part_offset` for projection analysis, even if the column does not exist. This does not
+    /// affect the analysis itself. Later code will not use it as an index if the column is missing.
+    static Names required_column_names = {"_parent_part_offset"};
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
         empty_mutations_snapshot,
-        {},
+        required_column_names,
         projection.metadata,
         projection_query_info,
         context,
@@ -387,17 +408,63 @@ void filterPartsUsingProjection(
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
         return;
 
+    size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
+    size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
+    auto & desc = reading.getProjectionIndexReadDescription();
+    bool in_use = false;
     for (auto & part : projection_result_ptr->parts_with_ranges)
+    {
         valid_parts.emplace(part.data_part->getParentPart());
+        if (projection.sample_block.has("_parent_part_offset") && part.getRowsCount() <= max_projection_rows_to_use_projection_index
+            && part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index)
+        {
+            desc.read_ranges[part.part_index_in_query].push_back(std::move(part));
+            in_use = true;
+        }
+    }
 
     /// Remove ranges whose data parts are fully filtered by projection.
     size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
 
-    if (filtered_parts > 0)
+    if (in_use)
+    {
+        NameSet available_inputs;
+        available_inputs.reserve(projection.sample_block.columns());
+        for (const auto & column : projection.sample_block)
+            available_inputs.emplace(column.name);
+
+        auto prewhere_info = std::make_shared<PrewhereInfo>();
+        prewhere_info->prewhere_actions
+            = projection_query_info.filter_actions_dag->restrictFilterDAGToInputs(filter_node, available_inputs);
+        prewhere_info->need_filter = true;
+        prewhere_info->prewhere_column_name = prewhere_info->prewhere_actions.getOutputs().front()->result_name;
+        prewhere_info->remove_prewhere_column = true;
+
+        const ActionsDAG::Node * parent_part_offset_node = nullptr;
+        for (const auto * input : prewhere_info->prewhere_actions.getInputs())
+        {
+            if (input->result_name == "_parent_part_offset")
+            {
+                parent_part_offset_node = input;
+                break;
+            }
+        }
+
+        if (parent_part_offset_node == nullptr)
+            parent_part_offset_node = &prewhere_info->prewhere_actions.addInput("_parent_part_offset", std::make_shared<DataTypeUInt64>());
+
+        prewhere_info->prewhere_actions.getOutputs().emplace_back(parent_part_offset_node);
+        desc.read_infos.emplace_back(&projection, std::move(prewhere_info));
+    }
+
+    if (in_use || filtered_parts > 0)
     {
         auto & stats = parent_reading_select_result.projection_stats.emplace_back();
         stats.name = projection.name;
-        stats.description = "Projection has been analyzed and is used for part-level filtering";
+        if (in_use)
+            stats.description = "Projection has been analyzed and will be applied during reading";
+        else
+            stats.description = "Projection has been analyzed and is used for part-level filtering";
         for (const auto & stat : projection_result_ptr->index_stats)
         {
             if (stat.type == ReadFromMergeTree::IndexType::PrimaryKey)

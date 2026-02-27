@@ -1,31 +1,34 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
 
-
-/** Serialization for sparse representation.
- *  Only '{serialize,deserialize}BinaryBulk' makes sense.
- *  Format:
- *    Values and offsets are written to separate substreams.
- *    There are written only non-default values.
- *
- *    Offsets have position independent format: as i-th offset there
- *    is written number of default values, that precedes the i-th non-default value.
- *    Offsets are written in VarInt encoding.
- *    Additionally at the end of every call of 'serializeBinaryBulkWithMultipleStreams'
- *    there is written number of default values in the suffix of part of column,
- *    that we currently writing. This value also marked with a flag, that means the end of portion of data.
- *    This value is used, e.g. to allow independent reading of granules in MergeTree.
- */
+/// Serialization for sparse representation.
+/// Only '{serialize,deserialize}BinaryBulk' makes sense.
+/// Format:
+///   Values and offsets are written to separate substreams.
+///   There are written only non-default values.
+///
+///   Offsets have position independent format: as i-th offset there
+///   is written number of default values, that precedes the i-th non-default value.
+///   Offsets are written in VarInt encoding.
+///   Additionally at the end of every call of 'serializeBinaryBulkWithMultipleStreams'
+///   there is written number of default values in the suffix of part of column,
+///   that we currently writing. This value also marked with a flag, that means the end of portion of data.
+///   This value is used, e.g. to allow independent reading of granules in MergeTree.
+///
+/// Sparse serialization of Nullable columns is supported too.
+/// In that case NULL is used as implicit default value,
+/// null map is not written but can be restored from offsets.
 class SerializationSparse final : public ISerialization
 {
 public:
     explicit SerializationSparse(const SerializationPtr & nested_);
 
-    Kind getKind() const override { return Kind::SPARSE; }
+    KindStack getKindStack() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -46,7 +49,7 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsDeserializeStatesCache * cache) const override;
 
-    /// Allows to write ColumnSparse and other columns in sparse serialization.
+    /// Allows to write ColumnSparse and full columns in sparse serialization.
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
@@ -100,10 +103,95 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
+    struct NullMapSubcolumnCreator : public ISubcolumnCreator
+    {
+        const ColumnPtr offsets;
+        const size_t size;
+
+        NullMapSubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
+            : offsets(offsets_), size(size_) {}
+
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override { return prev; }
+        ColumnPtr create(const ColumnPtr & prev) const override;
+    };
+
     template <typename Reader>
     void deserialize(IColumn & column, Reader && reader) const;
 
+    /// Serialization of nested column.
     SerializationPtr nested;
+
+    /// Serialization of null map.
+    SerializationPtr sparse_null_map;
+};
+
+
+/// Special serialization that allows to read ".null" (which represents null map)
+/// subcolumn from Nullable column written in Sparse serialziaton.
+/// It modifies only 'enumerateStreams' and 'deserializeBinaryBulkWithMultipleStreams'
+/// methods and builds a null map in full serialization from offset of Sparse column.
+class SerializationSparseNullMap final : public SerializationNumber<UInt8>
+{
+public:
+    using Base = SerializationNumber<UInt8>;
+
+    void serializeBinaryBulkStatePrefix(
+        const IColumn & column,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
+
+private:
+    static void assertSettings(const SerializeBinaryBulkSettings & settings);
+};
+
+struct SubstreamsCacheSparseOffsetsElement : public ISerialization::ISubstreamsCacheElement
+{
+    explicit SubstreamsCacheSparseOffsetsElement(
+        ColumnPtr offsets_,
+        size_t old_size_,
+        size_t read_rows_,
+        size_t skipped_values_rows_)
+        : offsets(std::move(offsets_))
+        , old_size(old_size_)
+        , read_rows(read_rows_)
+        , skipped_values_rows(skipped_values_rows_)
+    {
+    }
+
+    ColumnPtr offsets;
+    size_t old_size = 0;
+    size_t read_rows = 0;
+    size_t skipped_values_rows = 0;
 };
 
 }

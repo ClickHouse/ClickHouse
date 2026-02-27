@@ -90,7 +90,7 @@ private:
         String cluster_secret;
 
         /// For dynamic clusters, index+1 in multicluster_discovery_paths where cluster was found
-        /// 0 for static ckusters
+        /// 0 for static clusters
         size_t zk_root_index;
 
         ClusterInfo(const String & name_,
@@ -106,20 +106,7 @@ private:
                     bool observer_mode,
                     bool invisible,
                     size_t zk_root_index_ = 0
-                    )
-            : name(name_)
-            , zk_name(zk_name_)
-            , zk_root(zk_root_)
-            , current_node(host_name + ":" + toString(port), secure, shard_id)
-            , current_node_is_observer(observer_mode)
-            , current_cluster_is_invisible(invisible)
-            , is_secure_connection(secure)
-            , username(username_)
-            , password(password_)
-            , cluster_secret(cluster_secret_)
-            , zk_root_index(zk_root_index_)
-        {
-        }
+                    );
     };
 
     void initialUpdate();
@@ -182,8 +169,9 @@ private:
         String password;
         String cluster_secret;
 
-        Stopwatch watch;
-        mutable std::atomic_bool need_update;
+        mutable Stopwatch watch;
+        mutable std::shared_ptr<std::atomic_bool> need_update;
+        Coordination::WatchCallbackPtr watch_callback;
 
         MulticlusterDiscovery(const String & zk_name_,
                               const String & zk_path_,
@@ -197,14 +185,13 @@ private:
             , username(username_)
             , password(password_)
             , cluster_secret(cluster_secret_)
-        {
-            need_update = true;
-        }
+            , need_update(std::make_shared<std::atomic_bool>(true))
+        {}
 
         String getFullPath() const { return zk_name + ":" + zk_path; }
     };
 
-    std::shared_ptr<std::vector<std::shared_ptr<MulticlusterDiscovery>>> multicluster_discovery_paths;
+    std::vector<MulticlusterDiscovery> multicluster_discovery_paths;
 
     MultiVersion<Macros>::Version macros;
 };

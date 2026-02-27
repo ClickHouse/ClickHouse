@@ -548,8 +548,16 @@ let queries = [];
 /// All other parameters will be automatically found in the queries.
 let default_params = {
     'rounding': '60',
-    'seconds': '86400'
+    'seconds': '86400',
+    // If unset, the `seconds` is used
+    'from': '',
+    'to': '',
 };
+let default_params_desc = {
+    'from': {'placeholder': '2023-01-01 00:00:00', 'title': 'Enter date in 2023-01-01 00:00:00 format. If empty, it is calculated as current time minus "seconds" parameter.'},
+    'to': {'placeholder': '2023-01-02 00:00:00', 'title': 'Enter date in 2023-01-01 00:00:00 format. If empty, it is current time.'},
+    'seconds': {'placeholder': '86400', 'title': 'Number of seconds to look back from current time. Default is 86400 (1 day).'},
+}
 let params = default_params;
 
 /// Palette generation for charts
@@ -641,9 +649,24 @@ function findParamsInQuery(query, new_params) {
         : (type.includes('Date') ? new Date().toISOString().slice(0, 10)
         : (type.includes('UUID') ? '00000000-0000-0000-0000-000000000000'
         : ''))));
+    let temp_params = {};
     for (let match of query.matchAll(query_param_regexp)) {
         const name = match[1];
-        new_params[name] = params[name] || default_params[name] || typeDefault(match[2]);
+        temp_params[name] = params[name] || default_params[name] || typeDefault(match[2]);
+    }
+    // Here we preserve the order of default_params if they are present in temp_params
+    // First, add parameters in the order they appear in default_params
+    for (let key in default_params) {
+        if (key in temp_params) {
+            new_params[key] = temp_params[key];
+        }
+    }
+
+    // Then, add all remaining parameters from temp_params
+    for (let key in temp_params) {
+        if (!(key in default_params)) {
+            new_params[key] = temp_params[key];
+        }
     }
 }
 
@@ -667,6 +690,14 @@ function insertParam(name, value) {
     param_value.name = `${name}`;
     param_value.type = 'text';
     param_value.value = value;
+    if (name in default_params_desc) {
+        if ('placeholder' in default_params_desc[name]) {
+            param_value.placeholder = default_params_desc[name]['placeholder'];
+        }
+        if ('title' in default_params_desc[name]) {
+            param_value.title = default_params_desc[name]['title'];
+        }
+    }
     param_value.spellcheck = false;
 
     let setWidth = e => { e.style.width = (e.value.length + 1) + 'ch' };

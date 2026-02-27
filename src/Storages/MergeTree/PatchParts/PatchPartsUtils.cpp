@@ -69,24 +69,25 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     StorageInMemoryMetadata part_metadata;
 
     /// Use hash of column names to put patch parts with different structure to different partitions.
-    auto part_identifier = std::make_shared<ASTIdentifier>("_part");
+    auto part_identifier = make_intrusive<ASTIdentifier>("_part");
     auto columns_hash = getColumnsHash(patch_part_desc.getNamesOfPhysical());
-    auto hash_literal = std::make_shared<ASTLiteral>(std::move(columns_hash));
+    auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
 
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, local_context);
 
     const auto & key_columns = getPatchPartKeyColumns();
-    auto order_by_expression = makeASTFunction("tuple");
+    auto order_by_expression = makeASTOperator("tuple");
 
     for (const auto & [key_column_name, _] : key_columns)
-        order_by_expression->arguments->children.push_back(std::make_shared<ASTIdentifier>(key_column_name));
+        order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(key_column_name));
 
     addCodecsForPatchSystemColumns(patch_part_desc);
 
     IndicesDescription secondary_indices;
-    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockNumberColumn::name, patch_part_desc, local_context));
-    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockOffsetColumn::name, patch_part_desc, local_context));
+    constexpr bool escape_index_filenames = true; /// It doesn't matter, the hardcoded names don't contain non ascii characters
+    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockNumberColumn::name, patch_part_desc, escape_index_filenames, local_context));
+    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockOffsetColumn::name, patch_part_desc, escape_index_filenames, local_context));
 
     part_metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_by_expression, patch_part_desc, local_context, {});
     part_metadata.primary_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, local_context);
@@ -139,7 +140,7 @@ std::pair<UInt64, UInt64> getPartNameRange(const ColumnLowCardinality & part_nam
 
     const auto [begin, end] = std::ranges::equal_range(
         indices,
-        StringRef{part_name},
+        std::string_view{part_name},
         std::less{},
         [&](const auto idx) { return part_name_column.getDataAt(idx); });
 
@@ -160,15 +161,15 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
         const auto & [name, result_idx] = name_with_idx;
 
         auto data = part_name_column.getDataAt(index);
-        int res = memcmp(data.data, name.data(), std::min(data.size, name.size()));
+        int res = memcmp(data.data(), name.data(), std::min(data.size(), name.size()));
 
         if (res != 0)
             return res;
 
-        if (data.size < name.size())
+        if (data.size() < name.size())
             return -1;
 
-        if (data.size > name.size())
+        if (data.size() > name.size())
             return 1;
 
         UInt64 patch_idx = part_offset_data[index];

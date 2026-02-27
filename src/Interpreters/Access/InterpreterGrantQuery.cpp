@@ -13,6 +13,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
+#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -319,9 +320,20 @@ namespace
         if (!roles_to_revoke.empty())
         {
             if (admin_option)
+            {
                 grantee.granted_roles.revokeAdminOption(grantee.granted_roles.findGrantedWithAdminOption(roles_to_revoke));
+            }
             else
-                grantee.granted_roles.revoke(grantee.granted_roles.findGranted(roles_to_revoke));
+            {
+                auto found_roles_to_revoke = grantee.granted_roles.findGranted(roles_to_revoke);
+                grantee.granted_roles.revoke(found_roles_to_revoke);
+
+                if constexpr (std::is_same_v<T, User>)
+                {
+                    for (const auto & id : found_roles_to_revoke)
+                        grantee.default_roles.ids.erase(id);
+                }
+            }
         }
 
         if (!roles_to_grant.empty())
@@ -427,6 +439,18 @@ BlockIO InterpreterGrantQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
     auto current_user_access = getContext()->getAccess();
+
+    /// Validate TABLE ENGINE parameter names if explicitly specified
+    for (const auto & element : query.access_rights_elements)
+    {
+        if (element.isGlobalWithParameter()
+            && (element.access_flags.getParameterType() == AccessFlags::TABLE_ENGINE)
+            && !element.anyParameter())
+        {
+            /// Will throw UNKNOWN_STORAGE if engine is unknown
+            (void)StorageFactory::instance().getStorageFeatures(element.parameter);
+        }
+    }
 
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
