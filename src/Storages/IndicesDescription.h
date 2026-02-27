@@ -84,7 +84,6 @@ struct IndexDescription
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
     bool isSimpleSingleColumnIndex() const;
-
 };
 
 /// All secondary indices in storage

@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Macros.h>
@@ -469,6 +470,7 @@ String DisksApp::getDefaultConfigFileName()
 
 int DisksApp::main(const std::vector<String> & /*args*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("DisksApp");
     std::vector<std::string> keys;
     config().keys(keys);
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
