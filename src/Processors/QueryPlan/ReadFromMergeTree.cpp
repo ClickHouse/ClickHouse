@@ -2116,9 +2116,9 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
     if (defer_prewhere)
         deferred_prewhere_info = query_info.prewhere_info;
 
-    /// skip partition pruning when partition key is not determined by sorting key,
-    /// because FINAL may need rows from pruned partitions for correct deduplication
-    if (storage_snapshot->metadata->hasPartitionKey())
+    /// don't prune partitions unless the partition key is determined by the sorting key
+    /// matters when FINAL merges across partitions
+    if (!doNotMergePartsAcrossPartitionsFinal() && storage_snapshot->metadata->hasPartitionKey())
     {
         const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
         const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
