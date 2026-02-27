@@ -62,6 +62,8 @@ public:
     StorageObjectStorageConfiguration() = default;
     virtual ~StorageObjectStorageConfiguration() = default;
 
+    static constexpr auto SCHEMA_HASH_WILDCARD = "{_schema_hash}";
+
     struct Path
     {
         Path() = default;
@@ -72,6 +74,7 @@ public:
         std::string path;
 
         bool hasPartitionWildcard() const;
+        bool hasSchemaHashWildcard() const;
         bool hasGlobsIgnorePartitionWildcard() const;
         bool hasGlobs() const;
         std::string cutGlobs(bool supports_partial_prefix) const;
@@ -175,6 +178,9 @@ public:
         bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
+
+    static String computeSchemaHash(const ColumnsDescription & columns);
+    void setSchemaHash(const String & hash);
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
@@ -295,6 +301,7 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
+    String schema_hash;
 
 private:
     // Path used for reading, by default it is the same as `getRawPath`

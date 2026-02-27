@@ -175,6 +175,9 @@ StorageObjectStorage::StorageObjectStorage(
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
 
+    if (!columns.empty() && configuration->getRawPath().hasSchemaHashWildcard())
+        configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
+
     configuration->check(context);
 
     /// FIXME: We need to call getPathSample() lazily on select

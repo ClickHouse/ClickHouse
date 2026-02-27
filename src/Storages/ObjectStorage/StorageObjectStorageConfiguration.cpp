@@ -6,8 +6,12 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+
+#include <boost/algorithm/string/replace.hpp>
 
 namespace DB
 {
@@ -146,6 +150,25 @@ void StorageObjectStorageConfiguration::initialize(
     configuration_to_initialize.initialized = true;
 }
 
+String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescription & columns)
+{
+    SipHash hash;
+    auto columns_str = columns.getAllPhysical().toString();
+    hash.update(columns_str.data(), columns_str.size());
+    return getSipHash128AsHexString(hash);
+}
+
+void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
+{
+    schema_hash = hash;
+    boost::replace_all(read_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
+    chassert(getPaths().size() == 1);
+    auto path = getRawPath();
+    boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+    setPaths({path});
+}
+
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
     partition_strategy = PartitionStrategyFactory::get(
@@ -174,6 +197,9 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
 {
     auto raw_path = getRawPath();
 
+    if (!schema_hash.empty())
+        boost::replace_all(raw_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
     if (!partition_strategy)
     {
         return raw_path;
@@ -188,11 +214,18 @@ bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
     return path.find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
+bool StorageObjectStorageConfiguration::Path::hasSchemaHashWildcard() const
+{
+    return path.find(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
+}
+
 bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePartitionWildcard() const
 {
-    if (!hasPartitionWildcard())
+    if (!hasPartitionWildcard() && !hasSchemaHashWildcard())
         return hasGlobs();
-    return PartitionedSink::replaceWildcards(path, "").find_first_of("*?{") != std::string::npos;
+    String cleaned = PartitionedSink::replaceWildcards(path, "");
+    boost::replace_all(cleaned, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, "");
+    return cleaned.find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorageConfiguration::Path::hasGlobs() const

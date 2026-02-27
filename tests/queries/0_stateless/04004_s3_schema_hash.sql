@@ -1,0 +1,30 @@
+-- Tags: no-parallel, no-fasttest
+-- Tag no-fasttest: Depends on AWS
+
+-- { echo }
+drop table if exists test_04004_hash_write;
+drop table if exists test_04004_hash_write2;
+drop table if exists test_04004_hash_partitioned;
+
+-- Test 1: Basic write and read via table with {_schema_hash}
+create table test_04004_hash_write (a UInt64, b String) engine = S3(s3_conn, filename='test_04004/{_schema_hash}/data.parquet', format=Parquet);
+set s3_truncate_on_insert=1;
+insert into test_04004_hash_write values (1, 'hello'), (2, 'world');
+select a, b from test_04004_hash_write order by a;
+
+-- Test 2: Different schema, same base path pattern — writes to a different directory due to different hash
+create table test_04004_hash_write2 (x Float64) engine = S3(s3_conn, filename='test_04004/{_schema_hash}/data.parquet', format=Parquet);
+insert into test_04004_hash_write2 values (3.14), (2.72);
+select x from test_04004_hash_write2 order by x;
+
+-- Verify first table still reads only its own data (not cross-contaminated)
+select a, b from test_04004_hash_write order by a;
+
+-- Test 3: Combined {_schema_hash} and {_partition_id} — write via table, read via s3() glob
+create table test_04004_hash_partitioned (a UInt64, b String) engine = S3(s3_conn, filename='test_04004/{_schema_hash}/{_partition_id}/data.parquet', format=Parquet) partition by a;
+insert into test_04004_hash_partitioned values (1, 'foo'), (2, 'bar'), (3, 'baz');
+select a, b from s3(s3_conn, filename='test_04004/*/data.parquet', format=Parquet) order by a;
+
+drop table test_04004_hash_write;
+drop table test_04004_hash_write2;
+drop table test_04004_hash_partitioned;
