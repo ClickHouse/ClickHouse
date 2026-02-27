@@ -2243,7 +2243,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         bool use_skip_indexes_if_final_exact_mode =
             indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-            && !areAllSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes)
+            && !areAllSkipIndexColumnsInPrimaryKey(primary_key_column_names, indexes->skip_indexes)
             && settings[Setting::use_skip_indexes_if_final_exact_mode];
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
