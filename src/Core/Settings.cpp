@@ -4801,8 +4801,8 @@ Result
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
 )", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, MySQLDataTypesSupportList{}, R"(
-Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
+    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
 - `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
