@@ -128,7 +128,7 @@ size_t getNumberOfManifestFiles(
             for (const auto & manifest_file : manifest_list)
             {
                 unique_manifest_files.insert(manifest_file.manifest_file_path);
-				LOG_TEST(log, "Manifest file path {}", manifest_file.manifest_file_path);
+                LOG_TEST(log, "Manifest file path {}", manifest_file.manifest_file_path);
             }
         }
         catch (const Exception & e)
