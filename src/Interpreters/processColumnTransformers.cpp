@@ -25,8 +25,8 @@ ASTPtr processColumnTransformersImpl(
 
     TablesWithColumns tables_with_columns;
     {
-        auto table_expr = std::make_shared<ASTTableExpression>();
-        table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(storage_id);
+        auto table_expr = make_intrusive<ASTTableExpression>();
+        table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(storage_id);
         table_expr->children.push_back(table_expr->database_and_table_name);
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias(*table_expr, current_database), names_and_types);
     }

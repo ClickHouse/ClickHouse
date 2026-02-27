@@ -3,12 +3,14 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
+#include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
+#include <base/demangle.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
@@ -28,6 +30,21 @@ namespace ErrorCodes
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int LOGICAL_ERROR;
+}
+
+void throwEmptySerializationState(const ISerialization * serialization)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Got empty state for {}", demangle(typeid(*serialization).name()));
+}
+
+void throwInvalidSerializationState(const ISerialization * serialization, const std::type_info & expected, const std::type_info & got)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Invalid State for {}. Expected: {}, got {}",
+            demangle(typeid(*serialization).name()),
+            demangle(expected.name()),
+            demangle(got.name()));
 }
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
@@ -261,11 +278,12 @@ String getNameForSubstreamPath(
     SubstreamIterator end,
     bool escape_for_file_name,
     bool encode_sparse_stream,
-    bool escape_variant_substreams)
+    bool escape_variant_substreams,
+    size_t initial_array_level = 0)
 {
     using Substream = ISerialization::Substream;
 
-    size_t array_level = 0;
+    size_t array_level = initial_array_level;
     for (auto it = begin; it != end; ++it)
     {
         if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
@@ -419,14 +437,14 @@ String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair &
     return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream, size_t initial_array_level)
 {
-    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream);
+    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream, initial_array_level);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream, size_t initial_array_level)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false);
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false, initial_array_level);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
@@ -533,6 +551,11 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
 
 }
 
+void ISerialization::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    serializeBinary(column, row_num, ostr, {});
+}
+
 bool ISerialization::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
     return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextCSV(my_column, istr, settings); }, column);
@@ -587,11 +610,11 @@ void ISerialization::serializeTextRaw(const IColumn & column, size_t row_num, Wr
     serializeText(column, row_num, ostr, settings);
 }
 
-size_t ISerialization::getArrayLevel(const SubstreamPath & path)
+size_t ISerialization::getArrayLevel(const SubstreamPath & path, size_t prefix_len)
 {
     size_t level = 0;
-    for (const auto & elem : path)
-        level += elem.type == Substream::ArrayElements;
+    for (size_t i = 0; i < prefix_len; ++i)
+        level += path[i].type == Substream::ArrayElements;
     return level;
 }
 

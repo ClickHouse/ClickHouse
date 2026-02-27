@@ -14,10 +14,12 @@ public:
         LightweightUpdateHolderInKeeper update_holder_,
         ContextPtr context_);
 
+    ~ReplicatedMergeTreeSinkPatch() override;
+
     String getName() const override { return "ReplicatedMergeTreeSinkPatch"; }
 
 private:
-    void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper) override;
+    void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper) override;
     TemporaryPartPtr writeNewTempPart(BlockWithPartition & block) override;
     UInt64 getDataVersionInPartition(const String & original_partition_id) const;
 

@@ -234,7 +234,7 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
-    std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const override
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {
         return {num_arguments - 1};
     }

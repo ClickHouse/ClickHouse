@@ -284,6 +284,12 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (!limit_step)
         return false;
 
+    /// Save the expected output header before restructuring.
+    /// After lazy materialization, the result plan must produce the same header.
+    /// This may not hold when PREWHERE adds extra columns to ReadFromMergeTree
+    /// that are not consumed by the split expression DAGs (they pass through and pollute the output).
+    auto expected_output_header = root.step->getOutputHeader();
+
     /// it's not clear how many values will be read for LIMIT WITH TIES, so disable it
     if (limit_step->withTies())
         return false;
@@ -470,6 +476,23 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         if (!lazy_steps.empty())
             removeDanglingNodes(dag);
         result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
+    }
+
+    /// When PREWHERE adds extra columns to ReadFromMergeTree that are not consumed
+    /// by the split expression DAGs, they pass through and pollute the output header.
+    /// This causes block structure mismatch in UnionStep with parallel replicas.
+    /// Add a projection step to strip extra columns if needed.
+    auto result_header = result_plan.getCurrentHeader();
+    if (result_header->columns() != expected_output_header->columns())
+    {
+        Names expected_columns;
+        expected_columns.reserve(expected_output_header->columns());
+        for (const auto & col : *expected_output_header)
+            expected_columns.push_back(col.name);
+
+        ActionsDAG projection_dag(result_header->getColumnsWithTypeAndName());
+        projection_dag.getOutputs() = projection_dag.findInOutputs(expected_columns);
+        result_plan.addStep(std::make_unique<ExpressionStep>(result_header, std::move(projection_dag)));
     }
 
     query_plan.replaceNodeWithPlan(&root, std::move(result_plan));

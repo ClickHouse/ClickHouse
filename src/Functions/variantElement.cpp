@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -47,12 +46,24 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const size_t number_of_arguments = arguments.size();
+        auto is_variant_or_array_of_variant = [](const IDataType & type)
+        {
+            const IDataType * current_type = &type;
+            while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
+                current_type = array->getNestedType().get();
+            return isVariant(current_type);
+        };
 
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), number_of_arguments);
+        FunctionArgumentDescriptors mandatory_args{
+            {"variant", is_variant_or_array_of_variant, nullptr, "Variant or Array of Variant"},
+            {"name", &isString, &isColumnConst, "const String"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"default", nullptr, nullptr, "Any"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         size_t count_arrays = 0;
         const IDataType * input_type = arguments[0].type.get();
@@ -63,13 +74,8 @@ public:
         }
 
         const DataTypeVariant * variant_type = checkAndGetDataType<DataTypeVariant>(input_type);
-        if (!variant_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be Variant or Array of Variant. Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
 
-        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, number_of_arguments);
+        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, arguments.size());
         if (variant_global_discr.has_value())
         {
             DataTypePtr return_type = makeNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));

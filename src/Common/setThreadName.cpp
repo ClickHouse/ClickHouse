@@ -15,6 +15,7 @@
 
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
 
 constexpr size_t THREAD_NAME_SIZE = 16;
