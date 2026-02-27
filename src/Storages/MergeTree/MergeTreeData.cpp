@@ -18,6 +18,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
@@ -1901,6 +1902,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     MergeTreeDataPartState to_state,
     DB::SharedMutex & part_loading_mutex)
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::loadDataPart");
     LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
 
     LoadPartResult res;
@@ -2205,6 +2207,7 @@ bool MergeTreeData::isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::loadDataParts");
     Stopwatch watch;
     LOG_DEBUG(log, "Loading data parts");
 
@@ -2303,8 +2306,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         /// expected_parts outlives runner
         /// unexpected_disk_parts references unexpected_parts_to_load_by_disk which outlives runner
         /// disk_parts references parts_to_load_by_disk which outlives runner
-        runner.enqueueAndKeepTrack([&expected_parts, &unexpected_disk_parts, &disk_parts, this, disk_ptr]()
+        runner.enqueueAndKeepTrack([&expected_parts, &unexpected_disk_parts, &disk_parts, this, disk_ptr, component_name = Coordination::getCurrentComponent()]()
         {
+            auto local_component_guard = Coordination::setCurrentComponent(component_name);
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
                 /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
@@ -2483,8 +2487,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
 
         unexpected_data_parts_loading_task = getContext()->getSchedulePool().createTask(
-            getStorageID(), "MergeTreeData::loadUnexpectedDataParts",
-            [this] { loadUnexpectedDataParts(); });
+            getStorageID(),
+            "MergeTreeData::loadUnexpectedDataParts",
+            [this, component_name = Coordination::getCurrentComponent()]
+            {
+                auto local_component_guard = Coordination::setCurrentComponent(component_name);
+                loadUnexpectedDataParts();
+            });
     }
 
     loading_tree.traverse(/*recursive=*/ true, [&](const auto & node)
@@ -2506,7 +2515,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
         outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
             getStorageID(), "MergeTreeData::loadOutdatedDataParts",
-            [this] { loadOutdatedDataParts(/*is_async=*/ true); });
+            [this, component_name = Coordination::getCurrentComponent()]
+            {
+                auto local_component_guard = Coordination::setCurrentComponent(component_name);
+                loadOutdatedDataParts(/*is_async=*/ true);
+            });
     }
 
     watch.stop();
@@ -2520,7 +2533,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     {
         refresh_parts_task = getContext()->getSchedulePool().createTask(
             getStorageID(), "MergeTreeData::refreshDataParts",
-            [this, refresh_parts_interval] { refreshDataParts(refresh_parts_interval); });
+            [this, refresh_parts_interval, component_name = Coordination::getCurrentComponent()]
+            {
+                auto local_component_guard = Coordination::setCurrentComponent(component_name);
+                refreshDataParts(refresh_parts_interval);
+            });
 
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
@@ -2645,6 +2662,7 @@ catch (...)
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
 try
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
     DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
     if (cached_estimator)
     {
@@ -2720,8 +2738,9 @@ try
             return;
         }
         /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
-        runner.enqueueAndKeepTrack([this, &load_state, replicated]()
+        runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
         {
+            auto local_component_guard = Coordination::setCurrentComponent(component_name);
             loadUnexpectedDataPart(load_state);
 
             chassert(load_state.part);
@@ -7595,6 +7614,7 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
 
 DetachedPartsInfo MergeTreeData::getDetachedParts() const
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::getDetachedParts");
     DetachedPartsInfo res;
 
     for (const auto & disk : getDisks())
@@ -7676,6 +7696,7 @@ void MergeTreeData::optimizeDryRun(
     if (part_names.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN requires at least one part name");
 
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::optimizeDryRun");
     auto table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     MergeSelectorChoice choice;
     choice.merge_type = MergeType::Regular;

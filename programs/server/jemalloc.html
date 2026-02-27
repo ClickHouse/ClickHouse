@@ -18,7 +18,7 @@
             --metric-value-color: black;
             --error-color: #dc3545;
             --success-color: #28a745;
-            --warning-color: #ffc107;
+            --warning-color: #b58900;
             --table-header-bg: #f8f9fa;
             --table-hover-bg: #f1f1f1;
             --btn-primary-bg: black;
@@ -255,13 +255,13 @@
         .tab-content.active {
             display: block;
         }
-        #profile-result {
+        #profile-result, #query-flamegraph-result {
             /* CSS containment to isolate rendering and prevent affecting other tabs */
             contain: layout style paint;
             /* Allow browser to skip rendering when not in viewport */
             content-visibility: auto;
         }
-        #profile-result pre {
+        #profile-result pre, #query-flamegraph-result pre {
             /* Additional containment for large text content */
             contain: layout style paint;
         }
@@ -952,20 +952,23 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-        function copyProfileOutput() {
-            const resultDiv = document.getElementById('profile-result');
-            const pre = resultDiv.querySelector('pre');
-            if (!pre) {
+        // Shared profile output helpers parameterized by result div ID
+
+        function getFullProfileText(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
+            const pre = resultDiv ? resultDiv.querySelector('pre') : null;
+            if (!pre) return null;
+            if (resultDiv.dataset.allLines) {
+                return JSON.parse(resultDiv.dataset.allLines).join('\n');
+            }
+            return pre.textContent;
+        }
+
+        function copyProfileOutput(resultDivId) {
+            const text = getFullProfileText(resultDivId);
+            if (!text) {
                 alert('No profile output to copy');
                 return;
-            }
-            // If we have stored all lines, copy those; otherwise copy displayed text
-            let text;
-            if (resultDiv.dataset.allLines) {
-                const allLines = JSON.parse(resultDiv.dataset.allLines);
-                text = allLines.join('\n');
-            } else {
-                text = pre.textContent;
             }
             const button = event.target;
             const originalText = button.textContent;
@@ -1000,24 +1003,17 @@
                 document.body.removeChild(textarea);
             }
         }
-        function saveProfileOutput() {
-            const resultDiv = document.getElementById('profile-result');
-            const pre = resultDiv.querySelector('pre');
-            if (!pre) {
+
+        function saveProfileOutput(resultDivId, filenamePrefix) {
+            const resultDiv = document.getElementById(resultDivId);
+            const pre = resultDiv ? resultDiv.querySelector('pre') : null;
+            const text = getFullProfileText(resultDivId);
+            if (!text) {
                 alert('No profile output to save');
                 return;
             }
-            // If we have stored all lines, save those; otherwise save displayed text
-            let text;
-            if (resultDiv.dataset.allLines) {
-                const allLines = JSON.parse(resultDiv.dataset.allLines);
-                text = allLines.join('\n');
-            } else {
-                text = pre.textContent;
-            }
             const format = pre.dataset.format || 'Raw';
 
-            // Determine file extension based on format
             let extension;
             if (format === 'Raw') {
                 extension = '.heap';
@@ -1033,15 +1029,126 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `jemalloc-profile-${new Date().toISOString().replace(/[:.]/g, '-')}${extension}`;
+            a.download = `${filenamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-')}${extension}`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-        function closeProfileOutput() {
-            const resultDiv = document.getElementById('profile-result');
+
+        function closeProfileOutput(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
             resultDiv.innerHTML = '';
+        }
+
+        function showMoreProfileLines(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
+            const preElement = resultDiv.querySelector('pre');
+            const allLines = JSON.parse(resultDiv.dataset.allLines);
+            const currentLine = parseInt(resultDiv.dataset.currentLine);
+            const batchSize = 1000;
+            const nextLine = Math.min(currentLine + batchSize, allLines.length);
+
+            const newLines = allLines.slice(0, nextLine);
+            const format = preElement.dataset.format;
+            const maxLineLength = 500;
+
+            let displayText;
+            if (format === 'Collapsed') {
+                const truncatedLines = newLines.map(line => {
+                    if (line.length > maxLineLength) {
+                        return line.substring(0, maxLineLength) + '...';
+                    }
+                    return line;
+                });
+                displayText = truncatedLines.join('\n');
+            } else {
+                displayText = newLines.join('\n');
+            }
+            preElement.textContent = displayText;
+
+            resultDiv.dataset.currentLine = nextLine.toString();
+
+            const infoDiv = resultDiv.querySelector('.metric-label').parentElement.nextElementSibling;
+            const totalLines = allLines.length;
+            if (nextLine >= totalLines) {
+                infoDiv.textContent = infoDiv.textContent.replace(/Showing.*lines/, `${totalLines} lines`);
+                const buttonDiv = resultDiv.querySelector('div[style*="text-align: center"]');
+                if (buttonDiv) buttonDiv.remove();
+            } else {
+                infoDiv.textContent = infoDiv.textContent.replace(/Showing \d+/, `Showing ${nextLine}`);
+            }
+        }
+
+        function downloadFlameGraphFromProfile(resultDivId, filenamePrefix, countname) {
+            const text = getFullProfileText(resultDivId);
+            if (!text || text === 'No profile data') {
+                alert('No profile data available. Please get a profile first.');
+                return;
+            }
+
+            const svg = generateFlameGraphSVG(text, window.innerWidth, countname || 'bytes');
+
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filenamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-')}.svg`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function renderProfileOutputCard(resultDivId, label, lines, format, flameGraphOnclick, filenamePrefix) {
+            const resultDiv = document.getElementById(resultDivId);
+            const timestamp = new Date().toLocaleString();
+            const totalLines = lines.length;
+            const initialLines = 1000;
+            const hasMore = totalLines > initialLines;
+
+            const visualizeButton = flameGraphOnclick
+                ? `<button class="btn btn-primary" onclick="${flameGraphOnclick}" style="padding: 0.4rem 1rem; font-size: 0.85rem;">🔥 Generate Flame Graph</button>`
+                : '';
+
+            resultDiv.innerHTML = `
+                <div class="metric-card" style="margin-top: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div class="metric-label">${label}</div>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            ${visualizeButton}
+                            <button class="btn btn-secondary" onclick="copyProfileOutput('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Copy All</button>
+                            <button class="btn btn-secondary" onclick="saveProfileOutput('${resultDivId}', '${filenamePrefix}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">💾 Save</button>
+                            <button class="btn btn-secondary" onclick="closeProfileOutput('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">✕ Close</button>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.7;">
+                        Generated at: ${timestamp}${hasMore ? ` | Showing ${initialLines} of ${totalLines} lines` : ` | ${totalLines} lines`}
+                    </div>
+                    <pre data-format="${format}" style="margin-top: 0.5rem; background: var(--table-header-bg); padding: 1rem; border-radius: 4px; overflow-x: auto; max-height: 600px; font-size: 0.85rem; line-height: 1.5; white-space: pre;"></pre>
+                    ${hasMore ? `<div style="margin-top: 0.5rem; text-align: center;"><button class="btn btn-primary" onclick="showMoreProfileLines('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Show More Lines</button></div>` : ''}
+                </div>
+            `;
+
+            const preElement = resultDiv.querySelector('pre');
+            const displayLines = hasMore ? lines.slice(0, initialLines) : lines;
+            const maxLineLength = 500;
+
+            let displayText;
+            if (format === 'Collapsed') {
+                const truncatedLines = displayLines.map(line =>
+                    line.length > maxLineLength ? line.substring(0, maxLineLength) + '...' : line
+                );
+                displayText = truncatedLines.join('\n');
+            } else {
+                displayText = displayLines.join('\n');
+            }
+            preElement.textContent = displayText || 'No profile data';
+
+            resultDiv.dataset.allLines = JSON.stringify(lines);
+            if (hasMore) {
+                resultDiv.dataset.currentLine = initialLines.toString();
+            }
         }
         function parseJemallocStats(statsText) {
             const stats = {
@@ -2077,7 +2184,7 @@
         async function checkProfilingEnabled() {
             readConnectionParams();
             try {
-                const query = "SELECT value FROM system.server_settings WHERE name = 'jemalloc_enable_global_profiler'";
+                const query = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'jemalloc.prof.thread_active_init'";
                 const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     return null;
@@ -2147,62 +2254,14 @@
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const result = await response.text();
-                const timestamp = new Date().toLocaleString();
-                const visualizeButton = outputFormat === 'Collapsed'
-                    ? '<button class="btn btn-primary" onclick="generateFlameGraph()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">🔥 Generate Flame Graph</button>'
-                    : '';
-
-                // Split into lines for progressive loading
                 const lines = result ? result.split('\n') : [];
-                const totalLines = lines.length;
-                const initialLines = 1000;
-                const hasMore = totalLines > initialLines;
 
-                // Build DOM structure first without the large text content
-                resultDiv.innerHTML = `
-                    <div class="metric-card" style="margin-top: 1rem;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                            <div class="metric-label">Profile Output (${outputFormat}${(outputFormat === 'Symbolized' || outputFormat === 'Collapsed') ? (symbolizeWithInline ? ' - with inline' : ' - no inline') : ''}${outputFormat === 'Collapsed' && useCount ? ' - count' : ''})</div>
-                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                                ${visualizeButton}
-                                <button class="btn btn-secondary" onclick="copyProfileOutput()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Copy All</button>
-                                <button class="btn btn-secondary" onclick="saveProfileOutput()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">💾 Save</button>
-                                <button class="btn btn-secondary" onclick="closeProfileOutput()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">✕ Close</button>
-                            </div>
-                        </div>
-                        <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.7;">
-                            Generated at: ${timestamp}${hasMore ? ` | Showing ${initialLines} of ${totalLines} lines` : ` | ${totalLines} lines`}
-                        </div>
-                        <pre data-format="${outputFormat}" style="margin-top: 0.5rem; background: var(--table-header-bg); padding: 1rem; border-radius: 4px; overflow-x: auto; max-height: 600px; font-size: 0.85rem; line-height: 1.5; white-space: pre;"></pre>
-                        ${hasMore ? '<div style="margin-top: 0.5rem; text-align: center;"><button class="btn btn-primary" onclick="showMoreProfileLines()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Show More Lines</button></div>' : ''}
-                    </div>
-                `;
+                const label = `Profile Output (${outputFormat}${(outputFormat === 'Symbolized' || outputFormat === 'Collapsed') ? (symbolizeWithInline ? ' - with inline' : ' - no inline') : ''}${outputFormat === 'Collapsed' && useCount ? ' - count' : ''})`;
+                const flameGraphOnclick = outputFormat === 'Collapsed'
+                    ? `downloadFlameGraphFromProfile('profile-result', 'flamegraph', document.getElementById('profile-collapsed-use-count').checked ? 'allocations' : 'bytes')`
+                    : null;
 
-                // Set text content separately for better performance with large text
-                const preElement = resultDiv.querySelector('pre');
-                const displayLines = hasMore ? lines.slice(0, initialLines) : lines;
-
-                // Truncate long lines for collapsed format
-                const maxLineLength = 500;
-                let displayText;
-                if (outputFormat === 'Collapsed') {
-                    const truncatedLines = displayLines.map(line => {
-                        if (line.length > maxLineLength) {
-                            return line.substring(0, maxLineLength) + '...';
-                        }
-                        return line;
-                    });
-                    displayText = truncatedLines.join('\n');
-                } else {
-                    displayText = displayLines.join('\n');
-                }
-                preElement.textContent = displayText || 'No profile data';
-
-                // Store full data for "Show more" functionality and operations
-                resultDiv.dataset.allLines = JSON.stringify(lines);
-                if (hasMore) {
-                    resultDiv.dataset.currentLine = initialLines.toString();
-                }
+                renderProfileOutputCard('profile-result', label, lines, outputFormat, flameGraphOnclick, 'jemalloc-profile');
             } catch (error) {
                 console.error('Error getting profile:', error);
                 if (error.name === 'AbortError') {
@@ -2214,48 +2273,6 @@
                 profileAbortController = null;
                 button.disabled = false;
                 button.textContent = 'Get Profile';
-            }
-        }
-        function showMoreProfileLines() {
-            const resultDiv = document.getElementById('profile-result');
-            const preElement = resultDiv.querySelector('pre');
-            const allLines = JSON.parse(resultDiv.dataset.allLines);
-            const currentLine = parseInt(resultDiv.dataset.currentLine);
-            const batchSize = 1000;
-            const nextLine = Math.min(currentLine + batchSize, allLines.length);
-
-            // Prepare lines to display with truncation if needed
-            const newLines = allLines.slice(0, nextLine);
-            const format = preElement.dataset.format;
-            const maxLineLength = 500;
-
-            let displayText;
-            if (format === 'Collapsed') {
-                const truncatedLines = newLines.map(line => {
-                    if (line.length > maxLineLength) {
-                        return line.substring(0, maxLineLength) + '...';
-                    }
-                    return line;
-                });
-                displayText = truncatedLines.join('\n');
-            } else {
-                displayText = newLines.join('\n');
-            }
-            preElement.textContent = displayText;
-
-            // Update current line count
-            resultDiv.dataset.currentLine = nextLine.toString();
-
-            // Update info text
-            const infoDiv = resultDiv.querySelector('.metric-label').parentElement.nextElementSibling;
-            const totalLines = allLines.length;
-            if (nextLine >= totalLines) {
-                infoDiv.textContent = infoDiv.textContent.replace(/Showing.*lines/, `${totalLines} lines`);
-                // Remove the "Show more" button
-                const buttonDiv = resultDiv.querySelector('div[style*="text-align: center"]');
-                if (buttonDiv) buttonDiv.remove();
-            } else {
-                infoDiv.textContent = infoDiv.textContent.replace(/Showing \d+/, `Showing ${nextLine}`);
             }
         }
         async function renderProfileStats() {
@@ -2376,8 +2393,9 @@ SETTINGS jemalloc_enable_profiler = 1,
                 // First, flush the logs to ensure all data is written
                 const flushQuery = 'SYSTEM FLUSH LOGS';
                 const flushResponse = await fetch(buildUrl(flushQuery), fetchOptions);
-                if (!flushResponse.ok) {
-                    throw new Error(`Failed to flush logs: HTTP ${flushResponse.status}: ${flushResponse.statusText}`);
+                const flushFailed = !flushResponse.ok;
+                if (flushFailed) {
+                    resultDiv.innerHTML = '<p style="color: var(--warning-color);">⚠ Could not flush logs. There may be a delay before recent queries appear in trace_log.</p>';
                 }
 
                 // Query to get min and max event_time_microseconds for JemallocSample events
@@ -2391,12 +2409,15 @@ SETTINGS jemalloc_enable_profiler = 1,
                 const result = await response.text();
                 const lines = result.trim().split('\n');
 
-                if (lines.length === 0 || !lines[0]) {
-                    resultDiv.innerHTML = `<div class="error">No JemallocSample events found for query_id: ${queryId}</div>`;
+                const [minTime, maxTime] = (lines[0] || '').split('\t');
+
+                if (!minTime || !maxTime || (minTime === '0' && maxTime === '0')) {
+                    const msg = flushFailed
+                        ? '<p style="color: var(--warning-color);">⚠ Could not flush logs. There may be a delay before recent queries appear in trace_log.</p>'
+                        : '';
+                    resultDiv.innerHTML = msg + `<div class="error">No JemallocSample events found for query_id: ${queryId}</div>`;
                     return;
                 }
-
-                const [minTime, maxTime] = lines[0].split('\t');
 
                 // Now get cumulative memory usage over time with at most 10000 points
                 const maxPoints = 10000;
@@ -2479,8 +2500,9 @@ SETTINGS jemalloc_enable_profiler = 1,
                                 <label for="flamegraph-time" style="display: block; font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">Time</label>
                                 <input type="text" id="flamegraph-time" value="${formatTime(maxMemTime)}" style="width: 100%; padding: 0.5rem; font-family: monospace; font-size: 0.85rem; background: var(--input-background); color: var(--color); border: 1px solid var(--border-color); border-radius: 4px;">
                             </div>
-                            <button id="generate-query-flamegraph-btn" onclick="generateQueryFlameGraph()" class="btn btn-primary" style="padding: 0.5rem 1rem; white-space: nowrap;">🔥 Generate Flame Graph</button>
+                            <button id="generate-query-flamegraph-btn" onclick="getQueryCollapsedProfile()" class="btn btn-primary" style="padding: 0.5rem 1rem; white-space: nowrap;">Get Profile</button>
                         </div>
+                        <div id="query-flamegraph-result"></div>
                     </div>
                 `;
 
@@ -2546,13 +2568,14 @@ SETTINGS jemalloc_enable_profiler = 1,
             }
         }
 
-        async function generateQueryFlameGraph() {
+        async function getQueryCollapsedProfile() {
             readConnectionParams();
             const button = document.getElementById('generate-query-flamegraph-btn');
             const queryIdInput = document.getElementById('query-profile-id');
             const timeInput = document.getElementById('flamegraph-time');
             const queryId = queryIdInput.value.trim();
             const time = timeInput.value.trim();
+            const resultDiv = document.getElementById('query-flamegraph-result');
 
             if (!queryId) {
                 alert('Please enter a query ID first and click Profile to load the data.');
@@ -2565,11 +2588,11 @@ SETTINGS jemalloc_enable_profiler = 1,
             }
 
             button.disabled = true;
-            button.textContent = 'Generating...';
+            button.textContent = 'Getting profile...';
 
             try {
                 // Query to get collapsed flame graph data
-                const query = `SELECT arrayJoin(flameGraph(arrayReverse(trace), size, ptr)) FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' AND event_time_microseconds <= '${time}'`;
+                const query = `SELECT arrayJoin(flameGraph(arrayReverse(trace), size, ptr)) FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' AND event_time_microseconds <= '${time}' SETTINGS allow_introspection_functions = 1`;
 
                 const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
@@ -2579,30 +2602,21 @@ SETTINGS jemalloc_enable_profiler = 1,
                 const collapsedData = await response.text();
 
                 if (!collapsedData || collapsedData.trim() === '') {
-                    alert('No flame graph data found for the specified query ID and time.');
+                    resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">No profile data found for the specified query ID and time.</div>`;
                     return;
                 }
 
-                // Generate the flame graph SVG
-                const svg = generateFlameGraphSVG(collapsedData, window.innerWidth);
+                const lines = collapsedData.split('\n');
+                const flameGraphOnclick = `downloadFlameGraphFromProfile('query-flamegraph-result', 'query-flamegraph-' + document.getElementById('query-profile-id').value.trim())`;
 
-                // Download the SVG file
-                const blob = new Blob([svg], { type: 'image/svg+xml' });
-                const url2 = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url2;
-                a.download = `query-flamegraph-${queryId}-${new Date().toISOString().replace(/[:.]/g, '-')}.svg`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url2);
+                renderProfileOutputCard('query-flamegraph-result', 'Profile Output (Collapsed)', lines, 'Collapsed', flameGraphOnclick, 'query-profile-' + queryId);
 
             } catch (error) {
-                console.error('Error generating flame graph:', error);
-                alert(`Error generating flame graph: ${error.message}`);
+                console.error('Error getting query profile:', error);
+                resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">Error: ${error.message}</div>`;
             } finally {
                 button.disabled = false;
-                button.textContent = '🔥 Generate Flame Graph';
+                button.textContent = 'Get Profile';
             }
         }
 
@@ -2684,42 +2698,6 @@ SETTINGS jemalloc_enable_profiler = 1,
             }, 500);
         }
         // Flame Graph Generation - generates and downloads SVG file directly
-        function generateFlameGraph() {
-            const resultDiv = document.getElementById('profile-result');
-            const pre = resultDiv.querySelector('pre');
-            if (!pre) {
-                alert('No profile data found. Please get a collapsed profile first.');
-                return;
-            }
-            // If we have stored all lines, use those; otherwise use displayed text
-            let collapsedData;
-            if (resultDiv.dataset.allLines) {
-                const allLines = JSON.parse(resultDiv.dataset.allLines);
-                collapsedData = allLines.join('\n');
-            } else {
-                collapsedData = pre.textContent;
-            }
-            if (!collapsedData || collapsedData === 'No profile data') {
-                alert('No profile data available. Please get a collapsed profile first.');
-                return;
-            }
-
-            // Generate the flame graph SVG with full viewport width
-            const useCount = document.getElementById('profile-collapsed-use-count').checked;
-            const svg = generateFlameGraphSVG(collapsedData, window.innerWidth, useCount ? 'allocations' : 'bytes');
-
-            // Download the SVG file
-            const blob = new Blob([svg], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `flamegraph-${new Date().toISOString().replace(/[:.]/g, '-')}.svg`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
-
         function generateFlameGraphSVG(collapsedData, imagewidth = 1200, countname = 'bytes') {
             // Configuration
             const fonttype = "Verdana";

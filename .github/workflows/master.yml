@@ -1611,11 +1611,11 @@ jobs:
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel:
+  stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_wasmedge_parallel:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBvbGQgYW5hbHl6ZXIsIHMzIHN0b3JhZ2UsIERhdGFiYXNlUmVwbGljYXRlZCwgcGFyYWxsZWwp') }}
-    name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBvbGQgYW5hbHl6ZXIsIHMzIHN0b3JhZ2UsIERhdGFiYXNlUmVwbGljYXRlZCwgV2FzbUVkZ2UsIHBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1645,15 +1645,15 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential:
+  stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_wasmedge_sequential:
     runs-on: [self-hosted, amd-small]
     needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBvbGQgYW5hbHl6ZXIsIHMzIHN0b3JhZ2UsIERhdGFiYXNlUmVwbGljYXRlZCwgc2VxdWVudGlhbCk=') }}
-    name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBvbGQgYW5hbHl6ZXIsIHMzIHN0b3JhZ2UsIERhdGFiYXNlUmVwbGljYXRlZCwgV2FzbUVkZ2UsIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1683,7 +1683,7 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
@@ -2067,11 +2067,11 @@ jobs:
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  stateless_tests_amd_msan_parallel_1_2:
+  stateless_tests_amd_msan_wasmedge_parallel_1_2:
     runs-on: [self-hosted, amd-large]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgcGFyYWxsZWwsIDEvMik=') }}
-    name: "Stateless tests (amd_msan, parallel, 1/2)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHBhcmFsbGVsLCAxLzIp') }}
+    name: "Stateless tests (amd_msan, WasmEdge, parallel, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -2101,15 +2101,15 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, parallel, 1/2)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, parallel, 1/2)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  stateless_tests_amd_msan_parallel_2_2:
+  stateless_tests_amd_msan_wasmedge_parallel_2_2:
     runs-on: [self-hosted, amd-large]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgcGFyYWxsZWwsIDIvMik=') }}
-    name: "Stateless tests (amd_msan, parallel, 2/2)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHBhcmFsbGVsLCAyLzIp') }}
+    name: "Stateless tests (amd_msan, WasmEdge, parallel, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -2139,15 +2139,15 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, parallel, 2/2)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, parallel, 2/2)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  stateless_tests_amd_msan_sequential_1_2:
+  stateless_tests_amd_msan_wasmedge_sequential_1_2:
     runs-on: [self-hosted, amd-small-mem]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgc2VxdWVudGlhbCwgMS8yKQ==') }}
-    name: "Stateless tests (amd_msan, sequential, 1/2)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHNlcXVlbnRpYWwsIDEvMik=') }}
+    name: "Stateless tests (amd_msan, WasmEdge, sequential, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -2177,15 +2177,15 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, sequential, 1/2)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, sequential, 1/2)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  stateless_tests_amd_msan_sequential_2_2:
+  stateless_tests_amd_msan_wasmedge_sequential_2_2:
     runs-on: [self-hosted, amd-small-mem]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgc2VxdWVudGlhbCwgMi8yKQ==') }}
-    name: "Stateless tests (amd_msan, sequential, 2/2)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHNlcXVlbnRpYWwsIDIvMik=') }}
+    name: "Stateless tests (amd_msan, WasmEdge, sequential, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -2215,7 +2215,7 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, sequential, 2/2)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, sequential, 2/2)' --workflow "MasterCI" --ci 2>&1 | python3 -u -c 'import sys,datetime
           prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
           for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
@@ -5565,7 +5565,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [ast_fuzzer_amd_debug, ast_fuzzer_amd_msan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_ubsan, ast_fuzzer_arm_asan, build_amd_asan, build_amd_binary, build_amd_compat, build_amd_darwin, build_amd_debug, build_amd_freebsd, build_amd_msan, build_amd_musl, build_amd_release, build_amd_tsan, build_amd_ubsan, build_arm_asan, build_arm_binary, build_arm_darwin, build_arm_fuzzers, build_arm_release, build_arm_tidy, build_arm_v80compat, build_llvm_coverage_build, build_loongarch64, build_ppc64le, build_riscv64, build_s390x, buzzhouse_amd_debug, buzzhouse_amd_msan, buzzhouse_amd_tsan, buzzhouse_amd_ubsan, buzzhouse_arm_asan, clickbench_amd_release, clickbench_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_binary_1_5, integration_tests_amd_binary_2_5, integration_tests_amd_binary_3_5, integration_tests_amd_binary_4_5, integration_tests_amd_binary_5_5, integration_tests_amd_llvm_coverage_1_5, integration_tests_amd_llvm_coverage_2_5, integration_tests_amd_llvm_coverage_3_5, integration_tests_amd_llvm_coverage_4_5, integration_tests_amd_llvm_coverage_5_5, integration_tests_amd_msan_1_6, integration_tests_amd_msan_2_6, integration_tests_amd_msan_3_6, integration_tests_amd_msan_4_6, integration_tests_amd_msan_5_6, integration_tests_amd_msan_6_6, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, llvm_coverage, performance_comparison_amd_release_master_head_1_6, performance_comparison_amd_release_master_head_2_6, performance_comparison_amd_release_master_head_3_6, performance_comparison_amd_release_master_head_4_6, performance_comparison_amd_release_master_head_5_6, performance_comparison_amd_release_master_head_6_6, performance_comparison_arm_release_master_head_1_6, performance_comparison_arm_release_master_head_2_6, performance_comparison_arm_release_master_head_3_6, performance_comparison_arm_release_master_head_4_6, performance_comparison_arm_release_master_head_5_6, performance_comparison_arm_release_master_head_6_6, performance_comparison_arm_release_release_base_1_6, performance_comparison_arm_release_release_base_2_6, performance_comparison_arm_release_release_base_3_6, performance_comparison_arm_release_release_base_4_6, performance_comparison_arm_release_release_base_5_6, performance_comparison_arm_release_release_base_6_6, smoke_test_amd_darwin, sqltest, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, stateless_tests_amd_msan_parallel_1_2, stateless_tests_amd_msan_parallel_2_2, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_s3_storage_parallel_1_2, stateless_tests_amd_tsan_s3_storage_parallel_2_2, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_arm_asan_azure_parallel, stateless_tests_arm_asan_azure_sequential, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, stress_test_amd_debug, stress_test_amd_msan, stress_test_amd_release, stress_test_amd_tsan, stress_test_amd_ubsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_azure_amd_msan, stress_test_azure_amd_tsan, unit_tests_amd_llvm_coverage, unit_tests_asan, unit_tests_msan, unit_tests_tsan, unit_tests_ubsan]
+    needs: [ast_fuzzer_amd_debug, ast_fuzzer_amd_msan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_ubsan, ast_fuzzer_arm_asan, build_amd_asan, build_amd_binary, build_amd_compat, build_amd_darwin, build_amd_debug, build_amd_freebsd, build_amd_msan, build_amd_musl, build_amd_release, build_amd_tsan, build_amd_ubsan, build_arm_asan, build_arm_binary, build_arm_darwin, build_arm_fuzzers, build_arm_release, build_arm_tidy, build_arm_v80compat, build_llvm_coverage_build, build_loongarch64, build_ppc64le, build_riscv64, build_s390x, buzzhouse_amd_debug, buzzhouse_amd_msan, buzzhouse_amd_tsan, buzzhouse_amd_ubsan, buzzhouse_arm_asan, clickbench_amd_release, clickbench_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_binary_1_5, integration_tests_amd_binary_2_5, integration_tests_amd_binary_3_5, integration_tests_amd_binary_4_5, integration_tests_amd_binary_5_5, integration_tests_amd_llvm_coverage_1_5, integration_tests_amd_llvm_coverage_2_5, integration_tests_amd_llvm_coverage_3_5, integration_tests_amd_llvm_coverage_4_5, integration_tests_amd_llvm_coverage_5_5, integration_tests_amd_msan_1_6, integration_tests_amd_msan_2_6, integration_tests_amd_msan_3_6, integration_tests_amd_msan_4_6, integration_tests_amd_msan_5_6, integration_tests_amd_msan_6_6, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, llvm_coverage, performance_comparison_amd_release_master_head_1_6, performance_comparison_amd_release_master_head_2_6, performance_comparison_amd_release_master_head_3_6, performance_comparison_amd_release_master_head_4_6, performance_comparison_amd_release_master_head_5_6, performance_comparison_amd_release_master_head_6_6, performance_comparison_arm_release_master_head_1_6, performance_comparison_arm_release_master_head_2_6, performance_comparison_arm_release_master_head_3_6, performance_comparison_arm_release_master_head_4_6, performance_comparison_arm_release_master_head_5_6, performance_comparison_arm_release_master_head_6_6, performance_comparison_arm_release_release_base_1_6, performance_comparison_arm_release_release_base_2_6, performance_comparison_arm_release_release_base_3_6, performance_comparison_arm_release_release_base_4_6, performance_comparison_arm_release_release_base_5_6, performance_comparison_arm_release_release_base_6_6, smoke_test_amd_darwin, sqltest, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_wasmedge_parallel, stateless_tests_amd_binary_old_analyzer_s3_storage_databasereplicated_wasmedge_sequential, stateless_tests_amd_binary_parallelreplicas_s3_storage_parallel, stateless_tests_amd_binary_parallelreplicas_s3_storage_sequential, stateless_tests_amd_debug_asyncinsert_s3_storage_parallel, stateless_tests_amd_debug_asyncinsert_s3_storage_sequential, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, stateless_tests_amd_msan_wasmedge_parallel_1_2, stateless_tests_amd_msan_wasmedge_parallel_2_2, stateless_tests_amd_msan_wasmedge_sequential_1_2, stateless_tests_amd_msan_wasmedge_sequential_2_2, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_amd_tsan_s3_storage_parallel_1_2, stateless_tests_amd_tsan_s3_storage_parallel_2_2, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_amd_ubsan_parallel, stateless_tests_amd_ubsan_sequential, stateless_tests_arm_asan_azure_parallel, stateless_tests_arm_asan_azure_sequential, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, stress_test_amd_debug, stress_test_amd_msan, stress_test_amd_release, stress_test_amd_tsan, stress_test_amd_ubsan, stress_test_arm_asan, stress_test_arm_asan_s3, stress_test_azure_amd_msan, stress_test_azure_amd_tsan, unit_tests_amd_llvm_coverage, unit_tests_asan, unit_tests_msan, unit_tests_tsan, unit_tests_ubsan]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

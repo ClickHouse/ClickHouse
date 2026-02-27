@@ -4,20 +4,21 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
 
 
 namespace DB
@@ -84,7 +85,12 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;
 
-    const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
+    auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
+
+    if (!create_function_query)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "The function '{}' is not a SQL defined function and is not supported when 'enable_analyzer' is set to false", function.formatForErrorMessage());
+
     auto & function_core_expression = create_function_query->function_core->children.at(0);
 
     const auto & identifiers_expression_list = function_core_expression->children.at(0)->children.at(0)->as<ASTExpressionList>();
