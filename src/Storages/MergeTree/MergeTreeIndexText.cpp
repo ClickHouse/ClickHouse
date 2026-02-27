@@ -102,9 +102,10 @@ size_t DictionarySparseIndex::memoryUsageBytes() const
     return sizeof(*this) + tokens->allocatedBytes() + offsets_in_file->allocatedBytes();
 }
 
-DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_)
+DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
     : DictionaryBlockBase(std::move(tokens_))
     , token_infos(std::move(token_infos_))
+    , tokens_format(tokens_format_)
 {
 }
 
@@ -327,7 +328,7 @@ void MergeTreeIndexGranuleText::readSparseIndex(MergeTreeIndexReaderStream & str
     };
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
+    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getDiskName(), state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
     sparse_index = condition_text.headerCache()->getOrSet(hash, load_sparse_index);
 }
 
@@ -363,7 +364,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
             return std::make_shared<TextIndexDictionaryBlockCacheEntry>(TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, posting_list_codec));
         };
 
-        auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
+        auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getDiskName(), state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
         return condition_text.dictionaryBlockCache()->getOrSet(hash, load_dictionary_block);
     };
 
@@ -408,7 +409,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality, posting_list_codec);
     };
 
-    auto hash = TextIndexPostingsCache::hash(data_path, index_name, token_info.offsets[block_idx]);
+    auto hash = TextIndexPostingsCache::hash(state.part.getDataPartStorage().getDiskName(), data_path, index_name, token_info.offsets[block_idx]);
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 
@@ -898,7 +899,8 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
     for (size_t i = 0; i < num_tokens; ++i)
         token_infos.emplace_back(TextIndexSerialization::deserializeTokenInfo(istr, posting_list_codec));
 
-    return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
+    DictionaryBlock result{std::move(tokens_column), std::move(token_infos), tokens_format};
+    return result;
 }
 
 template <typename Stream>
@@ -1209,8 +1211,9 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
-    if (checksums.files.contains(path_prefix + ".idx"))
+    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
         return {1, getSubstreams()};
+
     return {0, {}};
 }
 
