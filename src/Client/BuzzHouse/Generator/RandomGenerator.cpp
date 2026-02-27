@@ -343,45 +343,56 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     /* A few times generate empty strings */
     if (this->nextMediumNumber() > 2)
     {
-        const String & pick = pickRandomly(
-            use_bad_utf8
-                ? bad_utf8
-                : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
-        if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
+        /// ~5% chance: repeated single character (stresses compression, string functions like repeat/position/like)
+        if (!use_bad_utf8 && this->nextMediumNumber() < 4)
         {
-            ret += pick;
-            /// A few times, generate a large string
-            if (this->nextMediumNumber() < 16)
-            {
-                uint32_t i = 0;
-                uint32_t len = static_cast<uint32_t>(pick.size());
-                const bool use_space = this->nextBool();
-                const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
+            static const std::vector<char> repeat_chars = {'a', '0', ' ', '\t', '\n', '%', '_', '\\', '"', '/', '-'};
 
-                while (i < max_iterations)
-                {
-                    const String & npick = pickRandomly(
-                        use_bad_utf8 ? bad_utf8
-                                     : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
-                                                                                   : (this->nextBool() ? common_english : common_chinese)));
-
-                    len += ((use_space ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
-                    if (len < limit)
-                    {
-                        ret += use_space ? " " : "";
-                        ret += npick;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                    i++;
-                }
-            }
+            ret += String(this->randomInt<uint32_t>(1, std::min(limit, UINT32_C(65536))), this->pickRandomly(repeat_chars));
         }
         else
         {
-            ret += "a";
+            const String & pick = pickRandomly(
+                use_bad_utf8
+                    ? bad_utf8
+                    : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
+            if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
+            {
+                ret += pick;
+                /// A few times, generate a large string
+                if (this->nextMediumNumber() < 16)
+                {
+                    uint32_t i = 0;
+                    uint32_t len = static_cast<uint32_t>(pick.size());
+                    const bool use_space = this->nextBool();
+                    const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
+
+                    while (i < max_iterations)
+                    {
+                        const String & npick = pickRandomly(
+                            use_bad_utf8
+                                ? bad_utf8
+                                : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
+                                                                              : (this->nextBool() ? common_english : common_chinese)));
+
+                        len += ((use_space ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
+                        if (len < limit)
+                        {
+                            ret += use_space ? " " : "";
+                            ret += npick;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                        i++;
+                    }
+                }
+            }
+            else
+            {
+                ret += use_bad_utf8 ? "00" : "a";
+            }
         }
     }
     ret += delimiter;
