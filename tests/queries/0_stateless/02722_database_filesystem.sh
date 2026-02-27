@@ -33,16 +33,16 @@ CREATE DATABASE ${DATABASE_TEST1} ENGINE = Filesystem;
 """
 echo $?
 ${CLICKHOUSE_CLIENT} --query "SHOW DATABASES" | grep "${DATABASE_TEST1}"
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/tmp.csv\`;"
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/tmp/tmp.csv\`;"
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/tmp_numbers_*.csv\`;"
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/tmp/*tmp_numbers_*.csv\`;"
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/*/*tmp_numbers_*.csv\`;"
-${CLICKHOUSE_CLIENT} --query "SELECT count(DISTINCT _path) FROM ${DATABASE_TEST1}.\`${unique_name}/*.csv\` WHERE startsWith(_path, '${user_files_tmp_dir}')";
-${CLICKHOUSE_CLIENT} --query "SELECT count(DISTINCT _path) FROM ${DATABASE_TEST1}.\`${unique_name}/*.csv\` WHERE not startsWith(_path, '${user_files_tmp_dir}')";
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/tmp.csv\` SETTINGS optimize_count_from_files = 1;"
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/tmp/tmp.csv\` SETTINGS optimize_count_from_files = 1;"
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/tmp_numbers_*.csv\` SETTINGS optimize_count_from_files = 1;"
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/tmp/*tmp_numbers_*.csv\` SETTINGS optimize_count_from_files = 1;"
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`${unique_name}/*/*tmp_numbers_*.csv\` SETTINGS optimize_count_from_files = 1;"
+${CLICKHOUSE_CLIENT} --query "SELECT count(DISTINCT _path) FROM ${DATABASE_TEST1}.\`${unique_name}/*.csv\` WHERE startsWith(_path, '${user_files_tmp_dir}') SETTINGS optimize_count_from_files = 1";
+${CLICKHOUSE_CLIENT} --query "SELECT count(DISTINCT _path) FROM ${DATABASE_TEST1}.\`${unique_name}/*.csv\` WHERE not startsWith(_path, '${user_files_tmp_dir}') SETTINGS optimize_count_from_files = 1";
 # **/* does not search in the current directory but searches recursively in nested directories.
-${CLICKHOUSE_CLIENT} --query "SELECT count(DISTINCT _path) FROM ${DATABASE_TEST1}.\`${unique_name}/**/*.csv\` WHERE startsWith(_path, '${user_files_tmp_dir}')";
-${CLICKHOUSE_CLIENT} --query "SELECT count(DISTINCT _path) FROM ${DATABASE_TEST1}.\`${unique_name}/**/*.csv\` WHERE not startsWith(_path, '${user_files_tmp_dir}')";
+${CLICKHOUSE_CLIENT} --query "SELECT count(DISTINCT _path) FROM ${DATABASE_TEST1}.\`${unique_name}/**/*.csv\` WHERE startsWith(_path, '${user_files_tmp_dir}') SETTINGS optimize_count_from_files = 1";
+${CLICKHOUSE_CLIENT} --query "SELECT count(DISTINCT _path) FROM ${DATABASE_TEST1}.\`${unique_name}/**/*.csv\` WHERE not startsWith(_path, '${user_files_tmp_dir}') SETTINGS optimize_count_from_files = 1";
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM ${DATABASE_TEST1}.\`tmp_numbers_*.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF "CANNOT_EXTRACT_TABLE_STRUCTURE" > /dev/null && echo "OK" || echo 'FAIL' ||:
 ${CLICKHOUSE_LOCAL} -q "SELECT COUNT(*) FROM \"${tmp_dir}/tmp.csv\""
 

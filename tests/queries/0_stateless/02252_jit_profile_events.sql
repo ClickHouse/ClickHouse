@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-parallel, no-msan
+-- Tags: no-fasttest, no-parallel, no-msan, no-random-settings
+-- JIT CompileFunction counts are sensitive to randomized optimizer/compiler settings
 
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
