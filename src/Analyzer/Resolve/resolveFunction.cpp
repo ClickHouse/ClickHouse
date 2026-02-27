@@ -241,7 +241,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     array_function_node->getArgumentsNode() = array_arguments_list;
     QueryTreeNodePtr array_node = array_function_node;
     resolveExpressionNode(array_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
-    
+
     return array_node;
 }
 

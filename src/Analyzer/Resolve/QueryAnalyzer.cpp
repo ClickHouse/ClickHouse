@@ -3078,7 +3078,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
     for (auto & node : node_list_typed.getNodes())
     {
-        auto node_to_resolve = node;        
+        auto node_to_resolve = node;
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions);
         size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
