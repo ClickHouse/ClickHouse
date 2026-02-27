@@ -3,7 +3,7 @@ name: clean-tsan
 description: Detect and fix ThreadSanitizer errors (data races, deadlocks, thread leaks, etc.) by building with TSan, running a specified test, analyzing alerts, and applying fixes iteratively.
 argument-hint: <test_name>
 disable-model-invocation: false
-allowed-tools: Task, TaskOutput, Bash(ninja *), Bash(cd *), Bash(ls *), Bash(find *), Bash(pgrep *), Bash(ps *), Bash(pkill *), Bash(mktemp *), Bash(sleep *), Bash(python *), Bash(python3 *), Bash(export *), Bash(mkdir *), Bash(tail *), Bash(grep *), Bash(wc *), Bash(./tests/clickhouse-test *), Read, Grep, Glob, Edit, Write, AskUserQuestion
+allowed-tools: Task, TaskOutput, Bash(ninja *), Bash(cd *), Bash(ls *), Bash(find *), Bash(pgrep *), Bash(ps *), Bash(pkill *), Bash(mktemp *), Bash(sleep *), Bash(python *), Bash(python3 *), Bash(export *), Bash(mkdir *), Bash(tail *), Bash(grep *), Bash(sed *), Bash(git diff*), Bash(wc *), Bash(./tests/clickhouse-test *), Read, Grep, Glob, Edit, Write, AskUserQuestion
 ---
 
 # Clean TSan Skill
@@ -225,7 +225,7 @@ TSan alerts have clear boundaries:
 - **Start marker**: a line containing `WARNING: ThreadSanitizer:`
 - **End marker**: a line containing `SUMMARY: ThreadSanitizer:`
 
-Extract the first alert directly from the log file(s) using Grep or Bash without a subagent. This avoids feeding huge log files into an agent's context.
+**IMPORTANT:** Do NOT read the alert contents into the main conversation context — this pollutes it with large stack traces. The main agent extracts the alert **mechanically** (using line numbers and Bash) and writes it to a file. Only the RCA subagent (Phase 5) reads the alert text.
 
 **For each log file containing TSan errors:**
 
@@ -234,36 +234,36 @@ Extract the first alert directly from the log file(s) using Grep or Bash without
    grep -c "SUMMARY: ThreadSanitizer:" <log_file>
    ```
 
-2. Extract the first complete alert — find line numbers of the start and end markers:
+2. Find line numbers of the first alert's start and end markers:
    ```bash
    grep -n -E "WARNING: ThreadSanitizer:|SUMMARY: ThreadSanitizer:" <log_file> | head -2
    ```
-   This gives the line numbers of the start and end markers. Then use Read tool with `offset` and `limit` to extract those lines.
+
+3. Extract directly to a file using `sed` — do NOT use Read tool here:
+   ```bash
+   sed -n '<start_line>,<end_line>p' <log_file> > _clean-tsan/<test_name>/alert-NNN.txt
+   ```
 
 ### Save extracted alert
 
-Create the artifact directory (once per skill invocation) and save the alert:
+Create the artifact directory (once per skill invocation):
 
 ```bash
 mkdir -p _clean-tsan/<test_name>
 ```
 
-Store the directory path for reuse. Save the alert text:
+NNN is the iteration number (001, 002, ...). If the directory already has artifacts from a previous session, continue numbering from the last NNN. The `sed` command in step 3 above writes directly to `_clean-tsan/<test_name>/alert-NNN.txt`.
 
-```
-Write alert to: <artifact_dir>/alert-NNN.txt
-```
-
-Where NNN is the iteration number (001, 002, ...). If the directory already has artifacts from a previous session, continue numbering from the last NNN.
+Report to the user: "Extracted TSan alert to `_clean-tsan/<test_name>/alert-NNN.txt`".
 
 ### Progress file format
 
-The file `<artifact_dir>/progress.md` is the shared memory across subagents — every RCA and Fix subagent reads it before starting work. Create it on the first iteration; entries are written in Phase 7c after each verify cycle.
+The file `_clean-tsan/progress.md` is the shared memory across subagents and sessions — every RCA and Fix subagent reads it before starting work. It lives in the root `_clean-tsan/` directory (not per-test) so knowledge accumulates across different tests. Create it on the first iteration if it does not exist; entries are appended in Phase 7c after each verify cycle.
 
 Each entry is compact (~5 lines):
 
 ```markdown
-## Iteration NNN: <OUTCOME>
+## Iteration NNN (<test_name>): <OUTCOME>
 - **Alert:** <type> (<key identifiers: mutex names, variable names>)
 - **Root cause:** <one line>
 - **Fix:** <what was changed>
@@ -277,38 +277,13 @@ Each entry is compact (~5 lines):
 
 ### Threading model file
 
-The file `<artifact_dir>/threading-model.md` is a cumulative knowledge base about the threading architecture of the code touched during the session. Unlike `progress.md` (which tracks what was tried), this captures the *understanding* of how the code works.
+The file `_clean-tsan/threading-model.md` is a cumulative knowledge base about the threading architecture of the code touched across sessions. Unlike `progress.md` (which tracks what was tried), this captures the *understanding* of how the code works. It lives in the root `_clean-tsan/` directory so knowledge accumulates across different tests.
 
 RCA subagents read it before analysis and **update it** with new discoveries. Fix subagents read it and **update it** when their changes alter invariants.
 
-**On the first iteration** (when `<artifact_dir>/threading-model.md` does not exist): create the file with the following self-describing header. This header instructs future subagents on how to maintain the document — it lives in the file itself rather than in subagent prompts.
+**Only if `_clean-tsan/threading-model.md` does not exist**: read `.claude/skills/clean-tsan/assets/threading-model-header.md` and write its contents to `_clean-tsan/threading-model.md`. Do NOT overwrite an existing file — it contains accumulated knowledge from previous sessions.
 
-```markdown
-# Threading Model
-
-> **Format guide for `/clean-tsan` subagents:** This file is maintained by RCA and Fix subagents
-> across iterations. Read it before analysis to understand what is already known. Update it with
-> new discoveries. When a fix changes an invariant, update the relevant entry rather than appending.
-> If an earlier entry was wrong, correct it.
->
-> **Per-class structure:** Add a `## ClassName` section for each class involved in TSan alerts.
-> Under each class, use these subsections as needed (omit empty ones):
->
-> - **Mutexes**: mutex name and type, what fields/state it guards, which threads acquire it
-> - **Lock Ordering**: which mutex must be acquired before which (e.g., `MutexA` → `MutexB`
->   means A is always acquired before B — never the reverse)
-> - **Cross-Class Calls Under Lock**: method holds mutex X while calling into another class
->   (which acquires mutex Y)
-> - **Atomics**: field name, type, access semantics
-> - **Thread Roles**: which named thread types call which entry-point methods
-> - **Condition Variables**: name, wait predicate, who signals it
-> - **Known Safe Patterns**: things that look like races but are provably safe (and why)
->
-> **Conventions:** Use actual mutex names from the code (e.g., `AllocationQueue::mutex`),
-> not abstract labels. One line per item. Keep entries factual — no speculation.
-```
-
-On subsequent iterations the file already exists — RCA and Fix subagents will update it in place.
+On subsequent iterations (or sessions) the file already exists — RCA and Fix subagents will update it in place.
 
 ---
 
@@ -316,137 +291,30 @@ On subsequent iterations the file already exists — RCA and Fix subagents will 
 
 Launch a Task with `subagent_type=general-purpose` for the extracted alert. Using a separate subagent prevents context pollution. The subagent reads the source files referenced in the stack traces and performs both threading analysis and root cause analysis in one pass.
 
-**Before launching**, prepare the context:
-1. Read `<artifact_dir>/progress.md` (if it exists — skip on first iteration)
-2. Read `<artifact_dir>/threading-model.md` — always present (created in Phase 4 with format guide)
-3. Generate the diff of all uncommitted changes: `git diff`
+**Before launching**, check if a previous iteration failed:
+```bash
+grep -c "FAILED" _clean-tsan/progress.md 2>/dev/null
+```
+If the count is non-zero, add to the prompt: **"IMPORTANT: A previous fix attempt for a similar alert failed. Read the progress file carefully and think deeper about the root cause. The obvious fix did not work — consider less obvious causes such as lock ordering across call chains, re-entrant paths, or indirect mutex acquisitions through callbacks."**
 
-If a previous iteration was marked `FAILED` in `progress.md`, add to the prompt: **"IMPORTANT: A previous fix attempt for a similar alert failed. Read the progress file carefully and think deeper about the root cause. The obvious fix did not work — consider less obvious causes such as lock ordering across call chains, re-entrant paths, or indirect mutex acquisitions through callbacks."**
+Read the prompt template from `.claude/skills/clean-tsan/assets/rca-prompt.md` and substitute the placeholders. All placeholders are file paths — the subagent reads them, keeping the main context clean.
+
+| Placeholder | Value |
+|-------------|-------|
+| `{{ALERT_FILE}}` | Path to `_clean-tsan/<test_name>/alert-NNN.txt` |
+| `{{PROGRESS_FILE}}` | Path to `_clean-tsan/progress.md` |
+| `{{THREADING_MODEL_FILE}}` | Path to `_clean-tsan/threading-model.md` |
+| `{{CLICKHOUSE_REFERENCES_FILE}}` | Path to `.claude/skills/clean-tsan/references/clickhouse-threading.md` |
+
+### Save RCA report
+
+Save the subagent's RCA output to the per-test directory:
 
 ```
-Prompt: "Perform root cause analysis of this ThreadSanitizer alert in ClickHouse.
-
-## TSan Alert
-<full alert text>
-
-## Previous Progress
-<contents of progress.md, or "First iteration — no previous context.">
-
-## Threading Model
-<contents of threading-model.md — the file header describes the format and update conventions; class sections below it are the current knowledge base. If only the header exists, no analysis has been recorded yet.>
-
-## Changes Already Applied
-<git diff output, or "No changes yet.">
-
-## Instructions
-
-**IMPORTANT:** The stack traces reference line numbers in the CURRENT working tree. Read source files directly — do not assume line numbers from previous iterations are still valid.
-
-### Step 1: Identify source files from the stack traces
-Extract all source file paths and line numbers from the `DB::` stack frames in the alert. These are the files you need to read.
-
-### Step 2: Read source files and analyze threading
-Read each source file. For the classes/structs involved in the racing accesses, analyze:
-- Member fields: classify each as atomic, mutex-protected (`TSA_GUARDED_BY`), pointer-guarded (`TSA_PT_GUARDED_BY`), unprotected, or immutable
-- Synchronization primitives: mutexes, their types, what they guard, lock ordering (`TSA_ACQUIRED_AFTER`)
-- Thread access patterns: which threads call the methods in the stack traces
-
-Use the Threading Model section above as a starting point — it may already have relevant information from previous iterations. Verify it against the current source code.
-
-### Step 3: Root cause analysis (varies by error type)
-
-#### For data race alerts:
-1. Identify the two racing accesses: which threads, what memory location, read-write or write-write?
-2. Map stack frames to exact source lines.
-3. Determine why the access is unprotected:
-   - Missing lock acquisition
-   - Wrong mutex (field guarded by A but code locks B)
-   - Lock released too early (TOCTOU)
-   - Atomic mixed with non-atomic access to same field
-   - Field assumed single-threaded but actually shared
-   - Race in init/destruction sequence
-4. Propose fix: add lock, make field atomic, extend lock scope, add TSA annotation, etc.
-
-#### For lock-order-inversion (potential deadlock) alerts:
-1. Identify the mutex cycle: which mutexes are acquired in inconsistent order?
-2. Map each acquisition to exact source lines.
-3. Determine why the ordering is inconsistent:
-   - Two code paths acquire the same pair of mutexes in opposite order
-   - Callback or virtual method call while holding a lock acquires another lock
-   - Nested lock acquisition without documented ordering
-4. Propose fix: enforce consistent lock ordering, reduce lock scope, use `std::lock` for simultaneous acquisition, add `TSA_ACQUIRED_AFTER` annotations, restructure to avoid nested locking.
-
-#### For thread leak alerts:
-1. Identify the leaked thread: where was it created, why wasn't it joined?
-2. Map creation stack to source.
-3. Determine root cause: missing join, early return skipping cleanup, exception path missing join.
-4. Propose fix: add join/detach in destructor, use RAII thread wrapper, fix cleanup path.
-
-#### For destroy of locked mutex / unlock of unlocked mutex:
-1. Identify the problematic mutex operation and where it occurs.
-2. Map stack to source.
-3. Determine root cause: destructor called while lock held, double-unlock, unlock without matching lock.
-4. Propose fix: ensure proper lock lifecycle, fix unlock/lock pairing.
-
-#### For signal-unsafe call alerts:
-1. Identify which function was called from a signal handler and why it's unsafe.
-2. Map stack to source.
-3. Propose fix: use only async-signal-safe functions in signal handlers, defer work to main thread.
-
-## ClickHouse Threading Context
-
-Key threading concepts:
-- `GlobalThreadPool`: singleton for all thread creation (`src/Common/ThreadPool.h`)
-- `ThreadFromGlobalPool`: wraps std::thread, used throughout codebase
-- `BackgroundSchedulePool`: periodic task scheduler with TSA annotations (`src/Core/BackgroundSchedulePool.h`)
-- `MergeTreeBackgroundExecutor`: preemptable merge/mutation tasks (`src/Storages/MergeTree/MergeTreeBackgroundExecutor.h`)
-- `ThreadStatus`: per-thread state; `ThreadGroup` for query-level grouping (`src/Common/ThreadStatus.h`)
-- `ConcurrencyControl`: CPU slot scheduling (`src/Common/ConcurrencyControl.h`)
-- Thread names (15 byte limit): QueryPipelineEx, MergeMutate, BgSchPool, AsyncMetrics, etc.
-- Common sync patterns: `std::mutex` + `TSA_GUARDED_BY`, `SharedMutex`, `std::atomic`
-- Per-thread access via `CurrentThread::get`
-- TSA macros in `base/base/defines.h`:
-  - `TSA_GUARDED_BY(mutex)` — field protected by mutex
-  - `TSA_PT_GUARDED_BY(mutex)` — pointer-to-data protected by mutex
-  - `TSA_REQUIRES(mutex)` — function requires mutex held
-  - `TSA_REQUIRES_SHARED(mutex)` — function requires shared lock
-  - `TSA_NO_THREAD_SAFETY_ANALYSIS` — suppress TSA checks (may hide real issues)
-  - `TSA_ACQUIRED_AFTER(mutex)` — lock ordering
-
-## Output Format
-
-### Alert Analysis
-**Error Type:** <type>
-**Threads/Mutexes Involved:** <description>
-**Source Locations:** <file:line for each relevant stack frame>
-**Field/Variable/Mutex:** <name of what's affected>
-**Current Protection:** <what protection exists, if any>
-**Root Cause:** <detailed explanation>
-**Proposed Fix:**
-```cpp
-// Before (problematic code)
-...
-// After (fixed code)
-...
-```
-**Fix Explanation:** <why this fix is correct and doesn't introduce new issues>
-**TSA Annotations to Add:** <any TSA_GUARDED_BY, TSA_ACQUIRED_AFTER, etc.>
-
-### Threading Model Update
-Write updated `threading-model.md` content for the classes involved in this alert. The file's own header (in the `>` blockquote at the top) describes the required format, conventions, and update rules — follow it exactly. Only include classes involved in the alert."
-```
-
-### Save RCA report and update threading model
-
-Save the subagent's RCA output to the artifact directory (created in Phase 4):
-
-```
-Write RCA to: <artifact_dir>/rca-NNN.txt
+Write RCA to: _clean-tsan/<test_name>/rca-NNN.txt
 ```
 
 Where NNN matches the alert number from Phase 4.
-
-Update `<artifact_dir>/threading-model.md` with the Threading Model Update section from the subagent's output.
 
 Present the RCA summary to the user.
 
@@ -470,40 +338,15 @@ Present the RCA summary and use `AskUserQuestion`:
 
 If user chose "Apply the fix":
 
-Launch Task with `subagent_type=general-purpose`:
+Launch Task with `subagent_type=general-purpose`. Read the prompt template from `.claude/skills/clean-tsan/assets/fix-prompt.md` and substitute the placeholders. All placeholders are file paths — the subagent reads them.
 
-```
-Prompt: "Apply the following TSan fix to the ClickHouse codebase.
+| Placeholder | Value |
+|-------------|-------|
+| `{{RCA_FILE}}` | Path to `_clean-tsan/<test_name>/rca-NNN.txt` |
+| `{{PROGRESS_FILE}}` | Path to `_clean-tsan/progress.md` |
+| `{{THREADING_MODEL_FILE}}` | Path to `_clean-tsan/threading-model.md` |
 
-## Fix Details
-<RCA report for this alert>
-
-## Previous Progress
-<contents of progress.md, or "First iteration — no previous context.">
-
-## Threading Model
-<contents of threading-model.md — the file header describes the format and update conventions; class sections below it are the current knowledge base.>
-
-## Changes Already Applied
-<git diff output, or "No changes yet.">
-
-## Instructions
-1. Read the target source files — use the CURRENT file contents, not cached versions. Do NOT commit changes.
-2. Apply the proposed code change using Edit tool
-3. If adding TSA annotations, use macros from `base/base/defines.h`
-4. If adding includes, place in alphabetical order within their group
-5. Follow ClickHouse code style:
-   - Allman-style braces (opening brace on a new line)
-   - Never use sleep to fix race conditions
-   - Prefer `std::lock_guard` or `std::unique_lock` for RAII locking
-   - Use TSA annotations when adding mutex protection
-6. If your fix changes threading invariants (e.g., a method no longer holds a lock when calling another method), report what `threading-model.md` entries need updating — follow the format described in that file's header
-7. Report what was changed"
-```
-
-After the fix is applied:
-1. Show the diff to the user for review
-2. Update `<artifact_dir>/threading-model.md` if the fix subagent reported changed invariants
+After the fix is applied, show the diff to the user for review.
 
 ---
 
@@ -519,7 +362,7 @@ Repeat Phase 3 (run tests).
 
 ### 7c. Update progress
 
-After checking results, write the full entry for the current iteration to `<artifact_dir>/progress.md` using the format from Phase 4. The entry includes:
+After checking results, append the full entry for the current iteration to `_clean-tsan/progress.md` using the format from Phase 4. The entry includes:
 - **Alert** type and key identifiers (from Phase 4 extraction)
 - **Root cause** summary (from Phase 5 RCA)
 - **Fix** applied (from Phase 6)
@@ -542,62 +385,18 @@ Each iteration processes one alert at a time. The loop continues until either:
 
 ## Error Handling
 
-### Build failure
-- Report the specific error from build log
-- Ask user if they want to investigate or fix manually
-- Do NOT proceed to testing
-
-### No test binary found
-- Unit tests: binary at `build_tsan/src/unit_tests_dbms`. Rebuild with target `unit_tests_dbms`.
-- Integration/stateless: binary at `build_tsan/programs/clickhouse`.
-
 ### Test timeout
-- Integration tests: use 600000ms timeout (tests may take >10 minutes)
+- Integration tests: use 600000ms timeout (tests may take >10 minutes under TSan)
 - Unit tests: use 300000ms timeout
 - If test hangs, kill and report
 
 ### Empty test results
-- Verify test selector matches existing tests
-- For gtest: check `--gtest_filter` matches
+- For gtest: verify `--gtest_filter` matches actual test names
 - For integration: verify test directory exists under `tests/integration/`
 
 ---
 
-## ClickHouse Threading Reference
-
-### Thread Pool Hierarchy
-
-- **`GlobalThreadPool`** (`src/Common/ThreadPool.h`): Singleton managing all thread creation. Configured via `max_thread_pool_size`, `max_thread_pool_free_size`, `thread_pool_queue_size`.
-- **`ThreadFromGlobalPool`**: Wraps `std::thread` but pulls from the global pool. Used throughout the codebase instead of raw `std::thread`.
-- **`IOThreadPool`**: Separate pool for I/O-bound jobs to avoid starving query execution.
-- **`BackupsIOThreadPool`**: Dedicated pool for backup operations.
-- **`BackgroundSchedulePool`** (`src/Core/BackgroundSchedulePool.h`): Periodic task scheduler. Guarantees a task does not run simultaneously from multiple workers. Uses `TSA_GUARDED_BY(tasks_mutex)` extensively.
-- **`MergeTreeBackgroundExecutor`** (`src/Storages/MergeTree/MergeTreeBackgroundExecutor.h`): Preemptable tasks for merges, mutations, fetches. Tasks implement `IExecutableTask` with `executeStep` method.
-
-### Per-Thread State
-
-- **`ThreadStatus`** (`src/Common/ThreadStatus.h`): Thread-local object holding thread ID, performance counters, memory tracker, query context.
-- **`ThreadGroup`**: Logical grouping for threads in a single operation. Created via `createForQuery`, `createForMergeMutate`, etc.
-- **`CurrentThread`** (`src/Common/CurrentThread.h`): Static accessor for per-thread state. No parameter passing needed.
-- **`ConcurrencyControl`** (`src/Common/ConcurrencyControl.h`): Global CPU slot scheduling across competing queries.
-
-### Common Thread Names (15-byte limit)
-
-QueryPipelineEx, QueryPullPipeEx, QueryPushPipeEx, MergeMutate, MERGETREE_FETCH, MERGETREE_MOVE, BgSchPool, BgBufSchPool, BgDistSchPool, AsyncMetrics, ConfigReloader, ZooKeeperRecv, ZooKeeperSend, TCPHandler, HTTPHandler, MySQLHandler, AsyncInsertQue, AsyncLogger.
-
-### TSA Macros (`base/base/defines.h`)
-
-```cpp
-TSA_GUARDED_BY(mutex)              // Field protected by mutex
-TSA_PT_GUARDED_BY(mutex)           // Pointer-to-data protected by mutex
-TSA_REQUIRES(mutex)                // Function requires exclusive lock
-TSA_REQUIRES_SHARED(mutex)         // Function requires shared lock
-TSA_NO_THREAD_SAFETY_ANALYSIS      // Suppress TSA checks (use sparingly!)
-TSA_ACQUIRED_AFTER(mutex)          // Lock ordering constraint
-TSA_CAPABILITY("mutex")            // Declare a capability type
-```
-
-### TSan Alert Locations
+## TSan Alert Locations
 
 | Test Type | TSan Output Location |
 |-----------|---------------------|
@@ -615,8 +414,8 @@ TSA_CAPABILITY("mutex")            // Declare a capability type
 | Server stderr (stateless) | `/tmp/tsan_server_stderr_XXXXXX.log` |
 | TSan alerts | `_clean-tsan/<test_name>/alert-NNN.txt` |
 | RCA reports | `_clean-tsan/<test_name>/rca-NNN.txt` |
-| Progress log | `_clean-tsan/<test_name>/progress.md` |
-| Threading model | `_clean-tsan/<test_name>/threading-model.md` |
+| Progress log | `_clean-tsan/progress.md` (shared across tests) |
+| Threading model | `_clean-tsan/threading-model.md` (shared across tests) |
 
 ---
 
