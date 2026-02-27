@@ -528,32 +528,32 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
+            parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
+            parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_binary, ParallelReplicas, s3 storage, parallel",
+            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_binary, ParallelReplicas, s3 storage, sequential",
+            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_debug, AsyncInsert, s3 storage, parallel",
+            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
-            parameter="amd_debug, AsyncInsert, s3 storage, sequential",
+            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
