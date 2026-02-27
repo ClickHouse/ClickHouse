@@ -86,7 +86,7 @@ Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() con
 }
 
 
-std::shared_ptr<const ParsedManifestFileEntry> AvroForIcebergDeserializer::createParsedManifestFileEntry(size_t row_index) const
+ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileEntry(size_t row_index) const
 {
     const auto format_version = getFormatVersionFromManifestFileMetadata();
     FileContentType content_type = FileContentType::DATA;
@@ -309,7 +309,7 @@ std::shared_ptr<const ParsedManifestFileEntry> AvroForIcebergDeserializer::creat
 }
 
 
-std::shared_ptr<const ParsedManifestFileEntry> AvroForIcebergDeserializer::getParsedManifestFileEntry(size_t row_index) const
+ParsedManifestFileEntryPtr AvroForIcebergDeserializer::getParsedManifestFileEntry(size_t row_index) const
 {
     SharedLockGuard lock(cache_mutex);
     if (row_index >= parsed_manifest_file_entries.size())

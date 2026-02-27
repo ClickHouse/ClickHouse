@@ -61,7 +61,7 @@ struct ManifestFileCacheableInfo
 };
 
 /// Description of Data file in manifest file
-struct ParsedManifestFileEntry
+struct ParsedManifestFileEntry : boost::noncopyable
 {
     FileContentType content_type;
     // It's the original string in the Iceberg metadata
@@ -115,9 +115,6 @@ struct ParsedManifestFileEntry
         , sort_order_id(sort_order_id_)
     {
     }
-
-    ParsedManifestFileEntry(const ParsedManifestFileEntry &) = delete;
-    ParsedManifestFileEntry & operator=(const ParsedManifestFileEntry &) = delete;
 };
 
 struct ProcessedManifestFileEntry
