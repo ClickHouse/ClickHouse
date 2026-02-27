@@ -2681,7 +2681,10 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         /// Float64 regardless of the specific Decimal/Float widths. Handle at runtime to avoid
         /// instantiating 4 Decimal × 3 Float × 2 directions = 24 redundant template specializations
         /// that all collapse to the same Float64 × Float64 code path.
-        if constexpr (IsOperation<Op>::allow_decimal && valid_on_float_arguments)
+        /// Exclude intDiv/intDivOrZero/intDivOrNull: their result type is an integer whose width
+        /// depends on the original operand types (e.g. Decimal32 → Int32), not Float64.
+        if constexpr (IsOperation<Op>::allow_decimal && valid_on_float_arguments
+            && !IsOperation<Op>::int_div && !IsOperation<Op>::int_div_or_zero && !IsOperation<Op>::int_div_or_null)
         {
             const WhichDataType left_which(left_argument.type);
             const WhichDataType right_which(right_argument.type);
@@ -2736,11 +2739,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             }
             else if constexpr (
                 IsOperation<Op>::allow_decimal && valid_on_float_arguments
+                && !IsOperation<Op>::int_div && !IsOperation<Op>::int_div_or_zero && !IsOperation<Op>::int_div_or_null
                 && ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>)
                     || (IsFloatingPoint<LeftDataType> && IsDataTypeDecimal<RightDataType>)))
             {
                 /// Decimal × Float pairs are handled at runtime above (converted to Float64 × Float64).
-                /// Skip them here to avoid 24 redundant template instantiations.
+                /// Skip them here to avoid redundant template instantiations.
                 return false;
             }
             else
