@@ -206,8 +206,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
-
-    prewarmCaches(getActivePartsLoadingThreadPool().get(), getMarkCacheToPrewarm(0), getPrimaryIndexCacheToPrewarm(0));
+    prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
 }
 
 
@@ -253,6 +252,22 @@ void StorageMergeTree::startup()
     }
 }
 
+void StorageMergeTree::flushAndPrepareForShutdown()
+{
+    LOG_TRACE(log, "Start preparing for shutdown");
+
+    if (flush_called.exchange(true))
+        return;
+
+    merger_mutator.merges_blocker.cancelForever();
+    parts_mover.moves_blocker.cancelForever();
+
+    background_operations_assignee.finish();
+    background_moves_assignee.finish();
+
+    LOG_TRACE(log, "Finished preparing for shutdown");
+}
+
 void StorageMergeTree::shutdown(bool)
 {
     if (shutdown_called.exchange(true))
@@ -272,11 +287,7 @@ void StorageMergeTree::shutdown(bool)
         mutation_wait_event.notify_all();
     }
 
-    merger_mutator.merges_blocker.cancelForever();
-    parts_mover.moves_blocker.cancelForever();
-
-    background_operations_assignee.finish();
-    background_moves_assignee.finish();
+    flushAndPrepareForShutdown();
 
     if (deduplication_log)
         deduplication_log->shutdown();
@@ -2421,7 +2432,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                     parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
                 else
                 {
-                    String partition_id = getPartitionIDFromQuery(partition, query_context, data_parts_lock);
+                    String partition_id = getPartitionIDFromQuery(partition, query_context, &data_parts_lock);
                     parts_to_remove = getVisibleDataPartsVectorInPartition(query_context, partition_id, data_parts_lock);
                 }
                 removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
