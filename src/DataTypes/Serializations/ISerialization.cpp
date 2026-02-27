@@ -3,6 +3,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
+#include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
@@ -10,6 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
+#include <base/demangle.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
@@ -31,7 +33,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ISerialization::~ISerialization() noexcept(false) = default;
+void throwEmptySerializationState(const ISerialization * serialization)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Got empty state for {}", demangle(typeid(*serialization).name()));
+}
+
+void throwInvalidSerializationState(const ISerialization * serialization, const std::type_info & expected, const std::type_info & got)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Invalid State for {}. Expected: {}, got {}",
+            demangle(typeid(*serialization).name()),
+            demangle(expected.name()),
+            demangle(got.name()));
+}
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
 {

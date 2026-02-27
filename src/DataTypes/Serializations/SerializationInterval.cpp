@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationInterval.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/Exception.h>
 #include <IO/WriteBuffer.h>
 #include <Parsers/Kusto/Formatters.h>
 #include <base/arithmeticOverflow.h>

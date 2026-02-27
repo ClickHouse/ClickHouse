@@ -34,6 +34,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/randomSeed.h>
 
@@ -61,6 +62,7 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
@@ -70,6 +72,7 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_commit[];
     extern const char object_storage_queue_fail_commit_once[];
+    extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
 }
 
@@ -107,6 +110,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
     extern const ObjectStorageQueueSettingsBool commit_on_select;
+    extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
@@ -276,6 +280,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_tag_value = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_value],
     })
     , commit_on_select((*queue_settings_)[ObjectStorageQueueSetting::commit_on_select])
+    , deduplication_v2((*queue_settings_)[ObjectStorageQueueSetting::deduplication_v2])
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
@@ -286,6 +291,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , keep_data_in_keeper(keep_data_in_keeper_)
     , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::StorageObjectStorageQueue");
     const auto & read_path = configuration->getPathForRead();
     if (read_path.path.empty())
     {
@@ -402,6 +408,7 @@ void StorageObjectStorageQueue::startup()
         return;
     }
 
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::startup");
     /// Create metadata in keeper if it does not exits yet.
     /// Create a persistent node for the table under /registry node.
     bool created_new_metadata = false;
@@ -456,6 +463,8 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 {
     if (shutdown_called)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::shutdown");
 
     /// Unregister table from local Queue storages factory.
     /// (which allows to  to execute shutdown of Queue tables
@@ -665,10 +674,12 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
+    bool add_deduplication_info;
     {
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
         after_processing_settings_copy = after_processing_settings;
+        add_deduplication_info = deduplication_v2;
     }
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
@@ -690,7 +701,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         getQueueLog(object_storage, local_context, enable_logging_to_queue_log),
         getStorageID(),
         log,
-        commit_once_processed);
+        commit_once_processed,
+        add_deduplication_info);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
@@ -727,6 +739,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (shutdown_called)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::threadFunc");
 
     const auto storage_id = getStorageID();
 
@@ -822,15 +836,19 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
     size_t min_insert_block_size_rows;
     size_t min_insert_block_size_bytes;
+    bool is_deduplication_v2;
     {
         std::lock_guard lock(mutex);
         min_insert_block_size_rows = min_insert_block_size_rows_for_materialized_views;
         min_insert_block_size_bytes = min_insert_block_size_bytes_for_materialized_views;
+        is_deduplication_v2 = deduplication_v2 && queue_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
     }
     if (min_insert_block_size_rows)
         queue_context->setSetting("min_insert_block_size_rows_for_materialized_views", min_insert_block_size_rows);
     if (min_insert_block_size_bytes)
         queue_context->setSetting("min_insert_block_size_bytes_for_materialized_views", min_insert_block_size_bytes);
+    if (is_deduplication_v2)
+        queue_context->setSetting("async_insert_deduplicate", 1);
 
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator;
     {
@@ -847,8 +865,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     const bool parallel_inserts = getTableMetadata().parallel_inserts;
     const size_t threads = parallel_inserts ? 1 : processing_threads_num;
 
-    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {})",
-        threads, processing_threads_num, parallel_inserts);
+    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
+        threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
@@ -860,9 +878,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             insert,
             queue_context,
             /*allow_materialized_=*/ false,
-            /*no_squash_=*/ true,
+            /*no_squash_=*/ false,
             /*no_destination=*/ true,
-            /*async_insert_=*/ false);
+            /*async_insert*/ is_deduplication_v2);
         auto block_io = interpreter.execute();
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),
@@ -941,6 +959,10 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             throw;
         }
 
+        fiu_do_on(FailPoints::object_storage_queue_fail_after_insert, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after insert");
+        });
+
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
@@ -954,6 +976,7 @@ void StorageObjectStorageQueue::postProcess(const StoredObjects & successful_obj
 {
     std::optional<ObjectStorageQueuePostProcessor> post_processor;
 
+    LOG_TEST(log, "Executing post process for {} objects", successful_objects.size());
     {
         std::lock_guard lock(mutex);
         post_processor.emplace(
@@ -1081,10 +1104,10 @@ void StorageObjectStorageQueue::commit(
         std::rethrow_exception(finalize_exception);
 
     LOG_DEBUG(
-        log, "Successfully committed {} requests for {} sources with commit id {} "
-        "(inserted rows: {}, successful files ({}): {})",
-        requests.size(), sources.size(), commit_id, inserted_rows,
-        successful_objects.size(), collectRemotePaths(successful_objects));
+        log, "Successfully committed {} files with {} requests for {} sources with commit id {} "
+        "(inserted rows: {}, files: {})",
+        successful_objects.size(), requests.size(), sources.size(), commit_id, inserted_rows,
+        collectRemotePaths(successful_objects));
 }
 
 UInt64 StorageObjectStorageQueue::generateCommitID()
@@ -1126,6 +1149,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_tag_key",
     "after_processing_tag_value",
     "commit_on_select",
+    "deduplication_v2",
     "metadata_cache_size_bytes",
     "metadata_cache_size_elements",
 };
@@ -1158,6 +1182,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_tag_key",
     "after_processing_tag_value",
     "commit_on_select",
+    "deduplication_v2",
     "metadata_cache_size_bytes",
     "metadata_cache_size_elements",
 };
@@ -1290,6 +1315,7 @@ void StorageObjectStorageQueue::alter(
     ContextPtr local_context,
     AlterLockHolder &)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::alter");
     if (commands.isSettingsAlter())
     {
         auto table_id = getStorageID();
@@ -1472,6 +1498,8 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
             else if (change.name == "commit_on_select")
                 commit_on_select = change.value.safeGet<UInt64>();
+            else if (change.name == "deduplication_v2")
+                deduplication_v2 = change.value.safeGet<UInt64>();
         }
 
         files_metadata->updateSettings(changed_settings);
@@ -1585,6 +1613,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views] = min_insert_block_size_rows_for_materialized_views;
         settings[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views] = min_insert_block_size_bytes_for_materialized_views;
         settings[ObjectStorageQueueSetting::commit_on_select] = commit_on_select;
+        settings[ObjectStorageQueueSetting::deduplication_v2] = deduplication_v2;
     }
 
     return settings;

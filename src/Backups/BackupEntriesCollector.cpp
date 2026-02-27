@@ -18,6 +18,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/intExp2.h>
 #include <Common/quoteString.h>
@@ -28,6 +29,10 @@
 #include <boost/range/algorithm/copy.hpp>
 
 #include <filesystem>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -223,6 +228,8 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
     /// ...
     /// and so on, the sleep time is doubled each time until it reaches 5000 milliseconds.
     /// And such attempts will be continued until 600000 milliseconds pass.
+
+    auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::gatherMetadataAndCheckConsistency");
 
     setStage(Stage::formatGatheringMetadata(0));
 
@@ -432,6 +439,11 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
     const std::set<DatabaseAndTableName> & except_table_names)
 {
     checkIsQueryCancelled();
+
+#if CLICKHOUSE_CLOUD
+    if (database_name == SharedDatabaseCatalog::INTERNAL_DATABASE_TO_DROP)
+        return;
+#endif
 
     auto it = database_infos.find(database_name);
     if (it == database_infos.end())

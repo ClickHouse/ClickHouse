@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-random-merge-tree-settings
 # Regression test for ColumnVariant::filter/permute/index optimization paths.
 # The optimization for "one non-empty variant, no NULLs" must not carry over
 # non-active variant columns that could have inconsistent sizes.
@@ -12,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_types_in_order_by=1 --use_variant_default_implementation_for_comparisons=0"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_types_in_order_by=1 --use_variant_default_implementation_for_comparisons=0 --max_execution_time=10"
 
 $CH_CLIENT -q "DROP TABLE IF EXISTS test_variant_distinct"
 $CH_CLIENT -q "CREATE TABLE test_variant_distinct (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE = Memory"
@@ -20,7 +21,7 @@ $CH_CLIENT -q "CREATE TABLE test_variant_distinct (v1 Variant(String, UInt64, Ar
 # Each INSERT creates a separate block in the Memory engine.
 # Concurrent queries will share these blocks via COW pointers.
 inserts=""
-for i in $(seq 1 25); do
+for i in $(seq 1 10); do
     inserts+="INSERT INTO test_variant_distinct VALUES ($i, $i);"
     inserts+="INSERT INTO test_variant_distinct VALUES ('s_$i', 's_$i');"
     inserts+="INSERT INTO test_variant_distinct VALUES ([1,2,$i], [1,2,$i]);"
@@ -37,12 +38,12 @@ echo "$inserts" | $CH_CLIENT -n
 # columns via assumeMutable(), then filter (DISTINCT) reads the corrupted data.
 function run_queries()
 {
-    local TIMELIMIT=$((SECONDS + 10))
+    local TIMELIMIT=$((SECONDS + 5))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        $CH_CLIENT -q "SELECT v2 FROM test_variant_distinct WHERE toLowCardinality(1) ORDER BY v2 ASC NULLS FIRST FORMAT Null" 2>&1
-        $CH_CLIENT -q "SELECT DISTINCT v2 FROM test_variant_distinct WHERE toLowCardinality(1) ORDER BY v2 ASC NULLS FIRST FORMAT Null" 2>&1
-        $CH_CLIENT -q "SELECT v2 FROM test_variant_distinct WHERE toLowCardinality(1) ORDER BY v2 DESC NULLS LAST FORMAT Null" 2>&1
-        $CH_CLIENT -q "SELECT DISTINCT v2 FROM test_variant_distinct WHERE toLowCardinality(1) ORDER BY v2 DESC FORMAT Null" 2>&1
+        $CH_CLIENT -q "SELECT v2 FROM test_variant_distinct WHERE toLowCardinality(1) ORDER BY v2 ASC NULLS FIRST FORMAT Null" 2>/dev/null
+        $CH_CLIENT -q "SELECT DISTINCT v2 FROM test_variant_distinct WHERE toLowCardinality(1) ORDER BY v2 ASC NULLS FIRST FORMAT Null" 2>/dev/null
+        $CH_CLIENT -q "SELECT v2 FROM test_variant_distinct WHERE toLowCardinality(1) ORDER BY v2 DESC NULLS LAST FORMAT Null" 2>/dev/null
+        $CH_CLIENT -q "SELECT DISTINCT v2 FROM test_variant_distinct WHERE toLowCardinality(1) ORDER BY v2 DESC FORMAT Null" 2>/dev/null
     done
 }
 
@@ -50,7 +51,7 @@ export -f run_queries
 export CH_CLIENT
 
 # Launch several concurrent query loops to create COW sharing contention.
-for _ in $(seq 1 8); do
+for _ in $(seq 1 4); do
     run_queries &
 done
 

@@ -1,10 +1,11 @@
 #pragma once
 
-#include <DataTypes/Serializations/SerializationObjectPool.h>
-#include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
+#include <Common/Exception.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationObjectPool.h>
+#include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 namespace DB
 {

@@ -25,8 +25,12 @@ def get_run_command(
     image: DockerImage,
     buzzhouse: bool,
 ) -> str:
+    from ci.jobs.ci_utils import is_extended_run
+
+    minutes = 60 if is_extended_run() else 30
     envs = [
         f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
+        f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
 
     env_str = " ".join(envs)
@@ -80,11 +84,10 @@ def run_fuzz_job(check_name: str):
     Shell.check(command=run_command, verbose=True)
 
     # Fix file ownership after running docker as root
-    logging.info("Fixing file ownership after running docker as root")
+    logging.info("Fuzzer: Fixing file ownership after running docker as root")
     uid = os.getuid()
     gid = os.getgid()
-    chown_cmd = f"docker run --rm --user root --volume {cwd}:{cwd} --workdir={cwd} {docker_image} sh -c 'find {temp_dir} -user root -exec chown {uid}:{gid} {{}} +'"
-    logging.info("Run ownership fix command: %s", chown_cmd)
+    chown_cmd = f"docker run --rm --user root --volume {cwd}:/repo --workdir=/repo {docker_image} chown -R {uid}:{gid} /repo"
     Shell.check(chown_cmd, verbose=True)
 
     fuzzer_log = workspace_path / "fuzzer.log"

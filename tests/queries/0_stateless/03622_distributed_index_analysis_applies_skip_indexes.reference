@@ -1,0 +1,39 @@
+100	200
+-- { echo }
+explain indexes=1 select * from test_1m where value > 800_000*100 settings distributed_index_analysis=0;
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_1m)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 100/100
+        Granules: 100/100
+      Skip
+        Name: value_idx
+        Description: minmax GRANULARITY 1
+        Condition: (value in [80000001, +Inf))
+        Parts: 20/100
+        Granules: 20/100
+      Ranges: 20
+explain indexes=1 select * from test_1m where value > 800_000*100 settings distributed_index_analysis=1;
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_1m)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 20/100
+        Granules: 20/100
+        Distributed:
+          Address: 127.0.0.1:9000
+          Parts send: 56
+          Parts received: 8
+          Granules send: 56
+          Granules received: 8
+          Address: 127.0.0.2:9000
+          Parts send: 44
+          Parts received: 12
+          Granules send: 44
+          Granules received: 12
+      Ranges: 20

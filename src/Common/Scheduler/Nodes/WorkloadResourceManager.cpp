@@ -123,7 +123,7 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Removing workload '{}' with children in resource '{}'",
         info.name, resource_name);
 
-    executeInSchedulerThread([&, n = std::move(node)]
+    executeInSchedulerThread([&, n = std::move(node)]() mutable
     {
         if (!info.parent.empty())
             node_for_workload[info.parent]->detachUnifiedChild(n);
@@ -138,9 +138,13 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 
         updateCurrentVersion();
 
-        // Note: `n` is intentionally destroyed here, in the scheduler thread,
+        // Note: `n` must be explicitly destroyed here, in the scheduler thread,
         // to avoid a data race between the destructor and the scheduler thread
         // that may still process activations for this node.
+        // Without this explicit reset, `n` (a captured lambda member) would be
+        // destroyed when the lambda itself is destroyed — which happens in the
+        // caller's thread after `executeInSchedulerThread` returns, not here.
+        n.reset();
     });
 }
 

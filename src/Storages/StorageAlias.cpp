@@ -77,6 +77,7 @@ public:
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , WithContext(context_)
         , storage(storage_)
+        , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
     {
     }
 
@@ -88,6 +89,10 @@ public:
             return;
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+        Block non_materialized_block;
+        for (const auto & col : non_materialized_header)
+            non_materialized_block.insert(block.getByName(col.name));
 
         StoragePtr target = storage.getTargetTable();
         StorageID target_id = target->getStorageID();
@@ -110,12 +115,13 @@ public:
         BlockIO block_io = interpreter.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
         executor.start();
-        executor.push(std::move(block));
+        executor.push(std::move(non_materialized_block));
         executor.finish();
     }
 
 private:
     StorageAlias & storage;
+    Block non_materialized_header;
 };
 
 void StorageAlias::read(

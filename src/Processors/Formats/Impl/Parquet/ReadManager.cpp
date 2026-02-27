@@ -3,6 +3,7 @@
 #include <Common/BitHelpers.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
+#include <Columns/ColumnsCommon.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -50,8 +51,7 @@ std::optional<size_t> AtomicBitSet::findFirst()
 void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
 {
     parser_shared_resources = parser_shared_resources_;
-    if (reader.file_metadata.row_groups.empty())
-        reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
+    reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
 
     if (buckets_to_read_)
     {
@@ -1097,7 +1097,7 @@ ReadManager::ReadResult ReadManager::read()
     {
         chassert(row_subgroup.filter.rows_pass > 0);
         chassert(!row_subgroup.filter.filter.empty());
-        chassert(std::accumulate(row_subgroup.filter.filter.begin(), row_subgroup.filter.filter.end(), size_t(0)) == chunk.getNumRows());
+        chassert(countBytesInFilter(row_subgroup.filter.filter) == chunk.getNumRows());
 
         row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
     }

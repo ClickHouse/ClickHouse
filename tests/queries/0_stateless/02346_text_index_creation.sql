@@ -1,4 +1,3 @@
-SET enable_full_text_index = 1;
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Must not have no arguments.';
@@ -495,9 +494,7 @@ CREATE TABLE tab
     INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'invalid_codec')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- TODO: this should throw an exception but it doesn't
-
-DROP TABLE tab;
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Types are incorrect.';
 
