@@ -204,6 +204,45 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             memo.getGroup(expression->group_id)->addPhysicalExpression(partitioned_join);
             result.push_back(partitioned_join);
         }
+
+        /// Strategy 3b: Single-key shuffle alternatives.
+        /// For joins with 2+ equi-join keys, generate a shuffle alternative for EACH individual
+        /// key pair. This lets the cost model pick a single-key shuffle when the input is already
+        /// distributed by that key, avoiding unnecessary re-shuffles.
+        /// Correctness: hash join on (A=A', B=B') shuffled by only A/A' is correct because
+        /// matching pairs where A=A' are co-located; B=B' is checked locally in the hash table.
+        if (equi_keys.size() >= 2)
+        {
+            for (const auto & [left_col, right_col] : equi_keys)
+            {
+                DistributionDescription single_left_dist;
+                single_left_dist.node_count = candidate_node_count;
+                single_left_dist.columns.push_back({left_col});
+
+                DistributionDescription single_right_dist;
+                single_right_dist.node_count = candidate_node_count;
+                single_right_dist.columns.push_back({right_col});
+
+                DistributionDescription single_output_dist;
+                single_output_dist.node_count = candidate_node_count;
+                single_output_dist.columns.push_back({left_col, right_col});
+
+                auto new_join_step = join_step->clone();
+                new_join_step->setStepDescription(
+                    fmt::format("Shuffle HashJoin (by {}) {}", left_col, join_step->getStepDescription()), 200);
+
+                GroupExpressionPtr single_key_join = std::make_shared<GroupExpression>(*expression);
+                single_key_join->plan_step = std::move(new_join_step);
+                single_key_join->strategy = std::make_shared<ShuffleJoinStrategy>();
+                single_key_join->inputs[0].required_properties.distribution = single_left_dist;
+                single_key_join->inputs[1].required_properties.distribution = single_right_dist;
+                single_key_join->properties.distribution = single_output_dist;
+
+                single_key_join->setApplied(*this, required_properties);
+                memo.getGroup(expression->group_id)->addPhysicalExpression(single_key_join);
+                result.push_back(single_key_join);
+            }
+        }
     }
 
     return result;

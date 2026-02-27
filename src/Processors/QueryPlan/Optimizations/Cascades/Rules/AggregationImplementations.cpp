@@ -173,6 +173,37 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             memo.getGroup(expression->group_id)->addPhysicalExpression(shuffle_agg);
             result.push_back(shuffle_agg);
         }
+
+        /// Strategy B2: Single-key shuffle alternatives.
+        /// For aggregations with 2+ group-by keys, generate a shuffle alternative for EACH
+        /// individual key. Correctness: `GROUP BY (A, B)` with data shuffled by `A` is correct
+        /// because all rows with the same `(A, B)` have the same `A`, hence the same node.
+        if (agg_step->getParams().keys.size() >= 2)
+        {
+            for (const auto & single_key : agg_step->getParams().keys)
+            {
+                for (size_t candidate_node_count : candidate_node_counts)
+                {
+                    DistributionDescription by_single_key;
+                    by_single_key.node_count = candidate_node_count;
+                    by_single_key.columns.push_back({single_key});
+
+                    auto new_step = agg_step->clone();
+                    new_step->setStepDescription(
+                        fmt::format("Shuffle (by {}) {}", single_key, agg_step->getStepDescription()), 200);
+
+                    GroupExpressionPtr single_key_agg = std::make_shared<GroupExpression>(*expression);
+                    single_key_agg->plan_step = std::move(new_step);
+                    single_key_agg->strategy = std::make_shared<ShuffleAggregationStrategy>();
+                    single_key_agg->inputs[0].required_properties.distribution = by_single_key;
+                    single_key_agg->properties.distribution = by_single_key;
+
+                    single_key_agg->setApplied(*this, required_properties);
+                    memo.getGroup(expression->group_id)->addPhysicalExpression(single_key_agg);
+                    result.push_back(single_key_agg);
+                }
+            }
+        }
     }
 
     return result;
