@@ -1,9 +1,15 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <IO/ReadHelpers.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric MaxAllocatedEphemeralLockSequentialNumber;
+}
 
 namespace DB
 {
@@ -13,11 +19,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, const String & conflict_path_)
-    : zookeeper(zookeeper_), path_prefix(path_prefix_), path(path_), conflict_path(conflict_path_)
+EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, UInt64 number_, const String & conflict_path_)
+    : zookeeper(zookeeper_), path_prefix(path_prefix_), path(path_), conflict_path(conflict_path_), number(number_)
 {
     if (conflict_path.empty() && path.size() <= path_prefix.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the main node is shorter than prefix.");
+}
+
+UInt64 EphemeralLockInZooKeeper::parseNumber(const String & path, size_t prefix_size)
+{
+    if (path.size() <= prefix_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path of the sequential node is shorter than the provided prefix size: path={}, prefix_size={}", path, prefix_size);
+    return parse<UInt64>(path.c_str() + prefix_size, path.size() - prefix_size);
 }
 
 EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
@@ -60,7 +73,7 @@ EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
                     getLogger("createEphemeralLockInZooKeeper"),
                     "Deduplication path already exists: deduplication_path={}",
                     failed_op_path);
-                return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
+                return EphemeralLockInZooKeeper{"", nullptr, "", 0, failed_op_path};
             }
         }
 
@@ -73,13 +86,9 @@ EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
         path = dynamic_cast<const Coordination::CreateResponse *>(responses.back().get())->path_created;
     }
 
-    return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, path};
-}
-
-UInt64 EphemeralLockInZooKeeper::getNumber() const
-{
-    checkCreated();
-    return parse<UInt64>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
+    const UInt64 number = EphemeralLockInZooKeeper::parseNumber(path, path_prefix_.size());
+    CurrentMetrics::max(CurrentMetrics::MaxAllocatedEphemeralLockSequentialNumber, number);
+    return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, path, number};
 }
 
 void EphemeralLockInZooKeeper::unlock()
@@ -179,10 +188,9 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         {
             size_t prefix_size = block_numbers_path.size() + 1 + partitions[i].size() + 1 + path_prefix.size();
             const String & path = dynamic_cast<const Coordination::CreateResponse &>(*lock_responses[i]).path_created;
-            if (path.size() <= prefix_size)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the sequential node is shorter than prefix.");
 
-            UInt64 number = parse<UInt64>(path.c_str() + prefix_size, path.size() - prefix_size);
+            const UInt64 number = EphemeralLockInZooKeeper::parseNumber(path, prefix_size);
+            CurrentMetrics::max(CurrentMetrics::MaxAllocatedEphemeralLockSequentialNumber, number);
             locks.push_back(LockInfo{path, partitions[i], number});
         }
 
