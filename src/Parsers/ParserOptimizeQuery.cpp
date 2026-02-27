@@ -33,7 +33,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_force(Keyword::FORCE);
     ParserKeyword s_deduplicate(Keyword::DEDUPLICATE);
     ParserKeyword s_cleanup(Keyword::CLEANUP);
-    ParserKeyword s_manifests(Keyword::MANIFESTS);
+    ParserKeyword s_manifest(Keyword::MANIFEST);
     ParserKeyword s_by(Keyword::BY);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
@@ -47,7 +47,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     bool final = false;
     bool deduplicate = false;
     bool cleanup = false;
-    bool manifests = false;
+    bool manifest = false;
     String cluster_str;
 
     if (!s_optimize_table.ignore(pos, expected))
@@ -92,8 +92,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (s_cleanup.ignore(pos, expected))
         cleanup = true;
 
-    if (s_manifests.ignore(pos, expected))
-        manifests = true;
+    if (s_manifest.ignore(pos, expected))
+        manifest = true;
 
     ASTPtr deduplicate_by_columns;
     if (deduplicate && s_by.ignore(pos, expected))
@@ -116,7 +116,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->deduplicate = deduplicate;
     query->deduplicate_by_columns = deduplicate_by_columns;
     query->cleanup = cleanup;
-    query->manifests = manifests;
+    query->manifest = manifest;
     query->database = database;
     query->table = table;
 

@@ -142,7 +142,7 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    instance.query(f"OPTIMIZE TABLE {TABLE_NAME} MANIFESTS;", settings={"allow_experimental_iceberg_compaction" : 1})
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST;", settings={"allow_experimental_iceberg_compaction" : 1})
 
     # check that timetravel works with previous snapshot_ids and timestamps
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {snapshot_id}") == instance.query(

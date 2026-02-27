@@ -45,8 +45,8 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
     if (cleanup)
         ostr << " CLEANUP";
 
-    if (manifests)
-        ostr << " MANIFESTS";
+    if (manifest)
+        ostr << " MANIFEST";
 
     if (deduplicate_by_columns)
     {

@@ -44,8 +44,8 @@ BlockIO InterpreterOptimizeQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
-    // Handle OPTIMIZE TABLE ... MANIFESTS for Iceberg tables
-    if (ast.manifests)
+    // Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
+    if (ast.manifest)
     {
         // Manifest compaction is handled through the optimize() call with special flag
         // The storage will check if it's a data lake table and perform manifest-only compaction
