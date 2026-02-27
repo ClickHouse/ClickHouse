@@ -99,7 +99,7 @@ WriteFileOperation::WriteFileOperation(std::string path_, std::string data_, IDi
 
 void WriteFileOperation::execute()
 {
-    if (auto buf = disk.readFileIfExists(path, ReadSettings{}))
+    if (auto buf = disk.readFileIfExists(path, getReadSettings()))
     {
         std::string file_data;
         readStringUntilEOF(file_data, *buf);
