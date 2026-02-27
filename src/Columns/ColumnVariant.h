@@ -84,20 +84,20 @@ private:
     /// Variants are in global order.
     explicit ColumnVariant(MutableColumns && variants_);
     /// Variants are in local order according to provided mapping.
-    explicit ColumnVariant(MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_);
+    explicit ColumnVariant(MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
 
     /// Create column from discriminators column and list of variant columns.
     /// Offsets column should be constructed according to the discriminators.
     /// Variants are in global order.
     ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_);
     /// Variants are in local order according to provided mapping.
-    ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_);
+    ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
 
     /// Create column from discriminators column, offsets column and list of variant columns.
     /// Variants are in global order.
     ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_);
     /// Variants are in local order according to provided mapping.
-    ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_);
+    ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
 
     ColumnVariant(const ColumnVariant &) = default;
 
@@ -118,9 +118,9 @@ public:
         return Base::create(std::move(variants_));
     }
 
-    static MutablePtr create(MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_)
+    static MutablePtr create(MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_)
     {
-        return Base::create(std::move(variants_), std::move(local_to_global_discriminators_));
+        return Base::create(std::move(variants_), local_to_global_discriminators_);
     }
 
 
@@ -129,9 +129,9 @@ public:
         return Base::create(std::move(local_discriminators_), std::move(variants_));
     }
 
-    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_)
+    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_)
     {
-        return Base::create(std::move(local_discriminators_), std::move(variants_), std::move(local_to_global_discriminators_));
+        return Base::create(std::move(local_discriminators_), std::move(variants_), local_to_global_discriminators_);
     }
 
 
@@ -140,9 +140,9 @@ public:
         return Base::create(std::move(local_discriminators_), std::move(offsets_), std::move(variants_));
     }
 
-    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, VectorWithMemoryTracking<Discriminator> local_to_global_discriminators_)
+    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_)
     {
-        return Base::create(std::move(local_discriminators_), std::move(offsets_), std::move(variants_), std::move(local_to_global_discriminators_));
+        return Base::create(std::move(local_discriminators_), std::move(offsets_), std::move(variants_), local_to_global_discriminators_);
     }
 
 
