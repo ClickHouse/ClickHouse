@@ -214,7 +214,6 @@ public:
         "\\r",
         /// Extra punctuation useful for parser probing
         "?",
-        "!",
         "@",
         "#",
         "$"};
