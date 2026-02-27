@@ -48,10 +48,13 @@ class BuzzHouseGenerator(Generator):
         super().__init__()
         self.binary: pathlib.Path = args.client_binary
 
-        tree = ET.parse(server_settings)
-        root = tree.getroot()
-        if root.tag != "clickhouse":
-            raise Exception("<clickhouse> element not found")
+        if server_settings is None:
+            root = ET.Element("clickhouse")
+        else:
+            tree = ET.parse(server_settings)
+            root = tree.getroot()
+            if root.tag != "clickhouse":
+                raise Exception("<clickhouse> element not found")
 
         # Load configuration
         buzz_config = {}

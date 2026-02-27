@@ -6,6 +6,8 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -378,6 +380,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
+    extern const ServerSettingsBool enforce_keeper_component_tracking;
     extern const ServerSettingsUInt64 max_table_num_to_throw;
     extern const ServerSettingsUInt64 max_view_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
@@ -4770,6 +4773,7 @@ void recordZooKeeperConnectionLoss()
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
+    auto component_guard = Coordination::setCurrentComponent("Context::getZooKeeper");
     std::lock_guard lock(shared->zookeeper_mutex);
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
@@ -4778,6 +4782,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     {
         zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
         args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
 
         try
         {
@@ -5033,6 +5038,7 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
+    auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
     const auto config_name = "auxiliary_zookeepers." + name;
 
@@ -5052,6 +5058,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 
         zkutil::ZooKeeperArgs args(config, config_name);
         args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
 
         zookeeper = shared->auxiliary_zookeepers.emplace(name,
                         zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
@@ -5097,8 +5104,10 @@ static void reloadZooKeeperIfChangedImpl(
     std::shared_ptr<ZooKeeperConnectionLog> zk_concection_log,
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log,
     bool server_started,
-    const Int32 send_receive_os_threads_nice_value)
+    const Int32 send_receive_os_threads_nice_value,
+    bool enforce_component_tracking)
 {
+    auto component_guard = Coordination::setCurrentComponent("Context::reloadZooKeeperIfChangedImpl");
     static constexpr auto reason = "Config changed";
     if (!zk || zk->configChanged(*config, config_name))
     {
@@ -5109,6 +5118,7 @@ static void reloadZooKeeperIfChangedImpl(
 
         zkutil::ZooKeeperArgs args(*config, config_name);
         args.send_receive_os_threads_nice_value = send_receive_os_threads_nice_value;
+        args.enforce_component_tracking = enforce_component_tracking;
         zk = zkutil::ZooKeeper::create(std::move(args), std::move(zk_log), std::move(aggregated_zookeeper_log));
 
         if (zk_concection_log)
@@ -5127,10 +5137,21 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     bool server_started = isServerCompletelyStarted();
 
+    auto component_guard = Coordination::setCurrentComponent("Context::reloadZooKeeperIfChanged");
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
 
-    reloadZooKeeperIfChangedImpl(config, ZooKeeperConnectionLog::default_zookeeper_name, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), getZooKeeperConnectionLog(), getAggregatedZooKeeperLog(), server_started, getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive]);
+    reloadZooKeeperIfChangedImpl(
+        config,
+        ZooKeeperConnectionLog::default_zookeeper_name,
+        zkutil::getZooKeeperConfigName(*config),
+        shared->zookeeper,
+        getZooKeeperLog(),
+        getZooKeeperConnectionLog(),
+        getAggregatedZooKeeperLog(),
+        server_started,
+        getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
+        getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -5157,7 +5178,17 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
         else
         {
             LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
-            reloadZooKeeperIfChangedImpl(config, it->first, config_name, it->second, getZooKeeperLog(), zookeeper_connection_log, getAggregatedZooKeeperLog(), server_started, getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive]);
+            reloadZooKeeperIfChangedImpl(
+                config,
+                it->first,
+                config_name,
+                it->second,
+                getZooKeeperLog(),
+                zookeeper_connection_log,
+                getAggregatedZooKeeperLog(),
+                server_started,
+                getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
+                getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
             ++it;
         }
     }

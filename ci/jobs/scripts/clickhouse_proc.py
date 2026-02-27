@@ -692,6 +692,8 @@ clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnabl
 # AWS S3 is very inefficient, so increase memory even further:
 clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, write_through_distributed_cache=0, max_insert_threads=16"
 
+clickhouse-client --query "CREATE TABLE test.hits_parquet (Title String, URL String, Referer String, SearchPhrase String, WatchID UInt64, UserID UInt64, CounterID UInt32, EventTime DateTime, EventDate Date, RegionID UInt32, ClientIP UInt32) ENGINE = S3('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits_compatible/hits.parquet', NOSIGN)"
+
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"

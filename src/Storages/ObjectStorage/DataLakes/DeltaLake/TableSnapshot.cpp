@@ -53,6 +53,7 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DeltaLakePartitionPrunedFiles;
+    extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
 }
 
@@ -727,6 +728,8 @@ void TableSnapshot::initOrUpdateSnapshot() const
 {
     if (kernel_snapshot_state)
         return;
+
+    ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
     LOG_TEST(log, "Initializing snapshot");
 
