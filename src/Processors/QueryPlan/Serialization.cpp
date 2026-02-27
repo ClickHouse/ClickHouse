@@ -59,9 +59,10 @@ static Block deserializeHeader(ReadBuffer & in)
     return Block(std::move(columns));
 }
 
-/// Nothing is here for now
 struct QueryPlan::SerializationFlags
 {
+    size_t worker_index = 0;
+    size_t num_workers = 1;
 };
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
@@ -70,6 +71,17 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     writeVarUInt(version, out);
 
     SerializationFlags flags;
+    serialize(out, flags);
+}
+
+void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version, size_t worker_index, size_t num_workers) const
+{
+    UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    writeVarUInt(version, out);
+
+    SerializationFlags flags;
+    flags.worker_index = worker_index;
+    flags.num_workers = num_workers;
     serialize(out, flags);
 }
 
@@ -127,6 +139,8 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         settings.writeChangedBinary(out);
 
         IQueryPlanStep::Serialization ctx{out, registry};
+        ctx.worker_index = flags.worker_index;
+        ctx.num_workers = flags.num_workers;
         node->step->serialize(ctx);
     }
 
