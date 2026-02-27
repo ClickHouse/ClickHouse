@@ -507,7 +507,7 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
     uint64_t found = 0;
 
     if (processServerQuery(
-            false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzz_server_out.generic_string())))
+            false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         out.clear();
@@ -566,7 +566,7 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
             fmt::format(
                 "SELECT c.database, c.table, c.name from system.columns c WHERE c.database IN ('system', 'INFORMATION_SCHEMA', "
                 "'information_schema') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         while (std::getline(infile, buf) && buf.size() > 1)
@@ -617,7 +617,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
                 detached_tbl,
                 db_clause,
                 table,
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
@@ -636,7 +636,7 @@ bool FuzzConfig::hasMutations()
             false,
             fmt::format(
                 R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
@@ -659,7 +659,7 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
                 "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
                 "FORMAT TabSeparated;",
                 rand_val,
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);
@@ -677,7 +677,7 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
             fmt::format(
                 R"(SELECT {} FROM "system"."iceberg_history" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 property,
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);
@@ -694,7 +694,7 @@ String FuzzConfig::getRandomFileSystemCacheValue()
             false,
             fmt::format(
                 R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);
@@ -724,7 +724,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 detached_tbl,
                 db_clause,
                 table,
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);
@@ -759,7 +759,7 @@ void FuzzConfig::validateClickHouseHealth()
                 "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE "
                 "'%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%')"
                 ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         String buf;
         size_t i = 0;

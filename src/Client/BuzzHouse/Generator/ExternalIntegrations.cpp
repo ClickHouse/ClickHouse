@@ -2173,7 +2173,7 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
             false,
             fmt::format(
                 "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fc.fuzz_server_out.generic_string())))
+                fc.fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fc.fuzz_client_out);
         while (std::getline(infile, buf) && buf.size() > 1)
