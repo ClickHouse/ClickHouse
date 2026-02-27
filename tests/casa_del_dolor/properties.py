@@ -907,7 +907,7 @@ class DiskPropertiesGroup(PropertiesGroup):
 
 def add_single_cache(i: int, next_cache: ET.Element):
     max_size_xml = ET.SubElement(next_cache, "max_size")
-    max_size_xml.text = file_size_value(10, 4)()
+    max_size_xml.text = file_size_value(100, 4)()
     path_xml = ET.SubElement(next_cache, "path")
     path_xml.text = f"/var/lib/clickhouse/fcache{i}/"
 
