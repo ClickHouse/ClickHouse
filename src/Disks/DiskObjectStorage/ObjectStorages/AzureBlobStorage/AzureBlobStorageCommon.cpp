@@ -18,7 +18,6 @@
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-#include <filesystem>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
 
@@ -43,8 +42,6 @@ namespace ProfileEvents
     extern const Event DiskAzurePutRequestThrottlerBlocked;
     extern const Event DiskAzurePutRequestThrottlerSleepMicroseconds;
 }
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -142,16 +139,18 @@ static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> getManagedIde
 ContainerClientWrapper::ContainerClientWrapper(RawContainerClient client_, String blob_prefix_)
     : client(std::move(client_)), blob_prefix(std::move(blob_prefix_))
 {
+    if (!blob_prefix.empty() && !blob_prefix.ends_with('/'))
+        blob_prefix += '/';
 }
 
 BlobClient ContainerClientWrapper::GetBlobClient(const String & blob_name) const
 {
-    return client.GetBlobClient(blob_prefix / blob_name);
+    return client.GetBlobClient(blob_prefix + blob_name);
 }
 
 BlockBlobClient ContainerClientWrapper::GetBlockBlobClient(const String & blob_name) const
 {
-    return client.GetBlockBlobClient(blob_prefix / blob_name);
+    return client.GetBlockBlobClient(blob_prefix + blob_name);
 }
 
 BlobContainerPropertiesRespones ContainerClientWrapper::GetProperties() const
@@ -162,17 +161,16 @@ BlobContainerPropertiesRespones ContainerClientWrapper::GetProperties() const
 ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions & options) const
 {
     auto new_options = options;
-    new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
+    new_options.Prefix = blob_prefix + options.Prefix.ValueOr("");
 
     auto response = client.ListBlobs(new_options);
-    String blob_prefix_str = blob_prefix / "";
 
     for (auto & blob : response.Blobs)
     {
-        if (!blob.Name.starts_with(blob_prefix_str))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix_str, blob.Name);
+        if (!blob.Name.starts_with(blob_prefix))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix, blob.Name);
 
-        blob.Name = blob.Name.substr(blob_prefix_str.size());
+        blob.Name = blob.Name.substr(blob_prefix.size());
     }
 
     return response;
@@ -490,7 +488,9 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
         if (config.has(config_prefix + ".endpoint_subpath"))
         {
             String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
-            prefix = fs::path(prefix) / endpoint_subpath;
+            if (!prefix.empty() && !prefix.ends_with('/'))
+                prefix += '/';
+            prefix += endpoint_subpath;
         }
     }
     else if (config.has(config_prefix + ".connection_string"))
