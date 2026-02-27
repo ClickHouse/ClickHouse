@@ -1736,24 +1736,60 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 {
     Expr * expr = idef->mutable_expr();
     std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType::IDX_text));
-    const IndexType itpe = projection ? IndexType::IDX_basic : static_cast<IndexType>(idx_range(rg.generator));
+    const IndexType itpe = projection
+        ? IndexType::IDX_basic
+        : ((rg.nextMediumNumber() < 21) ? IndexType::IDX_text : static_cast<IndexType>(idx_range(rg.generator)));
 
     chassert(!t.cols.empty());
     idef->set_type(itpe);
-    if (!expr->has_comp_expr())
+    if (rg.nextBool())
     {
-        if (rg.nextBool())
-        {
-            flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-            colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 8, "", t), t, rg.pickRandomly(this->entries), expr);
-            this->entries.clear();
-        }
-        else
-        {
-            std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
+        /// For index types that require specific column types, filter to compatible columns first.
+        /// Text/ngrambf/tokenbf indices require String-compatible columns; using numeric columns causes CREATE TABLE to fail.
+        /// Vector similarity indices require Array columns.
+        const bool need_string = itpe == IDX_text || itpe == IDX_ngrambf_v1 || itpe == IDX_tokenbf_v1;
+        const bool need_array = itpe == IDX_vector_similarity;
 
-            generateTableExpression(rg, trel, rg.nextMediumNumber() < 6, rg.nextMediumNumber() < 16, expr);
+        if ((need_string || need_array) && rg.nextBool())
+        {
+            flatTableColumnPath(
+                flat_tuple | flat_nested | flat_json | skip_nested_node,
+                t.cols,
+                [&](const SQLColumn & c)
+                {
+                    SQLType * tp = c.tp;
+
+                    if (tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+                    {
+                        LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
+
+                        tp = lc->subtype;
+                    }
+                    if (tp->getTypeClass() == SQLTypeClass::NULLABLE)
+                    {
+                        /// JSON type can be inside nullable
+                        Nullable * nl = dynamic_cast<Nullable *>(tp);
+
+                        tp = nl->subtype;
+                    }
+                    const SQLTypeClass tc = tp->getTypeClass();
+
+                    return need_array ? (tc == SQLTypeClass::ARRAY) : (tc == SQLTypeClass::STRING);
+                });
         }
+        if (this->entries.empty())
+        {
+            /// No type-compatible columns found, fall back to any column
+            flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
+        }
+        colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 8, "", t), t, rg.pickRandomly(this->entries), expr);
+        this->entries.clear();
+    }
+    else
+    {
+        std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
+
+        generateTableExpression(rg, trel, rg.nextMediumNumber() < 6, rg.nextMediumNumber() < 16, expr);
     }
     switch (itpe)
     {
@@ -1786,21 +1822,16 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
-            static const std::vector<Tokenizer> & tokenizerVals
-                = {{"splitByNonAlpha", "SplitByNonAlpha"},
-                   {"splitByString", "SplitByString"},
-                   {"ngrams", "Ngrams"},
-                   {"array", "Array"},
-                   {"sparseGrams", "SparseGrams"}};
-            const Tokenizer & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
+            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
+            const auto & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
-            buf += fmt::format("tokenizer = {}", nt.name);
+            buf += fmt::format("tokenizer = {}", nt);
             buf += has_paren ? "(" : "";
-            if (has_paren && nt.type == "Ngrams" && rg.nextBool())
+            if (has_paren && (nt == "ngrams" || nt == "ngrambf_v1") && rg.nextBool())
             {
                 buf += std::to_string(rg.randomInt<uint32_t>(1, 8));
             }
-            else if (has_paren && nt.type == "SplitByString" && rg.nextBool())
+            else if (has_paren && nt == "splitByString" && rg.nextBool())
             {
                 String buf2;
                 DB::Strings separators
@@ -1821,7 +1852,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 buf2 += "]";
                 buf += buf2;
             }
-            else if (has_paren && nt.type == "SparseGrams")
+            else if (has_paren && (nt == "sparseGrams" || nt == "sparse_grams"))
             {
                 /// sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                 const uint32_t nextra = rg.randomInt<uint32_t>(0, 3);
@@ -1854,14 +1885,20 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
+                idef->add_params()->set_unescaped_sval(
+                    "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
+            }
+            if (rg.nextBool())
+            {
                 std::uniform_int_distribution<uint32_t> next_dist(1, 100000);
 
                 idef->add_params()->set_unescaped_sval("posting_list_block_size = " + std::to_string(next_dist(rg.generator)));
             }
             if (rg.nextBool())
             {
-                idef->add_params()->set_unescaped_sval(
-                    "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
+                static const DB::Strings & post_codecs = {"none", "bitpacking"};
+
+                idef->add_params()->set_unescaped_sval("posting_list_codec = '" + rg.pickRandomly(post_codecs) + "'");
             }
         }
         break;
@@ -1922,13 +1959,23 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
     if (rg.nextBool())
     {
         ProjectionSelectDef * psdef = pdef->mutable_sel_def();
+        const bool prev_allow_subqueries = this->allow_subqueries;
         const uint32_t ncols = rg.nextMediumNumber() < 91 ? 1 : (rg.nextMediumNumber() % 3) + 1;
 
+        /// Projections don't support window functions or subqueries
+        if (!this->levels.contains(this->current_level))
+        {
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+        }
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 10;
         if (!t.cols.empty())
         {
             addTableRelation(rg, true, "", t);
         }
-        generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, std::nullopt, psdef->mutable_select());
+        this->allow_subqueries = rg.nextSmallNumber() < 10;
+        generateSelect(
+            rg, true, false, ncols, allow_groupby | allow_orderby | allow_global_aggregate, std::nullopt, psdef->mutable_select());
+        this->allow_subqueries = prev_allow_subqueries;
         this->levels.clear();
         /// Add projection settings
         if (rg.nextSmallNumber() < 4)

@@ -5307,7 +5307,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version",
+                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' && /usr/share/clickhouse_fresh server --version",
             ]
         )
         if fix_metadata:
@@ -5324,7 +5324,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
         self.exec_in_container(
@@ -5604,6 +5604,7 @@ class ClickHouseInstance:
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
+        write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
@@ -5805,9 +5806,9 @@ class ClickHouseInstance:
         if self.cluster.with_dolor:
             binary_volume = ""
         elif not self.with_installed_binary:
-            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
+            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse:ro"
         else:
-            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
+            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh:ro"
 
         external_dirs_volumes = ""
         if self.external_dirs:
