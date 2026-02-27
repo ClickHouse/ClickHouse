@@ -2,6 +2,7 @@
 
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
+SET compile_sort_description = 0;
 
 SYSTEM CLEAR COMPILED EXPRESSION CACHE;
 
