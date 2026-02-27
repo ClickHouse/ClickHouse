@@ -1,28 +1,29 @@
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Common/DateLUTImpl.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Common/CacheLine.h>
+#include <Common/DateLUTImpl.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/StringHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/numLiteralChars.h>
 
 #include <Interpreters/Context.h>
 
 #include <IO/WriteHelpers.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include <expected>
-#include <new>
 
-#include <Functions/StringHelpers.h>
 
 namespace DB
 {
@@ -205,7 +206,7 @@ namespace
 }
 
     template <ErrorHandling error_handling, ReturnType return_type>
-    struct alignas(std::hardware_constructive_interference_size) ParsedValue
+    struct alignas(CACHE_LINE_SIZE) ParsedValue
     {
         static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 1900 : 1970;
         static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 2299 : 2106;

@@ -1,14 +1,16 @@
 #pragma once
 
-#include <new>
-#include <type_traits>
 #include <Core/Types_fwd.h>
 #include <Dictionaries/IDictionary.h>
-#include <sparsehash/sparse_hash_map>
-#include <sparsehash/sparse_hash_set>
+#include <Common/CacheLine.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/PackedHashMap.h>
+
+#include <sparsehash/sparse_hash_map>
+#include <sparsehash/sparse_hash_set>
+
+#include <type_traits>
 
 namespace DB::HashedDictionaryImpl
 {
@@ -79,7 +81,7 @@ constexpr bool useSparseHashForHashedDictionary()
 ///
 /// Based on HashTableGrowerWithPrecalculation
 template <size_t initial_size_degree = 8>
-class alignas(std::hardware_destructive_interference_size) HashTableGrowerWithPrecalculationAndMaxLoadFactor
+class alignas(CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndMaxLoadFactor
 {
     UInt8 size_degree = initial_size_degree;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
@@ -151,7 +153,7 @@ public:
         increaseSizeDegree(0);
     }
 };
-static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == std::hardware_destructive_interference_size);
+static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == CACHE_LINE_SIZE);
 
 HashTableGrowerWithPrecalculationAndMaxLoadFactor() -> HashTableGrowerWithPrecalculationAndMaxLoadFactor<8>;
 
