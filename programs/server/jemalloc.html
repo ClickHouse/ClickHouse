@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <title>ClickHouse Jemalloc Stats</title>
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6IzAwMH0ub3tmaWxsOiNmZjB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
     <style>
         :root {
             --color: black;
@@ -16,7 +18,7 @@
             --metric-value-color: black;
             --error-color: #dc3545;
             --success-color: #28a745;
-            --warning-color: #ffc107;
+            --warning-color: #b58900;
             --table-header-bg: #f8f9fa;
             --table-hover-bg: #f1f1f1;
             --btn-primary-bg: black;
@@ -70,6 +72,32 @@
             gap: 1rem;
             align-items: center;
         }
+        .connection-params {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .connection-params input {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--card-background);
+            color: var(--color);
+            font-size: 0.85rem;
+            font-family: inherit;
+            box-shadow: 1px 1px 0 var(--shadow-color);
+            transition: border-color 0.2s;
+        }
+        .connection-params input:focus {
+            outline: none;
+            border-color: var(--btn-primary-bg);
+        }
+        #url {
+            width: 350px;
+        }
+        #user, #password {
+            width: 120px;
+        }
         .btn {
             padding: 0.5rem 1rem;
             border: none;
@@ -90,7 +118,7 @@
             color: var(--color);
         }
         .container {
-            max-width: 1400px;
+            max-width: 90vw;
             margin: 0 auto;
             padding: 2rem;
         }
@@ -227,6 +255,16 @@
         .tab-content.active {
             display: block;
         }
+        #profile-result, #query-flamegraph-result {
+            /* CSS containment to isolate rendering and prevent affecting other tabs */
+            contain: layout style paint;
+            /* Allow browser to skip rendering when not in viewport */
+            content-visibility: auto;
+        }
+        #profile-result pre, #query-flamegraph-result pre {
+            /* Additional containment for large text content */
+            contain: layout style paint;
+        }
         pre {
             background: var(--table-header-bg);
             padding: 1rem;
@@ -252,6 +290,44 @@
         .timestamp {
             font-size: 0.85rem;
             opacity: 0.7;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 2.4rem;
+            height: 1.35rem;
+            flex-shrink: 0;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--border-color);
+            border-radius: 1.35rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 1rem;
+            height: 1rem;
+            left: 0.18rem;
+            top: 0.18rem;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--btn-primary-bg);
+        }
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(1.05rem);
         }
         .heatmap-split-view {
             display: flex;
@@ -371,10 +447,15 @@
     <div class="header">
         <h1>ClickHouse Jemalloc Statistics</h1>
         <div class="controls">
+            <div class="connection-params">
+                <input spellcheck="false" id="url" type="text" value="" placeholder="URL" />
+                <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
+                <input spellcheck="false" id="password" type="password" placeholder="password" />
+            </div>
             <span class="timestamp" id="timestamp"></span>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
                 <label for="refresh-interval" style="font-size: 0.9rem;" title="Set to 0 to disable auto-refresh">Auto-refresh (s):</label>
-                <input type="number" id="refresh-interval" min="0" value="10" title="Set to 0 to disable auto-refresh" style="width: 60px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-background); color: var(--color);" oninput="debouncedUpdateRefreshInterval()" onchange="updateRefreshInterval()">
+                <input type="number" id="refresh-interval" min="0" value="60" title="Set to 0 to disable auto-refresh" style="width: 60px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-background); color: var(--color);" oninput="debouncedUpdateRefreshInterval()" onchange="updateRefreshInterval()">
             </div>
             <button class="btn btn-primary" onclick="event.preventDefault(); loadStats(true); return false;">Refresh</button>
             <button class="theme-toggle" onclick="toggleTheme()">
@@ -388,12 +469,13 @@
         <div id="content" style="display: none;">
             <div class="metrics-grid" id="overview-metrics"></div>
             <div class="tabs">
-                <button class="tab active" onclick="switchTab('summary')">Summary</button>
-                <button class="tab" onclick="switchTab('bins')">Allocations</button>
-                <button class="tab" onclick="switchTab('arenas')">Arenas</button>
-                <button class="tab" onclick="switchTab('operations')">Operations</button>
-                <button class="tab" onclick="switchTab('profile')">Heap Profile</button>
-                <button class="tab" onclick="switchTab('raw')">Raw Output</button>
+                <button class="tab active" onclick="switchTab('summary', event)">Summary</button>
+                <button class="tab" onclick="switchTab('bins', event)">Allocations</button>
+                <button class="tab" onclick="switchTab('arenas', event)">Arenas</button>
+                <button class="tab" onclick="switchTab('operations', event)">Operations</button>
+                <button class="tab" onclick="switchTab('profile', event)">Global Profiler</button>
+                <button class="tab" onclick="switchTab('query-profile', event)">Query Profiler</button>
+                <button class="tab" onclick="switchTab('raw', event)">Raw Output</button>
             </div>
             <div id="tab-summary" class="tab-content active">
                 <div class="section">
@@ -421,15 +503,24 @@
             </div>
             <div id="tab-profile" class="tab-content">
                 <div class="section">
-                    <div class="section-title">Heap Profile</div>
+                    <div class="section-title">Global Profiler</div>
                     <div id="profile-stats"></div>
+                </div>
+            </div>
+            <div id="tab-query-profile" class="tab-content">
+                <div class="section">
+                    <div class="section-title">Query Profiler</div>
+                    <div id="query-profile-stats"></div>
                 </div>
             </div>
             <div id="tab-raw" class="tab-content">
                 <div class="section">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <div class="section-title" style="margin-bottom: 0;">Raw Statistics</div>
-                        <button class="btn btn-secondary" onclick="copyRawStats()">Copy All</button>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-secondary" onclick="copyRawStats()">Copy All</button>
+                            <button class="btn btn-secondary" onclick="saveRawStats()">💾 Save</button>
+                        </div>
                     </div>
                     <pre id="raw-stats"></pre>
                 </div>
@@ -453,6 +544,31 @@
         if (password_from_url) {
             password = password_from_url;
         }
+
+        /// Read connection parameters from the input fields
+        function readConnectionParams() {
+            host = document.getElementById('url').value || host;
+            user = document.getElementById('user').value || user;
+            password = document.getElementById('password').value || password;
+        }
+
+        /// Build a query URL with authentication and CORS parameters
+        function buildUrl(query, format = 'TabSeparated') {
+            let url = `${host}?default_format=${format}&enable_http_compression=1&query=${encodeURIComponent(query)}`;
+            if (add_http_cors_header) {
+                url += '&add_http_cors_header=1';
+            }
+            if (user) {
+                url += `&user=${encodeURIComponent(user)}`;
+            }
+            if (password) {
+                url += `&password=${encodeURIComponent(password)}`;
+            }
+            return url;
+        }
+
+        const fetchOptions = { method: 'POST', headers: { 'Authorization': 'never' } };
+
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
@@ -490,6 +606,66 @@
                 });
             }, 0);
         }
+        const _tableSortState = {};
+        const _tableData = {};
+        const _tableRenderFns = {};
+
+        function makeSortableTh(label, col, tableId, extraClass = 'number', extraStyle = '') {
+            const state = _tableSortState[tableId];
+            const isActive = state && state.col === col;
+            const ind = isActive ? (state.dir > 0 ? ' ▲' : ' ▼') : ' ⇅';
+            const opacity = isActive ? '1' : '0.3';
+            return `<th class="${extraClass}" data-sort-col="${col}" style="cursor:pointer;white-space:nowrap;user-select:none;${extraStyle}" onclick="sortTableBy('${tableId}','${col}')">${label}<span class="sort-ind" style="opacity:${opacity};font-size:0.7em;margin-left:0.2em">${ind}</span></th>`;
+        }
+
+        function sortTableBy(tableId, col) {
+            if (!_tableSortState[tableId]) _tableSortState[tableId] = { col: null, dir: 1 };
+            const state = _tableSortState[tableId];
+            if (state.col === col) state.dir *= -1;
+            else { state.col = col; state.dir = 1; }
+            const data = _tableData[tableId];
+            if (!data) return;
+            const table = document.getElementById(tableId);
+            if (!table) return;
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+            // Sort index array — avoids any HTML re-generation
+            const order = data.map((item, i) => i).sort((a, b) => {
+                const av = data[a][col] ?? 0, bv = data[b][col] ?? 0;
+                return (av < bv ? -1 : av > bv ? 1 : 0) * state.dir;
+            });
+            // Build map from data-idx → existing DOM row
+            const rowMap = {};
+            Array.from(tbody.querySelectorAll('tr')).forEach(row => { rowMap[row.dataset.idx] = row; });
+            // Hide during reorder so the browser does one layout pass, not N
+            tbody.style.display = 'none';
+            const frag = document.createDocumentFragment();
+            order.forEach(i => { if (rowMap[i]) frag.appendChild(rowMap[i]); });
+            tbody.appendChild(frag);
+            tbody.style.display = '';
+            // Update header indicators
+            table.querySelectorAll('th[data-sort-col]').forEach(th => {
+                const span = th.querySelector('.sort-ind');
+                if (!span) return;
+                if (th.dataset.sortCol === col) {
+                    span.style.opacity = '1';
+                    span.textContent = state.dir > 0 ? ' ▲' : ' ▼';
+                } else {
+                    span.style.opacity = '0.3';
+                    span.textContent = ' ⇅';
+                }
+            });
+        }
+
+        function applySortToData(tableId, data) {
+            const state = _tableSortState[tableId];
+            if (!state || !state.col) return data;
+            return [...data].sort((a, b) => {
+                const av = a[state.col] ?? 0, bv = b[state.col] ?? 0;
+                return (av < bv ? -1 : av > bv ? 1 : 0) * state.dir;
+            });
+        }
+
         function getAllocationsTableHeader() {
             return `
                 <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
@@ -527,59 +703,59 @@
                     <td class="number">${formatNumber(alloc.nflush_ps)}</td>
                 </tr>`;
         }
-        function getBinsTableHeader() {
+        function getBinsTableHeader(tableId) {
             return `
                 <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
                     <tr>
-                        <th class="number sticky-header-100">Size</th>
-                        <th class="number">Index</th>
-                        <th class="number">Allocated</th>
-                        <th class="number">Nmalloc</th>
-                        <th class="number">Nmalloc/s</th>
-                        <th class="number">Ndalloc</th>
-                        <th class="number">Ndalloc/s</th>
-                        <th class="number">Nrequests</th>
-                        <th class="number">Nrequests/s</th>
-                        <th class="number">Nshards</th>
-                        <th class="number">Curregs</th>
-                        <th class="number">Curslabs</th>
-                        <th class="number">Nonfull Slabs</th>
-                        <th class="number">Regs</th>
-                        <th class="number">Pgs</th>
-                        <th class="number">Util</th>
-                        <th class="number">Nfills</th>
-                        <th class="number">Nfills/s</th>
-                        <th class="number">Nflushes</th>
-                        <th class="number">Nflushes/s</th>
-                        <th class="number">Nslabs</th>
-                        <th class="number">Nreslabs</th>
-                        <th class="number">Nreslabs/s</th>
-                        <th class="number">Pops</th>
-                        <th class="number">Pops/s</th>
-                        <th class="number">Failed Push</th>
-                        <th class="number">Failed Push/s</th>
-                        <th class="number">Push</th>
-                        <th class="number">Push/s</th>
-                        <th class="number">Push Elem</th>
-                        <th class="number">Push Elem/s</th>
-                        <th class="number">Lock Ops</th>
-                        <th class="number">Lock Ops/s</th>
-                        <th class="number">Waiting</th>
-                        <th class="number">Waiting/s</th>
-                        <th class="number">Spin Acq</th>
-                        <th class="number">Spin Acq/s</th>
-                        <th class="number">Owner Switch</th>
-                        <th class="number">Owner Switch/s</th>
-                        <th class="number">Total Wait (ns)</th>
-                        <th class="number">Total Wait/s</th>
-                        <th class="number">Max Wait (ns)</th>
-                        <th class="number">Max Threads</th>
+                        ${makeSortableTh('Size', 'size', tableId, 'number sticky-header-100')}
+                        ${makeSortableTh('Index', 'ind', tableId)}
+                        ${makeSortableTh('Allocated', 'allocated', tableId)}
+                        ${makeSortableTh('Nmalloc', 'nmalloc', tableId)}
+                        ${makeSortableTh('Nmalloc/s', 'nmalloc_ps', tableId)}
+                        ${makeSortableTh('Ndalloc', 'ndalloc', tableId)}
+                        ${makeSortableTh('Ndalloc/s', 'ndalloc_ps', tableId)}
+                        ${makeSortableTh('Nrequests', 'nrequests', tableId)}
+                        ${makeSortableTh('Nrequests/s', 'nrequests_ps', tableId)}
+                        ${makeSortableTh('Nshards', 'nshards', tableId)}
+                        ${makeSortableTh('Curregs', 'curregs', tableId)}
+                        ${makeSortableTh('Curslabs', 'curslabs', tableId)}
+                        ${makeSortableTh('Nonfull Slabs', 'nonfull_slabs', tableId)}
+                        ${makeSortableTh('Regs', 'regs', tableId)}
+                        ${makeSortableTh('Pgs', 'pgs', tableId)}
+                        ${makeSortableTh('Util', 'util', tableId)}
+                        ${makeSortableTh('Nfills', 'nfills', tableId)}
+                        ${makeSortableTh('Nfills/s', 'nfills_ps', tableId)}
+                        ${makeSortableTh('Nflushes', 'nflushes', tableId)}
+                        ${makeSortableTh('Nflushes/s', 'nflushes_ps', tableId)}
+                        ${makeSortableTh('Nslabs', 'nslabs', tableId)}
+                        ${makeSortableTh('Nreslabs', 'nreslabs', tableId)}
+                        ${makeSortableTh('Nreslabs/s', 'nreslabs_ps', tableId)}
+                        ${makeSortableTh('Pops', 'pops', tableId)}
+                        ${makeSortableTh('Pops/s', 'pops_ps', tableId)}
+                        ${makeSortableTh('Failed Push', 'failed_push', tableId)}
+                        ${makeSortableTh('Failed Push/s', 'failed_push_ps', tableId)}
+                        ${makeSortableTh('Push', 'push', tableId)}
+                        ${makeSortableTh('Push/s', 'push_ps', tableId)}
+                        ${makeSortableTh('Push Elem', 'push_elem', tableId)}
+                        ${makeSortableTh('Push Elem/s', 'push_elem_ps', tableId)}
+                        ${makeSortableTh('Lock Ops', 'n_lock_ops', tableId)}
+                        ${makeSortableTh('Lock Ops/s', 'n_lock_ops_ps', tableId)}
+                        ${makeSortableTh('Waiting', 'n_waiting', tableId)}
+                        ${makeSortableTh('Waiting/s', 'n_waiting_ps', tableId)}
+                        ${makeSortableTh('Spin Acq', 'n_spin_acq', tableId)}
+                        ${makeSortableTh('Spin Acq/s', 'n_spin_acq_ps', tableId)}
+                        ${makeSortableTh('Owner Switch', 'n_owner_switch', tableId)}
+                        ${makeSortableTh('Owner Switch/s', 'n_owner_switch_ps', tableId)}
+                        ${makeSortableTh('Total Wait (ns)', 'total_wait_ns', tableId)}
+                        ${makeSortableTh('Total Wait/s', 'total_wait_ns_ps', tableId)}
+                        ${makeSortableTh('Max Wait (ns)', 'max_wait_ns', tableId)}
+                        ${makeSortableTh('Max Threads', 'max_n_thds', tableId)}
                     </tr>
                 </thead>`;
         }
         function renderBinRow(bin) {
             return `
-                <tr>
+                <tr data-idx="${bin._idx}">
                     <td class="number sticky-cell-100">${formatBytes(bin.size)}</td>
                     <td class="number">${bin.ind}</td>
                     <td class="number">${formatBytes(bin.allocated)}</td>
@@ -625,26 +801,26 @@
                     <td class="number">${formatNumber(bin.max_n_thds)}</td>
                 </tr>`;
         }
-        function getLargeTableHeader() {
+        function getLargeTableHeader(tableId) {
             return `
                 <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
                     <tr>
-                        <th class="number sticky-header-100">Size</th>
-                        <th class="number">Index</th>
-                        <th class="number">Allocated</th>
-                        <th class="number">Nmalloc</th>
-                        <th class="number">Nmalloc/s</th>
-                        <th class="number">Ndalloc</th>
-                        <th class="number">Ndalloc/s</th>
-                        <th class="number">Nrequests</th>
-                        <th class="number">Nrequests/s</th>
-                        <th class="number">Curlextents</th>
+                        ${makeSortableTh('Size', 'size', tableId, 'number sticky-header-100')}
+                        ${makeSortableTh('Index', 'ind', tableId)}
+                        ${makeSortableTh('Allocated', 'allocated', tableId)}
+                        ${makeSortableTh('Nmalloc', 'nmalloc', tableId)}
+                        ${makeSortableTh('Nmalloc/s', 'nmalloc_ps', tableId)}
+                        ${makeSortableTh('Ndalloc', 'ndalloc', tableId)}
+                        ${makeSortableTh('Ndalloc/s', 'ndalloc_ps', tableId)}
+                        ${makeSortableTh('Nrequests', 'nrequests', tableId)}
+                        ${makeSortableTh('Nrequests/s', 'nrequests_ps', tableId)}
+                        ${makeSortableTh('Curlextents', 'curlextents', tableId)}
                     </tr>
                 </thead>`;
         }
         function renderLargeRow(item) {
             return `
-                <tr>
+                <tr data-idx="${item._idx}">
                     <td class="number sticky-cell-100">${formatBytes(item.size)}</td>
                     <td class="number">${item.ind}</td>
                     <td class="number">${formatBytes(item.allocated)}</td>
@@ -657,26 +833,26 @@
                     <td class="number">${formatNumber(item.curlextents)}</td>
                 </tr>`;
         }
-        function getExtentsTableHeader() {
+        function getExtentsTableHeader(tableId) {
             return `
                 <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
                     <tr>
-                        <th class="number sticky-header-100">Size</th>
-                        <th class="number">Index</th>
-                        <th class="number">Ndirty</th>
-                        <th class="number">Dirty</th>
-                        <th class="number">Nmuzzy</th>
-                        <th class="number">Muzzy</th>
-                        <th class="number">Nretained</th>
-                        <th class="number">Retained</th>
-                        <th class="number">Ntotal</th>
-                        <th class="number">Total</th>
+                        ${makeSortableTh('Size', 'size', tableId, 'number sticky-header-100')}
+                        ${makeSortableTh('Index', 'ind', tableId)}
+                        ${makeSortableTh('Ndirty', 'ndirty', tableId)}
+                        ${makeSortableTh('Dirty', 'dirty', tableId)}
+                        ${makeSortableTh('Nmuzzy', 'nmuzzy', tableId)}
+                        ${makeSortableTh('Muzzy', 'muzzy', tableId)}
+                        ${makeSortableTh('Nretained', 'nretained', tableId)}
+                        ${makeSortableTh('Retained', 'retained', tableId)}
+                        ${makeSortableTh('Ntotal', 'ntotal', tableId)}
+                        ${makeSortableTh('Total', 'total', tableId)}
                     </tr>
                 </thead>`;
         }
         function renderExtentRow(item) {
             return `
-                <tr>
+                <tr data-idx="${item._idx}">
                     <td class="number sticky-cell-100">${formatBytes(item.size)}</td>
                     <td class="number">${item.ind}</td>
                     <td class="number">${formatNumber(item.ndirty)}</td>
@@ -716,10 +892,14 @@
             document.getElementById('theme-icon').textContent = newTheme === 'dark' ? '☀️' : '🌙';
             localStorage.setItem('theme', newTheme);
         }
-        function switchTab(tabName) {
+        function switchTab(tabName, evt) {
+            // Use passed event or fall back to global event
+            const target = evt ? evt.target : event.target;
+
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            event.target.classList.add('active');
+
+            target.classList.add('active');
             document.getElementById(`tab-${tabName}`).classList.add('active');
         }
         function copyRawStats() {
@@ -757,6 +937,217 @@
                 alert('Failed to copy to clipboard. Please try selecting the text manually.');
             } finally {
                 document.body.removeChild(textarea);
+            }
+        }
+        function saveRawStats() {
+            const rawStatsEl = document.getElementById('raw-stats');
+            const text = rawStatsEl.textContent;
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `jemalloc-raw-stats-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        // Shared profile output helpers parameterized by result div ID
+
+        function getFullProfileText(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
+            const pre = resultDiv ? resultDiv.querySelector('pre') : null;
+            if (!pre) return null;
+            if (resultDiv.dataset.allLines) {
+                return JSON.parse(resultDiv.dataset.allLines).join('\n');
+            }
+            return pre.textContent;
+        }
+
+        function copyProfileOutput(resultDivId) {
+            const text = getFullProfileText(resultDivId);
+            if (!text) {
+                alert('No profile output to copy');
+                return;
+            }
+            const button = event.target;
+            const originalText = button.textContent;
+
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-999999px';
+            textarea.style.top = '-999999px';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    button.textContent = 'Copied!';
+                    button.style.background = 'var(--success-color)';
+                    button.style.color = 'white';
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.style.background = '';
+                        button.style.color = '';
+                    }, 2000);
+                } else {
+                    throw new Error('Copy command failed');
+                }
+            } catch (error) {
+                console.error('Failed to copy:', error);
+                alert('Failed to copy to clipboard. Please try selecting the text manually.');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+
+        function saveProfileOutput(resultDivId, filenamePrefix) {
+            const resultDiv = document.getElementById(resultDivId);
+            const pre = resultDiv ? resultDiv.querySelector('pre') : null;
+            const text = getFullProfileText(resultDivId);
+            if (!text) {
+                alert('No profile output to save');
+                return;
+            }
+            const format = pre.dataset.format || 'Raw';
+
+            let extension;
+            if (format === 'Raw') {
+                extension = '.heap';
+            } else if (format === 'Symbolized') {
+                extension = '.heap.symbolized';
+            } else if (format === 'Collapsed') {
+                extension = '.collapsed';
+            } else {
+                extension = '.txt';
+            }
+
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filenamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-')}${extension}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function closeProfileOutput(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
+            resultDiv.innerHTML = '';
+        }
+
+        function showMoreProfileLines(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
+            const preElement = resultDiv.querySelector('pre');
+            const allLines = JSON.parse(resultDiv.dataset.allLines);
+            const currentLine = parseInt(resultDiv.dataset.currentLine);
+            const batchSize = 1000;
+            const nextLine = Math.min(currentLine + batchSize, allLines.length);
+
+            const newLines = allLines.slice(0, nextLine);
+            const format = preElement.dataset.format;
+            const maxLineLength = 500;
+
+            let displayText;
+            if (format === 'Collapsed') {
+                const truncatedLines = newLines.map(line => {
+                    if (line.length > maxLineLength) {
+                        return line.substring(0, maxLineLength) + '...';
+                    }
+                    return line;
+                });
+                displayText = truncatedLines.join('\n');
+            } else {
+                displayText = newLines.join('\n');
+            }
+            preElement.textContent = displayText;
+
+            resultDiv.dataset.currentLine = nextLine.toString();
+
+            const infoDiv = resultDiv.querySelector('.metric-label').parentElement.nextElementSibling;
+            const totalLines = allLines.length;
+            if (nextLine >= totalLines) {
+                infoDiv.textContent = infoDiv.textContent.replace(/Showing.*lines/, `${totalLines} lines`);
+                const buttonDiv = resultDiv.querySelector('div[style*="text-align: center"]');
+                if (buttonDiv) buttonDiv.remove();
+            } else {
+                infoDiv.textContent = infoDiv.textContent.replace(/Showing \d+/, `Showing ${nextLine}`);
+            }
+        }
+
+        function downloadFlameGraphFromProfile(resultDivId, filenamePrefix, countname) {
+            const text = getFullProfileText(resultDivId);
+            if (!text || text === 'No profile data') {
+                alert('No profile data available. Please get a profile first.');
+                return;
+            }
+
+            const svg = generateFlameGraphSVG(text, window.innerWidth, countname || 'bytes');
+
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filenamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-')}.svg`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function renderProfileOutputCard(resultDivId, label, lines, format, flameGraphOnclick, filenamePrefix) {
+            const resultDiv = document.getElementById(resultDivId);
+            const timestamp = new Date().toLocaleString();
+            const totalLines = lines.length;
+            const initialLines = 1000;
+            const hasMore = totalLines > initialLines;
+
+            const visualizeButton = flameGraphOnclick
+                ? `<button class="btn btn-primary" onclick="${flameGraphOnclick}" style="padding: 0.4rem 1rem; font-size: 0.85rem;">🔥 Generate Flame Graph</button>`
+                : '';
+
+            resultDiv.innerHTML = `
+                <div class="metric-card" style="margin-top: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div class="metric-label">${label}</div>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            ${visualizeButton}
+                            <button class="btn btn-secondary" onclick="copyProfileOutput('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Copy All</button>
+                            <button class="btn btn-secondary" onclick="saveProfileOutput('${resultDivId}', '${filenamePrefix}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">💾 Save</button>
+                            <button class="btn btn-secondary" onclick="closeProfileOutput('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">✕ Close</button>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.7;">
+                        Generated at: ${timestamp}${hasMore ? ` | Showing ${initialLines} of ${totalLines} lines` : ` | ${totalLines} lines`}
+                    </div>
+                    <pre data-format="${format}" style="margin-top: 0.5rem; background: var(--table-header-bg); padding: 1rem; border-radius: 4px; overflow-x: auto; max-height: 600px; font-size: 0.85rem; line-height: 1.5; white-space: pre;"></pre>
+                    ${hasMore ? `<div style="margin-top: 0.5rem; text-align: center;"><button class="btn btn-primary" onclick="showMoreProfileLines('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Show More Lines</button></div>` : ''}
+                </div>
+            `;
+
+            const preElement = resultDiv.querySelector('pre');
+            const displayLines = hasMore ? lines.slice(0, initialLines) : lines;
+            const maxLineLength = 500;
+
+            let displayText;
+            if (format === 'Collapsed') {
+                const truncatedLines = displayLines.map(line =>
+                    line.length > maxLineLength ? line.substring(0, maxLineLength) + '...' : line
+                );
+                displayText = truncatedLines.join('\n');
+            } else {
+                displayText = displayLines.join('\n');
+            }
+            preElement.textContent = displayText || 'No profile data';
+
+            resultDiv.dataset.allLines = JSON.stringify(lines);
+            if (hasMore) {
+                resultDiv.dataset.currentLine = initialLines.toString();
             }
         }
         function parseJemallocStats(statsText) {
@@ -983,6 +1374,38 @@
             `;
             }
         }
+        function renderArenaComparisonRow(arena) {
+            const fragColor = arena._fragmentation < 10 ? 'var(--success-color)' :
+                              arena._fragmentation < 25 ? 'var(--warning-color)' : 'var(--error-color)';
+            return `
+                <tr data-idx="${arena._idx}">
+                    <td class="sticky-cell-100">Arena ${arena.id}</td>
+                    <td class="number">${formatBytes(arena._allocated)}</td>
+                    <td class="number">${formatBytes(arena._active)}</td>
+                    <td class="number">${formatBytes(arena._resident)}</td>
+                    <td class="number">${formatBytes(arena._mapped)}</td>
+                    <td class="number">${formatBytes(arena._retained)}</td>
+                    <td class="number" style="color:${fragColor}" title="Formula: (Active - Allocated) / Allocated × 100%">${arena._fragmentation.toFixed(2)}%</td>
+                </tr>`;
+        }
+
+        function enrichArenas(arenas) {
+            return arenas.map((a, i) => {
+                const allocated = a.stats.allocated || 0;
+                const active = a.stats.active || 0;
+                return {
+                    ...a,
+                    _idx: i,
+                    _allocated: allocated,
+                    _active: active,
+                    _resident: a.stats.resident || 0,
+                    _mapped: a.stats.mapped || 0,
+                    _retained: a.stats.retained || 0,
+                    _fragmentation: allocated > 0 ? ((active - allocated) / allocated * 100) : 0,
+                };
+            });
+        }
+
         let selectedArena = 0;
         function renderArenaStats(arenas, rawStats) {
             const container = document.getElementById('arena-stats');
@@ -1000,6 +1423,12 @@
             const arenaBins = parseArenaBins(rawStats);
             const arenaLarge = parseArenaLarge(rawStats);
             const arenaExtents = parseArenaExtents(rawStats);
+            // Store and sort arena comparison data
+            const enriched = enrichArenas(arenas);
+            _tableData['arena-comparison-table'] = enriched;
+            _tableRenderFns['arena-comparison-table'] = renderArenaComparisonRow;
+            const sortedArenaRows = applySortToData('arena-comparison-table', enriched);
+
             // Check if comparison table and dropdown already exist
             let comparisonTable = container.querySelector('#arena-comparison');
             if (!comparisonTable) {
@@ -1009,43 +1438,20 @@
                     <div id="arena-comparison" style="margin-bottom: 1.5rem;">
                         <h3 style="margin: 0.5rem 0;">Arena Comparison</h3>
                         <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
-                            <table>
+                            <table id="arena-comparison-table">
                                 <thead style="position: sticky; top: 0; z-index: 10;">
                                     <tr>
-                                        <th class="arena-first-header">Arena</th>
-                                        <th class="number arena-header">Allocated</th>
-                                        <th class="number arena-header">Active</th>
-                                        <th class="number arena-header">Resident</th>
-                                        <th class="number arena-header">Mapped</th>
-                                        <th class="number arena-header">Retained</th>
-                                        <th class="number arena-header">Fragmentation</th>
+                                        ${makeSortableTh('Arena', 'id', 'arena-comparison-table', 'arena-first-header')}
+                                        ${makeSortableTh('Allocated', '_allocated', 'arena-comparison-table', 'number arena-header')}
+                                        ${makeSortableTh('Active', '_active', 'arena-comparison-table', 'number arena-header')}
+                                        ${makeSortableTh('Resident', '_resident', 'arena-comparison-table', 'number arena-header')}
+                                        ${makeSortableTh('Mapped', '_mapped', 'arena-comparison-table', 'number arena-header')}
+                                        ${makeSortableTh('Retained', '_retained', 'arena-comparison-table', 'number arena-header')}
+                                        ${makeSortableTh('Fragmentation', '_fragmentation', 'arena-comparison-table', 'number arena-header')}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${arenas.map(arena => {
-                                        const allocated = arena.stats.allocated || 0;
-                                        const active = arena.stats.active || 0;
-                                        const fragmentation = allocated > 0 ? ((active - allocated) / allocated * 100) : 0;
-                                        let fragColor = '';
-                                        if (fragmentation < 10) {
-                                            fragColor = 'color: var(--success-color);';
-                                        } else if (fragmentation < 25) {
-                                            fragColor = 'color: var(--warning-color);';
-                                        } else {
-                                            fragColor = 'color: var(--error-color);';
-                                        }
-                                        return `
-                                        <tr>
-                                            <td class="sticky-cell-100">Arena ${arena.id}</td>
-                                            <td class="number">${formatBytes(allocated)}</td>
-                                            <td class="number">${formatBytes(active)}</td>
-                                            <td class="number">${formatBytes(arena.stats.resident || 0)}</td>
-                                            <td class="number">${formatBytes(arena.stats.mapped || 0)}</td>
-                                            <td class="number">${formatBytes(arena.stats.retained || 0)}</td>
-                                            <td class="number" style="${fragColor}" title="Formula: (Active - Allocated) / Allocated × 100%">${fragmentation.toFixed(2)}%</td>
-                                        </tr>
-                                        `;
-                                    }).join('')}
+                                    ${sortedArenaRows.map(renderArenaComparisonRow).join('')}
                                 </tbody>
                             </table>
                         </div>
@@ -1059,38 +1465,9 @@
                     <div id="arena-details"></div>
                 `;
             } else {
-                // Update comparison table values
+                // Update comparison table tbody with current sort applied
                 const tbody = comparisonTable.querySelector('tbody');
-                if (tbody) {
-                    const rows = tbody.querySelectorAll('tr');
-                    rows.forEach((row, idx) => {
-                        if (idx < arenas.length) {
-                            const arena = arenas[idx];
-                            const cells = row.querySelectorAll('td.number');
-                            if (cells.length >= 6) {
-                                const allocated = arena.stats.allocated || 0;
-                                const active = arena.stats.active || 0;
-                                const fragmentation = allocated > 0 ? ((active - allocated) / allocated * 100) : 0;
-                                cells[0].textContent = formatBytes(allocated);
-                                cells[1].textContent = formatBytes(active);
-                                cells[2].textContent = formatBytes(arena.stats.resident || 0);
-                                cells[3].textContent = formatBytes(arena.stats.mapped || 0);
-                                cells[4].textContent = formatBytes(arena.stats.retained || 0);
-                                cells[5].textContent = `${fragmentation.toFixed(2)}%`;
-                                // Update color coding for fragmentation
-                                let fragColor = '';
-                                if (fragmentation < 10) {
-                                    fragColor = 'color: var(--success-color);';
-                                } else if (fragmentation < 25) {
-                                    fragColor = 'color: var(--warning-color);';
-                                } else {
-                                    fragColor = 'color: var(--error-color);';
-                                }
-                                cells[5].style.cssText = fragColor;
-                            }
-                        }
-                    });
-                }
+                if (tbody) tbody.innerHTML = sortedArenaRows.map(renderArenaComparisonRow).join('');
             }
             // Always update the load balancing and thread distribution heatmaps
             const loadBalancingDiv = container.querySelector('#arena-load-balancing');
@@ -1111,6 +1488,13 @@
             const bins = arenaBins[selectedArena] || [];
             const large = arenaLarge[selectedArena] || [];
             const extents = arenaExtents[selectedArena] || [];
+            // Store data for sortable tables (arena details), tagging each item with _idx
+            bins.forEach((b, i) => { b._idx = i; });
+            large.forEach((l, i) => { l._idx = i; });
+            extents.forEach((e, i) => { e._idx = i; });
+            _tableData['bins-table-arena'] = bins; _tableRenderFns['bins-table-arena'] = renderBinRow;
+            _tableData['large-table-arena'] = large; _tableRenderFns['large-table-arena'] = renderLargeRow;
+            _tableData['extents-table-arena'] = extents; _tableRenderFns['extents-table-arena'] = renderExtentRow;
             const targetDiv = container.querySelector('#arena-details') || container;
             targetDiv.innerHTML = `
                 ${renderBinHeatmapSplitView(bins)}
@@ -1128,10 +1512,10 @@
                 ${bins.length > 0 ? `
                     <h3 style="margin: 1rem 0 0.5rem 0;">Bins</h3>
                     <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
-                        <table>
-                            ${getBinsTableHeader()}
+                        <table id="bins-table-arena">
+                            ${getBinsTableHeader('bins-table-arena')}
                             <tbody>
-                                ${bins.map(renderBinRow).join('')}
+                                ${applySortToData('bins-table-arena', bins).map(renderBinRow).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -1139,10 +1523,10 @@
                 ${large.length > 0 ? `
                     <h3 style="margin: 1rem 0 0.5rem 0;">Large Allocations</h3>
                     <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
-                        <table>
-                            ${getLargeTableHeader()}
+                        <table id="large-table-arena">
+                            ${getLargeTableHeader('large-table-arena')}
                             <tbody>
-                                ${large.map(renderLargeRow).join('')}
+                                ${applySortToData('large-table-arena', large).map(renderLargeRow).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -1150,10 +1534,10 @@
                 ${extents.length > 0 ? `
                     <h3 style="margin: 1rem 0 0.5rem 0;">Extents</h3>
                     <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
-                        <table>
-                            ${getExtentsTableHeader()}
+                        <table id="extents-table-arena">
+                            ${getExtentsTableHeader('extents-table-arena')}
                             <tbody>
-                                ${extents.map(renderExtentRow).join('')}
+                                ${applySortToData('extents-table-arena', extents).map(renderExtentRow).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -1611,6 +1995,13 @@
             const bins = arenaBins.global || [];
             const large = arenaLarge.global || [];
             const extents = arenaExtents.global || [];
+            // Store data for sortable tables (global / Allocations tab), tagging each item with _idx
+            bins.forEach((b, i) => { b._idx = i; });
+            large.forEach((l, i) => { l._idx = i; });
+            extents.forEach((e, i) => { e._idx = i; });
+            _tableData['bins-table-alloc'] = bins; _tableRenderFns['bins-table-alloc'] = renderBinRow;
+            _tableData['large-table-alloc'] = large; _tableRenderFns['large-table-alloc'] = renderLargeRow;
+            _tableData['extents-table-alloc'] = extents; _tableRenderFns['extents-table-alloc'] = renderExtentRow;
             container.innerHTML = `
                 ${renderBinHeatmapSplitView(bins)}
                 <h3 style="margin: 1rem 0 0.5rem 0;">Allocations</h3>
@@ -1627,10 +2018,10 @@
                 ${bins.length > 0 ? `
                     <h3 style="margin: 1rem 0 0.5rem 0;">Bins</h3>
                     <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
-                        <table>
-                            ${getBinsTableHeader()}
+                        <table id="bins-table-alloc">
+                            ${getBinsTableHeader('bins-table-alloc')}
                             <tbody>
-                                ${bins.map(renderBinRow).join('')}
+                                ${applySortToData('bins-table-alloc', bins).map(renderBinRow).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -1638,30 +2029,10 @@
                 ${large.length > 0 ? `
                     <h3 style="margin: 1rem 0 0.5rem 0;">Large Allocations</h3>
                     <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
-                        <table>
-                            <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
-                                <tr>
-                                    <th class="number sticky-header-100">Size</th>
-                                    <th class="number">Index</th>
-                                    <th class="number">Allocated</th>
-                                    <th class="number">Nmalloc</th>
-                                    <th class="number">Ndalloc</th>
-                                    <th class="number">Nrequests</th>
-                                    <th class="number">Curlextents</th>
-                                </tr>
-                            </thead>
+                        <table id="large-table-alloc">
+                            ${getLargeTableHeader('large-table-alloc')}
                             <tbody>
-                                ${large.map(l => `
-                                    <tr>
-                                        <td class="number sticky-cell-100">${formatBytes(l.size)}</td>
-                                        <td class="number">${l.ind}</td>
-                                        <td class="number">${formatBytes(l.allocated)}</td>
-                                        <td class="number">${formatNumber(l.nmalloc)}</td>
-                                        <td class="number">${formatNumber(l.ndalloc)}</td>
-                                        <td class="number">${formatNumber(l.nrequests)}</td>
-                                        <td class="number">${formatNumber(l.curlextents)}</td>
-                                    </tr>
-                                `).join('')}
+                                ${applySortToData('large-table-alloc', large).map(renderLargeRow).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -1669,36 +2040,10 @@
                 ${extents.length > 0 ? `
                     <h3 style="margin: 1rem 0 0.5rem 0;">Extents</h3>
                     <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
-                        <table>
-                            <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
-                                <tr>
-                                    <th class="number sticky-header-100">Size</th>
-                                    <th class="number">Index</th>
-                                    <th class="number">Ndirty</th>
-                                    <th class="number">Dirty</th>
-                                    <th class="number">Nmuzzy</th>
-                                    <th class="number">Muzzy</th>
-                                    <th class="number">Nretained</th>
-                                    <th class="number">Retained</th>
-                                    <th class="number">Ntotal</th>
-                                    <th class="number">Total</th>
-                                </tr>
-                            </thead>
+                        <table id="extents-table-alloc">
+                            ${getExtentsTableHeader('extents-table-alloc')}
                             <tbody>
-                                ${extents.map(e => `
-                                    <tr>
-                                        <td class="number sticky-cell-100">${formatBytes(e.size)}</td>
-                                        <td class="number">${e.ind}</td>
-                                        <td class="number">${formatNumber(e.ndirty)}</td>
-                                        <td class="number">${formatBytes(e.dirty)}</td>
-                                        <td class="number">${formatNumber(e.nmuzzy)}</td>
-                                        <td class="number">${formatBytes(e.muzzy)}</td>
-                                        <td class="number">${formatNumber(e.nretained)}</td>
-                                        <td class="number">${formatBytes(e.retained)}</td>
-                                        <td class="number">${formatNumber(e.ntotal)}</td>
-                                        <td class="number">${formatBytes(e.total)}</td>
-                                    </tr>
-                                `).join('')}
+                                ${applySortToData('extents-table-alloc', extents).map(renderExtentRow).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -1837,16 +2182,10 @@
             container.innerHTML = backgroundInfo + mutexTable;
         }
         async function checkProfilingEnabled() {
+            readConnectionParams();
             try {
-                const query = "SELECT value FROM system.asynchronous_metrics WHERE name = 'jemalloc.prof.thread_active_init'";
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-                const response = await fetch(url, { method: 'POST' });
+                const query = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'jemalloc.prof.thread_active_init'";
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     return null;
                 }
@@ -1857,44 +2196,83 @@
                 return null;
             }
         }
-        async function flushProfile() {
-            const button = document.getElementById('flush-profile-btn');
+        function updateSymbolizationVisibility() {
+            const outputFormat = document.getElementById('profile-output-format').value;
+            const symbolizationContainer = document.getElementById('symbolization-mode-container');
+            const useCountContainer = document.getElementById('use-count-container');
+            if (outputFormat === 'Symbolized' || outputFormat === 'Collapsed') {
+                symbolizationContainer.style.display = 'flex';
+            } else {
+                symbolizationContainer.style.display = 'none';
+            }
+            useCountContainer.style.display = outputFormat === 'Collapsed' ? 'flex' : 'none';
+        }
+
+        let profileAbortController = null;
+
+        async function getProfile() {
+            readConnectionParams();
+            const button = document.getElementById('get-profile-btn');
             const resultDiv = document.getElementById('profile-result');
-            button.disabled = true;
-            button.textContent = 'Flushing...';
-            resultDiv.innerHTML = '<p>Generating profile...</p>';
+
+            // If already running, cancel it
+            if (profileAbortController) {
+                profileAbortController.abort();
+                profileAbortController = null;
+                button.textContent = 'Get Profile';
+                button.disabled = false;
+                resultDiv.innerHTML = '<p>Profile request cancelled.</p>';
+                return;
+            }
+
+            const outputFormat = document.getElementById('profile-output-format').value;
+            const symbolizeWithInline = document.getElementById('profile-symbolize-with-inline').checked;
+            button.disabled = false;
+            button.textContent = 'Cancel';
+            resultDiv.innerHTML = '<p>Fetching profile...</p>';
+
+            // Create abort controller for this request
+            profileAbortController = new AbortController();
+
             try {
-                const query = "SYSTEM JEMALLOC FLUSH PROFILE";
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
+                // Build settings based on selection (values must be lowercase)
+                const outputFormatLower = outputFormat.toLowerCase();
+                const useCount = document.getElementById('profile-collapsed-use-count').checked;
+                let settings = `jemalloc_profile_text_output_format = '${outputFormatLower}'`;
+                if (outputFormat === 'Symbolized' || outputFormat === 'Collapsed') {
+                    settings += `, jemalloc_profile_text_symbolize_with_inline = ${symbolizeWithInline ? 1 : 0}`;
                 }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
+                if (outputFormat === 'Collapsed') {
+                    settings += `, jemalloc_profile_text_collapsed_use_count = ${useCount ? 1 : 0}`;
                 }
-                const response = await fetch(url, { method: 'POST' });
+                const query = `SELECT * FROM system.jemalloc_profile_text SETTINGS ${settings}`;
+                const response = await fetch(buildUrl(query), {
+                    ...fetchOptions,
+                    signal: profileAbortController.signal
+                });
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const result = await response.text();
-                const timestamp = new Date().toLocaleString();
-                resultDiv.innerHTML = `
-                    <div class="metric-card" style="margin-top: 1rem;">
-                        <div class="metric-label">Last Generated Profile</div>
-                        <div style="margin-top: 0.5rem; font-family: Monaco, Consolas, monospace; font-size: 0.9rem; word-break: break-all;">
-                            ${result || 'Profile flushed successfully'}
-                        </div>
-                        <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.7;">
-                            Generated at: ${timestamp}
-                        </div>
-                    </div>
-                `;
+                const lines = result ? result.split('\n') : [];
+
+                const label = `Profile Output (${outputFormat}${(outputFormat === 'Symbolized' || outputFormat === 'Collapsed') ? (symbolizeWithInline ? ' - with inline' : ' - no inline') : ''}${outputFormat === 'Collapsed' && useCount ? ' - count' : ''})`;
+                const flameGraphOnclick = outputFormat === 'Collapsed'
+                    ? `downloadFlameGraphFromProfile('profile-result', 'flamegraph', document.getElementById('profile-collapsed-use-count').checked ? 'allocations' : 'bytes')`
+                    : null;
+
+                renderProfileOutputCard('profile-result', label, lines, outputFormat, flameGraphOnclick, 'jemalloc-profile');
             } catch (error) {
-                console.error('Error flushing profile:', error);
-                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                console.error('Error getting profile:', error);
+                if (error.name === 'AbortError') {
+                    resultDiv.innerHTML = `<p>Profile request cancelled.</p>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                }
             } finally {
+                profileAbortController = null;
                 button.disabled = false;
-                button.textContent = 'Flush Profile';
+                button.textContent = 'Get Profile';
             }
         }
         async function renderProfileStats() {
@@ -1923,15 +2301,327 @@
                     ${isEnabled ? '<p style="margin-top: 1rem; font-size: 0.9rem;">Global heap profiling is active. Note that per-query profiling can still be enabled independently.</p>' : '<p style="margin-top: 1rem; font-size: 0.9rem;">Global heap profiling is not enabled. To enable it, set <code style="background: var(--table-header-bg); padding: 0.2rem 0.4rem; border-radius: 3px;">jemalloc_enable_global_profiler</code> in server config and restart the instance. Note that per-query profiling can still be used independently.</p>'}
                 </div>
                 <div style="margin-top: 2rem;">
-                    <button id="flush-profile-btn" class="btn btn-primary" onclick="flushProfile()">Flush Profile</button>
+                    <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                        <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                            <label for="profile-output-format" style="font-size: 0.85rem; font-weight: 600; color: var(--color);">Output Format</label>
+                            <select id="profile-output-format" onchange="updateSymbolizationVisibility()" style="padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-background); color: var(--color); font-size: 0.9rem; cursor: pointer; min-width: 140px;">
+                                <option value="Raw">Raw</option>
+                                <option value="Symbolized">Symbolized</option>
+                                <option value="Collapsed" selected>Collapsed</option>
+                            </select>
+                        </div>
+                        <div id="symbolization-mode-container" style="display: flex; flex-direction: column; gap: 0.3rem;">
+                            <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem; user-select: none; height: 38px;">
+                                <span class="toggle-switch">
+                                    <input type="checkbox" id="profile-symbolize-with-inline" checked onchange="document.getElementById('inline-warning').style.display = this.checked ? 'none' : ''">
+                                    <span class="toggle-slider"></span>
+                                </span>
+                                Symbolize with inline
+                            </label>
+                        </div>
+                        <div id="use-count-container" style="display: flex; flex-direction: column; gap: 0.3rem;">
+                            <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem; user-select: none; height: 38px;">
+                                <span class="toggle-switch">
+                                    <input type="checkbox" id="profile-collapsed-use-count">
+                                    <span class="toggle-slider"></span>
+                                </span>
+                                Count allocations (not bytes)
+                            </label>
+                        </div>
+                        <button id="get-profile-btn" class="btn btn-primary" onclick="getProfile()" style="padding: 0.5rem 1.5rem; height: 38px;">Get Profile</button>
+                    </div>
+                    <div id="inline-warning" style="display: none; margin-bottom: 0.5rem; font-size: 0.82rem; color: var(--warning-color);">&#9888; Inline frames are disabled. The profile will be produced faster but may lose precision.</div>
                     <p style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.8;">
-                        Generates a new heap profile dump. The profile will be saved to the directory configured in jemalloc settings. Works with both global and per-query profiling.
+                        Retrieves the jemalloc heap profile with the selected output format. Works with both global and per-query profiling.
                     </p>
+                    <div style="margin-top: 0.75rem; padding: 0.6rem 1rem; border-left: 4px solid var(--success-color); background: var(--table-header-bg); border-radius: 0 4px 4px 0; font-size: 0.85rem; line-height: 1.6;">
+                        The <strong>Collapsed</strong> format is best for analysis with AI tools.
+                        For help analyzing it with Claude, you can fetch the
+                        <a href="https://github.com/ClickHouse/ClickHouse/blob/master/.claude/skills/alloc-profile/SKILL.md" target="_blank" style="color: var(--link-color);">alloc-profile skill</a>
+                        into your Claude Code project and use it with <code style="background: var(--card-background); padding: 0.1rem 0.3rem; border-radius: 3px;">/alloc-profile</code>.
+                    </div>
                 </div>
                 <div id="profile-result"></div>
             `;
         }
+        async function renderQueryProfileStats() {
+            const container = document.getElementById('query-profile-stats');
+            container.innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-label">Query Profiler</div>
+                    <p style="margin-top: 1rem; font-size: 0.9rem; line-height: 1.6;">
+                        This can be used to profile queries that were run with the following settings:
+                    </p>
+                    <pre style="margin-top: 0.5rem; background: var(--table-header-bg); padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem;">SETTINGS jemalloc_enable_profiler = 1,
+         jemalloc_collect_profile_samples_in_trace_log = 1</pre>
+                    <p style="margin-top: 1rem; font-size: 0.9rem; line-height: 1.6;">
+                        Example query:
+                    </p>
+                    <pre style="margin-top: 0.5rem; background: var(--table-header-bg); padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem;">SELECT count() FROM system.numbers LIMIT 1000000
+SETTINGS jemalloc_enable_profiler = 1,
+         jemalloc_collect_profile_samples_in_trace_log = 1</pre>
+                </div>
+                <div style="margin-top: 2rem;">
+                    <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem;">
+                        <div style="display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 300px;">
+                            <label for="query-profile-id" style="font-size: 0.85rem; font-weight: 600; color: var(--color);">Query ID</label>
+                            <input type="text" id="query-profile-id" placeholder="Enter query_id..." style="padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-background); color: var(--color); font-size: 0.9rem; font-family: monospace;">
+                        </div>
+                        <button id="query-profile-btn" class="btn btn-primary" onclick="getQueryProfile()" style="padding: 0.5rem 1.5rem; height: 38px;">Profile</button>
+                    </div>
+                </div>
+                <div id="query-profile-result"></div>
+            `;
+        }
+        async function getQueryProfile() {
+            readConnectionParams();
+            const button = document.getElementById('query-profile-btn');
+            const resultDiv = document.getElementById('query-profile-result');
+            const queryIdInput = document.getElementById('query-profile-id');
+            const queryId = queryIdInput.value.trim();
+
+            if (!queryId) {
+                alert('Please enter a query ID');
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Getting profile...';
+            resultDiv.innerHTML = '<p>Fetching profile data...</p>';
+
+            try {
+                // First, flush the logs to ensure all data is written
+                const flushQuery = 'SYSTEM FLUSH LOGS';
+                const flushResponse = await fetch(buildUrl(flushQuery), fetchOptions);
+                const flushFailed = !flushResponse.ok;
+                if (flushFailed) {
+                    resultDiv.innerHTML = '<p style="color: var(--warning-color);">⚠ Could not flush logs. There may be a delay before recent queries appear in trace_log.</p>';
+                }
+
+                // Query to get min and max event_time_microseconds for JemallocSample events
+                const query = `SELECT toUnixTimestamp64Micro(min(event_time_microseconds)) AS min_time, toUnixTimestamp64Micro(max(event_time_microseconds)) AS max_time FROM system.trace_log WHERE query_id = '${queryId}' AND trace_type = 'JemallocSample'`;
+
+                const response = await fetch(buildUrl(query), fetchOptions);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.text();
+                const lines = result.trim().split('\n');
+
+                const [minTime, maxTime] = (lines[0] || '').split('\t');
+
+                if (!minTime || !maxTime || (minTime === '0' && maxTime === '0')) {
+                    const msg = flushFailed
+                        ? '<p style="color: var(--warning-color);">⚠ Could not flush logs. There may be a delay before recent queries appear in trace_log.</p>'
+                        : '';
+                    resultDiv.innerHTML = msg + `<div class="error">No JemallocSample events found for query_id: ${queryId}</div>`;
+                    return;
+                }
+
+                // Now get cumulative memory usage over time with at most 10000 points
+                const maxPoints = 10000;
+                const timeRange = BigInt(maxTime) - BigInt(minTime);
+                // Use Math.ceil to round up, ensuring we don't exceed maxPoints
+                const bucketSize = timeRange > BigInt(0) ? Math.max(1, Math.ceil(Number(timeRange) / maxPoints)) : 1;
+
+                const cumulativeQuery = `WITH per_bucket AS (SELECT intDiv(toUnixTimestamp64Micro(event_time_microseconds) - ${minTime}, ${bucketSize}) * ${bucketSize} + ${minTime} AS bucket_time, sum(size) AS bucket_sum FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' GROUP BY bucket_time) SELECT bucket_time, sum(bucket_sum) OVER (ORDER BY bucket_time ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_size FROM per_bucket ORDER BY bucket_time`;
+
+                const cumulativeResponse = await fetch(buildUrl(cumulativeQuery), fetchOptions);
+                if (!cumulativeResponse.ok) {
+                    throw new Error(`HTTP ${cumulativeResponse.status}: ${cumulativeResponse.statusText}`);
+                }
+
+                const cumulativeResult = await cumulativeResponse.text();
+                const cumulativeLines = cumulativeResult.trim().split('\n');
+
+                // Parse data for plotting
+                const dataPoints = cumulativeLines.map(line => {
+                    const [time, size] = line.split('\t');
+                    return { time: Number(time), size: Number(size) };
+                });
+
+                // Get max memory usage and its timepoint
+                const maxMemQuery = `SELECT argMax(bucket_time, cumulative_size), max(cumulative_size) FROM (WITH per_bucket AS (SELECT event_time_microseconds AS bucket_time, sum(size) AS bucket_sum FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' GROUP BY bucket_time) SELECT bucket_time, sum(bucket_sum) OVER (ORDER BY bucket_time ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_size, formatReadableSize(cumulative_size) AS cumulative_size_readable FROM per_bucket ORDER BY bucket_time)`;
+
+                const maxMemResponse = await fetch(buildUrl(maxMemQuery), fetchOptions);
+                if (!maxMemResponse.ok) {
+                    throw new Error(`HTTP ${maxMemResponse.status}: ${maxMemResponse.statusText}`);
+                }
+
+                const maxMemResult = await maxMemResponse.text();
+                const [maxMemTime, maxMemSize] = maxMemResult.trim().split('\t');
+
+                function formatBytes(bytes) {
+                    if (bytes === 0) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+                }
+
+                function formatTime(timestamp) {
+                    // If it's already a DateTime64 string, use it as-is
+                    if (typeof timestamp === 'string' && timestamp.includes('-')) {
+                        return timestamp;
+                    }
+                    // Otherwise convert from microsecond timestamp
+                    const date = new Date(Number(timestamp) / 1000);
+                    return date.toISOString().replace('T', ' ').replace('Z', '');
+                }
+
+                resultDiv.innerHTML = `
+                    <div class="metric-card" style="margin-top: 1rem;">
+                        <div class="metric-label">Overview</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                            <div>
+                                <div style="font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px;">First Sample</div>
+                                <div style="font-family: monospace; font-size: 0.85rem; margin-top: 0.25rem;">${formatTime(minTime)}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px;">Last Sample</div>
+                                <div style="font-family: monospace; font-size: 0.85rem; margin-top: 0.25rem;">${formatTime(maxTime)}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px;">Peak Memory</div>
+                                <div style="font-family: monospace; font-size: 0.85rem; margin-top: 0.25rem;">${formatTime(maxMemTime)}</div>
+                                <div style="font-size: 0.85rem; margin-top: 0.25rem;">${formatBytes(maxMemSize)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="metric-card" style="margin-top: 1rem;">
+                        <div class="metric-label">Memory Usage Over Time</div>
+                        <div id="memory-chart" style="margin-top: 1rem; height: 400px;"></div>
+                    </div>
+                    <div class="metric-card" style="margin-top: 1rem;">
+                        <div class="metric-label">Flame Graph</div>
+                        <div style="margin-top: 1rem; display: flex; gap: 1rem; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <label for="flamegraph-time" style="display: block; font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">Time</label>
+                                <input type="text" id="flamegraph-time" value="${formatTime(maxMemTime)}" style="width: 100%; padding: 0.5rem; font-family: monospace; font-size: 0.85rem; background: var(--input-background); color: var(--color); border: 1px solid var(--border-color); border-radius: 4px;">
+                            </div>
+                            <button id="generate-query-flamegraph-btn" onclick="getQueryCollapsedProfile()" class="btn btn-primary" style="padding: 0.5rem 1rem; white-space: nowrap;">Get Profile</button>
+                        </div>
+                        <div id="query-flamegraph-result"></div>
+                    </div>
+                `;
+
+                // Prepare data for uPlot
+                const times = dataPoints.map(p => p.time / 1000000); // Convert microseconds to seconds
+                const sizes = dataPoints.map(p => p.size);
+
+                function formatBytes(bytes) {
+                    if (bytes === 0) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+                }
+
+                // Create uPlot chart
+                const chartEl = document.getElementById('memory-chart');
+                const opts = {
+                    width: chartEl.clientWidth,
+                    height: 400,
+                    padding: [null, 60, null, null],
+                    scales: {
+                        x: { time: true },
+                        y: { range: (u, dataMin, dataMax) => [0, dataMax * 1.1] }
+                    },
+                    axes: [
+                        {
+                            stroke: getComputedStyle(document.body).getPropertyValue('--color'),
+                            grid: { stroke: getComputedStyle(document.body).getPropertyValue('--border-color'), width: 1 / devicePixelRatio },
+                            splits: (u, axisIdx, scaleMin, scaleMax, foundIncr, foundSpace, forceMin) => [scaleMin, scaleMax],
+                            values: (u, splits) => splits.map(v => new Date(v * 1000).toISOString().substring(0, 19).replace('T', ' '))
+                        },
+                        {
+                            stroke: getComputedStyle(document.body).getPropertyValue('--color'),
+                            values: (u, vals) => vals.map(v => formatBytes(v)),
+                            grid: { stroke: getComputedStyle(document.body).getPropertyValue('--border-color'), width: 1 / devicePixelRatio },
+                            size: 80
+                        }
+                    ],
+                    series: [
+                        {
+                            label: 'Time',
+                            value: (u, v) => v == null ? '-' : new Date(v * 1000).toISOString().replace('T', ' ').replace('Z', ' UTC')
+                        },
+                        {
+                            label: 'Cumulative Memory',
+                            stroke: 'rgb(0, 200, 100)',
+                            width: 2,
+                            points: { show: false },
+                            value: (u, v) => v == null ? '-' : formatBytes(v)
+                        }
+                    ]
+                };
+
+                new uPlot(opts, [times, sizes], chartEl);
+
+            } catch (error) {
+                console.error('Error getting query profile:', error);
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Profile';
+            }
+        }
+
+        async function getQueryCollapsedProfile() {
+            readConnectionParams();
+            const button = document.getElementById('generate-query-flamegraph-btn');
+            const queryIdInput = document.getElementById('query-profile-id');
+            const timeInput = document.getElementById('flamegraph-time');
+            const queryId = queryIdInput.value.trim();
+            const time = timeInput.value.trim();
+            const resultDiv = document.getElementById('query-flamegraph-result');
+
+            if (!queryId) {
+                alert('Please enter a query ID first and click Profile to load the data.');
+                return;
+            }
+
+            if (!time) {
+                alert('Please enter a time.');
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Getting profile...';
+
+            try {
+                // Query to get collapsed flame graph data
+                const query = `SELECT arrayJoin(flameGraph(arrayReverse(trace), size, ptr)) FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' AND event_time_microseconds <= '${time}' SETTINGS allow_introspection_functions = 1`;
+
+                const response = await fetch(buildUrl(query), fetchOptions);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const collapsedData = await response.text();
+
+                if (!collapsedData || collapsedData.trim() === '') {
+                    resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">No profile data found for the specified query ID and time.</div>`;
+                    return;
+                }
+
+                const lines = collapsedData.split('\n');
+                const flameGraphOnclick = `downloadFlameGraphFromProfile('query-flamegraph-result', 'query-flamegraph-' + document.getElementById('query-profile-id').value.trim())`;
+
+                renderProfileOutputCard('query-flamegraph-result', 'Profile Output (Collapsed)', lines, 'Collapsed', flameGraphOnclick, 'query-profile-' + queryId);
+
+            } catch (error) {
+                console.error('Error getting query profile:', error);
+                resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">Error: ${error.message}</div>`;
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Get Profile';
+            }
+        }
+
         async function loadStats(isManualRefresh = false) {
+            readConnectionParams();
             const loading = document.getElementById('loading');
             const content = document.getElementById('content');
             const errorDiv = document.getElementById('error');
@@ -1944,17 +2634,7 @@
             errorDiv.style.display = 'none';
             try {
                 const query = 'SELECT * FROM system.jemalloc_stats';
-                // Build URL with parameters
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-                const response = await fetch(url, {
-                    method: 'POST'
-                });
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -1971,6 +2651,7 @@
                 // Only check profile status on first load or manual refresh
                 if (isFirstLoad || isManualRefresh) {
                     renderProfileStats();
+                    renderQueryProfileStats();
                 }
                 // Only update raw stats on manual refresh or first load
                 const rawStatsEl = document.getElementById('raw-stats');
@@ -2016,10 +2697,613 @@
                 updateRefreshInterval();
             }, 500);
         }
-        // Load stats on page load
-        loadStats();
-        // Start auto-refresh with default interval
-        updateRefreshInterval();
-    </script>
+        // Flame Graph Generation - generates and downloads SVG file directly
+        function generateFlameGraphSVG(collapsedData, imagewidth = 1200, countname = 'bytes') {
+            // Configuration
+            const fonttype = "Verdana";
+            const frameheight = 16;
+            const fontsize = 12;
+            const fontwidth = 0.59;
+            const minwidth = 0.1;
+            const nametype = "Function:";
+            const xpad = 10;
+            const framepad = 1;
+            const ypad1 = fontsize * 3;
+            const ypad2 = fontsize * 2 + 10;
+            const titletext = "Heap Profile Flame Graph";
+            const searchcolor = "rgb(230,0,230)";
+
+            // Parse input data
+            const lines = collapsedData.trim().split('\n').filter(line => line.trim());
+            const Node = {};
+            const Tmp = {};
+            let time = 0;
+            let depthmax = 0;
+
+            // Sort the data
+            lines.sort();
+
+            // Process and merge frames
+            let last = [];
+            for (const line of lines) {
+                const match = line.match(/^(.*)\s+(\d+(?:\.\d*)?)$/);
+                if (!match) continue;
+
+                const [, stack, samplesStr] = match;
+                const samples = parseFloat(samplesStr);
+
+                const current = ['', ...stack.split(';')];
+
+                // Merge frames
+                flow(last, current, time, Node, Tmp);
+
+                time += samples;
+                last = current;
+            }
+            flow(last, [], time, Node, Tmp);
+
+            if (time === 0) {
+                return '<p>No valid stack data found</p>';
+            }
+
+            const timemax = time;
+            const widthpertime = (imagewidth - 2 * xpad) / timemax;
+            const minwidth_time = minwidth / widthpertime;
+
+            // Prune narrow blocks and find max depth
+            for (const id in Node) {
+                const [func, depth, etime] = id.split(';');
+                const node = Node[id];
+                const stime = node.stime;
+
+                if ((etime - stime) < minwidth_time) {
+                    delete Node[id];
+                    continue;
+                }
+                depthmax = Math.max(depthmax, parseInt(depth));
+            }
+
+            // Generate SVG
+            const imageheight = ((depthmax + 1) * frameheight) + ypad1 + ypad2;
+            const titlesize = fontsize + 5;
+
+            let svg = '';
+            svg += `<?xml version="1.0" standalone="no"?>\n`;
+            svg += `<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n`;
+            svg += `<svg version="1.1" width="${imagewidth}" height="${imageheight}" onload="init(evt)" viewBox="0 0 ${imagewidth} ${imageheight}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">\n`;
+            svg += `<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->\n`;
+            svg += `<!-- NOTES:  -->\n`;
+
+            // Background gradient (before styles)
+            svg += `<defs>\n`;
+            svg += `\t<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >\n`;
+            svg += `\t\t<stop stop-color="#eef2ee" offset="5%" />\n`;
+            svg += `\t\t<stop stop-color="#e0ffe0" offset="95%" />\n`;
+            svg += `\t</linearGradient>\n`;
+            svg += `</defs>\n`;
+
+            // Add styles and JavaScript
+            svg += generateFlameGraphStyles(fonttype, fontsize, titlesize, searchcolor);
+            svg += generateFlameGraphScript(nametype, fontsize, fontwidth, xpad, searchcolor);
+
+            svg += `<rect x="0" y="0" width="${imagewidth}" height="${imageheight}" fill="url(#background)" />\n`;
+            svg += `<text id="title" x="${imagewidth / 2}" y="${fontsize * 2}" text-anchor="middle" font-size="${titlesize}px">${titletext}</text>\n`;
+            svg += `<text id="details" x="${xpad}" y="${imageheight - (ypad2 / 2)}"> </text>\n`;
+            svg += `<text id="unzoom" class="hide" x="${xpad}" y="${fontsize * 2}">Reset Zoom</text>\n`;
+            svg += `<text id="search" x="${imagewidth - xpad - 100}" y="${fontsize * 2}">Search</text>\n`;
+            svg += `<text id="ignorecase" x="${imagewidth - xpad - 16}" y="${fontsize * 2}">ic</text>\n`;
+            svg += `<text id="matched" class="hide" x="${imagewidth - xpad - 100}" y="${imageheight - (ypad2 / 2)}"> </text>\n`;
+
+            // Draw frames
+            svg += `<g id="frames">\n`;
+            for (const id in Node) {
+                const [func, depth, etime] = id.split(';');
+                const node = Node[id];
+                const stime = node.stime;
+
+                const etimeVal = func === '' && depth === '0' ? timemax : parseFloat(etime);
+                const depthVal = parseInt(depth);
+
+                const x1 = xpad + stime * widthpertime;
+                const x2 = xpad + etimeVal * widthpertime;
+                const y1 = imageheight - ypad2 - (depthVal + 1) * frameheight + framepad;
+                const y2 = imageheight - ypad2 - depthVal * frameheight;
+
+                const samples = Math.round((etimeVal - stime));
+                const samplesText = samples.toLocaleString();
+
+                let info;
+                if (func === '' && depthVal === 0) {
+                    info = `all (${samplesText} ${countname}, 100%)`;
+                } else {
+                    const pct = ((100 * samples) / timemax).toFixed(2);
+                    const escapedFunc = escapeHtml(func);
+                    info = `${escapedFunc} (${samplesText} ${countname}, ${pct}%)`;
+                }
+
+                const color = getMemColor(func);
+                const width = x2 - x1;
+                const chars = Math.floor(width / (fontsize * fontwidth));
+                let text = '';
+                if (chars >= 3) {
+                    text = func.substring(0, chars);
+                    if (chars < func.length) {
+                        text = text.substring(0, chars - 2) + '..';
+                    }
+                    text = escapeHtml(text);
+                }
+
+                svg += `<g >\n`;
+                svg += `<title>${info}</title><rect x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" width="${width.toFixed(1)}" height="${(y2 - y1).toFixed(1)}" fill="${color}" rx="2" ry="2" />\n`;
+                svg += `<text  x="${(x1 + 3).toFixed(2)}" y="${(3 + (y1 + y2) / 2).toFixed(1)}" >${text}</text>\n`;
+                svg += `</g>\n`;
+            }
+            svg += `</g>\n`;
+            svg += `</svg>`;
+
+            return svg;
+        }
+
+        function flow(last, current, time, Node, Tmp) {
+            const len_a = last.length - 1;
+            const len_b = current.length - 1;
+
+            let i = 0;
+            for (; i <= len_a; i++) {
+                if (i > len_b) break;
+                if (last[i] !== current[i]) break;
+            }
+            const len_same = i;
+
+            // Close frames from previous stack
+            for (i = len_a; i >= len_same; i--) {
+                const k = `${last[i]};${i}`;
+                const key = `${k};${time}`;
+                if (Tmp[k]) {
+                    Node[key] = { stime: Tmp[k].stime };
+                    delete Tmp[k];
+                }
+            }
+
+            // Open frames for current stack
+            for (i = len_same; i <= len_b; i++) {
+                const k = `${current[i]};${i}`;
+                Tmp[k] = { stime: time };
+            }
+        }
+
+        function getMemColor(name) {
+            if (name === '--') return 'rgb(160,160,160)';
+            if (name === '-') return 'rgb(200,200,200)';
+
+            const v1 = namehash(name);
+            const v2 = namehash(name.split('').reverse().join(''));
+
+            const r = 0;
+            const g = 190 + Math.floor(50 * v2);
+            const b = 0 + Math.floor(210 * v1);
+            return `rgb(${r},${g},${b})`;
+        }
+
+        function namehash(name) {
+            let vector = 0;
+            let weight = 1;
+            let max = 1;
+            let mod = 10;
+
+            // If module name present, truncate to first char
+            name = name.replace(/^.+?`/, '');
+
+            for (let j = 0; j < name.length && mod <= 12; j++) {
+                const i = name.charCodeAt(j) % mod;
+                vector += (i / (mod - 1)) * weight;
+                max += 1 * weight;
+                weight *= 0.70;
+                mod++;
+            }
+            return 1 - vector / max;
+        }
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function generateFlameGraphStyles(fonttype, fontsize, titlesize, searchcolor) {
+            return `<style type="text/css">
+\ttext { font-family:${fonttype}; font-size:${fontsize}px; fill:rgb(0,0,0); }
+\t#search, #ignorecase { opacity:0.1; cursor:pointer; }
+\t#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+\t#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+\t#title { text-anchor:middle; font-size:${titlesize}px}
+\t#unzoom { cursor:pointer; }
+\t#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+\t.hide { display:none; }
+\t.parent { opacity:0.5; }
+</style>\n`;
+        }
+
+        function generateFlameGraphScript(nametype, fontsize, fontwidth, xpad, searchcolor) {
+            return `<script type="text/ecmascript"><![CDATA[
+\t"use strict";
+\tvar details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+\tfunction init(evt) {
+\t\tdetails = document.getElementById("details").firstChild;
+\t\tsearchbtn = document.getElementById("search");
+\t\tignorecaseBtn = document.getElementById("ignorecase");
+\t\tunzoombtn = document.getElementById("unzoom");
+\t\tmatchedtxt = document.getElementById("matched");
+\t\tsvg = document.getElementsByTagName("svg")[0];
+\t\tsearching = 0;
+\t\tcurrentSearchTerm = null;
+
+\t\t// use GET parameters to restore a flamegraphs state.
+\t\tvar params = get_params();
+\t\tif (params.x && params.y)
+\t\t\tzoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+\t}
+
+\t// event listeners
+\twindow.addEventListener("click", function(e) {
+\t\tvar target = find_group(e.target);
+\t\tif (target) {
+\t\t\tif (target.nodeName == "a") {
+\t\t\t\tif (e.ctrlKey === false) return;
+\t\t\t\te.preventDefault();
+\t\t\t}
+\t\t\tif (target.classList.contains("parent")) unzoom(true);
+\t\t\tzoom(target);
+\t\t\tif (!document.querySelector('.parent')) {
+\t\t\t\t// we have basically done a clearzoom so clear the url
+\t\t\t\tvar params = get_params();
+\t\t\t\tif (params.x) delete params.x;
+\t\t\t\tif (params.y) delete params.y;
+\t\t\t\thistory.replaceState(null, null, parse_params(params));
+\t\t\t\tunzoombtn.classList.add("hide");
+\t\t\t\treturn;
+\t\t\t}
+
+\t\t\t// set parameters for zoom state
+\t\t\tvar el = target.querySelector("rect");
+\t\t\tif (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+\t\t\t\tvar params = get_params()
+\t\t\t\tparams.x = el.attributes._orig_x.value;
+\t\t\t\tparams.y = el.attributes.y.value;
+\t\t\t\thistory.replaceState(null, null, parse_params(params));
+\t\t\t}
+\t\t}
+\t\telse if (e.target.id == "unzoom") clearzoom();
+\t\telse if (e.target.id == "search") search_prompt();
+\t\telse if (e.target.id == "ignorecase") toggle_ignorecase();
+\t}, false)
+
+
+\t// mouse-over for info
+\t// show
+\twindow.addEventListener("mouseover", function(e) {
+\t\tvar target = find_group(e.target);
+\t\tif (target) details.nodeValue = "${nametype} " + g_to_text(target);
+\t}, false)
+
+\t// clear
+\twindow.addEventListener("mouseout", function(e) {
+\t\tvar target = find_group(e.target);
+\t\tif (target) details.nodeValue = ' ';
+\t}, false)
+
+\t// ctrl-F for search
+\t// ctrl-I to toggle case-sensitive search
+\twindow.addEventListener("keydown",function (e) {
+\t\tif (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+\t\t\te.preventDefault();
+\t\t\tsearch_prompt();
+\t\t}
+\t\telse if (e.ctrlKey && e.keyCode === 73) {
+\t\t\te.preventDefault();
+\t\t\ttoggle_ignorecase();
+\t\t}
+\t}, false)
+
+\t// functions
+\tfunction get_params() {
+\t\tvar params = {};
+\t\tvar paramsarr = window.location.search.substr(1).split('&');
+\t\tfor (var i = 0; i < paramsarr.length; ++i) {
+\t\t\tvar tmp = paramsarr[i].split("=");
+\t\t\tif (!tmp[0] || !tmp[1]) continue;
+\t\t\tparams[tmp[0]]  = decodeURIComponent(tmp[1]);
+\t\t}
+\t\treturn params;
+\t}
+\tfunction parse_params(params) {
+\t\tvar uri = "?";
+\t\tfor (var key in params) {
+\t\t\turi += key + '=' + encodeURIComponent(params[key]) + '&';
+\t\t}
+\t\tif (uri.slice(-1) == "&")
+\t\t\turi = uri.substring(0, uri.length - 1);
+\t\tif (uri == '?')
+\t\t\turi = window.location.href.split('?')[0];
+\t\treturn uri;
+\t}
+\tfunction find_child(node, selector) {
+\t\tvar children = node.querySelectorAll(selector);
+\t\tif (children.length) return children[0];
+\t}
+\tfunction find_group(node) {
+\t\tvar parent = node.parentElement;
+\t\tif (!parent) return;
+\t\tif (parent.id == "frames") return node;
+\t\treturn find_group(parent);
+\t}
+\tfunction orig_save(e, attr, val) {
+\t\tif (e.attributes["_orig_" + attr] != undefined) return;
+\t\tif (e.attributes[attr] == undefined) return;
+\t\tif (val == undefined) val = e.attributes[attr].value;
+\t\te.setAttribute("_orig_" + attr, val);
+\t}
+\tfunction orig_load(e, attr) {
+\t\tif (e.attributes["_orig_"+attr] == undefined) return;
+\t\te.attributes[attr].value = e.attributes["_orig_" + attr].value;
+\t\te.removeAttribute("_orig_"+attr);
+\t}
+\tfunction g_to_text(e) {
+\t\tvar text = find_child(e, "title").firstChild.nodeValue;
+\t\treturn (text)
+\t}
+\tfunction g_to_func(e) {
+\t\tvar func = g_to_text(e);
+\t\treturn (func);
+\t}
+    function update_text(e) {
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) -3;
+        var txt = find_child(e, "title").textContent.replace(/\\([^(]*\\)\$/,"");
+        t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+        if (w < 2 * ${fontsize} * ${fontwidth}) {
+            t.textContent = "";
+            return;
+        }
+
+        t.textContent = txt;
+        var sl = t.getSubStringLength(0, txt.length);
+        if (/^ *\$/.test(txt) || sl < w)
+            return;
+
+        var start = Math.floor((w/sl) * txt.length);
+        for (var x = start; x > 0; x = x-2) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+        t.textContent = "";
+    }
+
+    function zoom_reset(e) {
+        if (e.attributes != undefined) {
+            orig_load(e, "x");
+            orig_load(e, "width");
+        }
+        if (e.childNodes == undefined) return;
+        for (var i = 0, c = e.childNodes; i < c.length; i++) {
+            zoom_reset(c[i]);
+        }
+    }
+    function zoom_child(e, x, ratio) {
+        if (e.attributes != undefined) {
+            if (e.attributes.x != undefined) {
+                orig_save(e, "x");
+                e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - ${xpad}) * ratio + ${xpad};
+                if (e.tagName == "text")
+                    e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+            }
+            if (e.attributes.width != undefined) {
+                orig_save(e, "width");
+                e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+            }
+        }
+
+        if (e.childNodes == undefined) return;
+        for (var i = 0, c = e.childNodes; i < c.length; i++) {
+            zoom_child(c[i], x - ${xpad}, ratio);
+        }
+    }
+    function zoom_parent(e) {
+        if (e.attributes) {
+            if (e.attributes.x != undefined) {
+                orig_save(e, "x");
+                e.attributes.x.value = ${xpad};
+            }
+            if (e.attributes.width != undefined) {
+                orig_save(e, "width");
+                e.attributes.width.value = parseInt(svg.width.baseVal.value) - (${xpad} * 2);
+            }
+        }
+        if (e.childNodes == undefined) return;
+        for (var i = 0, c = e.childNodes; i < c.length; i++) {
+            zoom_parent(c[i]);
+        }
+    }
+    function zoom(node) {
+        var attr = find_child(node, "rect").attributes;
+        var width = parseFloat(attr.width.value);
+        var xmin = parseFloat(attr.x.value);
+        var xmax = parseFloat(xmin + width);
+        var ymin = parseFloat(attr.y.value);
+        var ratio = (svg.width.baseVal.value - 2 * ${xpad}) / width;
+
+        var fudge = 0.0001;
+
+        unzoombtn.classList.remove("hide");
+
+        var el = document.getElementById("frames").children;
+        for (var i = 0; i < el.length; i++) {
+            var e = el[i];
+            var a = find_child(e, "rect").attributes;
+            var ex = parseFloat(a.x.value);
+            var ew = parseFloat(a.width.value);
+            var upstack;
+            // Is it an ancestor
+            if (0 == 0) {
+                upstack = parseFloat(a.y.value) > ymin;
+            } else {
+                upstack = parseFloat(a.y.value) < ymin;
+            }
+            if (upstack) {
+                // Direct ancestor
+                if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+                    e.classList.add("parent");
+                    zoom_parent(e);
+                    update_text(e);
+                }
+                // not in current path
+                else
+                    e.classList.add("hide");
+            }
+            // Children maybe
+            else {
+                // no common path
+                if (ex < xmin || ex + fudge >= xmax) {
+                    e.classList.add("hide");
+                }
+                else {
+                    zoom_child(e, xmin, ratio);
+                    update_text(e);
+                }
+            }
+        }
+        search();
+    }
+    function unzoom(dont_update_text) {
+        unzoombtn.classList.add("hide");
+        var el = document.getElementById("frames").children;
+        for(var i = 0; i < el.length; i++) {
+            el[i].classList.remove("parent");
+            el[i].classList.remove("hide");
+            zoom_reset(el[i]);
+            if(!dont_update_text) update_text(el[i]);
+        }
+        search();
+    }
+    function clearzoom() {
+        unzoom();
+    }
+
+    function toggle_ignorecase() {
+        ignorecase = !ignorecase;
+        if (ignorecase) {
+            ignorecaseBtn.classList.add("show");
+        } else {
+            ignorecaseBtn.classList.remove("show");
+        }
+        reset_search();
+        search();
+    }
+    function reset_search() {
+        var el = document.querySelectorAll("#frames rect");
+        for (var i = 0; i < el.length; i++) {
+            orig_load(el[i], "fill")
+        }
+    }
+    function search_prompt() {
+        if (!searching) {
+            var term = prompt("Enter a search term (regexp allowed, eg: ^ext4_)" + (ignorecase ? ", ignoring case" : "") + "\\nPress Ctrl-i to toggle case sensitivity", "");
+            if (term != null) search(term);
+        } else {
+            reset_search();
+            searching = 0;
+            currentSearchTerm = null;
+            searchbtn.classList.remove("show");
+            searchbtn.firstChild.nodeValue = "Search"
+            matchedtxt.classList.add("hide");
+            matchedtxt.firstChild.nodeValue = ""
+        }
+    }
+    function search(term) {
+        if (term) currentSearchTerm = term;
+
+        var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+        var el = document.getElementById("frames").children;
+        var matches = new Object();
+        var maxwidth = 0;
+        for (var i = 0; i < el.length; i++) {
+            var e = el[i];
+            var func = g_to_func(e);
+            var rect = find_child(e, "rect");
+            if (func == null || rect == null)
+                continue;
+
+            var w = parseFloat(rect.attributes.width.value);
+            if (w > maxwidth)
+                maxwidth = w;
+
+            if (func.match(re)) {
+                var x = parseFloat(rect.attributes.x.value);
+                orig_save(rect, "fill");
+                rect.attributes.fill.value = "${searchcolor}";
+
+                if (matches[x] == undefined) {
+                    matches[x] = w;
+                } else {
+                    if (w > matches[x]) {
+                        matches[x] = w;
+                    }
+                }
+                searching = 1;
+            }
+        }
+        if (!searching)
+            return;
+
+        searchbtn.classList.add("show");
+        searchbtn.firstChild.nodeValue = "Reset Search";
+
+        var count = 0;
+        var lastx = -1;
+        var lastw = 0;
+        var keys = Array();
+        for (k in matches) {
+            if (matches.hasOwnProperty(k))
+                keys.push(k);
+        }
+        keys.sort(function(a, b){
+            return a - b;
+        });
+        var fudge = 0.0001;
+        for (var k in keys) {
+            var x = parseFloat(keys[k]);
+            var w = matches[keys[k]];
+            if (x >= lastx + lastw - fudge) {
+                count += w;
+                lastx = x;
+                lastw = w;
+            }
+        }
+        matchedtxt.classList.remove("hide");
+        var pct = 100 * count / maxwidth;
+        if (pct != 100) pct = pct.toFixed(1)
+        matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+    }
+]]><\/script>\n`;
+        }
+
+function start() {
+    document.getElementById('url').value = host;
+    document.getElementById('user').value = user;
+    document.getElementById('password').value = password;
+    loadStats();
+    updateRefreshInterval();
+}
+
+start();
+
+</script>
 </body>
 </html>

@@ -38,7 +38,9 @@ struct IYTsaurusHeavyQuery : public IYTsaurusQuery
 // https://ytsaurus.tech/docs/en/api/commands#read_table
 struct YTsaurusReadTableQuery : public IYTsaurusHeavyQuery
 {
-    explicit YTsaurusReadTableQuery(const String & cypress_path_) : cypress_path(cypress_path_) {}
+    explicit YTsaurusReadTableQuery(const String & cypress_path_, const std::pair<size_t, size_t>& row_range)
+        : cypress_path(fmt::format("{}[#{}:#{}]", cypress_path_, row_range.first, row_range.second))
+        {}
 
     String getQueryName() const override
     {
@@ -128,6 +130,86 @@ struct YTsaurusLookupRows : public IYTsaurusHeavyQuery
         return {{.name="path", .value=cypress_path}};
     }
     String cypress_path;
+};
+
+
+// https://ytsaurus.tech/docs/en/api/commands#start_tx
+struct YTsaurusStartTxQuery : public IYTsaurusQuery
+{
+    explicit YTsaurusStartTxQuery(size_t timeout_) : timeout(timeout_) {}
+
+    String getQueryName() const override
+    {
+        return "start_tx";
+    }
+
+    String getHTTPMethod() const override
+    {
+        return Poco::Net::HTTPRequest::HTTP_POST;
+    }
+
+    QueryParameters getQueryParameters() const override
+    {
+        return {{.name="timeout", .value=std::to_string(timeout) }};
+    }
+
+    size_t timeout;
+};
+
+// https://ytsaurus.tech/docs/en/api/commands#commit_tx
+struct YTsaurusCommitTxQuery : public IYTsaurusQuery
+{
+    explicit YTsaurusCommitTxQuery(const String& transaction_id_)
+        : transaction_id(transaction_id_)
+    {
+    }
+
+    String getQueryName() const override
+    {
+        return "commit_tx";
+    }
+
+    String getHTTPMethod() const override
+    {
+        return Poco::Net::HTTPRequest::HTTP_POST;
+    }
+
+    QueryParameters getQueryParameters() const override
+    {
+        return {{.name="transaction_id", .value=transaction_id}};
+    }
+
+    String transaction_id;
+};
+
+// https://ytsaurus.tech/docs/en/api/commands#lock
+struct YTsaurusLockQuery : public IYTsaurusQuery
+{
+    explicit YTsaurusLockQuery(const String& path_, const String& transaction_id_)
+        : path(path_)
+        , transaction_id(transaction_id_) {}
+
+    String getQueryName() const override
+    {
+        return "lock";
+    }
+
+    String getHTTPMethod() const override
+    {
+        return Poco::Net::HTTPRequest::HTTP_POST;
+    }
+
+    QueryParameters getQueryParameters() const override
+    {
+        return {
+            {.name="path", .value=path},
+            {.name="transaction_id", .value=transaction_id},
+            {.name="mode", .value="snapshot"},
+        };
+    }
+
+    String path;
+    String transaction_id;
 };
 
 
