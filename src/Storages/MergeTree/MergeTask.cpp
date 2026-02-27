@@ -1551,6 +1551,10 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     for (auto & [name, marks] : cached_marks)
         global_ctx->cached_marks.emplace(name, std::move(marks));
 
+    auto cached_index_marks = ctx->column_to->releaseCachedIndexMarks();
+    for (auto & [name, marks] : cached_index_marks)
+        global_ctx->cached_index_marks.emplace(name, std::move(marks));
+
     ctx->delayed_streams.emplace_back(std::move(ctx->column_to));
 
     while (ctx->delayed_streams.size() > ctx->max_delayed_streams)
@@ -1705,6 +1709,10 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
         global_ctx->cached_marks.emplace(name, std::move(marks));
+
+    auto cached_index_marks = global_ctx->to->releaseCachedIndexMarks();
+    for (auto & [name, marks] : cached_index_marks)
+        global_ctx->cached_index_marks.emplace(name, std::move(marks));
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
