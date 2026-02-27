@@ -89,6 +89,14 @@ public:
     /// @param context Context information for error messages
     void lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context);
 
+    /// Non-transactionally marks the data part as removed, acquiring and releasing the removal lock inline.
+    /// Unlike `setAndStoreRemovalTID` (which assumes the caller already holds the lock), this method
+    /// manages the lock itself: lock → set+store `Tx::NonTransactionalTID` → unlock.
+    /// Returns immediately if the part is already removed.
+    /// On `SERIALIZATION_ERROR`, refreshes metadata via `loadAndAdjustMetadata` and retries
+    /// up to `ZK_MAX_RETRIES` times. Always attempts to release the lock if acquired before an exception.
+    void setAndStoreNonTransactionalRemovalTID(const TransactionInfoContext & transaction_context);
+
     /// Returns `removal_tid` for logging purposes with validity checking.
     /// If removal is committed (removal_csn set), returns `removal_tid` directly.
     /// If removal_tid is empty or non-transactional, returns it as-is.

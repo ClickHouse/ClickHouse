@@ -63,7 +63,7 @@ bool VersionInfo::wasInvolvedInTransaction() const
     return created_by_transaction || removed_by_transaction || removing_by_transaction;
 }
 
-template <std::integral T>
+template <typename T>
 static void writeIntegerToBuffer(const char * separator, WriteBuffer & buf, const char * tag, T val)
 {
     writeCString(separator, buf);

@@ -1864,7 +1864,7 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     if (!current_version_info.isRemoved())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
-        MergeTreeTransaction::setAndStoreNonTransactionalRemovalTID(part, transaction_context);
+        part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
     }
 }
 

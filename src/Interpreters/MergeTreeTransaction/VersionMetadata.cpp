@@ -106,11 +106,7 @@ void VersionMetadata::setAndStoreCreationCSN(CSN csn)
 {
     LOG_DEBUG(log, "Object {}, setAndStoreCreationCSN {}", getObjectName(), csn);
 
-    auto update_function = [csn](VersionInfo & info)
-    {
-        chassert(!info.creation_tid.isEmpty());
-        info.creation_csn = csn;
-    };
+    auto update_function = [csn](VersionInfo & info) { info.creation_csn = csn; };
     updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 }
 
@@ -120,7 +116,6 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 
     auto update_function = [tid](VersionInfo & info)
     {
-        chassert(info.removal_csn == 0, fmt::format("removal_csn must be 0"));
         info.removal_tid = tid;
         if (tid.isNonTransactional())
             info.removal_csn = Tx::NonTransactionalCSN;
@@ -194,6 +189,54 @@ void VersionMetadata::lockRemovalTID(const TransactionID & tid, const Transactio
         context.table.getNameForLogs(),
         getRemovalTIDForLogging(),
         locked_by);
+}
+
+void VersionMetadata::setAndStoreNonTransactionalRemovalTID(const TransactionInfoContext & transaction_context)
+{
+    for (size_t attempt = 1; attempt <= ZK_MAX_RETRIES; ++attempt)
+    {
+        if (getInfo().isRemoved())
+        {
+            LOG_INFO(log, "Object {} is already removed", getObjectName());
+            return;
+        }
+
+        bool is_locked = false;
+        try
+        {
+            lockRemovalTID(Tx::NonTransactionalTID, transaction_context);
+            is_locked = true;
+            setAndStoreRemovalTID(Tx::NonTransactionalTID);
+            unlockRemovalTID(Tx::NonTransactionalTID, transaction_context);
+            is_locked = false;
+        }
+        catch (const Exception & e)
+        {
+            if (is_locked)
+            {
+                try
+                {
+                    unlockRemovalTID(Tx::NonTransactionalTID, transaction_context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("Object {}, unable to unlock", getObjectName()));
+                }
+                throw;
+            }
+
+            if (attempt == ZK_MAX_RETRIES)
+                throw;
+
+            if (e.code() != ErrorCodes::SERIALIZATION_ERROR)
+                throw;
+
+            sleepForMilliseconds(ZK_RETRY_INTERVAL_IN_MS);
+
+            loadAndAdjustMetadata();
+        }
+    }
+    UNREACHABLE();
 }
 
 void VersionMetadata::setAndStoreCreationTID(const TransactionID & tid, TransactionInfoContext * context)
@@ -349,6 +392,7 @@ void VersionMetadata::updateInfoWithRefreshDataThenStoreAndSetMetadata(std::func
         setInfo(new_info);
         return;
     }
+    UNREACHABLE();
 }
 
 void VersionMetadata::validateAndSetInfo(const VersionInfo & new_info)
@@ -638,6 +682,7 @@ void VersionMetadata::loadAndAdjustMetadata()
         setInfo(current_info);
         return;
     }
+    UNREACHABLE();
 }
 
 bool VersionMetadata::hasValidMetadata()
