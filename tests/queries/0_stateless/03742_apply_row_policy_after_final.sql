@@ -178,7 +178,6 @@ SELECT * FROM tab_where FINAL WHERE y != 'ccc' ORDER BY x;
 
 DROP TABLE tab_where;
 
--- Test: PARTITION BY sorting-key column is still prunable
 SELECT '';
 SELECT '= PARTITION BY sorting-key column is still prunable =';
 
