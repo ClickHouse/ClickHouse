@@ -2677,6 +2677,27 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
         }
 
+        /// Special case - Decimal op Float (or Float op Decimal): both sides are converted to
+        /// Float64 regardless of the specific Decimal/Float widths. Handle at runtime to avoid
+        /// instantiating 4 Decimal × 3 Float × 2 directions = 24 redundant template specializations
+        /// that all collapse to the same Float64 × Float64 code path.
+        if constexpr (IsOperation<Op>::allow_decimal && valid_on_float_arguments)
+        {
+            const WhichDataType left_which(left_argument.type);
+            const WhichDataType right_which(right_argument.type);
+
+            if ((left_which.isDecimal() && right_which.isFloat()) || (left_which.isFloat() && right_which.isDecimal()))
+            {
+                const auto float64_type = std::make_shared<DataTypeFloat64>();
+                ColumnsWithTypeAndName new_arguments
+                {
+                    {castColumn(arguments[0], float64_type), float64_type, arguments[0].name},
+                    {castColumn(arguments[1], float64_type), float64_type, arguments[1].name},
+                };
+                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            }
+        }
+
         const auto * const left_generic = left_argument.type.get();
         const auto * const right_generic = right_argument.type.get();
         ColumnPtr res;
@@ -2712,6 +2733,15 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
                 else if constexpr (std::is_same_v<DataTypeString, LeftDataType>)
                     return (res = executeStringInteger<ColumnString>(arguments, left, right)) != nullptr;
+            }
+            else if constexpr (
+                IsOperation<Op>::allow_decimal && valid_on_float_arguments
+                && ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>)
+                    || (IsFloatingPoint<LeftDataType> && IsDataTypeDecimal<RightDataType>)))
+            {
+                /// Decimal × Float pairs are handled at runtime above (converted to Float64 × Float64).
+                /// Skip them here to avoid 24 redundant template instantiations.
+                return false;
             }
             else
                 return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
