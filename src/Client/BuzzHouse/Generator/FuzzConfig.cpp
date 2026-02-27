@@ -746,7 +746,7 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT ifNull(sum(\"lost_part_count\"), 0) x, 2 y FROM \"system\".\"replicas\")"
                 " UNION ALL "
-                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE "
+                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "'%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%')"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
@@ -758,17 +758,17 @@ void FuzzConfig::validateClickHouseHealth()
                 "(SELECT count() x, 6 y FROM clusterAllReplicas(default, \"system\".\"replicas\") WHERE readonly_start_time IS NOT NULL)"
                 " UNION ALL "
                 "(SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, \"system\".\"part_log\")"
-                " WHERE exception != '' AND event_time > (now() - toIntervalSecond(120)) GROUP BY part_name HAVING count() > 10) tx)"
+                " WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
-                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE "
+                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "'%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%')"
                 " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
                 " UNION ALL "
-                "(SELECT count() x, 10 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE "
+                "(SELECT count() x, 10 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "'%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%')"
                 " UNION ALL "
-                "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE "
+                "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "'%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%')"
                 ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_client_out.generic_string())))
@@ -791,15 +791,15 @@ void FuzzConfig::validateClickHouseHealth()
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE '%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
             "",
             "",
             R"(SELECT "database", "table", "last_exception" FROM "system"."replicas" WHERE readonly_start_time IS NOT NULL LIMIT 3)",
-            R"(SELECT "database", "table", "part_name", "exception" FROM "system"."part_log" WHERE exception != '' AND event_time > (now() - toIntervalSecond(120)) ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE '%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "database", "table", "part_name", "exception" FROM "system"."part_log" WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE '%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE '%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)"};
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
