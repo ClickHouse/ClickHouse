@@ -5,6 +5,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
+#include <memory>
 
 namespace DB
 {
@@ -34,15 +35,18 @@ UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) 
 
 UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    ZSTD_CCtx * cctx = ZSTD_createCCtx();
-    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
+    thread_local std::unique_ptr<ZSTD_CCtx, void(*)(ZSTD_CCtx*)> cctx(ZSTD_createCCtx(), [](ZSTD_CCtx * ctx) { ZSTD_freeCCtx(ctx); });
+    if (!cctx)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot create ZSTD compression context");
+
+    ZSTD_CCtx_reset(cctx.get(), ZSTD_reset_session_and_parameters);
+    ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_compressionLevel, level);
     if (enable_long_range)
     {
-        ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableLongDistanceMatching, 1);
-        ZSTD_CCtx_setParameter(cctx, ZSTD_c_windowLog, window_log); // NB zero window_log means "use default" for libzstd
+        ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_enableLongDistanceMatching, 1);
+        ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_windowLog, window_log); // NB zero window_log means "use default" for libzstd
     }
-    size_t compressed_size = ZSTD_compress2(cctx, dest, ZSTD_compressBound(source_size), source, source_size);
-    ZSTD_freeCCtx(cctx);
+    size_t compressed_size = ZSTD_compress2(cctx.get(), dest, ZSTD_compressBound(source_size), source, source_size);
 
     if (ZSTD_isError(compressed_size))
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", ZSTD_getErrorName(compressed_size));
@@ -53,10 +57,15 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
 
 UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    size_t res = ZSTD_decompress(dest, uncompressed_size, source, source_size);
+    thread_local std::unique_ptr<ZSTD_DCtx, void(*)(ZSTD_DCtx*)> dctx(ZSTD_createDCtx(), [](ZSTD_DCtx * ctx) { ZSTD_freeDCtx(ctx); });
+    if (!dctx)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot create ZSTD decompression context");
+
+    ZSTD_DCtx_reset(dctx.get(), ZSTD_reset_session_only);
+    size_t res = ZSTD_decompressDCtx(dctx.get(), dest, uncompressed_size, source, source_size);
 
     if (ZSTD_isError(res))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", ZSTD_getErrorName(res));
     return static_cast<UInt32>(res);
 }
 
