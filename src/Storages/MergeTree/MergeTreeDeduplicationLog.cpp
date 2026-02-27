@@ -208,7 +208,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
 
         if (current_sum >= deduplication_window)
         {
-            /// We have more logs than required, all older files (including current) can be dropped
+            /// We have more logs than required, all older files (up to and including this one) can be dropped
             remove_from_value = itr->first;
             break;
         }
