@@ -19,6 +19,8 @@ public:
     KeyGetterEmpty() = default;
 
     FindResult findKey(MappedType, size_t, const Arena &) { return FindResult(); }
+
+    bool hasSameKey(size_t, size_t, const Arena &) { return false; }
 };
 
 template <HashJoin::Type type, typename Value, typename Mapped>

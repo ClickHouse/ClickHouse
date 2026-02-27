@@ -494,6 +494,16 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = IColumn::Offsets(rows);
 
+    using FindResult = typename KeyGetter::FindResult;
+
+    /// Cache the result of the previous hash-table lookup so that consecutive
+    /// left-side rows with the same join key can skip the lookup entirely.
+    /// Not applied to ASOF joins because the ASOF column may differ between rows
+    /// that share the primary join key.
+    FindResult prev_find_result;
+    size_t prev_ind = 0;
+    bool have_prev = false;
+
     IColumn::Offset current_offset = 0;
     for (size_t i = 0; i < rows; ++i)
     {
@@ -520,8 +530,24 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             else
                 row_acceptable = !join_keys.isRowFiltered(ind);
 
-            using FindResult = typename KeyGetter::FindResult;
-            auto find_result = row_acceptable ? key_getter.findKey(*map, ind, pool) : FindResult();
+            FindResult find_result;
+            if (row_acceptable)
+            {
+                if constexpr (!join_features.is_asof_join)
+                {
+                    if (have_prev && key_getter.hasSameKey(prev_ind, ind, pool))
+                        find_result = prev_find_result;
+                    else
+                    {
+                        find_result = key_getter.findKey(*map, ind, pool);
+                        prev_find_result = find_result;
+                        prev_ind = ind;
+                        have_prev = true;
+                    }
+                }
+                else
+                    find_result = key_getter.findKey(*map, ind, pool);
+            }
 
             if (find_result.isFound())
             {

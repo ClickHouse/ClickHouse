@@ -252,6 +252,16 @@ public:
         return data.hash(keyHolderGetKey(key_holder));
     }
 
+    /// Returns true if the join keys at rows `prev_ind` and `curr_ind` are equal.
+    /// Used by HashJoin to skip redundant hash-table lookups for consecutive rows
+    /// that share the same join key.
+    ALWAYS_INLINE bool hasSameKey(size_t prev_ind, size_t curr_ind, Arena & pool)
+    {
+        auto prev_key_holder = static_cast<Derived &>(*this).getKeyHolder(prev_ind, pool);
+        auto curr_key_holder = static_cast<Derived &>(*this).getKeyHolder(curr_ind, pool);
+        return keyHolderGetKey(prev_key_holder) == keyHolderGetKey(curr_key_holder);
+    }
+
     ALWAYS_INLINE void resetCache()
     {
         if constexpr (consecutive_keys_optimization)
