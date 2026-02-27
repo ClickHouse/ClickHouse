@@ -14,11 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /** A column of values of "fixed-length string" type.
   * If you insert a smaller string, it will be padded with zero bytes.
   */
@@ -133,7 +128,7 @@ public:
     void popBack(size_t elems) override
     {
         if (elems > size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+            throwCannotPopBack(n, getName(), size());
 
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
@@ -210,7 +205,7 @@ public:
         chars.resize(n * size);
     }
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {

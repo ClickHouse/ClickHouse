@@ -170,7 +170,7 @@ class ClickHouseProc:
 
         for _ in range(60):
             res = Shell.check(
-                "kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list",
+                "rpk topic list --brokers 127.0.0.1:9092",
                 verbose=True,
             )
             if res:
@@ -534,14 +534,45 @@ profiles:
             verbose=True,
             strict=True,
         )
-        status = (
-            "failed"
-            if not res
-            else Shell.get_output(
+        if not res:
+            return False
+
+        # Restart minio with a timeout to avoid hanging forever (see #97647).
+        # If the restart hangs, kill minio and start it again.
+        restart_timeout = 60
+        try:
+            print(f"Restarting clickminio (timeout {restart_timeout}s)")
+            result = subprocess.run(
                 "/mc admin service restart clickminio --wait --json 2>&1 | jq -r .status",
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=restart_timeout,
+                executable="/bin/bash",
+            )
+            status = result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            print(
+                f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
+            )
+            Shell.check("pkill -9 -f 'minio server'", verbose=True)
+            time.sleep(2)
+            Shell.check(
+                f"nohup minio server --address :11111 {temp_dir}/minio_data &",
                 verbose=True,
             )
-        )
+            # Wait for minio to be ready
+            for _ in range(30):
+                if Shell.check(
+                    "/mc ls clickminio/test", verbose=False
+                ):
+                    status = "success"
+                    break
+                time.sleep(1)
+            else:
+                status = "failed"
+
         res = "success" in status
         if not res:
             print(f"ERROR: Failed to restart clickminio, status: {status}")
@@ -661,6 +692,8 @@ clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnabl
 # AWS S3 is very inefficient, so increase memory even further:
 clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, write_through_distributed_cache=0, max_insert_threads=16"
 
+clickhouse-client --query "CREATE TABLE test.hits_parquet (Title String, URL String, Referer String, SearchPhrase String, WatchID UInt64, UserID UInt64, CounterID UInt32, EventTime DateTime, EventDate Date, RegionID UInt32, ClientIP UInt32) ENGINE = S3('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits_compatible/hits.parquet', NOSIGN)"
+
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"
@@ -700,8 +733,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
 
         if self.kafka_proc:
-            print("Stopping Kafka broker")
-            Shell.check("kafka-server-stop.sh", verbose=True)
+            print("Stopping Redpanda broker")
+            Shell.check("pkill -f redpanda", verbose=True)
             try:
                 self.kafka_proc.wait(timeout=30)
             except subprocess.TimeoutExpired:

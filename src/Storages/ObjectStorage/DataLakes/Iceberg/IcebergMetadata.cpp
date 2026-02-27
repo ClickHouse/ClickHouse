@@ -527,7 +527,7 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN)
+            && command.type != AlterCommand::Type::MODIFY_COLUMN && command.type != AlterCommand::Type::RENAME_COLUMN)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage", command.type);
     }
 }
@@ -907,16 +907,29 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
     return *persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
-StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr local_context) const
+std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
+{
+    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
+    return DataLakeTableStateSnapshot{actual_table_state_snapshot};
+}
+
+std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot & state, ContextPtr local_context) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
-    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    StorageInMemoryMetadata result;
-    result.setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
-    result.setDataLakeTableState(actual_table_state_snapshot);
-    result.sorting_key = getSortingKey(local_context, actual_table_state_snapshot);
+    chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
+    const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
+    auto result = std::make_unique<StorageInMemoryMetadata>();
+    result->setColumns(
+        ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_state.schema_id)});
+    result->setDataLakeTableState(state);
+    result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
+}
+
+bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
+{
+    return true;
 }
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
@@ -1061,7 +1074,7 @@ SinkToStoragePtr IcebergMetadata::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Insert into iceberg is experimental. "
+            "Insert into iceberg is in beta."
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 }

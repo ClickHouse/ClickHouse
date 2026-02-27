@@ -475,6 +475,7 @@ void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_fi
 
 void DiskObjectStorageTransaction::commit()
 {
+    auto component_guard = Coordination::setCurrentComponent("DiskObjectStorageTransaction::commit");
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
         try

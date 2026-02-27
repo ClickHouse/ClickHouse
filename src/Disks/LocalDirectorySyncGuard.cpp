@@ -1,6 +1,7 @@
 #include <Disks/LocalDirectorySyncGuard.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Disks/IDisk.h>
 #include <Common/Stopwatch.h>
 #include <fcntl.h> // O_RDWR
