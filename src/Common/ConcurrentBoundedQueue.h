@@ -8,30 +8,11 @@
 #include <base/MoveOrCopyIfThrow.h>
 #include <base/defines.h>
 
-namespace detail
-{
-template <typename T>
-struct UnitWeight
-{
-    size_t operator()(const T &) const { return 1; }
-};
-}
-
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty or queue is finished.
   * If you try to push an element into an overflowed queue, the thread is blocked until space appears in the queue or queue is finished.
-  *
-  * WeightFunction maps each element to its weight; the default assigns weight 1 to every element,
-  * preserving the original "bounded by element count" behaviour.
-  * max_fill is the capacity limit expressed in total weight units.
-  *
-  * Push admission policy: a thread is admitted to push as soon as the current total weight
-  * drops below max_fill (i.e. the predicate is current_weight < max_fill, not
-  * current_weight + item_weight <= max_fill). As a consequence, after a push the total
-  * weight may transiently exceed max_fill by at most one item's weight. This matches the
-  * original element-count semantics and avoids starvation of high-weight items.
   */
-template <typename T, typename WeightFunction = detail::UnitWeight<T>>
+template <typename T>
 class ConcurrentBoundedQueue
 {
 private:
@@ -45,8 +26,6 @@ private:
     bool is_finished = false;
 
     size_t max_fill = 0;
-    size_t current_weight = 0;
-    WeightFunction weight_function;
 
     template <bool back, typename ... Args>
     bool emplaceImpl(std::optional<UInt64> timeout_milliseconds, Args &&...args)
@@ -54,7 +33,7 @@ private:
         {
             std::unique_lock<std::mutex> queue_lock(queue_mutex);
 
-            auto predicate = [&]() { return is_finished || current_weight < max_fill; };
+            auto predicate = [&]() { return is_finished || queue.size() < max_fill; };
 
             if (timeout_milliseconds.has_value())
             {
@@ -72,15 +51,9 @@ private:
                 return false;
 
             if constexpr (back)
-            {
                 queue.emplace_back(std::forward<Args>(args)...);
-                current_weight += weight_function(queue.back());
-            }
             else
-            {
                 queue.emplace_front(std::forward<Args>(args)...);
-                current_weight += weight_function(queue.front());
-            }
         }
 
         pop_condition.notify_one();
@@ -112,13 +85,11 @@ private:
 
             if constexpr (front)
             {
-                current_weight -= weight_function(queue.front());
                 detail::moveOrCopyIfThrow(std::move(queue.front()), x);
                 queue.pop_front();
             }
             else
             {
-                current_weight -= weight_function(queue.back());
                 detail::moveOrCopyIfThrow(std::move(queue.back()), x);
                 queue.pop_back();
             }
@@ -130,9 +101,8 @@ private:
 
 public:
 
-    explicit ConcurrentBoundedQueue(size_t max_fill_, WeightFunction weight_function_ = WeightFunction{})
+    explicit ConcurrentBoundedQueue(size_t max_fill_)
         : max_fill(max_fill_)
-        , weight_function(std::move(weight_function_))
     {
     }
 
@@ -201,7 +171,6 @@ public:
             if (queue.empty())
                 return false;
 
-            current_weight -= weight_function(queue.front());
             detail::moveOrCopyIfThrow(std::move(queue.front()), x);
             queue.pop_front();
         }
@@ -270,7 +239,6 @@ public:
 
             Container empty_queue;
             queue.swap(empty_queue);
-            current_weight = 0;
         }
 
         push_condition.notify_all();
@@ -284,7 +252,6 @@ public:
 
             Container empty_queue;
             queue.swap(empty_queue);
-            current_weight = 0;
             is_finished = true;
         }
 
