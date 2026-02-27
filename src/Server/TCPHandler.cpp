@@ -769,7 +769,7 @@ void TCPHandler::runImpl()
                 {
                     std::lock_guard lock(*callback_mutex);
 
-                    if (!query_state->need_receive_data_for_input)
+                    if (!query_state->need_receive_data_for_input && !query_state->need_receive_data_for_insert)
                         receivePacketsExpectCancel(*query_state);
 
                     if (query_state->stop_read_return_partial_result)
