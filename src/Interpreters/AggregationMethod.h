@@ -12,13 +12,9 @@ namespace DB
 {
 
 /** A bounded heap that tracks the top-N smallest (ascending) keys
-  * seen during aggregation. Keys are stored in a small IColumn and compared using
-  * IColumn::compareAt / compareAtWithCollation, which correctly handles all types
-  * (signed integers, floats, strings, Nullable, LowCardinality, Enum, collations, etc.)
-  * without extracting Field values.
+  * seen during aggregation.
   *
-  * Only ascending sort order is supported, since the optimization is gated at the planner
-  * level to ASC-only (see testForAggregationLimitPushdownOptimization in Planner.cpp).
+  * Only ascending sort order is supported.
   *
   * Uses std::priority_queue over row indices into `heap_column`.
   * The boundary element (the largest kept key that would be evicted next) is at the top.
@@ -35,8 +31,6 @@ struct ColumnBoundedHeap
     ColumnBoundedHeap(const ColumnBoundedHeap &) = delete;
     ColumnBoundedHeap & operator=(const ColumnBoundedHeap &) = delete;
 
-    /// Custom move constructor: fixes up the HeapComparator's owner pointer
-    /// which would otherwise dangle after std::move.
     ColumnBoundedHeap(ColumnBoundedHeap && other) noexcept
         : heap_column(std::move(other.heap_column))
         , nan_direction_hint(other.nan_direction_hint)
@@ -44,7 +38,7 @@ struct ColumnBoundedHeap
         , capacity(other.capacity)
         , compaction_threshold(other.compaction_threshold)
     {
-        if (heap_column)  /// initialized
+        if (heap_column)
         {
             /// Reconstruct the priority queue with the correct 'this' pointer in the comparator.
             /// Extract the underlying container from the old priority_queue via a helper struct
@@ -70,7 +64,7 @@ struct ColumnBoundedHeap
             collator = other.collator;
             capacity = other.capacity;
             compaction_threshold = other.compaction_threshold;
-            if (heap_column)  /// initialized
+            if (heap_column)
             {
                 struct HeapAccess : std::priority_queue<size_t, std::vector<size_t>, HeapComparator>
                 {
@@ -119,7 +113,7 @@ struct ColumnBoundedHeap
         heap.push(new_idx);
     }
 
-    /// Returns true when the heap has grown past the compaction threshold (1.5x capacity)
+    /// Returns true when the heap has grown past the compaction threshold
     /// and needs to be trimmed back down to `capacity`.
     bool needsTrim() const
     {
