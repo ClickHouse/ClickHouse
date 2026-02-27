@@ -983,25 +983,30 @@ def test_math_functions():
         ],
     )
 
-    do_query_test(
-        "exp(vector(2.5))",
-        500,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "12.182493960703473"]}]}',
-        [["[]", "1970-01-01 00:08:20.000", 12.182493960703473]],
-    )
+    # NOTE: The function exp() in ClickHouse isn't very accurate
+    # "SELECT exp(2)" returns 7.389056098924109,
+    # whereas the correct value is 7.38905609893065
+    # See https://github.com/ClickHouse/ClickHouse/issues/30340
+    #
+    # do_query_test(
+    #     "exp(vector(2))",
+    #     500,
+    #     '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "7.38905609893065"]}]}',
+    #     [["[]", "1970-01-01 00:08:20.000", 7.38905609893065]],
+    # )
+    #
+    # do_query_test(
+    #     "exp(deltas)",
+    #     700,
+    #     '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [700, "7.38905609893065"]}]}',
+    #     [["[('job','test')]", "1970-01-01 00:11:40.000", 7.38905609893065]],
+    # )
 
     do_query_test(
-        "exp(deltas)",
-        400,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [400, "1"]}]}',
-        [["[('job','test')]", "1970-01-01 00:06:40.000", 1]],
-    )
-
-    do_query_test(
-        "ln(vector(2.5))",
+        "ln(vector(2))",
         500,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.9162907318741551"]}]}',
-        [["[]", "1970-01-01 00:08:20.000", 0.9162907318741551]],
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.6931471805599453"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 0.6931471805599453]],
     )
 
     do_query_test(
@@ -1204,16 +1209,18 @@ def test_math_functions():
         [["[('job','test')]", "1970-01-01 00:10:00.000", 1.5430806348152437]],
     )
 
-    do_query_test(
-        "tanh(vector(1))",
-        500,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.7615941559557649"]}]}',
-        [["[]", "1970-01-01 00:08:20.000", 0.7615941559557649]],
-    )
-
-    # FIXME: The function tanh() in ClickHouse doesn't seem to be very accurate:
+    # NOTE: The function tanh() in ClickHouse isn't very accurate:
     # "SELECT tanh(1)" returns 0.7615941559557646 or even 0.7615946626193841,
     # whereas the correct value is 0.7615941559557649.
+    # See https://github.com/ClickHouse/ClickHouse/issues/62390
+    #
+    # do_query_test(
+    #     "tanh(vector(1))",
+    #     500,
+    #     '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.7615941559557649"]}]}',
+    #     [["[]", "1970-01-01 00:08:20.000", 0.7615941559557649]],
+    #)
+    #
     # do_query_test(
     #     "tanh(deltas)",
     #     600,
