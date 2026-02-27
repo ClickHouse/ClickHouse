@@ -132,28 +132,29 @@ void updateChildDAGForPushedColumns(
     child_dag->removeUnusedActions();
 }
 
-/// Try to push volume-reducing functions from a parent ExpressionStep / FilterStep
-/// through its single child step.  Returns true if a pushdown was performed.
-bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+} // anonymous namespace
+
+
+size_t tryPushDownVolumeReducingFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
     /// --- 1. Validate parent --------------------------------------------------------
 
     if (parent_node->children.size() != 1)
-        return false;
+        return 0;
 
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent_node->step.get());
     auto * parent_filter = typeid_cast<FilterStep *>(parent_node->step.get());
     if (!parent_expr && !parent_filter)
-        return false;
+        return 0;
 
     auto & parent_dag = parent_expr ? parent_expr->getExpression() : parent_filter->getExpression();
 
     if (parent_dag.hasArrayJoin())
-        return false;
+        return 0;
 
     /// --- 2. Find volume-reducing function outputs ----------------------------------
 
-    /// Map: source column name → pushdown candidate.
+    /// Map: source column name -> pushdown candidate.
     std::unordered_map<std::string, PushdownCandidate> candidates;
 
     for (const auto * output : parent_dag.getOutputs())
@@ -195,7 +196,7 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
     }
 
     if (candidates.empty())
-        return false;
+        return 0;
 
     /// --- 3. Verify source columns are ONLY used by volume-reducing functions -------
 
@@ -205,7 +206,7 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
         for (const auto & func : cand.functions)
             vr_func_nodes.insert(func.function_node);
 
-    /// If ANY non-VR function in the DAG uses a candidate source column → exclude it.
+    /// If ANY non-VR function in the DAG uses a candidate source column -> exclude it.
     for (const auto & node : parent_dag.getNodes())
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION || vr_func_nodes.contains(&node))
@@ -218,7 +219,7 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
         }
     }
 
-    /// If a source column appears directly in the parent's outputs → exclude it.
+    /// If a source column appears directly in the parent's outputs -> exclude it.
     for (const auto * output : parent_dag.getOutputs())
     {
         const auto * actual = dealiasNode(output);
@@ -227,7 +228,7 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
     }
 
     if (candidates.empty())
-        return false;
+        return 0;
 
     /// --- 4. Check child step compatibility -----------------------------------------
 
@@ -236,7 +237,7 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 
     /// The child must have exactly one child itself (so we can insert a step below it).
     if (child_node->children.size() != 1)
-        return false;
+        return 0;
 
     for (auto it = candidates.begin(); it != candidates.end(); )
     {
@@ -247,7 +248,7 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
     }
 
     if (candidates.empty())
-        return false;
+        return 0;
 
     /// Check that no pushed function result name collides with existing grandchild output.
     const auto & grandchild_output = child_node->children.front()->step->getOutputHeader();
@@ -256,7 +257,7 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
         for (const auto & func : cand.functions)
         {
             if (grandchild_output->has(func.output_node->result_name))
-                return false;
+                return 0;
         }
     }
 
@@ -351,15 +352,7 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 
     parent_node->step->updateInputHeader(child_step->getOutputHeader());
 
-    return true;
-}
-
-} // anonymous namespace
-
-
-size_t tryPushDownVolumeReducingFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
-{
-    return tryPushDown(parent_node, nodes) ? 2 : 0;
+    return 2;
 }
 
 }
