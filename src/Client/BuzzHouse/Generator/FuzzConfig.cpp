@@ -586,7 +586,8 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
             if (nschema != current_schema || ntable != current_table)
             {
                 if (!next_cols.empty() && current_table != "stack_trace"
-                    && (allow_infinite_tables || std::ranges::none_of(infinite_prefixes, [&](std::string_view p){ return current_table.starts_with(p); })))
+                    && (allow_infinite_tables
+                        || std::ranges::none_of(infinite_prefixes, [&](std::string_view p) { return current_table.starts_with(p); })))
                 {
                     tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
                 }
@@ -599,7 +600,8 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
         }
         /// Emit the last table group that was never flushed by the loop
         if (!next_cols.empty() && current_table != "stack_trace"
-            && (allow_infinite_tables || std::ranges::none_of(infinite_prefixes, [&](std::string_view p){ return current_table.starts_with(p); })))
+            && (allow_infinite_tables
+                || std::ranges::none_of(infinite_prefixes, [&](std::string_view p) { return current_table.starts_with(p); })))
         {
             tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
         }
@@ -744,29 +746,37 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT ifNull(sum(\"lost_part_count\"), 0) x, 2 y FROM \"system\".\"replicas\")"
                 " UNION ALL "
-                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE "
+                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE "
                 "'%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%')"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
                 " WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)"
                 " UNION ALL "
-                "(SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, \"system\".\"metrics\") WHERE name = "
+                "(SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, \"system\".\"metrics\") WHERE \"name\" = "
                 "'SharedCatalogDropDetachLocalTablesErrors')"
                 " UNION ALL "
                 "(SELECT count() x, 6 y FROM clusterAllReplicas(default, \"system\".\"replicas\") WHERE readonly_start_time IS NOT NULL)"
                 " UNION ALL "
                 "(SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, \"system\".\"part_log\")"
-                " WHERE exception != '' AND event_time > (now() - toIntervalSecond(30)) GROUP BY part_name HAVING count() > 5) tx)"
+                " WHERE exception != '' AND event_time > (now() - toIntervalSecond(120)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
-                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE "
+                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE "
                 "'%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%')"
+                " UNION ALL "
+                "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
+                " UNION ALL "
+                "(SELECT count() x, 10 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE "
+                "'%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%')"
+                " UNION ALL "
+                "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE "
+                "'%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%')"
                 ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_client_out.generic_string())))
     {
         String buf;
         size_t i = 0;
         std::ifstream infile(fuzz_client_out, std::ios::in);
-        static const DB::Strings & health_errors
+        static const DB::Strings health_errors
             = {"broken detached part(s)",
                "broken replica(s)",
                "broken data part(s)",
@@ -774,7 +784,22 @@ void FuzzConfig::validateClickHouseHealth()
                "shared catalog drop/detach error(s)",
                "readonly replica(s)",
                "part(s) with excessive errors",
-               "replica(s) with REPLICA_ALREADY_EXISTS errors"};
+               "replica(s) with REPLICA_ALREADY_EXISTS errors",
+               "replication queue exception(s)",
+               "LOGICAL_ERROR(s) in text_log",
+               "CORRUPTED_DATA(s) in text_log"};
+        static const DB::Strings detail_queries = {
+            R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
+            R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE '%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            "",
+            "",
+            R"(SELECT "database", "table", "last_exception" FROM "system"."replicas" WHERE readonly_start_time IS NOT NULL LIMIT 3)",
+            R"(SELECT "database", "table", "part_name", "exception" FROM "system"."part_log" WHERE exception != '' AND event_time > (now() - toIntervalSecond(120)) ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE '%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE '%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(120) AND message ILIKE '%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
@@ -782,7 +807,29 @@ void FuzzConfig::validateClickHouseHealth()
             const uint32_t val = static_cast<uint32_t>(std::stoul(buf));
             if (val != 0)
             {
-                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "ClickHouse health check: found {} {}", val, health_errors[i]);
+                String details;
+                if (i < detail_queries.size() && !detail_queries[i].empty()
+                    && processServerQuery(
+                        false,
+                        fmt::format(
+                            "{} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;", detail_queries[i], fuzz_client_out.generic_string())))
+                {
+                    String dbuf;
+                    std::ifstream detail_file(fuzz_client_out, std::ios::in);
+                    while (std::getline(detail_file, dbuf))
+                    {
+                        if (!dbuf.empty())
+                            details += "\n  " + dbuf;
+                    }
+                }
+                throw DB::Exception(
+                    DB::ErrorCodes::BUZZHOUSE,
+                    "ClickHouse health check on {}:{}: found {} {}{}",
+                    host,
+                    port,
+                    val,
+                    health_errors[i],
+                    details.empty() ? "" : "\nDetails:" + details);
             }
             i++;
             buf.resize(0);
