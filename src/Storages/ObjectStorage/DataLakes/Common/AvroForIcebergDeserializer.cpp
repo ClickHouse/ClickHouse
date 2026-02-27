@@ -3,6 +3,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Common/UniqueLock.h>
