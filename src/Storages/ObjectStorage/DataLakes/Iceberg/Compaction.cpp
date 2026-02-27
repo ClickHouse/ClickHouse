@@ -171,6 +171,9 @@ Plan getPlan(
         log.get(),
         persistent_table_components.table_uuid);
 
+    // Set the generator version to the next version after the current metadata
+    plan.generator.setVersion(metadata_version + 1);
+
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
@@ -345,8 +348,18 @@ void writeConsolidatedManifestFile(
     auto log = getLogger("IcebergManifestConsolidation");
     LOG_INFO(log, "Writing consolidated manifest file for all snapshots");
 
-    // Use the existing metadata object from the plan to preserve snapshot history
-    Poco::JSON::Object::Ptr metadata_object = plan.initial_metadata_object;
+    // Create a deep copy of the metadata object to avoid modifying the original
+    // This ensures we create a new metadata file rather than updating the existing one
+    auto deepCopy = [](Poco::JSON::Object::Ptr obj) -> Poco::JSON::Object::Ptr
+    {
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        obj->stringify(oss);
+        Poco::JSON::Parser parser;
+        auto result = parser.parse(oss.str());
+        return result.extract<Poco::JSON::Object::Ptr>();
+    };
+
+    Poco::JSON::Object::Ptr metadata_object = deepCopy(plan.initial_metadata_object);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
@@ -462,9 +475,9 @@ void writeConsolidatedManifestFile(
     buffer_manifest->finalize();
 
     // Create manifest list with single manifest entry
-    LOG_INFO(log, "Creating manifest list: {}", new_snapshot.metadata_path);
+    LOG_INFO(log, "Creating manifest list: {}", new_snapshot.storage_metadata_path);
     auto buffer_manifest_list = object_storage->writeObject(
-        StoredObject(new_snapshot.metadata_path),
+        StoredObject(new_snapshot.storage_metadata_path),
         WriteMode::Rewrite,
         std::nullopt,
         DBMS_DEFAULT_BUFFER_SIZE,
@@ -499,6 +512,25 @@ void writeConsolidatedManifestFile(
 
         buffer_metadata->write(json_representation.data(), json_representation.size());
         buffer_metadata->finalize();
+    }
+
+    // Update version hint file to point to the new metadata
+    {
+        auto version_hint = plan.generator.generateVersionHint();
+        LOG_INFO(log, "Updating version hint file: {}", version_hint.path_in_storage);
+
+        auto buffer_version_hint = object_storage->writeObject(
+            StoredObject(version_hint.path_in_storage),
+            WriteMode::Rewrite,
+            std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
+
+        // Extract version number from metadata filename
+        // Format: metadata/v<version>.metadata.json or metadata/v<version>-<uuid>.metadata.json
+        auto version_str = std::to_string(plan.generator.getInitialVersion() - 1);
+        buffer_version_hint->write(version_str.data(), version_str.size());
+        buffer_version_hint->finalize();
     }
 
     LOG_INFO(log, "Successfully created consolidated manifest with {} data files", all_data_file_paths.size());

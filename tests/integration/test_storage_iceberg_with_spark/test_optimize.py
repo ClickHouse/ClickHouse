@@ -148,3 +148,5 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {snapshot_id}") == instance.query(
         "SELECT number FROM numbers(10, 90)"
     )
+
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST;", settings={"allow_experimental_iceberg_compaction" : 1})
