@@ -1167,11 +1167,13 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         const IColumn & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
 
+        const bool data_is_nullable = column_data.isNullable();
+
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
             for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
             {
-                if (column_data.isNullAt(element_idx))
+                if (data_is_nullable && column_data.isNullAt(element_idx))
                     continue;
 
                 const std::string_view ref = column_data.getDataAt(element_idx);
@@ -1182,9 +1184,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     }
     else
     {
+        const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
+
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            if (!preprocessed_column->isNullAt(i))
+            if (!column_is_nullable || !preprocessed_column->isNullAt(i))
             {
                 const std::string_view ref = preprocessed_column->getDataAt(i);
                 granule_builder.addDocument(ref);
