@@ -568,7 +568,9 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
                 "'information_schema') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_client_out.generic_string())))
     {
+        static constexpr std::array<std::string_view, 3> infinite_prefixes{"numbers", "zeros", "primes"};
         std::ifstream infile(fuzz_client_out);
+
         while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
@@ -584,7 +586,7 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
             if (nschema != current_schema || ntable != current_table)
             {
                 if (!next_cols.empty() && current_table != "stack_trace"
-                    && (allow_infinite_tables || (!current_table.starts_with("numbers") && !current_table.starts_with("zeros"))))
+                    && (allow_infinite_tables || std::ranges::none_of(infinite_prefixes, [&](std::string_view p){ return current_table.starts_with(p); })))
                 {
                     tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
                 }
@@ -597,7 +599,7 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
         }
         /// Emit the last table group that was never flushed by the loop
         if (!next_cols.empty() && current_table != "stack_trace"
-            && (allow_infinite_tables || (!current_table.starts_with("numbers") && !current_table.starts_with("zeros"))))
+            && (allow_infinite_tables || std::ranges::none_of(infinite_prefixes, [&](std::string_view p){ return current_table.starts_with(p); })))
         {
             tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
         }
