@@ -9,8 +9,18 @@ doc_type: 'reference'
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
-# User Defined Function (UDF) {#executable-user-defined-functions}
+# UDFs User Defined Functions
+
+ClickHouse supports several types of user defined functions (UDFs):
+
+- [Executable UDFs](#executable-user-defined-functions) start an external program or script (Python, Bash, etc.) and stream blocks of data to it over STDIN / STDOUT. Use them to integrate existing code or tooling without recompiling ClickHouse. They have higher per‑call overhead compared to in‑process options and are best for heavier logic or where a different runtime is required.
+- [SQL UDFs](#sql-user-defined-functions) are defined with `CREATE FUNCTION` purely in SQL. They are inlined/expanded into the query plan (no process boundary), making them lightweight and ideal for reusing expression logic or simplifying complex calculated columns.
+- [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) run code compiled to WebAssembly inside a sandbox within the server process. They offer lower per‑call overhead than external executables with better isolation than native extensions, making them suitable for custom algorithms written in languages that can target WASM (e.g. C/C++/Rust).
+
+## Executable User Defined Functions {#executable-user-defined-functions}
 
 <PrivatePreviewBadge/>
 
@@ -425,6 +435,51 @@ If a function in a query is performed on the requestor server, but you need to p
 ## SQL User Defined Functions {#sql-user-defined-functions}
 
 Custom functions from lambda expressions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
+
+## WebAssembly User Defined Functions {#webassembly-user-defined-functions}
+
+<CloudNotSupportedBadge/>
+<ExperimentalBadge/>
+
+WebAssembly User Defined Functions (WASM UDFs) allow you to run custom code compiled to WebAssembly inside the ClickHouse server process.
+
+### Quick Start
+
+Enable experimental WebAssembly support in your ClickHouse configuration:
+
+```xml
+<clickhouse>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+</clickhouse>
+```
+
+Insert your compiled WASM module into the system table:
+
+```sql
+INSERT INTO system.webassembly_modules (name, code)
+SELECT 'my_module', base64Decode('AGFzbQEAAAA...');
+```
+
+Create a function using your WASM module:
+
+```sql
+CREATE FUNCTION my_function
+LANGUAGE WASM
+ABI ROW_DIRECT
+FROM 'my_module'
+ARGUMENTS (x UInt32, y UInt32)
+RETURNS UInt32;
+```
+
+Use the function in your queries:
+
+```sql
+SELECT my_function(10, 20);
+```
+
+### More Information
+
+Refer to the documentation on [WebAssembly User Defined Functions](wasm_udf.md) for more details.
 
 ## Related Content {#related-content}
 - [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

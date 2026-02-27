@@ -58,8 +58,6 @@ public:
     {
     public:
         NodeType node_type;
-        size_t start_pos = String::npos; /// Start position of the promql query's part which this node represents with its children.
-        size_t length = 0;               /// Length of the promql query's part which this node represents with its children.
         ResultType result_type;          /// The data type this node with its children evaluates to.
         std::vector<const Node *> children;  /// E.g. arguments for a function, matchers for selectors.
         const Node * parent = nullptr;

@@ -27,9 +27,12 @@
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+namespace DB
+{
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
 }
 
 namespace DB

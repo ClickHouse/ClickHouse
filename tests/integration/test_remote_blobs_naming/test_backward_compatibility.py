@@ -271,6 +271,8 @@ def test_replicated_merge_tree(cluster, test_case):
                 PARTITION BY id
                 ORDER BY (id, val)
                 SETTINGS
+                    -- Changes the number of files
+                    add_minmax_index_for_numeric_columns=0,
                     storage_policy='{storage_policy}',
                     allow_remote_fs_zero_copy_replication='{1 if zero_copy else 0}'
                 """
