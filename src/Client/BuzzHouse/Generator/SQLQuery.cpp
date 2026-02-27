@@ -693,7 +693,7 @@ bool StatementGenerator::joinedTableOrFunction(
             if (ncols == 1 && rg.nextMediumNumber() < 6)
             {
                 prepareNextExplain(rg, eq);
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"explain"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"explain"}, string_tp.get()));
             }
             else
             {
@@ -845,14 +845,14 @@ bool StatementGenerator::joinedTableOrFunction(
             {
                 case NumbersFunc_NumbersName::NumbersFunc_NumbersName_generate_series:
                 case NumbersFunc_NumbersName::NumbersFunc_NumbersName_generateSeries:
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"generate_series"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"generate_series"}, size_tp.get()));
                     break;
                 case NumbersFunc_NumbersName::NumbersFunc_NumbersName_numbers:
                 case NumbersFunc_NumbersName::NumbersFunc_NumbersName_numbers_mt:
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"number"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"number"}, size_tp.get()));
                     break;
                 case NumbersFunc_NumbersName::NumbersFunc_NumbersName_primes:
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"prime"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"prime"}, size_tp.get()));
                     break;
             }
             this->levels[this->current_level].rels.emplace_back(rel);
@@ -945,9 +945,9 @@ bool StatementGenerator::joinedTableOrFunction(
                 marks.emplace_back(SQLRelationCol(rel_name, npath));
             }
             rel.cols.insert(rel.cols.end(), marks.begin(), marks.end());
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"mark_number"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"rows_in_granule"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"mark_number"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"rows_in_granule"}, size_tp.get()));
         }
         break;
         case QueryOp::LoopUDF: {
@@ -1109,7 +1109,7 @@ bool StatementGenerator::joinedTableOrFunction(
                 DB::Strings npath = entry.path;
 
                 npath.back() = "_parent" + npath.back();
-                parents.emplace_back(SQLRelationCol(rel_name, npath));
+                parents.emplace_back(SQLRelationCol(rel_name, npath, size_tp.get()));
             }
             rel.cols.insert(rel.cols.end(), parents.begin(), parents.end());
         }
@@ -1146,8 +1146,8 @@ bool StatementGenerator::joinedTableOrFunction(
                     mtudf->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
                 }
             }
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"ranges"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"ranges"}, size_tp.get()));
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;
@@ -1359,11 +1359,15 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
     }
 }
 
-void StatementGenerator::addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr)
+void StatementGenerator::addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr, SQLType * tp)
 {
     if (rg.nextSmallNumber() < 3)
     {
         refColumn(rg, rg.pickRandomly(available_cols), expr);
+    }
+    else if (tp && rg.nextSmallNumber() < 8)
+    {
+        expr->mutable_lit_val()->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
     }
     else
     {
@@ -1407,11 +1411,11 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             if (rg.nextSmallNumber() < 9)
             {
                 refColumn(rg, gcol, lexpr);
-                addWhereSide(rg, available_cols, rexpr);
+                addWhereSide(rg, available_cols, rexpr, gcol.getType());
             }
             else
             {
-                addWhereSide(rg, available_cols, lexpr);
+                addWhereSide(rg, available_cols, lexpr, gcol.getType());
                 refColumn(rg, gcol, rexpr);
             }
         }
@@ -1429,19 +1433,19 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             if (noption2 < 34)
             {
                 refColumn(rg, gcol, expr1);
-                addWhereSide(rg, available_cols, expr2);
-                addWhereSide(rg, available_cols, expr3);
+                addWhereSide(rg, available_cols, expr2, gcol.getType());
+                addWhereSide(rg, available_cols, expr3, gcol.getType());
             }
             else if (noption2 < 68)
             {
-                addWhereSide(rg, available_cols, expr1);
+                addWhereSide(rg, available_cols, expr1, gcol.getType());
                 refColumn(rg, gcol, expr2);
-                addWhereSide(rg, available_cols, expr3);
+                addWhereSide(rg, available_cols, expr3, gcol.getType());
             }
             else
             {
-                addWhereSide(rg, available_cols, expr1);
-                addWhereSide(rg, available_cols, expr2);
+                addWhereSide(rg, available_cols, expr1, gcol.getType());
+                addWhereSide(rg, available_cols, expr2, gcol.getType());
                 refColumn(rg, gcol, expr3);
             }
         }
@@ -1503,7 +1507,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             }
             else
             {
-                addWhereSide(rg, available_cols, expr2);
+                addWhereSide(rg, available_cols, expr2, gcol.getType());
             }
         }
         break;
@@ -1530,12 +1534,12 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
 
                     for (uint32_t i = 0; i < nclauses; i++)
                     {
-                        addWhereSide(rg, available_cols, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+                        addWhereSide(rg, available_cols, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs(), gcol.getType());
                     }
                 }
                 else
                 {
-                    addWhereSide(rg, available_cols, ein->mutable_single_expr());
+                    addWhereSide(rg, available_cols, ein->mutable_single_expr(), gcol.getType());
                 }
             }
             else
@@ -1546,7 +1550,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
-                addWhereSide(rg, available_cols, sfc->add_args()->mutable_expr());
+                addWhereSide(rg, available_cols, sfc->add_args()->mutable_expr(), gcol.getType());
             }
             refColumn(rg, gcol, expr1);
         }

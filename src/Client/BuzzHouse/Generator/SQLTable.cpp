@@ -226,7 +226,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, names));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names, entry.getBottomType()));
     }
     this->table_entries.clear();
     if (allow_internal_cols && (rel.cols.empty() || (rg.nextSmallNumber() < (this->inside_projection ? 6 : 3))))
@@ -235,39 +235,39 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             if (!this->inside_projection || rg.nextSmallNumber() < 2)
             {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}, size_tp.get()));
             }
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}, size_tp.get()));
         }
         else if (
             t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine() || t.isFileEngine()
             || t.isURLEngine())
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_number"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_number"}, size_tp.get()));
             if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
             {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}, size_tp.get()));
                 if (t.isAnyDeltaLakeEngine())
                 {
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_change_type"}));
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_timestamp"}));
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_version"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_change_type"}, string_tp.get()));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_timestamp"}, size_tp.get()));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_version"}, size_tp.get()));
                 }
             }
             if (t.isURLEngine())
@@ -276,35 +276,35 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             }
             else if (!t.isFileEngine())
             {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}, string_tp.get()));
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_tags"}));
             }
         }
         else if (t.isDistributedEngine())
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}, size_tp.get()));
         }
         else if (t.isMaterializedPostgreSQLEngine())
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}, string_tp.get()));
         }
         else if (t.isKafkaEngine())
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_topic"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_key"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_offset"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp_ms"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "name"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "value"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_raw_message"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_error"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_topic"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_key"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_offset"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp_ms"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "value"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_raw_message"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_error"}, string_tp.get()));
         }
         if (!this->inside_projection || rg.nextSmallNumber() < 2)
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}, string_tp.get()));
         }
     }
     if (rel.cols.empty())
@@ -365,7 +365,7 @@ void StatementGenerator::addDictionaryRelation(const String & rel_name, const SQ
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, names));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names, entry.getBottomType()));
     }
     this->table_entries.clear();
     if (!this->levels.contains(this->current_level))

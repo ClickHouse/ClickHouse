@@ -17,12 +17,20 @@ class SQLRelationCol
 public:
     String rel_name;
     DB::Strings path;
+    SQLType * tp = nullptr; /// Non-owning; nullptr when type is unknown (subqueries, CTEs, virtual columns)
 
     SQLRelationCol() = default;
 
     SQLRelationCol(const String & rname, const DB::Strings & names)
         : rel_name(rname)
         , path(names)
+    {
+    }
+
+    SQLRelationCol(const String & rname, const DB::Strings & names, SQLType * t)
+        : rel_name(rname)
+        , path(names)
+        , tp(t)
     {
     }
 
@@ -64,6 +72,8 @@ public:
         , gexpr(g)
     {
     }
+
+    SQLType * getType() const { return col.has_value() ? col->tp : nullptr; }
 };
 
 class QueryLevel
@@ -577,7 +587,7 @@ private:
         std::vector<GroupCol> & gcols,
         Expr * expr);
     bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, SelectStatementCore * ssc);
-    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
+    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr, SQLType * tp = nullptr);
     void addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
