@@ -53,6 +53,13 @@ CREATE NAMED COLLECTION IF NOT EXISTS test_niladic_coll AS currentUser = 'admin_
 SELECT collection FROM system.named_collections WHERE name = 'test_niladic_coll';
 DROP NAMED COLLECTION test_niladic_coll;
 
+-- Ensure AS aliases don't interfere with niladic function resolution
+WITH 123 as plus
+SELECT plus;
+
+WITH TODAY as plus
+SELECT plus = TODAY();
+
 -- Verify error for functions that don't allow omitting parentheses
 SELECT concat; -- { serverError UNKNOWN_IDENTIFIER }
 
