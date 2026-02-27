@@ -145,7 +145,7 @@ SELECT welchTTest(0.95)(sample_data, sample_index) FROM welch_ttest;
     FunctionDocumentation::Category category_welchTTest = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_welchTTest = {description_welchTTest, syntax_welchTTest, arguments_welchTTest, parameters_welchTTest, returned_value_welchTTest, examples_welchTTest, introduced_in_welchTTest, category_welchTTest};
 
-    factory.registerFunction("welchTTest", {createAggregateFunctionWelchTTest, {}, documentation_welchTTest});
+    factory.registerFunction("welchTTest", {createAggregateFunctionWelchTTest, documentation_welchTTest});
 }
 
 }

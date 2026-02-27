@@ -1184,6 +1184,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & [name, ast] : stage.column_to_updated)
                         stages_copy.back().column_to_updated.emplace(name, ast->clone());
                     stages_copy.back().output_columns = stage.output_columns;
+                    stages_copy.back().affects_all_columns = stage.affects_all_columns;
                     for (const auto & filter : stage.filters)
                         stages_copy.back().filters.push_back(filter->clone());
                 }

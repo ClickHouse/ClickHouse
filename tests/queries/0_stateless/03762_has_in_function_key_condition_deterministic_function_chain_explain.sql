@@ -1,10 +1,10 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-parallel, no-random-merge-tree-settings
 -- EXPLAIN output may differ
+-- add_minmax_index_for_numeric_columns=0: Changes the plan
 
 SET optimize_functions_to_subcolumns = 1;
 
 -- { echoOn }
-
 DROP TABLE IF EXISTS table_basic;
 
 CREATE TABLE table_basic
@@ -13,7 +13,7 @@ CREATE TABLE table_basic
 )
 ENGINE = MergeTree
 ORDER BY d::String
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO table_basic VALUES
     (toDateTime(1730611800, 'America/New_York')),
@@ -51,7 +51,7 @@ CREATE TABLE table_intdiv_string
 )
 ENGINE = MergeTree
 ORDER BY toString(intDiv(x, 10))
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO table_intdiv_string VALUES
     (2), (5), (9), (10), (12), (15), (19), (20), (29), (33), (39), (40), (55), (59), (90), (95), (99);
@@ -84,7 +84,7 @@ CREATE TABLE table_str_chain
 )
 ENGINE = MergeTree
 ORDER BY reverse(lower(s))
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO table_str_chain VALUES
     ('Abc'), ('abc'),
@@ -120,7 +120,7 @@ SET use_variant_as_common_type=1;
 
 DROP TABLE IF EXISTS table_json;
 
-CREATE TABLE table_json (id UInt64, json JSON(a UInt32)) ENGINE = MergeTree ORDER BY (json.a, json.b::String) SETTINGS index_granularity = 1;
+CREATE TABLE table_json (id UInt64, json JSON(a UInt32)) ENGINE = MergeTree ORDER BY (json.a, json.b::String) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2, 'b', 'str_' || number % 3, 'c', range(number % 10))) FROM numbers(4);
 INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2 + 4, 'b', 'str_' || number % 3 + 4, 'c', range(number % 10))) FROM numbers(4, 4);
@@ -135,7 +135,7 @@ DROP TABLE IF EXISTS table_json_or_null;
 CREATE TABLE table_json_or_null (id UInt64, json JSON(a UInt32))
 ENGINE = MergeTree
 ORDER BY (json.a, json.b::UInt64)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO table_json_or_null
 SELECT number, toJSONString(map('a', number % 2, 'b', toString(number % 3)))
@@ -152,7 +152,7 @@ DROP TABLE IF EXISTS table_json_nested_cast;
 CREATE TABLE table_json_nested_cast (id UInt64, json JSON(a UInt32))
 ENGINE = MergeTree
 ORDER BY (json.a, (json.b::String)::UInt64)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO table_json_nested_cast
 SELECT number, toJSONString(map('a', number % 2, 'b', toString(number % 3)))

@@ -5,6 +5,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <random>
 #include <unordered_set>
@@ -63,6 +64,7 @@ void ReplicatedMergeTreeCleanupThread::run()
 
     auto storage_settings = storage.getSettings();
 
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeCleanupThread");
     Float32 cleanup_points = 0;
     try
     {

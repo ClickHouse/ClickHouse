@@ -100,16 +100,16 @@ namespace
 REGISTER_FUNCTION(JSONArrayLength)
 {
     /// JSONArrayLength documentation
-    FunctionDocumentation::Description description_JSONArrayLength = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the number of elements in the outermost JSON array.
 The function returns `NULL` if input JSON string is invalid.
     )";
-    FunctionDocumentation::Syntax syntax_JSONArrayLength = "JSONArrayLength(json)";
-    FunctionDocumentation::Arguments arguments_JSONArrayLength = {
+    FunctionDocumentation::Syntax syntax = "JSONArrayLength(json)";
+    FunctionDocumentation::Arguments arguments = {
         {"json", "String with valid JSON.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_JSONArrayLength = {"Returns the number of array elements if `json` is a valid JSON array string, otherwise returns `NULL`.", {"Nullable(UInt64)"}};
-    FunctionDocumentation::Examples examples_JSONArrayLength = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of array elements if `json` is a valid JSON array string, otherwise returns `NULL`.", {"Nullable(UInt64)"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -124,11 +124,11 @@ SELECT
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_JSONArrayLength = {23, 2};
-    FunctionDocumentation::Category category_JSONArrayLength = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation_JSONArrayLength = {description_JSONArrayLength, syntax_JSONArrayLength, arguments_JSONArrayLength, {}, returned_value_JSONArrayLength, examples_JSONArrayLength, introduced_in_JSONArrayLength, category_JSONArrayLength};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionJSONArrayLength>(documentation_JSONArrayLength);
+    factory.registerFunction<FunctionJSONArrayLength>(documentation);
 
     /// For Spark compatibility.
     factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::Case::Insensitive);
