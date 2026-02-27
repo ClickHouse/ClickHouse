@@ -847,6 +847,9 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
                     codec_fn->arguments->children.push_back(
                         makeASTFunction("LZ4HC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1))));
                     break;
+                default:
+                    /// Do nothing
+                    break;
             }
         }
     }
@@ -854,13 +857,21 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
     if (column.default_specifier != ColumnDefaultSpecifier::Empty && column.default_specifier != ColumnDefaultSpecifier::AutoIncrement
         && column.getDefaultExpression() && fuzz_rand() % 5 == 0)
     {
-        static const std::vector<ColumnDefaultSpecifier> expr_specifiers = {
-            ColumnDefaultSpecifier::Default,
-            ColumnDefaultSpecifier::Materialized,
-            ColumnDefaultSpecifier::Alias,
-            ColumnDefaultSpecifier::Ephemeral,
-        };
-        column.default_specifier = pickRandomly(fuzz_rand, expr_specifiers);
+        switch (fuzz_rand() % 4)
+        {
+            case 0:
+                column.default_specifier = ColumnDefaultSpecifier::Default;
+                break;
+            case 1:
+                column.default_specifier = ColumnDefaultSpecifier::Materialized;
+                break;
+            case 2:
+                column.default_specifier = ColumnDefaultSpecifier::Alias;
+                break;
+            case 3:
+                column.default_specifier = ColumnDefaultSpecifier::Ephemeral;
+                break;
+        }
     }
 }
 
