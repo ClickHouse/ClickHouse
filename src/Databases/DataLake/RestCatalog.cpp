@@ -1012,98 +1012,45 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendRequest(
-    const String & endpoint,
-    Poco::JSON::Object::Ptr request_body,
-    const String & method,
-    bool ignore_result) const
+void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
 {
-    std::string body_str;
+    std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
-    {
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         request_body->stringify(oss);
+    const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
-        body_str = oss.str();
-    }
+    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
+    headers.emplace_back("Content-Type", "application/json");
 
     const auto & context = getContext();
-    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
+    if (!body_str.empty())
+    {
+        out_stream_callback = [body_str](std::ostream & os)
+        {
+            os << body_str;
+        };
+    }
 
     /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);
+    auto wb = DB::BuilderRWBufferFromHTTP(url)
+        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+        .withMethod(method)
+        .withSettings(context->getReadSettings())
+        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+        .withHostFilter(&context->getRemoteHostFilter())
+        .withHeaders(headers)
+        .withOutCallback(out_stream_callback)
+        .withSkipNotFound(false)
+        .create(credentials);
 
-    auto do_request = [&](bool update_token)
-    {
-        DB::HTTPHeaderEntries headers = getAuthHeaders(update_token);
-
-        headers.emplace_back("Accept", "application/json");
-        headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
-
-        context->getRemoteHostFilter().checkURL(url);
-
-        auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
-
-        Poco::Net::HTTPRequest request(method, url.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
-
-        if (!body_str.empty())
-            request.setContentType("application/json");
-
-        for (const auto & [name, value] : headers)
-            request.set(name, value);
-
-        if (!request.has("Authorization") && !credentials.getUsername().empty())
-            credentials.authenticate(request);
-
-        if (!body_str.empty())
-            request.setContentLength(static_cast<std::streamsize>(body_str.size()));
-
-        std::ostream & os = session->sendRequest(request);
-        if (!body_str.empty())
-            os << body_str;
-
-        Poco::Net::HTTPResponse response;
-        std::istream & rs = session->receiveResponse(response);
-
-        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK
-            && response.getStatus() != Poco::Net::HTTPResponse::HTTP_CREATED
-            && response.getStatus() != Poco::Net::HTTPResponse::HTTP_ACCEPTED
-            && response.getStatus() != Poco::Net::HTTPResponse::HTTP_NO_CONTENT)
-        {
-            std::string resp_body;
-            Poco::StreamCopier::copyToString(rs, resp_body);
-
-            throw DB::HTTPException(
-                DB::ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-                url.toString(),
-                response.getStatus(),
-                response.getReason(),
-                resp_body);
-        }
-
-        if (!ignore_result)
-        {
-            String response_str;
-            Poco::StreamCopier::copyToString(rs, response_str);
-            (void)response_str;
-        }
-    };
-
-    try
-    {
-        do_request(false);
-    }
-    catch (const DB::HTTPException & e)
-    {
-        if (update_token_if_expired
-            && (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED
-                || e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_FORBIDDEN))
-        {
-            do_request(true);
-            return;
-        }
-        throw;
-    }
+    String response_str;
+    if (!ignore_result)
+        readJSONObjectPossiblyInvalid(response_str, *wb);
+    else
+        wb->ignoreAll();
 }
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const

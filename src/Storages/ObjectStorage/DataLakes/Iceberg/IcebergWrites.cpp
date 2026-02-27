@@ -739,9 +739,6 @@ IcebergStorageSink::IcebergStorageSink(
                     if (write_data_path.back() != '/')
                         write_data_path += "/";
 
-                    /// Derive the storage-relative data path from write.data.path.
-                    /// bucket = s3_prefix + config_path, so s3_prefix = bucket without the config_path suffix.
-                    /// Then storage_data_path = write_data_path without the s3_prefix.
                     String storage_data_path = write_data_path;
                     if (bucket.size() > config_path.size())
                     {
@@ -963,7 +960,6 @@ bool IcebergStorageSink::initializeMetadata()
     Strings manifest_entries;
     Int64 manifest_lengths = 0;
 
-    /// S3 object key must not have leading slash so it matches the path in s3:// URL (Unity Catalog validates manifest-list location).
     auto object_key = [](const String & path) -> String
     {
         return path.starts_with('/') ? path.substr(1) : path;
