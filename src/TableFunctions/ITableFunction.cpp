@@ -33,8 +33,11 @@ std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject()
     return StorageFactory::instance().getSourceAccessObject(getStorageEngineName());
 }
 
-void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query) const
+StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query) const
 {
+    ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
+
     if (const auto access_object = getSourceAccessObject())
     {
         AccessType type_to_check = AccessType::READ;
@@ -43,14 +46,6 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
 
         context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
     }
-}
-
-StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query) const
-{
-    ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
-
-    checkSourceAccess(context, is_insert_query);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
