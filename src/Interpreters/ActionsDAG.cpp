@@ -932,6 +932,9 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             auto key = arguments.at(0);
+            if (!key.column)
+                break;
+
             key.column = key.column->convertToFullColumnIfConst();
 
             const auto * array = getArrayJoinColumnRawPtr(key.column);

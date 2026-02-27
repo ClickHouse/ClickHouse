@@ -3837,6 +3837,10 @@ class ClickHouseCluster:
                 self.wait_ytsaurus_to_start()
 
             if self.with_letsencrypt_pebble and self.base_letsencrypt_pebble_cmd:
+                letsencrypt_pebble_pull_cmd = self.base_letsencrypt_pebble_cmd + ["pull"]
+                retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(
+                    run_and_check, letsencrypt_pebble_pull_cmd, nothrow=True, timeout=600
+                )
                 letsencrypt_pebble_start_cmd = self.base_letsencrypt_pebble_cmd + common_opts
                 run_and_check(letsencrypt_pebble_start_cmd)
                 self.wait_letsencrypt_pebble_to_start()
