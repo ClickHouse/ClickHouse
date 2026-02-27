@@ -1820,6 +1820,30 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
+namespace
+{
+
+/// Check if all columns of all useful skip indexes are also part of the primary key.
+/// When true, skip indexes cannot cause incorrect FINAL results (since PK-based filtering cannot drop parts with overlapping key ranges),
+/// so the `findPKRangesForFinalAfterSkipIndex` recovery pass can be skipped.
+bool areAllSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+
+    for (const auto & skip_index : skip_indexes.useful_indices)
+    {
+        for (const auto & column : skip_index.index->index.column_names)
+        {
+            if (!primary_key_columns_set.contains(column))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+}
+
 static void buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag,
@@ -2219,8 +2243,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         bool use_skip_indexes_if_final_exact_mode =
             indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-            && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, indexes->skip_indexes,
-                                                indexes->key_condition_rpn_template->hasOnlyConjunctions())
+            && !areAllSkipIndexColumnsInPrimaryKey(primary_key_column_names, indexes->skip_indexes)
             && settings[Setting::use_skip_indexes_if_final_exact_mode];
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
@@ -3770,24 +3793,6 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
     return false;
 }
 
-/// Check if any/all columns with the given skip indexes are also part of the primary key
-bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one)
-{
-    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
-
-    for (const auto & skip_index : skip_indexes.useful_indices)
-    {
-        for (const auto & column : skip_index.index->index.column_names)
-        {
-            if (primary_key_columns_set.contains(column) && any_one)
-                return true;
-            else if (!primary_key_columns_set.contains(column) && !any_one)
-                return false;
-        }
-    }
-
-    return !any_one;
-}
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
 {
