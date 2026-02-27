@@ -48,6 +48,10 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    /// Cancel current execution if possible
+    /// Method `execute` called from another thread should stop after this method is called and throw an exception.
+    virtual void interruptExecution() const {}
+
 protected:
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
@@ -464,6 +468,9 @@ public:
     {
         return executeImpl(arguments, result_type, input_rows_count);
     }
+
+    /// Cancel current `executeImpl` execution if possible
+    virtual void interruptExecution() const {}
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,

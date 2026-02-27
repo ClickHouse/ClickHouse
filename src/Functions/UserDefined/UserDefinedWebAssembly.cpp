@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
 #include <Formats/FormatFactory.h>
@@ -153,7 +154,7 @@ public:
     }
 
     MutableColumnPtr
-    executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr, size_t num_rows) const override
+    executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr, size_t num_rows, StopToken stop_token) const override
     {
         ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
 
@@ -172,7 +173,7 @@ public:
         {
             if (auto * column_typed = typeid_cast<ColumnVector<T> *>(result_column.get()))
             {
-                auto value = compartment->invoke<typename NativeToWasmType<T>::Type>(function_name, args);
+                auto value = compartment->invoke<typename NativeToWasmType<T>::Type>(function_name, args, stop_token);
                 column_typed->insertValue(std::bit_cast<T>(value));
                 return true;
             }
@@ -220,10 +221,14 @@ public:
     static WasmFunctionDeclaration allocateFunctionDeclaration() { return {allocate_function_name, {WasmValKind::I32}, WasmValKind::I32}; }
     static WasmFunctionDeclaration deallocateFunctionDeclaration() { return {deallocate_function_name, {WasmValKind::I32}, std::nullopt}; }
 
-    explicit WasmMemoryManagerV01(WasmCompartment * compartment_) : compartment(compartment_) { }
+    explicit WasmMemoryManagerV01(WasmCompartment * compartment_, StopToken stop_token_)
+        : compartment(compartment_)
+        , stop_token(stop_token_)
+    {
+    }
 
-    WasmPtr createBuffer(WasmSizeT size) const override { return compartment->invoke<WasmPtr>(allocate_function_name, {size}); }
-    void destroyBuffer(WasmPtr handle) const override { compartment->invoke<void>(deallocate_function_name, {handle}); }
+    WasmPtr createBuffer(WasmSizeT size) const override { return compartment->invoke<WasmPtr>(allocate_function_name, {size}, stop_token); }
+    void destroyBuffer(WasmPtr handle) const override { compartment->invoke<void>(deallocate_function_name, {handle}, stop_token); }
 
     std::span<uint8_t> getMemoryView(WasmPtr handle) const override
     {
@@ -247,6 +252,7 @@ public:
 
 private:
     WasmCompartment * compartment;
+    StopToken stop_token;
 };
 
 class UserDefinedWebAssemblyFunctionBufferedV1 : public UserDefinedWebAssemblyFunction
@@ -297,7 +303,7 @@ public:
     }
 
     MutableColumnPtr
-    executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows) const override
+    executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows, StopToken stop_token) const override
     {
         ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
 
@@ -308,7 +314,7 @@ public:
         if (num_rows >= std::numeric_limits<WasmSizeT>::max())
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large number of rows: {}", num_rows);
 
-        auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment);
+        auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment, stop_token);
 
         WasmMemoryGuard wasm_data = nullptr;
         if (!block.empty())
@@ -344,7 +350,7 @@ public:
             std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
         }
 
-        auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getHandle(), static_cast<WasmSizeT>(num_rows)});
+        auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getHandle(), static_cast<WasmSizeT>(num_rows)}, stop_token);
         if (result_ptr == 0)
             throw Exception(ErrorCodes::WASM_ERROR, "WebAssembly function '{}' returned nullptr", function_name);
 
@@ -525,6 +531,11 @@ public:
         return result_column;
     }
 
+    void interruptExecution() const override
+    {
+        interrupt_source.request_stop();
+    }
+
 private:
     ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
@@ -538,7 +549,8 @@ private:
         {
             size_t current_block_size = std::min(block_size, input_rows_count - start_idx);
             auto current_input_block = getArgumentsBlock(arguments, start_idx, current_block_size);
-            auto current_column = user_defined_function->executeOnBlock(compartment, current_input_block, context, current_block_size);
+            auto stop_token = interrupt_source.get_token();
+            auto current_column = user_defined_function->executeOnBlock(compartment, current_input_block, context, current_block_size, stop_token);
 
             if (!result_column->structureEquals(*current_column))
                 throw Exception(
@@ -572,6 +584,7 @@ private:
     String function_name;
     Strings argument_names;
 
+    mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;
 };
 

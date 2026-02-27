@@ -384,6 +384,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
     extern const ServerSettingsBool allow_experimental_webassembly_udf;
+    extern const ServerSettingsString webassembly_udf_engine;
 }
 
 namespace ErrorCodes
@@ -3640,9 +3641,7 @@ WasmModuleManager * Context::initWasmModuleManager()
     if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
         return nullptr;
 
-    const auto & config = shared->getConfigRefWithLock(lock);
-    auto engine_name = config.getString("webassembly_udf_engine", "wasmtime");
-
+    String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Interpreters/WebAssembly/WasmTypes.h>
+
 #include <span>
+#include <Common/StopToken.h>
 
 namespace DB::WebAssembly
 {
@@ -27,11 +29,11 @@ public:
     /// Invoke a function expecting to return a single value of specific result type or void, if no return value expected.
     /// If function returns multiple values or different type, an exception is thrown.
     template <typename ResultType>
-    ResultType invoke(std::string_view function_name, const std::vector<WasmVal> & params);
+    ResultType invoke(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token);
 
 protected:
     /// Implementation provides generic invocation returning all result values of generic WasmVal type.
-    virtual std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) = 0;
+    virtual std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) = 0;
 };
 
 /** WasmModule represents a WebAssembly module, typically containing code, imports and exports.
