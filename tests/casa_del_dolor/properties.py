@@ -433,7 +433,7 @@ cache_storage_properties = {
     "max_elements": threshold_generator(0.2, 0.2, 100, 10000000),
     "max_file_segment_size": file_size_value(100),
     "overcommit_eviction_evict_step": threshold_generator(
-        0.2, 0.2, 0, 10 * 1024 * 1024
+        0.2, 0.2, 1, 10 * 1024 * 1024
     ),
     # "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0), cannot be specified with `max_size` at the same time
     "slru_size_ratio": threshold_generator(0.2, 0.2, 0.01, 0.99),
@@ -907,7 +907,7 @@ class DiskPropertiesGroup(PropertiesGroup):
 
 def add_single_cache(i: int, next_cache: ET.Element):
     max_size_xml = ET.SubElement(next_cache, "max_size")
-    max_size_xml.text = file_size_value(10, 4)()
+    max_size_xml.text = file_size_value(100, 4)()
     path_xml = ET.SubElement(next_cache, "path")
     path_xml.text = f"/var/lib/clickhouse/fcache{i}/"
 
