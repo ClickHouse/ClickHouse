@@ -1,0 +1,14 @@
+{
+    "type": "record",
+    "name": "row",
+    "fields": [
+        {"name": "uint8", "type": {"type":"fixed", "size": 1, "name": "uint8"}},
+        {"name": "int8", "type": {"type":"fixed", "size": 1, "name": "int8"}},
+        {"name": "uint16", "type": {"type":"fixed", "size": 2, "name": "uint16"}},
+        {"name": "int16", "type": {"type":"fixed", "size": 2, "name": "int16"}},
+        {"name": "uint32", "type": {"type":"fixed", "size": 4, "name": "uint32"}},
+        {"name": "int32", "type": {"type":"fixed", "size": 4, "name": "int32"}},
+        {"name": "uint64", "type": {"type":"fixed", "size": 8, "name": "uint64"}},
+        {"name": "int64", "type": {"type":"fixed", "size": 8, "name": "int64"}}
+    ]
+  }

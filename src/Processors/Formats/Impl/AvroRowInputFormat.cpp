@@ -243,6 +243,14 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
             return true;
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::IPv6: [[fallthrough]];
+        case TypeIndex::Int8: [[fallthrough]];
+        case TypeIndex::UInt8: [[fallthrough]];
+        case TypeIndex::Int16: [[fallthrough]];
+        case TypeIndex::UInt16: [[fallthrough]];
+        case TypeIndex::Int32: [[fallthrough]];
+        case TypeIndex::UInt32: [[fallthrough]];
+        case TypeIndex::Int64: [[fallthrough]];
+        case TypeIndex::UInt64: [[fallthrough]];
         case TypeIndex::Int128: [[fallthrough]];
         case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::Int256: [[fallthrough]];
