@@ -124,6 +124,77 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
+## -Tuple {#-tuple}
+
+The -Tuple suffix can be appended to any aggregate function with single argument. In this case, the aggregate function takes a single argument of Tuple type, and applies the aggregation independently to each element of the Tuple, returning a Tuple of results.
+
+If the input Tuple has explicit element names, they are preserved in the result.
+
+**Syntax**
+
+```sql
+<aggFunction>Tuple(tuple_column)
+```
+
+**Arguments**
+
+- `tuple_column` — A column of `Tuple` type. Each element of the Tuple must be a type supported by the underlying aggregate function.
+
+**Returned values**
+
+- A Tuple containing the result of applying the aggregate function to each element independently.
+
+Type: `Tuple(aggFunction(element1), aggFunction(element2), ...)`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT sumTuple(t) FROM
+(
+    SELECT tuple(toInt64(1), toFloat64(2.5)) AS t
+    UNION ALL
+    SELECT tuple(toInt64(3), toFloat64(4.5))
+    UNION ALL
+    SELECT tuple(toInt64(5), toFloat64(6.5))
+);
+```
+
+Result:
+
+```text
+┌─sumTuple(t)─┐
+│ (9,13.5)    │
+└─────────────┘
+```
+
+Using with GROUP BY:
+
+```sql
+SELECT
+    k,
+    avgTuple(t)
+FROM
+(
+    SELECT
+        number % 2 AS k,
+        tuple(toInt64(number), toFloat64(number) * 1.5) AS t
+    FROM numbers(6)
+)
+GROUP BY k
+ORDER BY k;
+```
+
+```text
+┌─k─┬─avgTuple(t)─┐
+│ 0 │ (2,3)       │
+│ 1 │ (3,4.5)     │
+└───┴─────────────┘
+```
+
+-Tuple can be combined with other combinators such as -If. For example: `sumTupleIf(tuple_column, cond)`.
+
 ## -Distinct {#-distinct}
 
 Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
