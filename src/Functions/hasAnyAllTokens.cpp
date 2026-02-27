@@ -146,11 +146,13 @@ DataTypePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::getReturnT
 
     validateFunctionArguments(name, arguments, mandatory_args, optional_args);
 
+    DataTypePtr return_type = std::make_shared<DataTypeNumber<UInt8>>();
+
     /// Propagate nullability: if the input column is Nullable, the result is Nullable(UInt8).
     if (arguments[arg_input].type->isNullable())
-        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<UInt8>>());
+        return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<UInt8>>());
 
-    return std::make_shared<DataTypeNumber<UInt8>>();
+    return return_type;
 }
 
 template <class HasTokensTraits>
@@ -255,7 +257,7 @@ concept MatcherType = std::same_as<Matcher, HasAnyTokensMatcher> || std::same_as
 void searchOnArray(
     const ColumnArray::Offsets & offsets,
     const StringColumnType auto & input_string,
-    const ColumnNullable * nullable_elements,
+    const ColumnNullable * null_map,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
     const ITokenizer * tokenizer,
@@ -272,7 +274,7 @@ void searchOnArray(
         {
             const size_t element_idx = current_offset + j;
 
-            if (nullable_elements && nullable_elements->isNullAt(element_idx))
+            if (null_map && null_map->isNullAt(element_idx))
                 continue;
 
             std::string_view input = input_string.getDataAt(element_idx);
@@ -334,7 +336,7 @@ template <class HasTokensTraits>
 void executeArray(
     const ColumnArray * array,
     const StringColumnType auto & input_string,
-    const ColumnNullable * nullable_elements,
+    const ColumnNullable * null_map,
     PaddedPODArray<UInt8> & col_result,
     const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
@@ -352,9 +354,9 @@ void executeArray(
     col_result.resize(input_size);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        searchOnArray(offsets, input_string, nullable_elements, col_result, input_size, tokenizer, HasAnyTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, null_map, col_result, input_size, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        searchOnArray(offsets, input_string, nullable_elements, col_result, input_size, tokenizer, HasAllTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, null_map, col_result, input_size, tokenizer, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -375,13 +377,13 @@ void executeStringOrArray(
     {
          /// Array elements may be Nullable(String) or Nullable(FixedString); unwrap and pass the null map.
         const IColumn * data_col = &col_input_array->getData();
-        const ColumnNullable * nullable_elements = checkAndGetColumn<ColumnNullable>(data_col);
-        const IColumn * actual_data = nullable_elements ? &nullable_elements->getNestedColumn() : data_col;
+        const ColumnNullable * null_map = checkAndGetColumn<ColumnNullable>(data_col);
+        const IColumn * actual_data = null_map ? &null_map->getNestedColumn() : data_col;
 
         if (const auto * input_string = checkAndGetColumn<ColumnString>(actual_data))
-            executeArray<HasTokensTraits>(col_input_array, *input_string, nullable_elements, col_result, tokenizer, tokens);
+            executeArray<HasTokensTraits>(col_input_array, *input_string, null_map, col_result, tokenizer, tokens);
         else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(actual_data))
-            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, nullable_elements, col_result, tokenizer, tokens);
+            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, null_map, col_result, tokenizer, tokens);
     }
 }
 
@@ -450,7 +452,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 hasAnyTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
-        {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
+        {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };

@@ -1162,25 +1162,21 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
     if (isArray(index_column.type))
     {
-        const ColumnArray & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
+        const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
 
         const IColumn & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
 
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            if (column_data.isNullable())
-                for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
-                {
-                    if (column_data.isNullAt(element_idx))
-                        continue;
+            for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+            {
+                if (column_data.isNullAt(element_idx))
+                    continue;
 
-                    granule_builder.addDocument(column_data.getDataAt(element_idx));
-                }
-            else
-                for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
-                    granule_builder.addDocument(column_data.getDataAt(element_idx));
-
+                const std::string_view ref = column_data.getDataAt(element_idx);
+                granule_builder.addDocument(ref);
+            }
             granule_builder.incrementCurrentRow();
         }
     }
@@ -1189,7 +1185,10 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
             if (!preprocessed_column->isNullAt(i))
-                granule_builder.addDocument(preprocessed_column->getDataAt(i));
+            {
+                const std::string_view ref = preprocessed_column->getDataAt(i);
+                granule_builder.addDocument(ref);
+            }
             granule_builder.incrementCurrentRow();
         }
     }
@@ -1393,10 +1392,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     DataTypePtr unwrapped = index.data_types[0];
     while (true)
     {
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped.get()))
-            unwrapped = nullable_type->getNestedType();
-        else if (const auto * array_type = typeid_cast<const DataTypeArray *>(unwrapped.get()))
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(unwrapped.get()))
             unwrapped = array_type->getNestedType();
+        else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped.get()))
+            unwrapped = nullable_type->getNestedType();
         else if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(unwrapped.get()))
             unwrapped = lc_type->getDictionaryType();
         else

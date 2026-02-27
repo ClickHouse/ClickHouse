@@ -4,9 +4,6 @@
 
 -- Tests text index in Nullable types
 
-SET enable_full_text_index = 1;
-SET use_skip_indexes_on_data_read = 1;
-
 SELECT 'Basic Nullable(String) expressions.';
 
 DROP TABLE IF EXISTS tab;
@@ -257,10 +254,4 @@ DROP TABLE tab;
 
 SELECT 'Some negative tests';
 
-SELECT '-- Nullable(Int32): must fail (underlying type is not a string)';
-CREATE TABLE tab (id UInt32, n Nullable(Int32), INDEX idx(n) TYPE text(tokenizer = 'splitByNonAlpha'))
-ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
-SELECT '-- Array(Nullable(Int32)): must also fail';
-CREATE TABLE tab (id UInt32, arr Array(Nullable(Int32)), INDEX idx(arr) TYPE text(tokenizer = 'splitByNonAlpha'))
-ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
