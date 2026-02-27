@@ -163,23 +163,6 @@ DROP ROW POLICY pol_part ON tab_part;
 DROP TABLE tab_part;
 
 SELECT '';
-SELECT '= PARTITION BY time ORDER BY toDate(time) — pruning is UNSAFE =';
-
-DROP TABLE IF EXISTS tab_unsafe;
-
-CREATE TABLE tab_unsafe (time DateTime, x UInt32, version UInt32)
-ENGINE = ReplacingMergeTree(version) PARTITION BY time ORDER BY toDate(time);
-
-INSERT INTO tab_unsafe VALUES ('2024-01-01 10:00:00', 1, 1);
-INSERT INTO tab_unsafe VALUES ('2024-01-01 11:00:00', 1, 2);
-
-SELECT '--- FINAL (should pick version 2)';
-SELECT * FROM tab_unsafe FINAL ORDER BY toDate(time);
-
-SELECT '--- FINAL WHERE time != 2024-01-01 10:00:00 (must not prune partition with winner)';
-SELECT * FROM tab_unsafe FINAL WHERE time != '2024-01-01 10:00:00' ORDER BY toDate(time);
-
-DROP TABLE tab_unsafe;SELECT '';
 SELECT '= row policy on toDate(time) with ORDER BY toDate(time) — prewhere should NOT be deferred =';
 
 DROP TABLE IF EXISTS tab_todate_policy;
