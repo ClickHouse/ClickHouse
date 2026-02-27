@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
+#include <climits>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -9,6 +10,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 
 #if USE_AVRO
 
@@ -170,7 +172,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     new_snapshot->set(Iceberg::f_summary, summary);
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
-    new_snapshot->set(Iceberg::f_manifest_list, manifest_list_name);
+    new_snapshot->set(Iceberg::f_manifest_list, removeEscapedSlashes(manifest_list_name));
 
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
