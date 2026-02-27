@@ -2512,6 +2512,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 result_parts_ranges.push_back(part_range_info);
             }
 
+            /// Parts should be sorted by part_index_in_query for QCC
+            std::sort(result_parts_ranges.begin(), result_parts_ranges.end(),
+                [](const auto & a, const auto & b) { return a.part_index_in_query < b.part_index_in_query; });
+
             result.parts_with_ranges = std::move(result_parts_ranges);
         }
 
