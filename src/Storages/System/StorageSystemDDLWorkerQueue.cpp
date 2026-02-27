@@ -236,9 +236,10 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 
 void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto& ddl_worker = context->getDDLWorker();
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemDDLWorkerQueue::fillData");
+    auto & ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
-    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getZooKeeperFromContext();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
 

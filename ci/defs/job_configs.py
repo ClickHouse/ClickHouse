@@ -528,12 +528,12 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel",
+            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential",
+            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
@@ -587,7 +587,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
+                parameter=f"amd_msan, WasmEdge, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -596,7 +596,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, sequential, {batch}/{total_batches}",
+                parameter=f"amd_msan, WasmEdge, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -1226,8 +1226,8 @@ class JobConfigs:
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
     )
-    llvm_coverage_merge_job = Job.Config(
-        name=JobNames.LLVM_COVERAGE_MERGE,
+    llvm_coverage_job = Job.Config(
+        name=JobNames.LLVM_COVERAGE,
         runs_on=RunnerLabels.AMD_MEDIUM,
         run_in_docker="clickhouse/test-base",
         requires=[

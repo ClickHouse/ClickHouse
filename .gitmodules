@@ -345,6 +345,15 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
+[submodule "contrib/wasmedge"]
+	path = contrib/wasmedge
+	url = https://github.com/WasmEdge/WasmEdge.git
+[submodule "contrib/spdlog"]
+	path = contrib/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/wasmtime"]
+	path = contrib/wasmtime
+	url = https://github.com/bytecodealliance/wasmtime.git
 [submodule "contrib/delta-kernel-rs"]
 	path = contrib/delta-kernel-rs
 	url = https://github.com/ClickHouse/delta-kernel-rs.git

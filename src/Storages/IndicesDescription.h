@@ -84,7 +84,6 @@ struct IndexDescription
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
     bool isSimpleSingleColumnIndex() const;
-
 };
 
 /// All secondary indices in storage
@@ -92,6 +91,8 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 {
     /// Index with name exists
     bool has(const String & name) const;
+    /// Get index by name; throws if not found
+    const IndexDescription & getByName(const String & name) const;
     /// Index with type exists
     bool hasType(const String & type) const;
 
