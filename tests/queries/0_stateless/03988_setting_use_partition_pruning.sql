@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET optimize_trivial_count_query = 1;
+
 -- { echo }
 
 DROP TABLE IF EXISTS test;
