@@ -17,7 +17,7 @@ class IOptimizationRule;
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 
 using Promise = Int64;
-using CostLimit = Cost;
+using CostLimit = Float64;
 
 class IOptimizationTask : boost::noncopyable
 {

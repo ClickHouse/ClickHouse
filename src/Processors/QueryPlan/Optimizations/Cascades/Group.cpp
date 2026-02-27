@@ -36,6 +36,16 @@ void Group::setOptimizedFor(const ExpressionProperties & required_properties)
     optimized_properties.insert(required_properties.dump());
 }
 
+bool Group::isFullyDoneFor(const ExpressionProperties & required_properties) const
+{
+    return fully_done_properties.contains(required_properties.dump());
+}
+
+void Group::setFullyDoneFor(const ExpressionProperties & required_properties)
+{
+    fully_done_properties.insert(required_properties.dump());
+}
+
 void Group::updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config)
 {
     /// Remove all known best expressions with higher cost and properties satisfied by the new expression
@@ -85,6 +95,14 @@ ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & req
         return {};
 
     return {found_best, *found_best->cost};
+}
+
+Float64 Group::getBestCostForProperties(const ExpressionProperties & required_properties, const CostConfig & cost_config) const
+{
+    auto best = getBestImplementation(required_properties, cost_config);
+    if (!best.expression)
+        return std::numeric_limits<Float64>::infinity();
+    return best.cost.subtree_cost.weighted_total(cost_config);
 }
 
 void Group::dump(WriteBuffer & out, String indent) const

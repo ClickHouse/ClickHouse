@@ -40,8 +40,17 @@ public:
     void setExplored() { is_explored = true; }
     bool isOptimizedFor(const ExpressionProperties & required_properties) const;
     void setOptimizedFor(const ExpressionProperties & required_properties);
+
+    /// Tracks whether optimization for a given property set is fully complete
+    /// (all stages: explore, implement, enforce — have finished).
+    bool isFullyDoneFor(const ExpressionProperties & required_properties) const;
+    void setFullyDoneFor(const ExpressionProperties & required_properties);
     void updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config);
     ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
+
+    /// Returns the weighted subtree cost of the best implementation satisfying
+    /// the given properties, or infinity if none exists.
+    Float64 getBestCostForProperties(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
     void dump(WriteBuffer & out, String indent = {}) const;
     String dump() const;
@@ -60,6 +69,7 @@ private:
     const GroupId group_id;
     bool is_explored = false;
     std::set<String> optimized_properties;  /// Tracks which required properties have had implementation rules applied
+    std::set<String> fully_done_properties; /// Tracks which required properties are fully optimized (all stages complete)
     std::unordered_set<String> physical_fingerprints;  /// Deduplicates identical physical expressions
 };
 
