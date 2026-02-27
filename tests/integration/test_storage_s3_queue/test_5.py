@@ -1858,3 +1858,68 @@ def test_deduplication_with_multiple_chunks(started_cluster, mode):
     assert files_num * num_rows == int(
         node.query(f"SELECT count() FROM {dst_table_name}")
     )
+
+
+def test_ordered_mode_commit_race_condition(started_cluster):
+    """
+    Reproduce the race condition where the ZK processed pointer is advanced past a file between its processing and commit.
+
+    A single streaming task processes test_0.csv and pauses before commit via a PAUSEABLE_ONCE failpoint. While paused, the test directly
+    writes test_1.csv to the ZK processed pointer (simulating a concurrent commit from another replica or task). When the paused task
+    resumes, it finds test_0.csv <= test_1.csv.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_commit_race_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 1000,
+        },
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_pause_before_commit")
+
+    generate_random_files(started_cluster, files_path, count=1)
+    create_mv(node, table_name, dst_table_name)
+
+    node.query("SYSTEM WAIT FAILPOINT object_storage_queue_pause_before_commit PAUSE", timeout=60)
+
+    # While the task is paused, advance the ZK processed pointer to test_1.csv, simulating a concurrent commit from another replica
+    zk = started_cluster.get_kazoo_client("zoo1")
+    processed_path = f"{keeper_path}/processed"
+    advanced_metadata = json.dumps(
+        {
+            "file_path": f"{files_path}/test_1.csv",
+            "last_processed_timestamp": 0,
+            "last_exception": "",
+            "retries": 0,
+            "processor_id": "",
+        }
+    )
+    zk.create(processed_path, advanced_metadata.encode())
+
+    # Resume the paused task, which is now behind the pointer (test_1.csv) and wait for the resumed task to complete its commit attempt
+    node.query("SYSTEM NOTIFY FAILPOINT object_storage_queue_pause_before_commit")
+    time.sleep(5)
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_pause_before_commit")
+
+    node.query("SYSTEM FLUSH LOGS")
+    error_count = int(
+        node.query(
+            f"SELECT count() FROM system.text_log "
+            f"WHERE message LIKE '%is already processed, while expected it not to be%' "
+            f"AND logger_name LIKE '%{table_name}%'"
+        )
+    )
+    assert error_count == 0, ("LOGICAL_ERROR: file reported as already processed due to commit race condition")
