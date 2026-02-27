@@ -41,8 +41,12 @@ SELECT count() FROM tab WHERE hasToken(str, 'hello') AND str IS NULL;
 SELECT '-- hasToken on absent token returns no rows';
 SELECT count() FROM tab WHERE hasToken(str, 'xyz');
 
-DROP TABLE tab;
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(str, NULL);
+SELECT count() FROM tab WHERE hasAllToken(str, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
 
+DROP TABLE tab;
 
 SELECT 'Nullable(String) consisting entirely of NULLs.';
 
@@ -62,6 +66,11 @@ SELECT count() FROM tab WHERE hasToken(str, 'hello');
 
 SELECT '-- all-NULL part: hasAnyTokens must return 0';
 SELECT count() FROM tab WHERE hasAnyTokens(str, 'hello world');
+
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(str, NULL);
+SELECT count() FROM tab WHERE hasAllToken(str, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
 
 DROP TABLE tab;
 
@@ -99,6 +108,11 @@ SELECT count() FROM tab WHERE hasToken(str, 'hello') AND id BETWEEN 5 AND 8;
 SELECT '-- "world" appears in granules 0 and 2';
 SELECT id FROM tab WHERE hasToken(str, 'world') ORDER BY id;
 
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(str, NULL);
+SELECT count() FROM tab WHERE hasAllToken(str, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
+
 DROP TABLE tab;
 
 SELECT 'Nullable(FixedString)';
@@ -122,6 +136,11 @@ SELECT id FROM tab WHERE hasAnyToken(str, 'foo') ORDER BY id;
 
 SELECT '-- NULL row must not match';
 SELECT count() FROM tab WHERE hasAllToken(str, 'hello') AND str IS NULL;
+
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(str, NULL);
+SELECT count() FROM tab WHERE hasAllToken(str, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
 
 DROP TABLE tab;
 
@@ -166,6 +185,11 @@ SELECT count() FROM tab WHERE hasAnyTokens(arr, 'foo bar');
 SELECT '-- hasAllTokens: only row 1 has both "hello" and "world"';
 SELECT id FROM tab WHERE hasAllTokens(arr, 'hello world') ORDER BY id;
 
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(arr, NULL);
+SELECT count() FROM tab WHERE hasAllToken(arr, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(arr, NULL);
+
 DROP TABLE tab;
 
 
@@ -190,6 +214,11 @@ SELECT id FROM tab WHERE hasToken(str, 'foo') ORDER BY id;
 
 SELECT '-- LowCardinality(Nullable): NULL row 2 must not match';
 SELECT count() FROM tab WHERE hasToken(str, 'hello') AND id = 2;
+
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(str, NULL);
+SELECT count() FROM tab WHERE hasAllToken(str, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
 
 DROP TABLE tab;
 
@@ -222,6 +251,11 @@ SELECT count() FROM tab WHERE id = 2 AND hasToken(str, 'hello');
 SELECT '-- Preprocessor + Nullable: absent token returns no rows';
 SELECT count() FROM tab WHERE hasToken(str, 'xyz');
 
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(str, NULL);
+SELECT count() FROM tab WHERE hasAllToken(str, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
+
 DROP TABLE tab;
 
 
@@ -249,6 +283,11 @@ SELECT id FROM tab WHERE hasAllToken(arr, 'foo') ORDER BY id;
 
 SELECT '-- Array preprocessor + Nullable: row 3 (all NULLs) must not match';
 SELECT count() FROM tab WHERE hasAnyToken(arr, 'hello') AND id = 3;
+
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(arr, NULL);
+SELECT count() FROM tab WHERE hasAllToken(arr, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(arr, NULL);
 
 DROP TABLE tab;
 
@@ -286,6 +325,11 @@ SELECT count() FROM tab WHERE hasAnyTokens(mapValues(m), 'foo bar');
 SELECT '-- hasAllTokens on map values: only row 1 has both "hello" and "world"';
 SELECT id FROM tab WHERE hasAllTokens(mapValues(m), 'hello world') ORDER BY id;
 
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(mapValues(m), NULL);
+SELECT count() FROM tab WHERE hasAllToken(mapValues(m), NULL);
+SELECT count() FROM tab WHERE hasAnyToken(mapValues(m), NULL);
+
 DROP TABLE tab;
 
 SELECT 'LowCardinality(String)';
@@ -312,6 +356,11 @@ SELECT id FROM tab WHERE hasAnyTokens(str, 'bar baz') ORDER BY id;
 
 SELECT '-- LowCardinality(String): hasAllTokens "hello" and "world": only row 1';
 SELECT id FROM tab WHERE hasAllTokens(str, 'hello world') ORDER BY id;
+
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(str, NULL);
+SELECT count() FROM tab WHERE hasAllToken(str, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
 
 DROP TABLE tab;
 
@@ -344,5 +393,10 @@ SELECT id FROM tab WHERE hasAllTokens(str, 'hello world') ORDER BY id;
 
 SELECT '-- LowCardinality(Nullable): NULL rows must not match any token';
 SELECT count() FROM tab WHERE hasToken(str, 'hello') AND str IS NULL;
+
+SELECT '-- has[Any|All]Token on NULL should not match anything';
+SELECT count() FROM tab WHERE hasToken(str, NULL);
+SELECT count() FROM tab WHERE hasAllToken(str, NULL);
+SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
 
 DROP TABLE tab;
