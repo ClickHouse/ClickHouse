@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/TextIndexCache.h>
-#include "Core/Names.h"
 
 namespace DB
 {
