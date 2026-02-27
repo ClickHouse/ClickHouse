@@ -2079,17 +2079,16 @@ void InterpreterSystemQuery::prewarmMarkCache()
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
-    auto mark_cache = getContext()->getMarkCache();
-    if (!mark_cache)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
-
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
         CurrentMetrics::MergeTreePartsLoaderThreadsActive,
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+    MergeTreeData::CachesToPrewarm caches;
+    caches.mark_cache = getContext()->getMarkCache();
+    caches.index_mark_cache = getContext()->getIndexMarkCache();
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 void InterpreterSystemQuery::prewarmPrimaryIndexCache()
@@ -2114,7 +2113,9 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
+    MergeTreeData::CachesToPrewarm caches;
+    caches.primary_index_cache = index_cache;
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 
