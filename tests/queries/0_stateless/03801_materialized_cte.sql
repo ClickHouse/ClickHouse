@@ -7,7 +7,17 @@ INSERT INTO users VALUES (1231, 'John', 33);
 INSERT INTO users VALUES (6666, 'Ksenia', 48);
 INSERT INTO users VALUES (8888, 'Alice', 50);
 
-SELECT REGEXP_REPLACE(explain, '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+', '_temporary_and_external_tables._tmp_UNIQ_ID') FROM
+SELECT
+    REGEXP_REPLACE(
+        REGEXP_REPLACE(
+            explain,
+            '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
+            '_temporary_and_external_tables._tmp_UNIQ_ID'
+        ),
+        '_materialized_cte_\\w+\\_\\w+',
+        '_materialized_cte_UNIQ_ID'
+    )
+FROM
 (
     EXPLAIN QUERY TREE
     WITH
@@ -16,7 +26,17 @@ SELECT REGEXP_REPLACE(explain, '_temporary_and_external_tables._tmp_\\w+\\-\\w+\
     SELECT name FROM a
 );
 
-SELECT REGEXP_REPLACE(explain, '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+', '_temporary_and_external_tables._tmp_UNIQ_ID') FROM
+SELECT
+    REGEXP_REPLACE(
+        REGEXP_REPLACE(
+            explain,
+            '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
+            '_temporary_and_external_tables._tmp_UNIQ_ID'
+        ),
+        '_materialized_cte_\\w+\\_\\w+',
+        '_materialized_cte_UNIQ_ID'
+    )
+FROM
 (
     EXPLAIN QUERY TREE
     WITH
@@ -24,7 +44,17 @@ SELECT REGEXP_REPLACE(explain, '_temporary_and_external_tables._tmp_\\w+\\-\\w+\
     SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid
 );
 
-SELECT REGEXP_REPLACE(explain, '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+', '_temporary_and_external_tables._tmp_UNIQ_ID') FROM
+SELECT
+    REGEXP_REPLACE(
+        REGEXP_REPLACE(
+            explain,
+            '_temporary_and_external_tables._tmp_\\w+\\-\\w+\\-\\w+\\-\\w+\\-\\w+',
+            '_temporary_and_external_tables._tmp_UNIQ_ID'
+        ),
+        '_materialized_cte_\\w+\\_\\w+',
+        '_materialized_cte_UNIQ_ID'
+    )
+FROM
 (
     EXPLAIN QUERY TREE
     WITH

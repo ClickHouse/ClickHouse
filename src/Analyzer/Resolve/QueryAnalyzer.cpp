@@ -1182,14 +1182,20 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
         for (const auto & projection_column : projection_columns)
             columns.emplace_back(projection_column.name, projection_column.type);
 
+        auto query_context = scope.context->getQueryContext();
         auto storage_holder = TemporaryTableHolder(
-            scope.context,
+            query_context,
             ColumnsDescription(std::move(columns), false),
             ConstraintsDescription{},
             nullptr /*query*/,
             true /*create_for_global_subquery*/);
 
-        auto table_node = std::make_shared<TableNode>(std::move(storage_holder), full_name, cte_node, scope.context);
+        auto temporary_table_name = fmt::format("_materialized_cte_{}", toString(cte_node->getTreeHash()));
+        auto table_node = std::make_shared<TableNode>(storage_holder, full_name, cte_node, scope.context);
+        table_node->setTemporaryTableName(temporary_table_name);
+        table_node->setAlias(full_name);
+
+        query_context->addExternalTable(temporary_table_name, std::move(storage_holder));
 
         cte_node = table_node;
     }

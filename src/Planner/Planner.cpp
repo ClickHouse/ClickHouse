@@ -277,6 +277,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
     QueryPlanOptimizationSettings optimization_settings(query_context);
     optimization_settings.build_sets = false; // no need to build sets to collect filters
+    optimization_settings.materialize_ctes = false; // no need to materialize CTEs to collect filters
     result_query_plan.optimize(optimization_settings);
 
     FiltersForTableExpressionMap res;

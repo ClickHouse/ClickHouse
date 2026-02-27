@@ -44,14 +44,14 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
 }
 
 TableNode::TableNode(
-    TemporaryTableHolder temporary_table_holder_,
+    const TemporaryTableHolder & temporary_table_holder_,
     const std::string & cte_name_,
     QueryTreeNodePtr materialized_cte_subquery_,
     const ContextPtr & context_
 )
     : TableNode(temporary_table_holder_.getTable(), context_)
 {
-    materialized_cte = std::make_shared<MaterializedCTE>(std::move(temporary_table_holder_), cte_name_);
+    materialized_cte = std::make_shared<MaterializedCTE>(temporary_table_holder_, cte_name_);
     children[materialized_cte_subquery_index] = std::move(materialized_cte_subquery_);
 }
 

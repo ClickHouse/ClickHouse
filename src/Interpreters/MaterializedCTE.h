@@ -15,16 +15,16 @@ namespace DB
 /// and the main plan), the table is written exactly once.
 struct MaterializedCTE
 {
-    explicit MaterializedCTE(TemporaryTableHolder holder_, const std::string & cte_name_)
-        : holder(std::move(holder_))
+    explicit MaterializedCTE(const TemporaryTableHolder & holder_, const std::string & cte_name_)
+        : storage(holder_.getTable())
         , cte_name(cte_name_)
     {}
 
     MaterializedCTE(const MaterializedCTE &) = delete;
     MaterializedCTE & operator=(const MaterializedCTE &) = delete;
 
-    /// Owns the temporary table used for materialization.
-    TemporaryTableHolder holder;
+    /// Temporary table storage.
+    StoragePtr storage;
     /// Name of the CTE.
     std::string cte_name;
     /// If true, query plan is built for the CTE (i.e. the table is being populated, but is not ready for reads yet).
