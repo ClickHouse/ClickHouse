@@ -25,6 +25,8 @@
 #include <Analyzer/ListNode.h>
 
 #include <Core/Settings.h>
+
+#include <set>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 #include <Common/assert_cast.h>
@@ -244,20 +246,20 @@ String buildInFilterExpression(const String & column_name, const std::vector<Fie
 /// Build the `additional_table_filters` Map for a recursive CTE step.
 /// Reads join key values from the working (CTE) table and creates IN filters
 /// for the corresponding real tables.
+/// Merges with user-specified `additional_table_filters` to avoid overwriting them.
 Map buildAdditionalTableFiltersForRecursiveStep(
     const QueryTreeNodePtr & recursive_query,
     std::optional<std::vector<JoinKeyInfo>> & cached_join_keys,
     const std::vector<TableNode *> & recursive_table_nodes,
     const StoragePtr & working_table_storage,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const Map & original_additional_table_filters)
 {
-    Map filters_map;
-
     if (!cached_join_keys.has_value())
         cached_join_keys = findJoinKeysWithCTETable(recursive_query, recursive_table_nodes);
 
     if (cached_join_keys->empty())
-        return filters_map;
+        return original_additional_table_filters;
 
     /// Group filter expressions by real table.
     std::map<String, std::vector<String>> table_filter_parts;
@@ -273,6 +275,17 @@ Map buildAdditionalTableFiltersForRecursiveStep(
             table_filter_parts[key_info.real_table_storage_id.getFullNameNotQuoted()].push_back(std::move(filter_expr));
     }
 
+    /// Index user-specified filters by table name so we can combine them.
+    std::map<String, String> user_filter_by_table;
+    for (const auto & entry : original_additional_table_filters)
+    {
+        const auto & tuple = entry.safeGet<Tuple>();
+        user_filter_by_table[tuple.at(0).safeGet<String>()] = tuple.at(1).safeGet<String>();
+    }
+
+    Map filters_map;
+    std::set<String> processed_tables;
+
     for (auto & [table_name, parts] : table_filter_parts)
     {
         String combined_filter;
@@ -283,10 +296,26 @@ Map buildAdditionalTableFiltersForRecursiveStep(
             combined_filter += parts[i];
         }
 
+        /// Combine with user-specified filter for the same table, if any.
+        auto it = user_filter_by_table.find(table_name);
+        if (it != user_filter_by_table.end())
+        {
+            combined_filter = "(" + combined_filter + ") AND (" + it->second + ")";
+            processed_tables.insert(table_name);
+        }
+
         Tuple tuple;
         tuple.push_back(Field(table_name));
-        tuple.push_back(Field(combined_filter));
+        tuple.push_back(Field(std::move(combined_filter)));
         filters_map.push_back(Field(std::move(tuple)));
+    }
+
+    /// Preserve user-specified filters for tables not involved in the CTE join.
+    for (const auto & entry : original_additional_table_filters)
+    {
+        const auto & tuple = entry.safeGet<Tuple>();
+        if (!processed_tables.contains(tuple.at(0).safeGet<String>()))
+            filters_map.push_back(entry);
     }
 
     return filters_map;
@@ -338,6 +367,10 @@ public:
         /// CTE temporary table has the same tree structure across steps (only the data changes),
         /// the hash stays identical and stale cached data is reused, producing wrong results.
         recursive_query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+
+        /// Save the original additional_table_filters so we can merge CTE-derived filters
+        /// with user-specified ones on each recursive step, instead of overwriting them.
+        original_additional_table_filters = recursive_query_context->getSettingsRef()[Setting::additional_table_filters].value;
 
         const auto & recursive_query_projection_columns = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getProjectionColumns() :
             recursive_query->as<UnionNode &>().computeProjectionColumns();
@@ -429,7 +462,8 @@ private:
         {
             auto filters = buildAdditionalTableFiltersForRecursiveStep(
                 recursive_query, cached_join_keys, recursive_table_nodes,
-                working_temporary_table_storage, recursive_query_context);
+                working_temporary_table_storage, recursive_query_context,
+                original_additional_table_filters);
 
             recursive_query_context->setSetting("additional_table_filters", Field(std::move(filters)));
         }
@@ -498,6 +532,7 @@ private:
     std::optional<PullingAsyncPipelineExecutor> executor;
 
     std::optional<std::vector<JoinKeyInfo>> cached_join_keys;
+    Map original_additional_table_filters;
 
     size_t recursive_step = 0;
     size_t read_rows_during_recursive_step = 0;
