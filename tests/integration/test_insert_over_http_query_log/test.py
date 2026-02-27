@@ -16,6 +16,12 @@ def start_cluster():
         cluster.shutdown()
 
 
+@pytest.fixture(scope="function", autouse=True)
+def clear_text_log():
+    instance.query("SYSTEM FLUSH LOGS query_log")
+    instance.query("DROP TABLE IF EXISTS system.query_log SYNC")
+
+
 @pytest.mark.parametrize("inject_failpoint", [1, 0])
 def test_insert_over_http_exception(start_cluster, inject_failpoint):
     instance.query("DROP TABLE IF EXISTS tt SYNC")

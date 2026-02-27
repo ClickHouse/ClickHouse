@@ -39,8 +39,9 @@ def started_cluster():
 def test_deduplication_window_in_seconds(started_cluster):
     node = node1
 
-    node1.query(
+    node.query(
         """
+        DROP TABLE IF EXISTS simple ON CLUSTER test_cluster SYNC;
         CREATE TABLE simple ON CLUSTER test_cluster (date Date, id UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id"""
     )
@@ -71,5 +72,3 @@ def test_deduplication_window_in_seconds(started_cluster):
         "INSERT INTO simple VALUES (0, 0)"
     )  # Deduplication doesn't work here as the first hash node was deleted
     assert TSV.toMat(node.query("SELECT count() FROM simple"))[0][0] == "3"
-
-    node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")
