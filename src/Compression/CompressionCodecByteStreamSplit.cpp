@@ -41,6 +41,7 @@ protected:
 
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
+    bool isExperimental() const override { return true; }
 
     String getDescription() const override
     {
