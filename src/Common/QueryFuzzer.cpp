@@ -824,6 +824,44 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
             }
         }
     }
+
+    if (auto codec = column.getCodec())
+    {
+        auto * codec_fn = codec->as<ASTFunction>();
+        if (codec_fn && codec_fn->name == "CODEC" && codec_fn->arguments && fuzz_rand() % 5 == 0)
+        {
+            codec_fn->arguments->children.clear();
+            switch (fuzz_rand() % 4)
+            {
+                case 0:
+                    codec_fn->arguments->children.push_back(makeASTFunction("NONE"));
+                    break;
+                case 1:
+                    codec_fn->arguments->children.push_back(makeASTFunction("LZ4"));
+                    break;
+                case 2:
+                    codec_fn->arguments->children.push_back(
+                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 22 + 1))));
+                    break;
+                case 3:
+                    codec_fn->arguments->children.push_back(
+                        makeASTFunction("LZ4HC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1))));
+                    break;
+            }
+        }
+    }
+
+    if (column.default_specifier != ColumnDefaultSpecifier::Empty && column.default_specifier != ColumnDefaultSpecifier::AutoIncrement
+        && column.getDefaultExpression() && fuzz_rand() % 5 == 0)
+    {
+        static const std::vector<ColumnDefaultSpecifier> & expr_specifiers = {
+            ColumnDefaultSpecifier::Default,
+            ColumnDefaultSpecifier::Materialized,
+            ColumnDefaultSpecifier::Alias,
+            ColumnDefaultSpecifier::Ephemeral,
+        };
+        column.default_specifier = pickRandomly(fuzz_rand, expr_specifiers);
+    }
 }
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
