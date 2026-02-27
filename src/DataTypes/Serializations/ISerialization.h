@@ -62,7 +62,7 @@ protected:
     ISerialization() = default;
 
 public:
-    virtual ~ISerialization() noexcept(false) = 0;
+    virtual ~ISerialization() = default;
 
     /// Returns a hash that uniquely identifies this serialization object.
     /// Used as the key in SerializationObjectPool for deduplication.
