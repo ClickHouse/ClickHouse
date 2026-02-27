@@ -179,7 +179,7 @@ CREATE ROW POLICY pol_todate ON tab_todate_policy USING toDate(time) = '2024-01-
 SET apply_row_policy_after_final = 1;
 -- rp is over sorting key toDate(time), so only row policy itself should be deferred, not prewhere
 SELECT '--- toDate(time) row policy: only row filter deferred, not prewhere';
-SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time) WHERE explain LIKE '%Deferred%';
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time) WHERE explain LIKE '%Deferred%' SETTINGS enable_analyzer=1;
 
 DROP ROW POLICY pol_todate ON tab_todate_policy;
 SET apply_row_policy_after_final = 0;
