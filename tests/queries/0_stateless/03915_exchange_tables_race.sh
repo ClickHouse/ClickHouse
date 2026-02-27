@@ -19,7 +19,7 @@ for _ in {1..10}; do
     ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_1 AND tbl_03007_2" 2>/dev/null &
 done
 
-wait
+wait 2>/dev/null
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE IF EXISTS tbl_03007_1;
