@@ -191,6 +191,37 @@ def kafka_consume_with_retry(
     return messages
 
 
+def kafka_produce_protobuf_messages_protobuflist(
+    kafka_cluster, topic, start_index, num_messages
+):
+    """Produce Kafka messages in ProtobufList format.
+
+    Each Kafka message is a single ProtobufList envelope containing
+    all num_messages rows. The wire format is:
+      varint(envelope_size) + repeated { varint(field_tag) + varint(msg_size) + msg_bytes }
+    """
+    # Build the envelope body: repeated field 1 (KeyValuePair) entries
+    envelope_body = b""
+    FIELD_TAG = _VarintBytes((1 << 3) | 2)  # field 1, wire type 2 (length-delimited)
+    for i in range(start_index, start_index + num_messages):
+        msg = kafka_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        envelope_body += FIELD_TAG + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    # Wrap with the envelope size prefix
+    data = _VarintBytes(len(envelope_body)) + envelope_body
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
+        value_serializer=producer_serializer,
+    )
+    producer.send(topic=topic, value=data)
+    producer.flush()
+    logging.debug("Produced {} ProtobufList messages for topic {}".format(num_messages, topic))
+
+
 def kafka_produce_protobuf_messages_no_delimiters(
     kafka_cluster, topic, start_index, num_messages
 ):

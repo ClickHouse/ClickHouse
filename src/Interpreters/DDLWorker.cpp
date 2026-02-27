@@ -89,11 +89,13 @@ DDLWorker::DDLWorker(
     ContextPtr context_,
     const Poco::Util::AbstractConfiguration * config,
     const String & prefix,
+    const String & zookeeper_name_,
     const String & logger_name,
     const CurrentMetrics::Metric * max_entry_metric_,
     const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
     , log(getLogger(logger_name))
+    , zookeeper_name(zookeeper_name_)
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
     , max_pushed_entry_metric(max_pushed_entry_metric_)
@@ -170,6 +172,10 @@ DDLWorker::~DDLWorker()
     DDLWorker::shutdown();
 }
 
+ZooKeeperPtr DDLWorker::getZooKeeperFromContext() const
+{
+    return context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+}
 
 ZooKeeperPtr DDLWorker::getZooKeeper() const
 {
@@ -184,7 +190,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
     std::lock_guard lock(zookeeper_mutex);
 
     if (!current_zookeeper || current_zookeeper->expired())
-        current_zookeeper = context->getZooKeeper();
+        current_zookeeper = getZooKeeperFromContext();
 
     return current_zookeeper;
 }
@@ -612,6 +618,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 
 void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query)
 {
+    auto component_guard = Coordination::setCurrentComponent("DDLWorker::processTask");
     LOG_DEBUG(log, "Processing task {} (query: {}, backup restore: {})", task.entry_name, task.query_for_logging, task.entry.is_backup_restore);
     chassert(!task.completely_processed);
 
@@ -1083,6 +1090,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 
 String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info)
 {
+    auto component_guard = Coordination::setCurrentComponent("DDLWorker::enqueueQuery");
     if (stop_flag)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't enqueue a query after shutdown");
 
@@ -1107,7 +1115,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &
 
 String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 {
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getZooKeeperFromContext();
 
     String query_path_prefix = fs::path(queue_dir) / "query-";
     zookeeper->createAncestors(query_path_prefix);
@@ -1150,6 +1158,7 @@ bool DDLWorker::initializeMainThread()
     DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_DEBUG(log, "Initializing DDLWorker thread");
 
+    auto component_guard = Coordination::setCurrentComponent("DDLWorker::initializeMainThread");
     while (!stop_flag)
     {
         try
@@ -1215,6 +1224,7 @@ void DDLWorker::runMainThread()
 
     DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_INFO(log, "Starting DDLWorker thread");
+    auto component_guard = Coordination::setCurrentComponent("DDLWorker::runMainThread");
     while (!stop_flag)
     {
         try
@@ -1494,6 +1504,7 @@ void DDLWorker::runCleanupThread()
     DB::setThreadName(ThreadName::DDL_WORKER_CLEANUP);
     LOG_DEBUG(log, "Started DDLWorker cleanup thread");
 
+    auto component_guard = Coordination::setCurrentComponent("DDLWorker::cleanupThread");
     Int64 last_cleanup_time_seconds = 0;
     while (!stop_flag)
     {

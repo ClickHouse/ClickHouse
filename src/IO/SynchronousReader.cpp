@@ -1,6 +1,7 @@
 #include <IO/SynchronousReader.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
