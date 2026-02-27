@@ -34,6 +34,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/randomSeed.h>
 
@@ -290,6 +291,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , keep_data_in_keeper(keep_data_in_keeper_)
     , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::StorageObjectStorageQueue");
     const auto & read_path = configuration->getPathForRead();
     if (read_path.path.empty())
     {
@@ -406,6 +408,7 @@ void StorageObjectStorageQueue::startup()
         return;
     }
 
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::startup");
     /// Create metadata in keeper if it does not exits yet.
     /// Create a persistent node for the table under /registry node.
     bool created_new_metadata = false;
@@ -460,6 +463,8 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 {
     if (shutdown_called)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::shutdown");
 
     /// Unregister table from local Queue storages factory.
     /// (which allows to  to execute shutdown of Queue tables
@@ -734,6 +739,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (shutdown_called)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::threadFunc");
 
     const auto storage_id = getStorageID();
 
@@ -1308,6 +1315,7 @@ void StorageObjectStorageQueue::alter(
     ContextPtr local_context,
     AlterLockHolder &)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::alter");
     if (commands.isSettingsAlter())
     {
         auto table_id = getStorageID();

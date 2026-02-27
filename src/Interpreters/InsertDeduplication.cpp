@@ -211,7 +211,6 @@ std::set<size_t> DeduplicationInfo::filterOriginal(const std::vector<std::string
 
 DeduplicationInfo::Ptr DeduplicationInfo::cloneSelfFilterImpl() const
 {
-    LOG_TEST(logger, "Cloning deduplication info for filtering, debug: {}", debug());
     auto new_instance = DeduplicationInfo::create(is_async_insert, unification_stage);
     new_instance->disabled = disabled;
     new_instance->level = level;
@@ -224,7 +223,6 @@ DeduplicationInfo::Ptr DeduplicationInfo::cloneSelfFilterImpl() const
 
 DeduplicationInfo::Ptr DeduplicationInfo::cloneMergeImpl() const
 {
-    LOG_TEST(logger, "Cloning deduplication info for merging, debug: {}", debug());
     auto new_instance = DeduplicationInfo::create(is_async_insert, unification_stage);
     new_instance->disabled = disabled;
     new_instance->level = level;
@@ -291,7 +289,7 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
         chassert(removed_tokens == getCount());
         new_tokens->original_block = std::make_shared<Block>(block.cloneEmpty());
 
-        LOG_TEST(
+        LOG_DEBUG(
             logger,
             "All {} rows are removed due to duplicate, debug: {}",
             block.rows(),
@@ -395,8 +393,6 @@ DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const st
         extension.append(extra.toString());
     }
 
-    LOG_TEST(logger, "getBlockUnifiedHash {} debug: {}", extension, debug());
-
     SipHash hash;
     hash.update(extension.data(), extension.size());
     return DeduplicationHash::createUnifiedHash(hash.get128(), partition_id);
@@ -451,8 +447,6 @@ DeduplicationHash DeduplicationInfo::getBlockHash(size_t offset, const std::stri
             extension.append(extra.toString());
     }
 
-    LOG_TEST(logger, "getBlockHash {} debug: {}", extension, debug());
-
     SipHash hash;
     hash.update(extension.data(), extension.size());
     if (is_async_insert)
@@ -498,7 +492,6 @@ std::vector<DeduplicationHash> DeduplicationInfo::chooseDeduplicationHashes(size
 
 std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const
 {
-    LOG_TEST(logger, "getDeduplicationHashes for partition_id={}, deduplication_enabled: {}, debug: {}", partition_id, deduplication_enabled, debug());
     if (disabled || !deduplication_enabled)
         return {};
 
@@ -616,16 +609,8 @@ ChunkInfo::Ptr DeduplicationInfo::clone() const
 }
 
 
-void DeduplicationInfo::setPartWriterHashForPartition(UInt128 hash, size_t count) const
+void DeduplicationInfo::setPartWriterHashForPartition(UInt128 hash, size_t /* count */) const
 {
-    LOG_TEST(
-        logger,
-        "setPartWriterHashForPartition: hash={}_{} count={}, debug: {}",
-        hash.items[0],
-        hash.items[1],
-        count,
-        debug());
-
     if (disabled)
         return;
 
@@ -649,16 +634,6 @@ void DeduplicationInfo::setPartWriterHashForPartition(UInt128 hash, size_t count
 
 void DeduplicationInfo::setPartWriterHashes(const std::vector<UInt128> & partitions_hashes, size_t count) const
 {
-    LOG_TEST(
-        logger,
-        "setPartWriterHashes: tokens='{}' count={}, debug: {}",
-        partitions_hashes.size(),
-        count,
-        debug());
-
-    // if (disabled)
-    //     return;
-
     if (is_async_insert)
         return;
 
@@ -728,7 +703,6 @@ DeduplicationInfo::DeduplicationInfo(bool async_insert_, InsertDeduplicationVers
     , is_async_insert(async_insert_)
     , unification_stage(unification_stage_)
 {
-    LOG_TEST(logger, "Create DeduplicationInfo, debug: {}", debug());
 }
 
 
@@ -747,7 +721,8 @@ DeduplicationInfo::DeduplicationInfo(const DeduplicationInfo & other)
     , visited_views(other.visited_views)
     , retried_view_id(other.retried_view_id)
 {
-    LOG_TEST(logger, "Clone DeduplicationInfo {} from {}", instance_id, other.debug());
+    if (!disabled)
+        LOG_TEST(logger, "Clone DeduplicationInfo {} from {}", instance_id, other.debug());
 }
 
 
@@ -967,7 +942,6 @@ void DeduplicationInfo::setInsertDependencies(InsertDependenciesBuilderConstPtr 
 
 void DeduplicationInfo::setRootViewID(const StorageIDMaybeEmpty & id)
 {
-    LOG_TEST(logger, "Setting root view ID '{}' in deduplication tokens", id);
     chassert(level == Level::SOURCE);
 
     if (!insert_dependencies || !insert_dependencies->deduplicate_blocks)
@@ -980,8 +954,6 @@ void DeduplicationInfo::setRootViewID(const StorageIDMaybeEmpty & id)
 
 void DeduplicationInfo::setViewID(const StorageID & id)
 {
-    LOG_TEST(logger, "Setting view ID '{}', debug: {}", id, debug());
-
     if (level == Level::SOURCE)
         level = Level::VIEW;
 
@@ -1091,11 +1063,12 @@ DeduplicationInfo::Ptr DeduplicationInfo::mergeSelf(const Ptr & right) const
 {
     chassert(right);
 
-    LOG_DEBUG(
-        logger,
-        "Merging:\n left: {}\n right: {}\n"
-        , debug()
-        , right->debug());
+    if (!disabled)
+        LOG_TEST(
+            logger,
+            "Merging:\n left: {}\n right: {}\n"
+            , debug()
+            , right->debug());
 
     chassert(disabled == right->disabled);
     chassert(is_async_insert == right->is_async_insert);
@@ -1155,10 +1128,11 @@ DeduplicationInfo::Ptr DeduplicationInfo::mergeSelf(const Ptr & right) const
         do_concat();
     }
 
-    LOG_DEBUG(
-        logger,
-        "Merged: {}",
-        new_instance->debug());
+    if (!disabled)
+        LOG_TEST(
+            logger,
+            "Merged: {}",
+            new_instance->debug());
 
     return new_instance;
 }
@@ -1269,8 +1243,6 @@ DeduplicationInfo::TokenDefinition::Extra DeduplicationInfo::TokenDefinition::Ex
 
 bool DeduplicationInfo::TokenDefinition::canBeExtended(const TokenDefinition & right) const
 {
-    LOG_TEST(getLogger("canBeExtended"), "{} vs {}", this->debug(), right.debug());
-
     if (by_user != right.by_user || by_part_writer != right.by_part_writer)
         return false;
 
