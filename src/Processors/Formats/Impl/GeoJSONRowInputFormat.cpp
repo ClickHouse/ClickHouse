@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -111,11 +110,6 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
 {
-    if (!format_settings.geojson.allow_experimental)
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "GeoJSON format is experimental. Set allow_experimental_geojson_format = 1 to enable it.");
-
     const auto & header = getPort().getHeader();
     for (size_t i = 0; i < header.columns(); ++i)
     {

@@ -50,7 +50,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
-    extern const SettingsBool allow_experimental_geojson_format;
+
     extern const SettingsString input_format_geojson_geometry_collection_handling;
 
     extern SettingsBool input_format_parallel_parsing;
@@ -342,7 +342,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
-    format_settings.geojson.allow_experimental = settings[Setting::allow_experimental_geojson_format];
     {
         const String & val = settings[Setting::input_format_geojson_geometry_collection_handling];
         if (val == "throw")

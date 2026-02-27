@@ -1,5 +1,4 @@
--- Tests for the experimental GeoJSON input format.
-SET allow_experimental_geojson_format = 1;
+-- Tests for the GeoJSON input format.
 
 -- Basic FeatureCollection with a Point geometry.
 SELECT id, geometry, JSONExtractString(properties, 'name') AS name
@@ -110,6 +109,3 @@ FROM format('GeoJSON', '{
 }')
 SETTINGS input_format_geojson_geometry_collection_handling = 'null';
 
--- Format is gated behind the setting.
-SET allow_experimental_geojson_format = 0;
-SELECT * FROM format('GeoJSON', '{"type":"FeatureCollection","features":[]}'); -- { serverError SUPPORT_IS_DISABLED }

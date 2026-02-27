@@ -573,7 +573,6 @@ struct FormatSettings
 
     struct
     {
-        bool allow_experimental = false;
         GeometryCollectionHandling geometry_collection_handling = GeometryCollectionHandling::Throw;
     } geojson{};
 
