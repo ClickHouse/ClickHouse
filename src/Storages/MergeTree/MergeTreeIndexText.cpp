@@ -214,6 +214,14 @@ bool RowsRange::intersects(const RowsRange & other) const
     return (begin <= other.begin && other.begin <= end) || (other.begin <= begin && begin <= other.end);
 }
 
+std::optional<RowsRange> RowsRange::intersectWith(const RowsRange & other) const
+{
+    if (!intersects(other))
+        return std::nullopt;
+
+    return RowsRange(std::max(begin, other.begin), std::min(end, other.end));
+}
+
 std::vector<size_t> TokenPostingsInfo::getBlocksToRead(const RowsRange & range) const
 {
     std::vector<size_t> blocks;
@@ -361,8 +369,14 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     auto global_search_mode = condition_text.getGlobalSearchMode();
     auto tokens_cache = condition_text.tokensCache();
 
-    std::sort(tokens_to_read.begin(), tokens_to_read.end());
-    std::vector<std::pair<size_t, std::vector<std::string_view>>> blocks_to_read;
+    auto cardinalities_cache = condition_text.cardinalitiesCache();
+    cardinalities_cache->sortTokens(tokens_to_read);
+
+    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part.getDataPartStorage().getFullPath());
+
+    /// Collect blocks ids in the same order as tokens are sorted by cardinality.
+    std::vector<size_t> blocks_ids_to_read;
+    std::unordered_map<size_t, std::vector<std::string_view>> block_id_to_tokens;
 
     for (const auto & token : tokens_to_read)
     {
@@ -370,17 +384,22 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
         if (idx != 0)
             --idx;
 
-        if (blocks_to_read.empty() || blocks_to_read.back().first != idx)
-        {
-            chassert(blocks_to_read.empty() || idx > blocks_to_read.back().first);
-            blocks_to_read.emplace_back(idx, std::vector<std::string_view>());
-        }
+        auto [it, inserted] = block_id_to_tokens.try_emplace(idx);
+        if (inserted)
+            blocks_ids_to_read.emplace_back(idx);
 
-        blocks_to_read.back().second.emplace_back(token);
+        it->second.emplace_back(token);
     }
 
-    for (const auto & [block_idx, needed_tokens] : blocks_to_read)
+    NameSet missing_tokens;
+    RowsRange intersection(0, state.part.rows_count);
+
+    for (const auto & block_idx : blocks_ids_to_read)
     {
+        /// Sort tokens lexicographically for correct binary search in the dictionary.
+        auto & needed_tokens = block_id_to_tokens[block_idx];
+        std::sort(needed_tokens.begin(), needed_tokens.end());
+
         /// Seek to the dictionary block and deserialize tokens.
         UInt64 offset_in_file = sparse_index->getOffsetInFile(block_idx);
         dictionary_stream.seekToMark({offset_in_file, 0});
@@ -411,10 +430,13 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
 
             if (idx_in_block < num_tokens && block_tokens.getDataAt(idx_in_block) == token)
                 matched_indices.emplace_back(idx_in_block);
+            else
+                missing_tokens.insert(String(token));
         }
 
         if (global_search_mode == TextSearchMode::All && matched_indices.size() != needed_tokens.size())
         {
+            cardinalities_cache->update(remaining_tokens, missing_tokens, state.part.rows_count);
             remaining_tokens.clear();
             return;
         }
@@ -432,11 +454,28 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
         for (size_t i = 0; i < matched_indices.size(); ++i)
         {
             String token(block_tokens.getDataAt(matched_indices[i]));
-            auto token_info = std::make_shared<TokenPostingsInfo>(std::move(infos[i]));
             auto token_hash = TextIndexTokensCache::hash(index_id_for_caches, token);
+            tokens_cache->set(token_hash, infos[i]);
+            remaining_tokens.emplace(std::move(token), infos[i]);
+        }
 
-            tokens_cache->set(token_hash, token_info);
-            remaining_tokens.emplace(std::move(token), std::move(token_info));
+        if (global_search_mode == TextSearchMode::All)
+        {
+            for (const auto & info : infos)
+            {
+                chassert(!info->ranges.empty());
+                RowsRange token_range(info->ranges.front().begin, info->ranges.back().end);
+                auto new_intersection = intersection.intersectWith(token_range);
+
+                if (!new_intersection)
+                {
+                    cardinalities_cache->update(remaining_tokens, missing_tokens, state.part.rows_count);
+                    remaining_tokens.clear();
+                    return;
+                }
+
+                intersection = std::move(*new_intersection);
+            }
         }
     }
 }
@@ -1020,7 +1059,7 @@ std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffe
     }
 }
 
-std::vector<TokenPostingsInfo> TextIndexSerialization::deserializeTokenInfos(
+std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
     ReadBuffer & istr,
     size_t num_tokens,
     const std::vector<size_t> & matched_indices,
@@ -1029,7 +1068,7 @@ std::vector<TokenPostingsInfo> TextIndexSerialization::deserializeTokenInfos(
     chassert(matched_indices.back() < num_tokens);
     chassert(std::is_sorted(matched_indices.begin(), matched_indices.end()));
 
-    std::vector<TokenPostingsInfo> result;
+    std::vector<TokenPostingsInfoPtr> result;
     result.reserve(matched_indices.size());
 
     if (matched_indices.empty())
@@ -1044,7 +1083,7 @@ std::vector<TokenPostingsInfo> TextIndexSerialization::deserializeTokenInfos(
         }
 
         auto info = deserializeTokenInfo(istr, &postings_serialization);
-        result.emplace_back(std::move(info));
+        result.emplace_back(std::make_shared<TokenPostingsInfo>(std::move(info)));
         ++j;
     }
 

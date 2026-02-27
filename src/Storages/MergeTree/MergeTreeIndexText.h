@@ -179,6 +179,7 @@ struct RowsRange
     RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
 
     bool intersects(const RowsRange & other) const;
+    std::optional<RowsRange> intersectWith(const RowsRange & other) const;
 };
 
 /// Stores information about posting list for a token.
@@ -264,7 +265,7 @@ struct TextIndexSerialization
 
     /// Deserializes `TokenPostingsInfo` only for tokens at the given sorted indices,
     /// skipping postings for others. Returns a vector parallel to `matched_indices`.
-    static std::vector<TokenPostingsInfo> deserializeTokenInfos(
+    static std::vector<TokenPostingsInfoPtr> deserializeTokenInfos(
         ReadBuffer & istr,
         size_t num_tokens,
         const std::vector<size_t> & matched_indices,
