@@ -92,6 +92,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
     auto & context = scope.context;
+    auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback();
 
     Block scalar_block;
 
@@ -238,8 +239,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                while (chunk.getNumRows() == 0 && executor->pull(chunk))
+                while (chunk.getNumRows() == 0 && executor->pull(chunk, 100))
                 {
+                    cancel_callback();
                 }
             }
 
@@ -280,8 +282,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 Chunk tmp_chunk;
-                while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))
+                while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk, 100))
                 {
+                    cancel_callback();
                 }
 
                 if (tmp_chunk.getNumRows() != 0)
