@@ -104,7 +104,7 @@ while IFS= read -r f; do
   [ -n "$f" ] && patterns+=("*$f")
 done < <(echo "$changed_files")
 
-lcov --extract current_llvm_coverage.info  "${patterns[@]}" \
+lcov --extract llvm_coverage.info  "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt \
   --quiet \
   -o current.changed.info 2>/dev/null

@@ -209,7 +209,7 @@ if __name__ == "__main__":
 
         # Current coverage percentages for the current branch
         c_line_cov, c_function_cov, c_branch_cov = get_lcov_summary_percentages(
-            f"{TEMP_DIR}/current_llvm_coverage.info"
+            f"{TEMP_DIR}/llvm_coverage.info"
         )
 
         delta = c_line_cov - b_line_cov
