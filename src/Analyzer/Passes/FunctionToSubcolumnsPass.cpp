@@ -131,6 +131,17 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
         return;
 
+    /// If the .size0 subcolumn is actually Nullable (e.g. when the column type is Nullable(Array(...))),
+    /// skip the optimization. The hardcoded UInt64 type would mismatch the actual Nullable(UInt64),
+    /// causing a type mismatch exception at runtime in ExpressionActions::execute.
+    if (auto * table_node = ctx.column_source->as<TableNode>())
+    {
+        auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+        if (actual && actual->type->isNullable())
+            return;
+    }
+
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
     function_arguments_nodes.clear();
@@ -366,6 +377,18 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
                 return;
+
+            /// For nested Nullable types (e.g. Nullable(Tuple(... Nullable(T) ...))),
+            /// the .null subcolumn in storage is Nullable(UInt8), not UInt8.
+            /// Using it with a hardcoded UInt8 type causes a type mismatch at runtime.
+            if (auto * table_node = ctx.column_source->as<TableNode>())
+            {
+                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+                if (actual && actual->type->isNullable())
+                    return;
+            }
+
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -377,6 +400,16 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
                 return;
+
+            /// Same guard as isNull above: nested Nullable .null subcolumn may itself be Nullable.
+            if (auto * table_node = ctx.column_source->as<TableNode>())
+            {
+                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+                if (actual && actual->type->isNullable())
+                    return;
+            }
+
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             function_arguments_nodes = {std::make_shared<ColumnNode>(column, ctx.column_source)};

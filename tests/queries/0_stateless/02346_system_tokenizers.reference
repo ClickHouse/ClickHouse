@@ -1,8 +1,8 @@
-array	Array
-ngrambf_v1	Ngrams
-ngrams	Ngrams
-sparseGrams	SparseGrams
-sparse_grams	SparseGrams
-splitByNonAlpha	SplitByNonAlpha
-splitByString	SplitByString
-tokenbf_v1	SplitByNonAlpha
+array
+ngrambf_v1
+ngrams
+sparseGrams
+sparse_grams
+splitByNonAlpha
+splitByString
+tokenbf_v1
