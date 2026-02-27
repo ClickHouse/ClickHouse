@@ -51,6 +51,30 @@ void DataFileStatistics::update(const Chunk & chunk)
     }
 }
 
+void DataFileStatistics::merge(const DataFileStatistics & other)
+{
+    // If this is the first merge and we're empty, initialize from other
+    if (column_sizes.empty())
+    {
+        column_sizes = other.column_sizes;
+        null_counts = other.null_counts;
+        ranges = other.ranges;
+        return;
+    }
+
+    // Otherwise, merge the statistics
+    chassert(column_sizes.size() == other.column_sizes.size());
+    chassert(null_counts.size() == other.null_counts.size());
+    chassert(ranges.size() == other.ranges.size());
+
+    for (size_t i = 0; i < column_sizes.size(); ++i)
+    {
+        column_sizes[i] += other.column_sizes[i];
+        null_counts[i] += other.null_counts[i];
+        ranges[i] = uniteRanges(ranges[i], other.ranges[i]);
+    }
+}
+
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
 {
     return Range(

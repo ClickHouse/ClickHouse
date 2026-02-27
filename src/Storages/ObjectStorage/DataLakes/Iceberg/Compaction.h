@@ -11,12 +11,27 @@ namespace DB::Iceberg
 {
 #if USE_AVRO
 
+bool shouldCompactManifests(
+    const IcebergHistory & snapshots_info,
+    const PersistentTableComponents & persistent_table_components,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context);
+
 void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
     DB::ObjectStoragePtr object_storage_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<DB::FormatSettings> & format_settings_,
+    DB::SharedHeader sample_block_,
+    DB::ContextPtr context_,
+    const String & write_format);
+
+void compactIcebergManifests(
+    IcebergHistory snapshots_info,
+    const PersistentTableComponents & persistent_table_components,
+    DB::ObjectStoragePtr object_storage_,
+    const DataLakeStorageSettings & data_lake_settings,
     DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
     const String & write_format);

@@ -25,6 +25,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/ObjectStorage/Utils.h>
 
@@ -365,6 +366,33 @@ bool IcebergMetadata::optimize(
     }
 }
 
+bool IcebergMetadata::optimizeManifestFiles(
+       const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & /*format_settings*/)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    {
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+        auto snapshots_info = getHistory(context);
+
+        // Perform manifest-only compaction
+        compactIcebergManifests(
+            snapshots_info,
+            persistent_components,
+            object_storage,
+            data_lake_settings,
+            sample_block,
+            context,
+            write_format);
+
+        return true;
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
+    }
+}
+
 std::pair<IcebergDataSnapshotPtr, Int32>
 IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const
 {
@@ -680,6 +708,14 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
+    /// Register all schemas from metadata
+    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 j = 0; j < schemas->size(); ++j)
+    {
+        auto schema = schemas->getObject(j);
+        persistent_components.schema_processor->addIcebergTableSchema(schema);
+    }
+
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
 
@@ -692,6 +728,10 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         auto snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+        auto schema_id = snapshot->getValue<Int32>(f_schema_id);
+
+        /// Register snapshot with its schema ID so manifest entries can find the schema
+        persistent_components.schema_processor->registerSnapshotWithSchemaId(snapshot_id, schema_id);
 
         if (snapshot->has(f_parent_snapshot_id) && !snapshot->isNull(f_parent_snapshot_id))
             parents_list[snapshot_id] = snapshot->getValue<Int64>(f_parent_snapshot_id);
