@@ -182,8 +182,6 @@ void optimizeTreeSecondPass(
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
-    pushDownVolumeReducingFunctions(&root, nodes, optimization_settings);
-
     Stack stack;
     stack.push_back({.node = &root});
 

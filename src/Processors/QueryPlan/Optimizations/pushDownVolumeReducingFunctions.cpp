@@ -357,37 +357,9 @@ bool tryPushDown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 } // anonymous namespace
 
 
-void pushDownVolumeReducingFunctions(
-    QueryPlan::Node * root_node,
-    QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings)
+size_t tryPushDownVolumeReducingFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
-    if (!optimization_settings.push_down_volume_reducing_functions)
-        return;
-
-    /// Iterate until no more pushdowns are possible.
-    bool changed = true;
-    while (changed)
-    {
-        changed = false;
-
-        /// DFS over all nodes.  We push at most one level per node per iteration;
-        /// the outer loop repeats until the plan stabilizes.
-        std::vector<QueryPlan::Node *> stack;
-        stack.push_back(root_node);
-
-        while (!stack.empty())
-        {
-            auto * node = stack.back();
-            stack.pop_back();
-
-            if (tryPushDown(node, nodes))
-                changed = true;
-
-            for (auto * child : node->children)
-                stack.push_back(child);
-        }
-    }
+    return tryPushDown(parent_node, nodes) ? 2 : 0;
 }
 
 }
