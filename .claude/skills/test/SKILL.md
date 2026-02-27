@@ -1,7 +1,7 @@
 ---
 name: test
 description: Run ClickHouse stateless or integration tests. Use when the user wants to run or execute tests.
-argument-hint: [test-name] [--flags]
+argument-hint: "[test-name] [--flags]"
 disable-model-invocation: false
 allowed-tools: Task, Bash(./tests/clickhouse-test:*), Bash(pgrep:*), Bash(./build/*/programs/clickhouse:*), Bash(./build*/programs/clickhouse:*), Bash(python:*), Bash(python3:*), Bash(mktemp:*), Bash(export:*), Bash(ls:*), Bash(test:*)
 ---

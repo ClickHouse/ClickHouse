@@ -1460,6 +1460,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
+    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 300, R"(
+    How often replicas will try to update replica set in background.
+    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
