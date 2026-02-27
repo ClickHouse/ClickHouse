@@ -432,7 +432,7 @@ SELECT sparkbar(9, toDate('2020-01-01'), toDate('2020-01-10'))(event_date, cnt) 
     FunctionDocumentation::Category category_sparkbar = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_sparkbar = {description_sparkbar, syntax_sparkbar, arguments_sparkbar, parameters_sparkbar, returned_value_sparkbar, examples_sparkbar, introduced_in_sparkbar, category_sparkbar};
 
-    factory.registerFunction("sparkbar", {createAggregateFunctionSparkbar, {}, documentation_sparkbar});
+    factory.registerFunction("sparkbar", {createAggregateFunctionSparkbar, documentation_sparkbar});
     factory.registerAlias("sparkBar", "sparkbar");
 }
 
