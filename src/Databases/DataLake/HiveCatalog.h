@@ -27,8 +27,7 @@ namespace DataLake
 class HiveCatalog final : public ICatalog, private DB::WithContext
 {
 public:
-    explicit HiveCatalog(
-        const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_);
+    explicit HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_);
 
     ~HiveCatalog() override = default;
 
@@ -48,22 +47,21 @@ public:
 
 private:
     void reconnect() const;
-    
+
     template <typename Func>
     void executeWithRetry(Func && func) const;
 
     String base_url;
-    
+
     mutable std::shared_ptr<apache::thrift::transport::TTransport> socket;
     mutable std::shared_ptr<apache::thrift::transport::TTransport> transport;
     mutable std::shared_ptr<apache::thrift::protocol::TBinaryProtocol> protocol;
-     /// Somehow API of apache::thrift::transport::TBufferBase is not thread-safe.
-     /// Database Datalake can call this function from multiple threads, so we need to protect
-     /// access to the client.
+    /// Somehow API of apache::thrift::transport::TBufferBase is not thread-safe.
+    /// Database Datalake can call this function from multiple threads, so we need to protect
+    /// access to the client.
     mutable std::mutex client_mutex;
 
     mutable std::unique_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client TSA_GUARDED_BY(client_mutex);
-
 };
 
 }
