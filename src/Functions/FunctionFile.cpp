@@ -10,7 +10,6 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Common/CurrentThread.h>
 #include <filesystem>
 
 
@@ -32,7 +31,13 @@ class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFile>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
+        return std::make_shared<FunctionFile>();
+    }
 
     bool isVariadic() const override { return true; }
     String getName() const override { return name; }
@@ -114,19 +119,12 @@ public:
 
         res_offsets.resize(input_rows_count);
 
-        ContextPtr current_context = Context::getGlobalContextInstance();
-        if (CurrentThread::isInitialized())
-            if (auto query_context = CurrentThread::get().getQueryContext())
-                current_context = query_context;
-
-        if (current_context->getApplicationType() != Context::ApplicationType::LOCAL)
-            current_context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
-
-        fs::path user_files_absolute_path = fs::canonical(fs::path(current_context->getUserFilesPath()));
+        const auto & context = Context::getGlobalContextInstance();
+        fs::path user_files_absolute_path = fs::canonical(fs::path(context->getUserFilesPath()));
         std::string user_files_absolute_path_string = user_files_absolute_path.string();
 
         // If run in Local mode, no need for path checking.
-        bool need_check = current_context->getApplicationType() != Context::ApplicationType::LOCAL;
+        bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
