@@ -871,6 +871,9 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
             case 3:
                 column.default_specifier = ColumnDefaultSpecifier::Ephemeral;
                 break;
+            default:
+                /// Do nothing
+                break;
         }
     }
 }
