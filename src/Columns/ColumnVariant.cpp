@@ -1502,7 +1502,7 @@ void ColumnVariant::protect()
         variant->protect();
 }
 
-void ColumnVariant::getExtremes(Field & min, Field & max) const
+void ColumnVariant::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
 {
     min = Null();
     max = Null();

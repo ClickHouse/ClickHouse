@@ -2,10 +2,12 @@
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyUnaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/finalizeSQL.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
@@ -26,6 +28,18 @@ namespace
     {
         switch (node->node_type)
         {
+            case NodeType::Scalar:
+            {
+                const auto * scalar_node = static_cast<const PQT::Scalar *>(node);
+                return fromLiteral(scalar_node, context);
+            }
+
+            case NodeType::StringLiteral:
+            {
+                const auto * string_node = static_cast<const PQT::StringLiteral *>(node);
+                return fromLiteral(string_node, context);
+            }
+
             case NodeType::InstantSelector:
             {
                 const auto * instant_selector = static_cast<const PQT::InstantSelector *>(node);
@@ -60,11 +74,14 @@ namespace
                 {
                     arguments.push_back(visitNode(arg_node, context));
                 }
+                return applyFunction(function, std::move(arguments), context);
+            }
 
-                if (isFunctionOverRange(function->function_name))
-                    return applyFunctionOverRange(node, function->function_name, std::move(arguments), context);
-                else
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function->function_name);
+            case NodeType::UnaryOperator:
+            {
+                const auto * unary_operator = static_cast<const PQT::UnaryOperator *>(node);
+                SQLQueryPiece argument = visitNode(unary_operator->getArgument(), context);
+                return applyUnaryOperator(unary_operator, std::move(argument), context);
             }
 
             default:

@@ -7,11 +7,7 @@ title: 'Full-text Search with Text Indexes'
 doc_type: 'reference'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
 # Full-text search with text indexes
-
-<BetaBadge/>
 
 Text indexes (also known as [inverted indexes](https://en.wikipedia.org/wiki/Inverted_index)) enable fast full-text search on text data.
 A text index stores a mapping from tokens to the row numbers which contain each token.
@@ -79,13 +75,7 @@ If query
 SELECT value FROM system.settings WHERE name = 'compatibility';
 ```
 
-returns
-
-```text
-25.4
-```
-
-or any other value smaller than 26.2, you will need to set three additional settings to use the text index:
+returns a value smaller than `26.2` (e.g. `25.4`), you will need to set three additional settings to use the text index:
 
 ```sql
 SET enable_full_text_index = true;
@@ -210,7 +200,7 @@ We plan to add specialized language-specific tokenizers to handle these cases be
 Typical use cases for the preprocessor argument include
 1. Lower- or upper-casing to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8) (see the first example below).
 2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
-3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](./sql-reference/functions/string-replace-functions.md/#translate).
+3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](/sql-reference/functions/string-replace-functions.md/#translate).
 
 The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
 

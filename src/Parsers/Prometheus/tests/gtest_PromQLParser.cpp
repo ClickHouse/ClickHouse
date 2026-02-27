@@ -1178,3 +1178,89 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
 }
+
+
+TEST(PromQLParser, ParseStringLiterals)
+{
+    EXPECT_EQ(parse(R"(
+        "this is a string"
+        )"), R"(
+"this is a string"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('this is a string')
+)");
+
+    EXPECT_EQ(parse(R"(
+        "\n"
+        )"), R"(
+"\n"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('\n')
+)");
+
+    EXPECT_EQ(parse(R"(
+        "these are unescaped: \n \\ ' \" ` \t"
+        )"), R"(
+"these are unescaped: \n \\ ' \" ` \t"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('these are unescaped: \n \\ \' " ` \t')
+)");
+
+    EXPECT_EQ(parse(R"(
+        'these are unescaped: \n \\ \' " ` \t'
+        )"), R"(
+"these are unescaped: \n \\ ' \" ` \t"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('these are unescaped: \n \\ \' " ` \t')
+)");
+
+    EXPECT_EQ(parse(R"(
+        `these are not unescaped: \n \\ ' " \t`
+        )"), R"(
+"these are not unescaped: \\n \\\\ ' \" \\t"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('these are not unescaped: \\n \\\\ \' " \\t')
+)");
+
+    EXPECT_EQ(parse(R"(
+        "日本語"
+        )"), R"(
+"日本語"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('日本語')
+)");
+
+    EXPECT_EQ(parse(R"(
+        "\u65e5\u672c\u8a9e" 
+        )"), R"(
+"日本語"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('日本語')
+)");
+
+    EXPECT_EQ(parse(R"(
+        "\U000065e5\U0000672c\U00008a9e" 
+        )"), R"(
+"日本語"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('日本語')
+)");
+
+    EXPECT_EQ(parse(R"(
+        "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e"
+        )"), R"(
+"日本語"
+
+PrometheusQueryTree(STRING):
+    StringLiteral('日本語')
+)");
+
+}

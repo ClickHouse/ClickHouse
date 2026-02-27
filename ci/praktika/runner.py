@@ -158,6 +158,10 @@ class Runner:
             status=Result.Status.RUNNING,
             start_time=Utils.timestamp(),
         )
+        if env.WORKFLOW_JOB_DATA:
+            result.add_ext_key_value(
+                "run_url", f"{env.RUN_URL}/job/{env.WORKFLOW_JOB_DATA['check_run_id']}"
+            )
         result.dump()
 
         if not local_run:
@@ -327,7 +331,9 @@ class Runner:
                 "if docker ps -a --format '{{.Names}}' | grep -qx praktika; then docker rm -f praktika; fi",
                 verbose=True,
             ):
-                raise RuntimeError("Failed to remove existing docker container 'praktika'")
+                raise RuntimeError(
+                    "Failed to remove existing docker container 'praktika'"
+                )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
                 gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
@@ -372,6 +378,15 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
+        # Clean up stale experimental result file before starting the subprocess.
+        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
+        # the process — if the subprocess completes during that sleep (common for
+        # fast native jobs like Finish Workflow in backport PRs), deleting the file
+        # afterwards would remove the subprocess's own output, causing a spurious
+        # "Job killed or terminated" error.
+        if Path((Result.experimental_file_name_static())).exists():
+            Path(Result.experimental_file_name_static()).unlink()
+
         with TeePopen(
             cmd,
             timeout=job.timeout,
@@ -379,10 +394,6 @@ class Runner:
             timeout_shell_cleanup=job.timeout_shell_cleanup,
         ) as process:
             start_time = Utils.timestamp()
-
-            if Path((Result.experimental_file_name_static())).exists():
-                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
-                Path(Result.experimental_file_name_static()).unlink()
 
             exit_code = process.wait()
 

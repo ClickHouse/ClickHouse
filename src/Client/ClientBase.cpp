@@ -25,6 +25,7 @@
 #include <Common/formatReadable.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -43,7 +44,8 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -415,7 +417,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         try
         {
             if (dialect == Dialect::kusto)
-                res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             else
                 res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
         }
@@ -1116,7 +1118,11 @@ void ClientBase::updateSuggest(const ASTPtr & ast)
         }
     }
 
-    if (const auto * create_function = ast->as<ASTCreateFunctionQuery>())
+    if (const auto * create_function = ast->as<ASTCreateSQLFunctionQuery>())
+    {
+        new_words.push_back(create_function->getFunctionName());
+    }
+    if (const auto * create_function = ast->as<ASTCreateWasmFunctionQuery>())
     {
         new_words.push_back(create_function->getFunctionName());
     }
@@ -1218,7 +1224,8 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             if (query_with_output->isOutfileTruncate())
             {
                 out_file_if_truncated = out_file;
-                out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
+                fs::path out_file_path(out_file);
+                out_file = (out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file_path.filename().string())).string();
             }
 
             if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
