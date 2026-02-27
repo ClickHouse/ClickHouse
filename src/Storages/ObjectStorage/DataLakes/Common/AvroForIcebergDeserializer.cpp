@@ -112,18 +112,18 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         snapshot_id = snapshot_id_value.safeGet<Int64>();
     }
 
-    const auto sequence_number_value = getValueFromRowByName(row_index, f_sequence_number);
     std::optional<Int64> sequence_number;
 
     if (format_version > 1)
     {
+        const auto sequence_number_value = getValueFromRowByName(row_index, f_sequence_number);
         if (sequence_number_value.isNull())
         {
             if (status == ManifestEntryStatus::EXISTING)
             {
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without snapshot id",
+                    "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without sequence number",
                     manifest_file_path);
             }
         }
@@ -319,7 +319,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::getParsedManifestFileEntr
         lock.unlock();
         auto entry = createParsedManifestFileEntry(row_index);
         UniqueLock exclusive_lock(cache_mutex);
-        parsed_manifest_file_entries[row_index] = std::move(entry);
+        if (!parsed_manifest_file_entries[row_index])
+            parsed_manifest_file_entries[row_index] = std::move(entry);
         return parsed_manifest_file_entries[row_index];
     }
     return parsed_manifest_file_entries[row_index];

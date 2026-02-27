@@ -175,7 +175,7 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
         while (manifest_file_index < data_snapshot->manifest_list_entries.size())
         {
             const auto & mle = data_snapshot->manifest_list_entries[manifest_file_index++];
-            if (persistent_components.format_version > 1 && mle.content_type != manifest_file_content_type)
+            if (mle.content_type != manifest_file_content_type)
                 continue;
 
             auto manifest_file_cacheable_part = Iceberg::getManifestFile(

@@ -33,6 +33,16 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace ProfileEvents
+{
+extern const Event IcebergPartitionPrunedFiles;
+extern const Event IcebergMinMaxIndexPrunedFiles;
+extern const Event IcebergMetadataReadWaitTimeMicroseconds;
+extern const Event IcebergMetadataReturnedObjectInfos;
+extern const Event IcebergMinMaxNonPrunedDeleteFiles;
+extern const Event IcebergMinMaxPrunedDeleteFiles;
+};
+
 namespace DB::Iceberg
 {
 
@@ -147,6 +157,8 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
 }
 
 using namespace DB;
+
+ManifestFileIterator::~ManifestFileIterator() = default;
 
 std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
@@ -313,7 +325,17 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             path_to_manifest_file);
 
     if (parsed_entry->status == ManifestEntryStatus::DELETED)
+    {
+        insertRowToLogTable(
+            context,
+            manifest_file_deserializer->getContent(row_index),
+            DB::IcebergMetadataLogLevel::ManifestFileEntry,
+            common_path,
+            path_to_manifest_file,
+            row_index,
+            std::nullopt);
         return nullptr;
+    }
 
     /// Compute inherited/resolved fields
     const auto file_path = getProperFilePathFromMetadataInfo(parsed_entry->file_path_key, common_path, table_location);
@@ -408,11 +430,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         .hyperrectangles = std::move(hyperrectangles),
     });
 
-    std::optional<ManifestFilesPruner> current_pruner;
-    if (filter_dag)
-    {
-        current_pruner.emplace(*schema_processor_ptr, table_snapshot_schema_id, entry->schema_id, filter_dag.get(), *this, context);
-    }
+    const ManifestFilesPruner * current_pruner = filter_dag ? getOrCreatePruner(entry->schema_id) : nullptr;
     auto pruning_status = current_pruner ? current_pruner->canBePruned(entry) : PruningReturnStatus::NOT_PRUNED;
     insertRowToLogTable(
         context,
@@ -441,17 +459,32 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                     return entry;
                 }
             }
+            UNREACHABLE();
         }
         case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
-            ++min_max_index_pruned_files;
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
             return nullptr;
         }
         case PruningReturnStatus::PARTITION_PRUNED: {
-            ++partition_pruned_files;
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
             return nullptr;
         }
     }
     return entry;
+}
+
+const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema_id)
+{
+    std::lock_guard lock(pruners_mutex);
+    auto it = pruners_by_schema_id.find(schema_id);
+    if (it != pruners_by_schema_id.end())
+        return it->second.get();
+
+    auto pruner = std::make_unique<ManifestFilesPruner>(
+        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), *this, context);
+    auto * raw_ptr = pruner.get();
+    pruners_by_schema_id.emplace(schema_id, std::move(pruner));
+    return raw_ptr;
 }
 
 bool ManifestFileIterator::isInitialized() const

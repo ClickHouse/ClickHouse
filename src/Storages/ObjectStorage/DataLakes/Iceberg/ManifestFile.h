@@ -12,9 +12,13 @@
 #include <Core/Field.h>
 
 #include <cstdint>
+#include <mutex>
+#include <unordered_map>
 
 namespace DB::Iceberg
 {
+
+class ManifestFilesPruner;
 
 enum class ManifestEntryStatus : uint8_t
 {
@@ -218,6 +222,8 @@ public:
     /// Returns nullptr only when all entries have been processed (iterator is fully initialized).
     ProcessedManifestFileEntryPtr next();
 
+    ~ManifestFileIterator();
+
     ManifestFileIterator(ManifestFileIterator &&) = delete;
     ManifestFileIterator & operator=(ManifestFileIterator &&) = delete;
 
@@ -277,6 +283,11 @@ private:
     const Int32 table_snapshot_schema_id;
     std::atomic<std::size_t> partition_pruned_files{0};
     std::atomic<std::size_t> min_max_index_pruned_files{0};
+
+    /// Cache of pruners by schema_id to avoid recreation on each row
+    mutable std::mutex pruners_mutex;
+    std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners_by_schema_id;
+    const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id);
 };
 
 using ManifestFilePtr = std::shared_ptr<ManifestFileIterator>;
