@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-asan, no-tsan, no-msan, no-ubsan
+# Tags: no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-flaky-check
 # Test is flaky in debug/sanitizer builds because large data transfer
 # can cause connection timeouts before the parsing error is reported.
 
