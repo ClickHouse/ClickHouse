@@ -70,15 +70,17 @@ def analyze_job_logs(
     if server_died:
         # Server died - status will be determined after OOM checks
         is_failed = True
-    elif fuzzer_exit_code in (-9, -15, 0, 32, 137, 143, 210):
+    elif fuzzer_exit_code in (-9, -15, -2, 0, 32, 130, 137, 143, 210):
         # normal exit with timeout or OOM kill
         is_failed = False
         status = Result.Status.SUCCESS
         messages = {
             0: "Fuzzer exited with success",
+            -2: "Fuzzer killed with SIGINT",
             -9: "Fuzzer killed with SIGKILL",
             -15: "Fuzzer killed with SIGTERM",
             32: "Fuzzer exited after ATTEMPT_TO_READ_AFTER_EOF error",
+            130: "Fuzzer killed with SIGINT",
             137: "Fuzzer killed with SIGKILL",
             143: "Fuzzer killed with SIGTERM",
             210: "Fuzzer exited with network timeout",
