@@ -2036,12 +2036,22 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pulling())
+                if (result.second.pipeline.pushing())
+                {
+                    /// The fuzzed query is an INSERT or similar that expects input data.
+                    /// We can't provide data, so just skip it.
+                }
+                else if (result.second.pipeline.pulling())
                 {
                     result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    CompletedPipelineExecutor executor(result.second.pipeline);
+                    executor.execute();
                 }
-                CompletedPipelineExecutor executor(result.second.pipeline);
-                executor.execute();
+                else
+                {
+                    CompletedPipelineExecutor executor(result.second.pipeline);
+                    executor.execute();
+                }
             }
 
             base_ast = fuzzed_ast;
