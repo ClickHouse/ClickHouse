@@ -115,13 +115,13 @@ ORDER BY id;
 INSERT INTO tab VALUES (1, 'hello world '), (2, NULL), (3, 'foo bar     ');
 
 SELECT '-- Nullable(FixedString): only row 1 has "hello"';
-SELECT id FROM tab WHERE hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE hasAllToken(str, 'hello') ORDER BY id;
 
 SELECT '-- Nullable(FixedString): only row 3 has "foo"';
-SELECT id FROM tab WHERE hasToken(str, 'foo') ORDER BY id;
+SELECT id FROM tab WHERE hasAnyToken(str, 'foo') ORDER BY id;
 
 SELECT '-- NULL row must not match';
-SELECT count() FROM tab WHERE hasToken(str, 'hello') AND str IS NULL;
+SELECT count() FROM tab WHERE hasAllToken(str, 'hello') AND str IS NULL;
 
 DROP TABLE tab;
 
@@ -252,6 +252,97 @@ SELECT count() FROM tab WHERE hasAnyToken(arr, 'hello') AND id = 3;
 
 DROP TABLE tab;
 
-SELECT 'Some negative tests';
+SELECT 'Map(String, Nullable(String))';
+CREATE TABLE tab
+(
+    id UInt32,
+    m  Map(String, Nullable(String)),
+    INDEX idx(mapValues(m)) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, {'key1': 'hello world', 'key2': 'foo'}),
+    (2, {'key1': NULL, 'key2': 'bar'}),
+    (3, {'key1': NULL, 'key2': NULL}),
+    (4, {});
+
+SELECT '-- Map values: row 1 has "hello"';
+SELECT id FROM tab WHERE hasAllToken(mapValues(m), 'hello') ORDER BY id;
+
+SELECT '-- Map values: row 2 has "bar" (NULL value is skipped)';
+SELECT id FROM tab WHERE hasAllToken(mapValues(m), 'bar') ORDER BY id;
+
+SELECT '-- Map values: row 3 (all NULL values) must not match';
+SELECT count() FROM tab WHERE hasAllToken(mapValues(m), 'hello') AND id = 3;
+
+SELECT '-- Map values: row 4 (empty map) must not match';
+SELECT count() FROM tab WHERE hasAllToken(mapValues(m), 'hello') AND id = 4;
+
+SELECT '-- hasAnyTokens on map values: rows 1 ("foo") and 2 ("bar") match';
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(m), 'foo bar');
+
+SELECT '-- hasAllTokens on map values: only row 1 has both "hello" and "world"';
+SELECT id FROM tab WHERE hasAllTokens(mapValues(m), 'hello world') ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT 'LowCardinality(String)';
+CREATE TABLE tab
+(
+    id  UInt32,
+    str LowCardinality(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, 'hello world'),
+    (2, 'foo bar'),
+    (3, 'baz'),
+    (4, 'hello foo');
+
+SELECT '-- LowCardinality(String): rows 1 and 4 have "hello"';
+SELECT id FROM tab WHERE hasToken(str, 'hello') ORDER BY id;
+
+SELECT '-- LowCardinality(String): hasAnyTokens "bar" or "baz": rows 2 and 3';
+SELECT id FROM tab WHERE hasAnyTokens(str, 'bar baz') ORDER BY id;
+
+SELECT '-- LowCardinality(String): hasAllTokens "hello" and "world": only row 1';
+SELECT id FROM tab WHERE hasAllTokens(str, 'hello world') ORDER BY id;
+
+DROP TABLE tab;
 
 
+SELECT 'LowCardinality(Nullable(String))';
+CREATE TABLE tab
+(
+    id  UInt32,
+    str LowCardinality(Nullable(String)),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, 'hello world'),
+    (2, NULL),
+    (3, 'foo bar'),
+    (4, NULL),
+    (5, 'hello foo');
+
+SELECT '-- LowCardinality(Nullable): rows 1 and 5 have "hello"';
+SELECT id FROM tab WHERE hasToken(str, 'hello') ORDER BY id;
+
+SELECT '-- LowCardinality(Nullable): hasAnyTokens: row 1 ("world") and row 3 ("bar")';
+SELECT id FROM tab WHERE hasAnyTokens(str, 'world bar') ORDER BY id;
+
+SELECT '-- LowCardinality(Nullable): hasAllTokens: only row 1 has both "hello" and "world"';
+SELECT id FROM tab WHERE hasAllTokens(str, 'hello world') ORDER BY id;
+
+SELECT '-- LowCardinality(Nullable): NULL rows must not match any token';
+SELECT count() FROM tab WHERE hasToken(str, 'hello') AND str IS NULL;
+
+DROP TABLE tab;
