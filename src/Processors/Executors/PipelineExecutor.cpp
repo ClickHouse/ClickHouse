@@ -101,35 +101,15 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
 
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
-    graph->cancel();
 
-    /// After graph->cancel(), onCancel() has been called on all processors synchronously.
-    /// Some processors (e.g. RemoteSource) drain remaining packets during onCancel(),
-    /// which may produce additional progress (e.g. Progress packets from parallel replicas).
-    /// This progress is accumulated in ISource::read_progress but might not have been
-    /// forwarded yet because finalizeExecution() in the background thread could have
-    /// already run (or be running concurrently) before the drain completed.
-    /// Collect any remaining progress here to ensure it reaches the progress callback.
-    if (read_progress_callback)
+    /// Hold cancel_mutex while calling graph->cancel() so that finalizeExecution()
+    /// (which may be running concurrently in the executor thread) waits for all
+    /// onCancel() calls to complete before collecting progress.
+    /// This is important because RemoteSource::onCancel() drains remaining packets
+    /// and accumulates progress that finalizeExecution() needs to pick up.
     {
-        for (auto & node : graph->nodes)
-        {
-            if (node->processor)
-            {
-                if (auto read_progress = node->processor->getReadProgress())
-                {
-                    if (read_progress->counters.total_rows_approx)
-                        read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
-
-                    if (read_progress->counters.total_bytes)
-                        read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
-
-                    if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
-                        read_progress_callback->onProgress(
-                            read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
-                }
-            }
-        }
+        std::lock_guard lock(cancel_mutex);
+        graph->cancel();
     }
 }
 
@@ -266,6 +246,14 @@ void PipelineExecutor::finalizeExecution()
     auto status = execution_status.load();
     bool is_cancelled = (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser);
 
+    /// Wait for any in-progress graph->cancel() to complete before collecting progress.
+    /// cancel() may be running concurrently (e.g. from CompletedPipelineExecutor's main thread)
+    /// and graph->cancel() triggers RemoteSource::onCancel() which drains remaining packets
+    /// and accumulates progress. We must wait for that to finish before reading the progress.
+    {
+        std::lock_guard lock(cancel_mutex);
+    }
+
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
     {
@@ -280,7 +268,8 @@ void PipelineExecutor::finalizeExecution()
 
             /// When cancelled, fall through to also collect remaining progress from
             /// non-finished processors. This is safe because all execution threads
-            /// have stopped by this point, so no concurrent access to processor state.
+            /// have stopped by this point and graph->cancel() has completed
+            /// (ensured by cancel_mutex above), so no concurrent access to processor state.
         }
 
         if (node->processor && read_progress_callback)
