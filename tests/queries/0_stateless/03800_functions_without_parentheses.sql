@@ -45,6 +45,7 @@ DROP TABLE t;
 -- Parameterized view: niladic function name used as a parameter should NOT resolve as a function
 CREATE VIEW test_param_view AS SELECT {currentUser:String} AS value;
 SELECT * FROM test_param_view(currentUser = 'currentUser');
+SELECT (SELECT * FROM test_param_view(currentUser = (SELECT NOW))) = NOW();
 DROP VIEW test_param_view;
 
 -- Ensure niladic function names passed as collection keys stay as identifiers
