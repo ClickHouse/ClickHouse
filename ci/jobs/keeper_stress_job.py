@@ -190,13 +190,14 @@ def get_branch(env):
     return "master"
 
 
-def build_pytest_command():
+def build_pytest_command(junit_suffix=""):
+    """Build pytest command. Scenario selection is via KEEPER_SCENARIO_FILES in env."""
     dur = env_int("KEEPER_DURATION", DEFAULT_TIMEOUT)
     ready = _ready_timeout()
     timeout_val = dur + ready + 120
-    extra = [f"--timeout={timeout_val}", "--timeout-method=signal", f"--junitxml={TEMP_DIR}/keeper_junit.xml"]
+    junit_path = f"{TEMP_DIR}/keeper_junit{junit_suffix}.xml"
+    extra = [f"--timeout={timeout_val}", "--timeout-method=signal", f"--junitxml={junit_path}"]
     extra.append(f"--duration={dur}")
-
     base = ["-vv", "tests/stress/keeper/tests", "--durations=0"]
     cmd = " ".join((["-s"]) + base + extra)
     return cmd, timeout_val
@@ -390,56 +391,71 @@ def main():
         _abort(job_name, results, stop_watch, status=Result.Status.ERROR, info="ClickHouse binary --version failed.")
         return
 
-    # Build pytest command and env
-    cmd, timeout_val = build_pytest_command()
+    _, timeout_val = build_pytest_command()  # get timeout for env
     env = build_pytest_env(ch_path, timeout_val)
-
-    if env.get("COMMIT_SHA") and "--commit-sha=" not in cmd:
-        cmd = f"{cmd} --commit-sha={env['COMMIT_SHA']}"
-    if env.get("BRANCH") and "--branch=" not in cmd:
-        cmd = f"{cmd} --branch={env['BRANCH']}"
-
     sidecar = env["KEEPER_METRICS_FILE"]
     Path(sidecar).parent.mkdir(parents=True, exist_ok=True)
     Path(sidecar).touch()
 
-    report_file = f"{TEMP_DIR}/pytest.jsonl"
-    junit_file = f"{TEMP_DIR}/keeper_junit.xml"
-    pytest_log_file = f"{TEMP_DIR}/keeper_pytest.log"
+    # Set to False to run only no-fault tests (skip fault-injection scenarios).
+    # Override via env: KEEPER_RUN_FAULT_TESTS=false
+    RUN_FAULT_TESTS = os.environ.get("KEEPER_RUN_FAULT_TESTS", "false").lower() == "true"
 
-    results.append(
-        Result.from_pytest_run(
+    def _run_pytest(scenario_file, junit_suffix, run_name):
+        run_env = env.copy()
+        run_env["KEEPER_SCENARIO_FILES"] = scenario_file
+        cmd, _ = build_pytest_command(junit_suffix=junit_suffix)
+        if run_env.get("COMMIT_SHA") and "--commit-sha=" not in cmd:
+            cmd = f"{cmd} --commit-sha={run_env['COMMIT_SHA']}"
+        if run_env.get("BRANCH") and "--branch=" not in cmd:
+            cmd = f"{cmd} --branch={run_env['BRANCH']}"
+        report_file = f"{TEMP_DIR}/pytest{junit_suffix}.jsonl"
+        log_file = f"{TEMP_DIR}/keeper_pytest{junit_suffix}.log"
+        return Result.from_pytest_run(
             command=cmd,
             cwd=REPO_DIR,
-            name="Keeper Stress",
-            env=env,
+            name=run_name,
+            env=run_env,
             pytest_report_file=report_file,
-            logfile=pytest_log_file,
+            logfile=log_file,
         )
-    )
-    pytest_ok = results[-1].is_ok()
+
+    # Run 1: No-fault tests (core_no_faults.yaml)
+    results.append(_run_pytest("core_no_faults.yaml", "_no_faults", "Keeper Stress (no-faults)"))
+
+    # Run 2: Fault tests (core_faults.yaml). To skip: RUN_FAULT_TESTS=False or env KEEPER_RUN_FAULT_TESTS=false
+    if RUN_FAULT_TESTS:
+        results.append(_run_pytest("core_faults.yaml", "_faults", "Keeper Stress (with-faults)"))
+
+    pytest_ok = all(r.is_ok() for r in results)
 
     metrics_ok = validate_metrics_jsonl(sidecar)
     if not metrics_ok:
         pytest_ok = False
 
-    max_mb = env_int("KEEPER_ATTACH_PYTEST_JSONL_MAX_MB", 512)
-    report_attach = False
-    
-    report_size = os.path.getsize(report_file)
-    print(f"report file {report_file} size: {report_size / (1024 * 1024)} MB")
-    if Path(report_file).exists() and report_size <= max_mb * 1024 * 1024:
-        report_attach = True
-    else:
-        report_attach = False
-        print(f"report file {report_file} is too large: {report_size / (1024 * 1024)} MB")
-    
     Shell.run(f"chmod -R a+rX {REPO_DIR}/tests/stress/keeper/tests/_instances-* || true")
 
     job_log = f"{TEMP_DIR}/job.log"
-    to_attach = [junit_file, pytest_log_file, job_log, sidecar]
-    if report_attach:
-        to_attach.append(report_file)
+    to_attach = [
+        f"{TEMP_DIR}/keeper_junit_no_faults.xml",
+        f"{TEMP_DIR}/keeper_pytest_no_faults.log",
+    ]
+    if RUN_FAULT_TESTS:
+        to_attach.extend([
+            f"{TEMP_DIR}/keeper_junit_faults.xml",
+            f"{TEMP_DIR}/keeper_pytest_faults.log",
+        ])
+    to_attach.extend([job_log, sidecar])
+    max_mb = env_int("KEEPER_ATTACH_PYTEST_JSONL_MAX_MB", 512)
+    report_files = [f"{TEMP_DIR}/pytest_no_faults.jsonl"]
+    if RUN_FAULT_TESTS:
+        report_files.append(f"{TEMP_DIR}/pytest_faults.jsonl")
+    for report_file in report_files:
+        if Path(report_file).exists():
+            report_size = os.path.getsize(report_file)
+            print(f"report file {report_file} size: {report_size / (1024 * 1024)} MB")
+            if report_size <= max_mb * 1024 * 1024:
+                to_attach.append(report_file)
     for p in to_attach:
         if Path(p).exists():
             files_to_attach.append(str(p))

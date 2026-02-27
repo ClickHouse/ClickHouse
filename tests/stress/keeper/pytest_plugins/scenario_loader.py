@@ -151,6 +151,17 @@ def _resolve_scenario_duration(cfg):
 
 
 def _resolve_scenario_files():
+    """Resolve which scenario YAML files to load. KEEPER_SCENARIO_FILES restricts to specific files (comma-separated)."""
+    files_env = os.environ.get("KEEPER_SCENARIO_FILES", "").strip()
+    if files_env:
+        paths = []
+        for name in (s.strip() for s in files_env.split(",") if s.strip()):
+            p = _SCN_BASE / name if not (name.startswith("/") or ".." in name) else pathlib.Path(name)
+            if p.exists():
+                paths.append(p)
+            else:
+                print(f"scenario file not found: {p}")
+        return sorted(paths) if paths else []
     return sorted(p for p in _SCN_BASE.glob("*.yaml"))
 
 
