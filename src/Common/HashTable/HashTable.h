@@ -270,7 +270,7 @@ struct HashTableGrower
   * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
-class alignas(DB::CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
+class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
@@ -328,7 +328,7 @@ public:
     }
 };
 
-static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CACHE_LINE_SIZE);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.

@@ -96,7 +96,7 @@ class PageCache
 private:
     using Base = CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
 
-    class alignas(CACHE_LINE_SIZE) Shard : public Base
+    class alignas(CH_CACHE_LINE_SIZE) Shard : public Base
     {
     public:
         using Base::Base;

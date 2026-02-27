@@ -195,7 +195,7 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
 # Forbid hardware_destructive_interference_size because it provides unrealistic values for ARM (see https://github.com/ClickHouse/ClickHouse/pull/97357)
 find "$ROOT_PATH"/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP "$EXCLUDE" |
-    xargs grep -P '(hardware_destructive_interference_size|hardware_constructive_interference_size)' | grep -vP ':\s*//' && echo "Use CACHE_LINE_SIZE from Common/CacheLine.h instead"
+    xargs grep -P '(hardware_destructive_interference_size|hardware_constructive_interference_size)' | grep -vP ':\s*//' && echo "Use CH_CACHE_LINE_SIZE from Common/CacheLine.h instead"
 
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions

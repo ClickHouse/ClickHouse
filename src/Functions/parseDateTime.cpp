@@ -206,7 +206,7 @@ namespace
 }
 
     template <ErrorHandling error_handling, ReturnType return_type>
-    struct alignas(CACHE_LINE_SIZE) ParsedValue
+    struct alignas(CH_CACHE_LINE_SIZE) ParsedValue
     {
         static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 1900 : 1970;
         static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 2299 : 2106;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 namespace DB
 {
 
@@ -12,17 +14,17 @@ namespace DB
 /// see https://github.com/pytorch/cpuinfo/blob/45a761d6c4c52e2a5276985c89ee7a2ab15d7006/src/arm/cache.c#L1315-L1331.
 ///
 #if defined(__powerpc64__)
-constexpr size_t CACHE_LINE_SIZE = 128;
+constexpr size_t CH_CACHE_LINE_SIZE = 128;
 #elif defined(__powerpc__)
-constexpr size_t CACHE_LINE_SIZE = 32;
+constexpr size_t CH_CACHE_LINE_SIZE = 32;
 #elif defined(__s390x__)
-constexpr size_t CACHE_LINE_SIZE = 256;
+constexpr size_t CH_CACHE_LINE_SIZE = 256;
 #elif defined(__loongarch64) || defined(__riscv)
-constexpr size_t CACHE_LINE_SIZE = 64;
+constexpr size_t CH_CACHE_LINE_SIZE = 64;
 #elif defined(__e2k__)
-constexpr size_t CACHE_LINE_SIZE = 64;
+constexpr size_t CH_CACHE_LINE_SIZE = 64;
 #else // x86_64 and AArch64
-constexpr size_t CACHE_LINE_SIZE = 64;
+constexpr size_t CH_CACHE_LINE_SIZE = 64;
 #endif
 
 }

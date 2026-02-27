@@ -81,7 +81,7 @@ constexpr bool useSparseHashForHashedDictionary()
 ///
 /// Based on HashTableGrowerWithPrecalculation
 template <size_t initial_size_degree = 8>
-class alignas(CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndMaxLoadFactor
+class alignas(CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndMaxLoadFactor
 {
     UInt8 size_degree = initial_size_degree;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
@@ -153,7 +153,7 @@ public:
         increaseSizeDegree(0);
     }
 };
-static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == CACHE_LINE_SIZE);
+static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == CH_CACHE_LINE_SIZE);
 
 HashTableGrowerWithPrecalculationAndMaxLoadFactor() -> HashTableGrowerWithPrecalculationAndMaxLoadFactor<8>;
 
