@@ -2038,17 +2038,15 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             {
                 if (result.second.pipeline.pushing())
                 {
-                    /// The fuzzed query is an INSERT or similar that expects input data.
-                    /// We can't provide data, so just skip it.
-                }
-                else if (result.second.pipeline.pulling())
-                {
-                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
-                    CompletedPipelineExecutor executor(result.second.pipeline);
-                    executor.execute();
+                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                    result.second.pipeline.cancel();
                 }
                 else
                 {
+                    if (result.second.pipeline.pulling())
+                    {
+                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    }
                     CompletedPipelineExecutor executor(result.second.pipeline);
                     executor.execute();
                 }
