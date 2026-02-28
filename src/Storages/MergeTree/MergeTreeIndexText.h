@@ -307,7 +307,7 @@ public:
     const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
     bool isTokenNeeded(std::string_view token) const { return query_count_by_token.at(token) > 0; }
-    bool hasPostingsForToken(std::string_view token) const { return tokens_with_postings.contains(token); }
+    bool hasPostingsForToken(const String & token) const { return tokens_with_postings.contains(token); }
 
     void addMissingToken(std::string_view token);
     void addLargePostings(std::string_view token);
@@ -347,6 +347,8 @@ public:
     bool hasAnyQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
+
+    const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }

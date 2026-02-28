@@ -567,7 +567,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
         const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
         auto [matched_indices, missing_tokens] = matchTokens(block_tokens, std::move(needed_tokens));
 
-        for (auto & token : missing_tokens)
+        for (const auto & token : missing_tokens)
         {
             analyzer->addMissingToken(token);
         }
@@ -713,7 +713,7 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 
     for (const auto & [token, token_info] : token_infos)
     {
-        if (!analyzer->isTokenNeeded(token) || token_info->header & EmbeddedPostings)
+        if (!analyzer->isTokenNeeded(token) || analyzer->hasPostingsForToken(token))
             continue;
 
         if (!(token_info->header & SingleBlock))
