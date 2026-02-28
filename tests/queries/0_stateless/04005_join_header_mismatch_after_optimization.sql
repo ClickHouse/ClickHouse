@@ -1,9 +1,13 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/85459
--- HashJoin is created at plan-building time with a snapshot of the right-side header.
--- Query plan optimizations (outer-to-inner join conversion with join_use_nulls,
+-- The original exception was found by the AST fuzzer on older commits.
+-- `HashJoin` is created at plan-building time with a snapshot of the right-side header.
+-- Query plan optimizations (outer-to-inner join conversion with `join_use_nulls`,
 -- filter push-down) can change the right child's output header afterwards,
--- causing checkBlockStructure to fail in HashJoin::addBlockToJoin.
--- The fix re-clones the join in JoinStep::updatePipeline when the header diverges.
+-- causing `checkBlockStructure` to fail in `HashJoin::addBlockToJoin`.
+-- The fix re-clones the join in `JoinStep::updatePipeline` when the header diverges.
+--
+-- These queries exercise the code path that the fix protects:
+-- outer-to-inner join conversion combined with `join_use_nulls` and filter push-down.
 
 DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right;
@@ -24,9 +28,9 @@ SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 
 -- LEFT JOIN converted to INNER because of filter on right column.
--- With join_use_nulls, the right header was originally Nullable but after
+-- With `join_use_nulls`, the right header was originally `Nullable` but after
 -- outer-to-inner conversion, the optimizer may push a non-null filter down,
--- changing the right pipeline header. This used to cause a LOGICAL_ERROR.
+-- changing the right pipeline header.
 SELECT t_left.a, t_left.b, t_right.c
 FROM t_left
 LEFT JOIN t_right ON t_left.a = t_right.a
