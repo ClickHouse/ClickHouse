@@ -8,6 +8,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 
 
@@ -33,6 +34,7 @@ void MergePlainMergeTreeTask::onCompleted()
 
 bool MergePlainMergeTreeTask::executeStep()
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
     /// All metrics will be saved in the thread_group, including all scheduled tasks.
     /// In profile_counters only metrics from this thread will be saved.
     ProfileEventsScope profile_events_scope(&profile_counters);
