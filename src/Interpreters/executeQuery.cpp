@@ -2027,6 +2027,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
             auto fuzz_context = Context::createCopy(context);
+            fuzz_context->makeQueryContext();
+            fuzz_context->makeSessionContext();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
 
@@ -2034,12 +2036,20 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pulling())
+                if (result.second.pipeline.pushing())
                 {
-                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                    result.second.pipeline.cancel();
                 }
-                CompletedPipelineExecutor executor(result.second.pipeline);
-                executor.execute();
+                else
+                {
+                    if (result.second.pipeline.pulling())
+                    {
+                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    }
+                    CompletedPipelineExecutor executor(result.second.pipeline);
+                    executor.execute();
+                }
             }
 
             base_ast = fuzzed_ast;
