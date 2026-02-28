@@ -156,6 +156,14 @@ private:
 
     bool updateImplementationBufferIfNeeded();
 
+    static void updateReadStateIfNeeded(
+        FileSegment & file_segment,
+        size_t offset,
+        ReadFromFileSegmentStatePtr & state,
+        ReadInfo & info,
+        size_t file_size_,
+        LoggerPtr log);
+
     static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
 
     static ReadFromFileSegmentStatePtr createReadFromFileSegmentState(
@@ -181,6 +189,7 @@ private:
     static size_t readFromFileSegment(
         FileSegment & file_segment,
         size_t offset,
+        size_t file_size_,
         ReadFromFileSegmentState & state,
         ReadInfo & info,
         bool & implementation_buffer_can_be_reused,

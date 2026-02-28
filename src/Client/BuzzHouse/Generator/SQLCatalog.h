@@ -103,10 +103,11 @@ public:
     SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
-        this->tp = c.tp->typeDeepCopy();
+        this->tp = c.tp;
+        c.tp = nullptr;
         this->special = c.special;
-        this->nullable = std::optional<bool>(c.nullable);
-        this->dmod = std::optional<DModifier>(c.dmod);
+        this->nullable = c.nullable;
+        this->dmod = c.dmod;
     }
     SQLColumn & operator=(const SQLColumn & c)
     {
