@@ -1005,6 +1005,7 @@ void ZooKeeper::receiveEvent()
     {
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
+        request_info.component = "Watch";
 
         request_info.callback = [this](const Response & response_)
         {
