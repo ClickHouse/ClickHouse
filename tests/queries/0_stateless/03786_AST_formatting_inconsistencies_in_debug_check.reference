@@ -27,20 +27,20 @@ format(original):  SELECT * FROM t1 INNER JOIN t2 ON ((t1.x = t2.x) AND (t1.x IS
 format(formatted): SELECT * FROM t1 INNER JOIN t2 ON ((t1.x = t2.x) AND (t1.x IS NULL) AS e2)
 
 Original:          SELECT (1,1) c0, (1,(1)) c0
-format(original):  SELECT (1, 1) AS c0, tuple(1, 1) AS c0
-format(formatted): SELECT (1, 1) AS c0, tuple(1, 1) AS c0
+format(original):  SELECT (1, 1) AS c0, (1, 1) AS c0
+format(formatted): SELECT (1, 1) AS c0, (1, 1) AS c0
 
 Original:          SELECT (1, (1 AS c0, 1 AS c0) IS NULL AS c0), (1, (1, 1 AS c0) IS NULL AS c0) IS NULL AS c0
-format(original):  SELECT (1, tuple(1 AS c0, 1 AS c0) IS NULL AS c0), (1, tuple(1, 1 AS c0) IS NULL AS c0) IS NULL AS c0
-format(formatted): SELECT (1, tuple(1 AS c0, 1 AS c0) IS NULL AS c0), (1, tuple(1, 1 AS c0) IS NULL AS c0) IS NULL AS c0
+format(original):  SELECT (1, (1 AS c0, 1 AS c0) IS NULL AS c0), (1, (1, 1 AS c0) IS NULL AS c0) IS NULL AS c0
+format(formatted): SELECT (1, (1 AS c0, 1 AS c0) IS NULL AS c0), (1, (1, 1 AS c0) IS NULL AS c0) IS NULL AS c0
 
 Original:          SELECT NOT ((1, 1, 1))
 format(original):  SELECT NOT ((1, 1, 1))
 format(formatted): SELECT NOT ((1, 1, 1))
 
 Original:          select (((1), (2)))
-format(original):  SELECT tuple(1, 2)
-format(formatted): SELECT tuple(1, 2)
+format(original):  SELECT (1, 2)
+format(formatted): SELECT (1, 2)
 
 Original:          select * from tuple('42', '3141592')
 format(original):  SELECT * FROM tuple('42', '3141592')

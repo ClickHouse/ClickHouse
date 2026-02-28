@@ -2742,8 +2742,12 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (ParseDateOperatorExpression(pos, tmp, expected) ||
         ParseTimestampOperatorExpression(pos, tmp, expected) ||
-        tuple_literal_parser.parse(pos, tmp, expected) ||
-        array_literal_parser.parse(pos, tmp, expected) ||
+        /// NOTE: We intentionally do NOT use tuple_literal_parser / array_literal_parser here.
+        /// Those fast-path parsers collapse [1, 2] into ASTLiteral(Array) and (1, 2) into
+        /// ASTLiteral(Tuple), which have different tree hashes than ASTFunction("array"/
+        /// "tuple") produced by the normal ArrayLayer/TupleLayer path. Skipping them ensures
+        /// a consistent AST representation and allows operator-form formatting ([...] and
+        /// (...)) to always be used.
         number_parser.parse(pos, tmp, expected) ||
         literal_parser.parse(pos, tmp, expected) ||
         asterisk_parser.parse(pos, tmp, expected) ||
