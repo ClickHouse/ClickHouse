@@ -385,10 +385,10 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-# ─── Latency stress (specialized fault profiles) — pair with prod-mix-120s/180s ─
+# ─── Latency stress (specialized fault profiles) — compare with prod-mix ─────
 - id: latency-multi-region
   name: Latency — multi-region
-  description: Leader 10ms, followers 80ms (geo-distributed). Pair with prod-mix-120s.
+  description: Leader 10ms, followers 80ms (geo-distributed). Compare with prod-mix.
   topology: 3
   duration: 120
   workload:
@@ -430,7 +430,7 @@ scenarios:
   - type: print_summary
 - id: latency-wan
   name: Latency — WAN
-  description: 25ms delay, 7ms jitter, 2% loss. Pair with prod-mix-120s.
+  description: 25ms delay, 7ms jitter, 2% loss. Compare with prod-mix.
   topology: 3
   duration: 120
   workload:
@@ -463,7 +463,7 @@ scenarios:
   - type: print_summary
 - id: latency-jitter
   name: Latency — jitter
-  description: 20ms delay, 15ms jitter (no loss), 180s. Pair with prod-mix-180s.
+  description: 20ms delay, 15ms jitter (no loss), 180s. Compare with prod-mix.
   topology: 3
   duration: 180
   workload:
@@ -499,7 +499,7 @@ scenarios:
   - type: print_summary
 - id: latency-net-disk
   name: Latency — net+disk
-  description: Netem + dm_delay parallel, 180s. Pair with prod-mix-180s.
+  description: Netem + dm_delay parallel, 180s. Compare with prod-mix.
   topology: 3
   duration: 180
   workload:
