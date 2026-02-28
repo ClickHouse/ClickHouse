@@ -15,7 +15,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 
 #include <Parsers/ASTLiteral.h>
