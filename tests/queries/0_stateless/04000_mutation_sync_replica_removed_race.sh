@@ -15,20 +15,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TABLE_PREFIX="mutation_sync_race"
 TABLE_R1="${TABLE_PREFIX}_r1"
 TABLE_R2="${TABLE_PREFIX}_r2"
-ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/${TABLE_PREFIX}"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${TABLE_R1} SYNC"
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${TABLE_R2} SYNC"
 
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE ${TABLE_R1} (key UInt64, value String)
-    ENGINE = ReplicatedMergeTree('${ZK_PATH}', '1')
+    ENGINE = ReplicatedMergeTree('$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/${TABLE_PREFIX}', '1')
     ORDER BY key
 "
 
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE ${TABLE_R2} (key UInt64, value String)
-    ENGINE = ReplicatedMergeTree('${ZK_PATH}', '2')
+    ENGINE = ReplicatedMergeTree('$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/${TABLE_PREFIX}', '2')
     ORDER BY key
 "
 
@@ -64,7 +63,7 @@ function drop_replica_thread()
         sleep 0.$((RANDOM % 3))
         $CLICKHOUSE_CLIENT --query "
             CREATE TABLE ${TABLE_R2} (key UInt64, value String)
-            ENGINE = ReplicatedMergeTree('${ZK_PATH}', '2')
+            ENGINE = ReplicatedMergeTree('$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/${TABLE_PREFIX}', '2')
             ORDER BY key
         " >/dev/null 2>&1 ||:
         sleep 0.$((RANDOM % 3))
@@ -82,7 +81,7 @@ wait
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${TABLE_R2} SYNC" 2>/dev/null
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE ${TABLE_R2} (key UInt64, value String)
-    ENGINE = ReplicatedMergeTree('${ZK_PATH}', '2')
+    ENGINE = ReplicatedMergeTree('$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/${TABLE_PREFIX}', '2')
     ORDER BY key
 " 2>/dev/null ||:
 
