@@ -1377,24 +1377,9 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         {
             if (pos->type == closing_bracket)
             {
+                /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
                 if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
-                {
-                    /// At the top level, one-element tuples like (1) must not be treated
-                    /// as tuples — they are just parenthesized values.
-                    if (layers.size() == 1)
-                        return false;
-
-                    /// Nested one-element "tuples" like the (1) inside ((1), (2)) are
-                    /// just parenthesized literals.  Pop the layer and push the value
-                    /// to the parent so that the fast-path produces the same AST as
-                    /// the full expression parser (which strips redundant parentheses).
-                    auto value = std::move(layers.back().arr[0]);
-                    layers.pop_back();
-                    pos.decreaseDepth();
-                    ++pos;
-                    layers.back().arr.push_back(std::move(value));
-                    continue;
-                }
+                    return false;
 
                 boost::intrusive_ptr<ASTLiteral> literal = make_intrusive<ASTLiteral>(std::move(layers.back().arr));
                 auto layer_begin = layers.back().literal_begin;
@@ -1437,37 +1422,6 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         {
             layers.emplace_back(pos);
             pos.increaseDepth();
-        }
-        else if (pos->type == TokenType::OpeningRoundBracket)
-        {
-            /// Handle parenthesized literals like (1), ((1)), etc.  inside
-            /// non-tuple collections (for tuples, `(` is the opening_bracket
-            /// so the branch above already handles nesting).
-            /// This ensures e.g. [(1)] fast-parses the same way as [1].
-            Pos save = pos;
-            size_t paren_depth = 0;
-            while (pos->type == TokenType::OpeningRoundBracket)
-            {
-                ++pos;
-                ++paren_depth;
-            }
-            ASTPtr inner;
-            if (literal_p.parse(pos, inner, expected))
-            {
-                size_t closed = 0;
-                while (closed < paren_depth && pos->type == TokenType::ClosingRoundBracket)
-                {
-                    ++pos;
-                    ++closed;
-                }
-                if (closed == paren_depth)
-                {
-                    layers.back().arr.push_back(inner->as<ASTLiteral &>().value);
-                    continue;
-                }
-            }
-            pos = save;
-            return false;
         }
         else
             return false;

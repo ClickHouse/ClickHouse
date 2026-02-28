@@ -1273,6 +1273,21 @@ private:
     bool is_operator;
 };
 
+/// Check if all elements in the list are plain ASTLiteral nodes without aliases.
+/// Used by RoundBracketsLayer and ArrayLayer to collapse operator-form tuples/arrays
+/// into ASTLiteral for consistency with the fast-path ParserCollectionOfLiterals.
+bool allElementsArePlainLiterals(const ASTs & elements)
+{
+    for (const auto & elem : elements)
+    {
+        if (!elem->as<ASTLiteral>())
+            return false;
+        if (!elem->tryGetAlias().empty())
+            return false;
+    }
+    return true;
+}
+
 /// Layer for priority brackets and the tuple function
 class RoundBracketsLayer : public Layer
 {
@@ -1325,9 +1340,27 @@ protected:
     {
         // Round brackets can mean priority operator as well as function tuple
         if (!is_tuple && elements.size() == 1)
+        {
             node = std::move(elements[0]);
+        }
         else
-            node = makeASTOperator("tuple", std::move(elements));
+        {
+            /// If all elements are plain literals (no aliases) and we have >= 2 elements,
+            /// produce ASTLiteral(Tuple) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which requires >= 2 elements for tuples).
+            if (elements.size() >= 2 && allElementsArePlainLiterals(elements))
+            {
+                Tuple tup;
+                tup.reserve(elements.size());
+                for (auto & elem : elements)
+                    tup.push_back(elem->as<ASTLiteral &>().value);
+                node = make_intrusive<ASTLiteral>(std::move(tup));
+            }
+            else
+            {
+                node = makeASTOperator("tuple", std::move(elements));
+            }
+        }
 
         return true;
     }
@@ -1348,7 +1381,20 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTOperator("array", std::move(elements));
+        /// If all elements are plain literals (no aliases), produce ASTLiteral(Array)
+        /// to be consistent with the fast-path ParserCollectionOfLiterals result.
+        if (allElementsArePlainLiterals(elements))
+        {
+            Array arr;
+            arr.reserve(elements.size());
+            for (auto & elem : elements)
+                arr.push_back(elem->as<ASTLiteral &>().value);
+            node = make_intrusive<ASTLiteral>(std::move(arr));
+        }
+        else
+        {
+            node = makeASTOperator("array", std::move(elements));
+        }
         return true;
     }
 };
