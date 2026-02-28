@@ -14,6 +14,7 @@
 #include <fmt/format.h>
 #include <exception>
 #include <memory>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -125,57 +126,122 @@ void addConvertingExpression(QueryPlan & plan, const SharedHeader & expected_hea
 
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties, const Memo & memo)
 {
-    auto group = memo.getGroup(subtree_root_group_id);
     const auto & cost_config = memo.getCostConfig();
-    auto group_best_expression = group->getBestImplementation(required_properties, cost_config).expression;
-    if (!group_best_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cascades optimizer: no implementation found for group #{} satisfying required properties {}.\n"
-            "Group state:\n{}",
-            subtree_root_group_id, required_properties.dump(), group->dump());
 
-    QueryPlanPtr plan_for_group;
-    if (group_best_expression->inputs.empty())
+    /// Track visited single-input expressions to detect cycles in the
+    /// best-implementation chain. A cycle occurs when enforcers (e.g.
+    /// ShuffleExchange) in the same group point back to the same group with
+    /// relaxed properties that match the enforcer itself, because
+    /// `isDistributionSatisfiedBy` treats empty required columns as "any
+    /// distribution is fine". When a cycle is detected, we skip the cycling
+    /// expression and pick the next-best alternative from the group.
+    std::unordered_set<GroupExpression *> visited_expressions;
+
+    /// Select the best expression for a group, with cycle detection for
+    /// single-input enforcers.
+    auto selectBest = [&](GroupId group_id, const ExpressionProperties & props) -> GroupExpressionPtr
     {
-        auto leaf_plan = std::make_unique<QueryPlan>();
-        leaf_plan->addStep(group_best_expression->getQueryPlanStep()->clone());
-        plan_for_group = std::move(leaf_plan);
-    }
-    else if (group_best_expression->inputs.size() == 1)
-    {
-        const auto & input = group_best_expression->inputs.front();
-        auto child_plan = buildBestPlan(input.group_id, input.required_properties, memo);
-        auto step = group_best_expression->getQueryPlanStep()->clone();
-        addConvertingExpression(*child_plan, step->getInputHeaders().at(0));
-        child_plan->addStep(std::move(step));
-        plan_for_group = std::move(child_plan);
-    }
-    else
-    {
-        std::vector<QueryPlanPtr> input_plans;
-        input_plans.reserve(group_best_expression->inputs.size());
-        auto step = group_best_expression->getQueryPlanStep()->clone();
-        for (size_t i = 0; i < group_best_expression->inputs.size(); ++i)
+        auto group = memo.getGroup(group_id);
+        auto best = group->getBestImplementation(props, cost_config).expression;
+        if (!best)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cascades optimizer: no implementation found for group #{} satisfying required properties {}.\n"
+                "Group state:\n{}",
+                group_id, props.dump(), group->dump());
+
+        while (best->inputs.size() == 1
+               && visited_expressions.contains(best.get()))
         {
-            const auto & input = group_best_expression->inputs[i];
-            auto input_plan = buildBestPlan(input.group_id, input.required_properties, memo);
-            addConvertingExpression(*input_plan, step->getInputHeaders().at(i));
-            input_plans.push_back(std::move(input_plan));
+            GroupExpressionPtr alternative;
+            for (const auto & candidate : group->best_implementations)
+            {
+                if (visited_expressions.contains(candidate.get()))
+                    continue;
+                if (!props.isSatisfiedBy(candidate->properties))
+                    continue;
+                if (!alternative
+                    || alternative->cost->subtree_cost.weighted_total(cost_config)
+                       > candidate->cost->subtree_cost.weighted_total(cost_config))
+                    alternative = candidate;
+            }
+            if (!alternative)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cascades optimizer: cycle detected in best-implementation chain at group #{} "
+                    "with no acyclic alternative. Expression '{}', properties {}.\n"
+                    "Group state:\n{}",
+                    group_id, best->dump(), props.dump(), group->dump());
+            best = alternative;
         }
-        auto united_plan = std::make_unique<QueryPlan>();
-        united_plan->unitePlans(std::move(step), std::move(input_plans));
-        plan_for_group = std::move(united_plan);
+
+        if (best->inputs.size() == 1)
+            visited_expressions.insert(best.get());
+
+        return best;
+    };
+
+    /// DFS stack frame — one per expression (leaf, single-input, or multi-input).
+    struct Frame
+    {
+        GroupId group_id;
+        GroupExpressionPtr expression;
+        size_t next_child = 0;
+        std::vector<QueryPlanPtr> child_plans;
+    };
+
+    std::vector<Frame> stack;
+    QueryPlanPtr result;
+
+    stack.push_back({subtree_root_group_id, selectBest(subtree_root_group_id, required_properties), 0, {}});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        /// Traverse children first (pre-order push).
+        if (frame.next_child < frame.expression->inputs.size())
+        {
+            const auto & input = frame.expression->inputs[frame.next_child];
+            ++frame.next_child;
+            stack.push_back({input.group_id, selectBest(input.group_id, input.required_properties), 0, {}});
+            continue;
+        }
+
+        /// All children processed — build this node's plan (post-order).
+        if (frame.expression->inputs.empty())
+        {
+            result = std::make_unique<QueryPlan>();
+            result->addStep(frame.expression->getQueryPlanStep()->clone());
+        }
+        else if (frame.expression->inputs.size() == 1)
+        {
+            result = std::move(frame.child_plans[0]);
+            auto step = frame.expression->getQueryPlanStep()->clone();
+            addConvertingExpression(*result, step->getInputHeaders().at(0));
+            result->addStep(std::move(step));
+        }
+        else
+        {
+            auto step = frame.expression->getQueryPlanStep()->clone();
+            for (size_t i = 0; i < frame.child_plans.size(); ++i)
+                addConvertingExpression(*frame.child_plans[i], step->getInputHeaders().at(i));
+            result = std::make_unique<QueryPlan>();
+            result->unitePlans(std::move(step), std::move(frame.child_plans));
+        }
+
+        result->getRootNode()->cost_estimation = CostEstimationInfo
+            {
+                .cost = frame.expression->cost->subtree_cost.weighted_total(cost_config),
+                .rows = memo.getGroup(frame.group_id)->statistics->estimated_row_count
+            };
+        LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", frame.group_id, dumpQueryPlanShort(*result));
+
+        stack.pop_back();
+
+        if (!stack.empty())
+            stack.back().child_plans.push_back(std::move(result));
     }
 
-    plan_for_group->getRootNode()->cost_estimation = CostEstimationInfo
-        {
-            .cost = group_best_expression->cost->subtree_cost.weighted_total(cost_config),
-            .rows = group->statistics->estimated_row_count
-        };
-
-    LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", subtree_root_group_id, dumpQueryPlanShort(*plan_for_group));
-
-    return plan_for_group;
+    return result;
 }
 
 }
