@@ -308,7 +308,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         if (added_columns.additional_filter_expression)
         {
             const bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
-            return joinRightColumnsWithAddtitionalFilter<KeyGetter, Map>(
+            return joinRightColumnsWithAdditionalFilter<KeyGetter, Map>(
                 std::forward<std::vector<KeyGetter>>(key_getter_vector),
                 mapv,
                 added_columns,
@@ -817,7 +817,7 @@ static ColumnPtr buildAdditionalFilter(
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, typename AddedColumns>
-size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtitionalFilter(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAdditionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,

@@ -51,7 +51,7 @@ SELECT skewSamp(x) FROM (SELECT pow(number, 2) AS x FROM numbers(10));
     FunctionDocumentation::Category category_skewSamp = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_skewSamp = {description_skewSamp, syntax_skewSamp, arguments_skewSamp, parameters_skewSamp, returned_value_skewSamp, examples_skewSamp, introduced_in_skewSamp, category_skewSamp};
 
-    factory.registerFunction("skewSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionThirdMoment, StatisticsFunctionKind::skewSamp>, {}, documentation_skewSamp});
+    factory.registerFunction("skewSamp", {createAggregateFunctionStatisticsUnary<AggregateFunctionThirdMoment, StatisticsFunctionKind::skewSamp>, documentation_skewSamp});
 
     FunctionDocumentation::Description description_skewPop = R"(
 Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
@@ -92,7 +92,7 @@ SELECT skewPop(x) FROM (SELECT pow(number, 2) AS x FROM numbers(10));
     FunctionDocumentation::Category category_skewPop = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_skewPop = {description_skewPop, syntax_skewPop, arguments_skewPop, parameters_skewPop, returned_value_skewPop, examples_skewPop, introduced_in_skewPop, category_skewPop};
 
-    factory.registerFunction("skewPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionThirdMoment, StatisticsFunctionKind::skewPop>, {}, documentation_skewPop});
+    factory.registerFunction("skewPop", {createAggregateFunctionStatisticsUnary<AggregateFunctionThirdMoment, StatisticsFunctionKind::skewPop>, documentation_skewPop});
 }
 
 }

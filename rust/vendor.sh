@@ -40,6 +40,10 @@ cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$
 cd "$CH_TOP_DIR"/contrib/chdig || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
+# wasmtime
+cd "$CH_TOP_DIR"/contrib/wasmtime/crates/c-api || exit 1
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
+
 # Just in case
 cd "$CH_TOP_DIR"/rust/workspace
 

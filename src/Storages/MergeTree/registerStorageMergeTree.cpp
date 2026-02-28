@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
@@ -392,6 +393,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         *  - Additional MergeTreeSettings in the SETTINGS clause;
         */
 
+    auto component_guard = Coordination::setCurrentComponent("registerStorageMergeTree::create");
     bool is_extended_storage_def = args.engine_args.empty() || isExtendedStorageDef(args.query);
 
     const Settings & local_settings = args.getLocalContext()->getSettingsRef();
