@@ -139,9 +139,12 @@ public:
 
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
+    /// Aggregate function states are always considered non-default
     bool isDefaultAt(size_t) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
+        /// Return false to support aggregation subcolumn when write.
+        /// Like getNumberOfDefaultRows(), it does not throw an exception.
+        return false;
     }
 
     std::string_view getDataAt(size_t n) const override;

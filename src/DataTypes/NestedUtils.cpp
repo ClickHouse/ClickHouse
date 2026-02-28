@@ -27,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
@@ -203,6 +204,145 @@ Block flatten(const Block & block)
 Block flattenNested(const Block & block)
 {
     return flattenImpl(block, false);
+}
+
+template <typename LeafCallback>
+static void flattenTupleRecursiveImpl(
+    const ColumnPtr & column,
+    const DataTypePtr & data_type,
+    LeafCallback && emit_leaf,
+    const String & name_prefix = {})
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
+    if (!tuple_type || tuple_type->getElements().empty() || data_type->hasCustomName())
+    {
+        emit_leaf(column, data_type, name_prefix);
+        return;
+    }
+
+    /// If the column is ColumnConst, expand it to a full column first,
+    /// so that all leaf columns are always non-const after flattening.
+    ColumnPtr materialized_column = column->convertToFullColumnIfConst();
+    const ColumnTuple * column_tuple = typeid_cast<const ColumnTuple *>(materialized_column.get());
+
+    if (!column_tuple)
+    {
+        emit_leaf(materialized_column, data_type, name_prefix);
+        return;
+    }
+
+    const DataTypes & element_types = tuple_type->getElements();
+    const auto & sub_columns = column_tuple->getColumns();
+
+    for (size_t i = 0; i < element_types.size(); ++i)
+    {
+        ColumnPtr element_col = sub_columns[i];
+
+        if (!name_prefix.empty())
+        {
+            const Strings & element_names = tuple_type->getElementNames();
+            String element_name = concatenateName(name_prefix, element_names[i]);
+            flattenTupleRecursiveImpl(element_col, element_types[i], emit_leaf, element_name);
+        }
+        else
+        {
+            flattenTupleRecursiveImpl(element_col, element_types[i], emit_leaf);
+        }
+    }
+}
+
+Block flattenTupleRecursive(const Block & block)
+{
+    Block result;
+    for (const auto & elem : block)
+    {
+        flattenTupleRecursiveImpl(
+            elem.column, elem.type,
+            [&result](const ColumnPtr & col, const DataTypePtr & type, const String & name)
+            {
+                result.insert(ColumnWithTypeAndName(col, type, name));
+            },
+            elem.name);
+    }
+    return result;
+}
+
+/// Flatten tuple columns: input a vector of columns, return a new vector with all tuples expanded
+/// All tuples are flattened recursively
+Columns flattenTupleColumnsRecursive(const Block & header, const Columns & columns)
+{
+    if (header.columns() != columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Header columns count ({}) does not match columns count ({}) in flattenTupleColumns",
+            header.columns(),
+            columns.size());
+    }
+
+    Columns result;
+    result.reserve(header.columns());
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto & header_col = header.getByPosition(i);
+        flattenTupleRecursiveImpl(
+            columns[i], header_col.type,
+            [&result](const ColumnPtr & col, const DataTypePtr &, const String &)
+            {
+                result.push_back(col);
+            });
+    }
+    return result;
+}
+
+/// Reconstruct tuple columns: input header and flattened columns, return a new vector with tuples reconstructed
+Columns reconstructTupleColumnsRecursive(const Block & header, const Columns & flattened_columns)
+{
+    Columns result;
+    result.reserve(header.columns());
+    size_t flattened_idx = 0;
+
+    std::function<ColumnPtr(const DataTypePtr &)> reconstructTupleColumnImpl;
+    reconstructTupleColumnImpl = [&](const DataTypePtr & data_type) -> ColumnPtr
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
+        if (tuple_type && !tuple_type->getElements().empty() && !data_type->hasCustomName())
+        {
+            const auto & element_types = tuple_type->getElements();
+            Columns tuple_columns;
+            tuple_columns.reserve(element_types.size());
+
+            for (const auto & element_type : element_types)
+                tuple_columns.push_back(reconstructTupleColumnImpl(element_type));
+
+            return ColumnTuple::create(tuple_columns);
+        }
+
+        /// For non-tuple types, take as-is from flattened columns
+        if (flattened_idx >= flattened_columns.size())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "flattened_idx out of range in reconstructTupleColumns");
+        }
+        return flattened_columns[flattened_idx++];
+    };
+
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const auto & header_col = header.getByPosition(i);
+        result.push_back(reconstructTupleColumnImpl(header_col.type));
+    }
+
+    if (flattened_idx != flattened_columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "reconstructTupleColumnsRecursive: consumed {} flattened columns, but total flattened columns count is {}",
+            flattened_idx,
+            flattened_columns.size());
+    }
+
+    return result;
 }
 
 namespace

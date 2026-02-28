@@ -1,0 +1,64 @@
+=== Test 1: SummingMergeTree Basic Tuple ===
+Basic Tuple - with FINAL:
+1	(250,110,2)
+2	(450,165,2)
+3	(650,185,2)
+Basic Tuple - after OPTIMIZE:
+1	(250,110,2)
+2	(450,165,2)
+3	(650,185,2)
+Basic Tuple - access by position:
+1	250	110	2
+2	450	165	2
+3	650	185	2
+=== Test 2: SummingMergeTree Empty Tuple ===
+Empty Tuple - with FINAL:
+1	()	250
+2	()	450
+Empty Tuple - after OPTIMIZE:
+1	()	250
+2	()	450
+=== Test 3: SummingMergeTree Nested Tuple ===
+Nested Tuple - with FINAL:
+1	(300,120,(500,18,(4,20)))
+2	(400,140,(600,27,(6,30)))
+Nested Tuple - after OPTIMIZE:
+1	(300,120,(500,18,(4,20)))
+2	(400,140,(600,27,(6,30)))
+=== Test 4: SummingMergeTree Unnamed Tuple ===
+Unnamed Tuple - with FINAL:
+1	(250,110,2)
+2	(450,165,2)
+Unnamed Tuple - after OPTIMIZE:
+1	(250,110,2)
+2	(450,165,2)
+Unnamed Tuple - access by position:
+1	250	110	2
+2	450	165	2
+=== Test 5: SummingMergeTree Mixed Tuples ===
+Mixed Tuples - with FINAL:
+1	()	(250,110)	()	(500,(),(3))
+Mixed Tuples - after OPTIMIZE:
+1	()	(250,110)	()	(500,(),(3))
+=== Test 6: CoalescingMergeTree Basic Tuple ===
+Coalescing Basic - with FINAL:
+1	(100,60,'updated')
+2	(250,80,'second')
+Coalescing Basic - after OPTIMIZE:
+1	(100,60,'updated')
+2	(250,80,'second')
+=== Test 7: CoalescingMergeTree Nested Tuple ===
+Coalescing Nested Tuple - with FINAL:
+1	(100,(210,(300)))
+2	(160,(250,(360)))
+Coalescing Nested Tuple - after OPTIMIZE:
+1	(100,(210,(300)))
+2	(160,(250,(360)))
+=== Test 8: SummingMergeTree Complex Types ===
+Complex Types - with FINAL:
+1	(300,110,'low1',(500,'inner1'))
+2	(400,70,'low2',(600,NULL))
+Complex Types - after OPTIMIZE:
+1	(300,110,'low1',(500,'inner1'))
+2	(400,70,'low2',(600,NULL))
+=== All Tests Completed ===

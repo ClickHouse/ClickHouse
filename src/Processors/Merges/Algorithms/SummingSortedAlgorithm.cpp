@@ -244,11 +244,18 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const String & sum_function_name,
     const String & sum_function_map_name,
     bool remove_default_values,
-    bool aggregate_all_columns)
+    bool aggregate_all_columns,
+    bool allow_tuple_element_aggregation)
 {
-    size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
-    def.column_names = header.getNames();
+    def.origin_header = header;
+    def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
+
+    const Block header_flatten = allow_tuple_element_aggregation
+        ? Nested::flattenTupleRecursive(header)
+        : header;
+    def.column_names = header_flatten.getNames();
+    size_t num_columns = header_flatten.columns();
 
     /// name of nested structure -> the column numbers that refer to it.
     std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
@@ -260,7 +267,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         */
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
+        const ColumnWithTypeAndName & column = header_flatten.safeGetByPosition(i);
 
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
         bool is_non_empty_tuple = typeid_cast<const DataTypeTuple *>(column.type.get()) && !typeid_cast<const DataTypeTuple *>(column.type.get())->getElements().empty();
@@ -482,6 +489,8 @@ static void preprocessChunk(Chunk & chunk, const SummingSortedAlgorithm::Columns
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
+    if (def.allow_tuple_element_aggregation)
+        columns = Nested::flattenTupleColumnsRecursive(def.origin_header, columns);
 
     for (const auto & desc : def.columns_to_aggregate)
     {
@@ -534,7 +543,8 @@ static void postprocessChunk(
 
         res_columns[column_number] = std::move(column);
     }
-
+    if (def.allow_tuple_element_aggregation)
+        res_columns = Nested::reconstructTupleColumnsRecursive(def.origin_header, res_columns);
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
@@ -830,10 +840,11 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const String & sum_function_name,
     const String & sum_function_map_name,
     bool remove_default_values,
-    bool aggregate_all_columns)
+    bool aggregate_all_columns,
+    bool allow_tuple_element_aggregation_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns))
+          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns, allow_tuple_element_aggregation_))
     , merged_data(max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_, columns_definition)
 {
 }
@@ -842,6 +853,8 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
     removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
+    if (columns_definition.allow_tuple_element_aggregation)
+        header = std::make_shared<Block>(Nested::flattenTupleRecursive(*header));
     merged_data.initialize(*header, inputs);
 
     for (auto & input : inputs)
