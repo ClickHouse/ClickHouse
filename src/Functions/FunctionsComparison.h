@@ -53,7 +53,10 @@ namespace Setting
 {
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_default_implementation_for_comparisons;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
+
+FormatSettings getFormatSettings(const ContextPtr & context);
 
 namespace ErrorCodes
 {
@@ -152,7 +155,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -179,27 +182,15 @@ struct NumComparisonImpl
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorVectorImplAVX512BW(a, b, c);
+            vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            vectorVectorImplAVX512F(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorVectorImplAVX2(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorVectorImplSSE42(a, b, c);
+            vectorVectorImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -208,7 +199,7 @@ struct NumComparisonImpl
     }
 
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -228,27 +219,15 @@ struct NumComparisonImpl
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImplAVX512BW(a, b, c);
+            vectorConstantImpl_x86_64_v4(a, b, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            vectorConstantImplAVX512F(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorConstantImplAVX2(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorConstantImplSSE42(a, b, c);
+            vectorConstantImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -720,12 +699,16 @@ struct ComparisonParams
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
+    FormatSettings format_settings;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
         , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
-    {}
+        , format_settings(getFormatSettings(context))
+    {
+        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    }
 
     ComparisonParams() = default;
 };
@@ -998,7 +981,7 @@ private:
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
+        Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())

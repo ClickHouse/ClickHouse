@@ -173,7 +173,7 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
 
     auto res = make_intrusive<ASTFunction>();
     res->name = "array";
-    res->is_operator = true;
+    res->setIsOperator(true);
     auto res_replicas = make_intrusive<ASTExpressionList>();
     res->arguments = res_replicas;
     res->children.push_back(res_replicas);

@@ -203,9 +203,19 @@ public:
                     chassert(exists_argument != nullptr);
 
                     const auto & table_alias = exists_argument->getAlias();
-                    chassert(!table_alias.empty());
-
-                    result = fmt::format("exists({})", table_alias);
+                    if (!table_alias.empty())
+                    {
+                        result = fmt::format("exists({})", table_alias);
+                    }
+                    else
+                    {
+                        /// The alias may be empty when EXISTS was constant-folded into a ConstantNode
+                        /// and its source expression is being traversed to reconstruct the action node name.
+                        /// In this case, createUniqueAliasesIfNecessary did not visit the subquery argument
+                        /// because it is not a child of ConstantNode. Use the tree hash as a stable identifier.
+                        auto hash = exists_argument->getTreeHash();
+                        result = fmt::format("exists({}_{})", hash.low64, hash.high64);
+                    }
                     break;
                 }
                 else if (function_node.getFunctionName() == "__getScalar")
@@ -216,9 +226,9 @@ public:
                     const auto & argument = arguments.front();
                     chassert(argument != nullptr);
 
-                    auto * argument_node = argument->as<ConstantNode>();
-                    chassert(argument_node != nullptr);
-                    chassert(isString(argument_node->getResultType()));
+                    const auto * argument_node = argument->as<ConstantNode>();
+                    if (!argument_node || !isString(argument_node->getResultType()))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __getScalar is internal and should not be used directly");
 
                     result = fmt::format("__getScalar('{}'_String)", argument_node->getValue().safeGet<String>());
                     break;
@@ -578,7 +588,7 @@ public:
         {
             /// It is possible that ActionsDAG already has an input with the same name as constant.
             /// In this case, prefer constant to input.
-            /// Constatns affect function return type, which should be consistent with QueryTree.
+            /// Constants affect function return type, which should be consistent with QueryTree.
             /// Query example:
             /// SELECT materialize(toLowCardinality('b')) || 'a' FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a'
             bool materialized_input = it->second->type == ActionsDAG::ActionType::INPUT && !it->second->column;
@@ -1166,7 +1176,31 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        /// When group_by_use_nulls wraps GROUP BY key constants in Nullable after aggregation,
+        /// the ActionsDAG may contain Nullable nodes where the query tree function expects
+        /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
+        /// In this case, rebuild the function via FunctionFactory with the actual argument types
+        /// so that the result type is correct.
+        bool argument_types_match = true;
+        if (auto function_base = function_node.getFunction())
+        {
+            const auto & expected_types = function_base->getArgumentTypes();
+            for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)
+                argument_types_match = children[i]->result_type->equals(*expected_types[i]);
+        }
+
+        if (!argument_types_match)
+        {
+            if (auto resolver = FunctionFactory::instance().tryGet(
+                    function_node.getFunctionName(), planner_context->getQueryContext()))
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, resolver);
+            else
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
+        else
+        {
+            actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
     }
 
     size_t actions_stack_size = actions_stack.size();

@@ -207,7 +207,10 @@ def test_stuck_replica(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    update_configs()
+    # Add a small delay to node_3 to ensure node_2 always wins the race
+    # when node_1 is paused. Without this, under heavy load (e.g., MSan builds),
+    # node_3 can occasionally respond before node_2.
+    update_configs(node_3_sleep_in_send_tables_status=1000)
 
     with cluster.pause_container("node_1"):
         check_query(expected_replica="node_2")
@@ -256,7 +259,13 @@ def test_send_table_status_sleep(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    update_configs(node_1_sleep_in_send_tables_status=sleep_time)
+    # Add a small delay to node_3 to ensure node_2 always wins the race
+    # when both are faster than node_1. Without this, under heavy load (e.g., ASAN builds),
+    # node_3 can occasionally respond before node_2.
+    update_configs(
+        node_1_sleep_in_send_tables_status=sleep_time,
+        node_3_sleep_in_send_tables_status=1000,
+    )
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
@@ -441,6 +450,9 @@ def test_async_connect(started_cluster):
 def test_async_query_sending(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
+    if NODES["node"].is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer is too slow for precise resource measurement in this test")
 
     update_configs(
         node_1_sleep_after_receiving_query=5000,

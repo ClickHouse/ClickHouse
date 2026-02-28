@@ -161,7 +161,7 @@ def partition_table_complex(started_cluster):
     q("DROP TABLE IF EXISTS test.partition_complex")
     q(
         "CREATE TABLE test.partition_complex (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) "
-        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, serialization_info_version='basic', replace_long_file_name_to_hash=false"
+        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, serialization_info_version='basic', replace_long_file_name_to_hash=false, add_minmax_index_for_numeric_columns=0"
     )
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(31), 1)")
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(1), 2)")
@@ -741,3 +741,50 @@ def test_attach_broken_parts(drop_detached_parts_table):
         )
         == "0\n"
     )
+
+
+def test_attach_part_path_traversal(drop_detached_parts_table):
+    """Test that path traversal attempts in ATTACH PART FROM are rejected."""
+    instance.query(
+        """
+        DROP TABLE IF EXISTS t_path_traversal;
+        CREATE TABLE t_path_traversal (id UInt64) ENGINE = MergeTree ORDER BY id;
+    """
+    )
+
+    # Test path traversal with ../
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM '../some_path'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    # Test path traversal with subdirectory ../
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM 'subdir/../../../etc'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    # Test absolute path
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM '/etc/passwd'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    # Test dot directory
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM '.'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    # Test double dot directory
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM '..'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    instance.query("DROP TABLE t_path_traversal")

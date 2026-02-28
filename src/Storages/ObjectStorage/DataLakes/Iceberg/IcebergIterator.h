@@ -49,8 +49,6 @@ public:
 
     std::optional<DB::Iceberg::ManifestFileEntryPtr> next();
 
-    ~SingleThreadIcebergKeysIterator();
-
 private:
     ObjectStoragePtr object_storage;
     std::shared_ptr<const ActionsDAG> filter_dag;
@@ -61,6 +59,7 @@ private:
     PersistentTableComponents persistent_components;
     FilesGenerator files_generator;
     LoggerPtr log;
+    std::vector<ManifestFileEntryPtr> files;
 
 
     // By Iceberg design it is difficult to avoid storing position deletes in memory.
@@ -71,9 +70,6 @@ private:
     std::optional<Iceberg::ManifestFilesPruner> current_pruner;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
-
-    size_t min_max_index_pruned_files = 0;
-    size_t partition_pruned_files = 0;
 };
 
 }

@@ -63,6 +63,7 @@ public:
         ContextPtr context_,
         const Poco::Util::AbstractConfiguration * config,
         const String & prefix,
+        const String & zookeeper_name_,
         const String & logger_name = "DDLWorker",
         const CurrentMetrics::Metric * max_entry_metric_ = nullptr,
         const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
@@ -90,12 +91,15 @@ public:
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
+    /// Return the latest ZooKeeper session.
+    ZooKeeperPtr getZooKeeperFromContext() const;
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr getZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
     ZooKeeperPtr getAndSetZooKeeper();
 
+    void requestToResetState();
     void notifyHostIDsUpdated();
     void updateHostIDs(const std::vector<HostID> & hosts);
 
@@ -131,7 +135,7 @@ protected:
     String enqueueQueryAttempt(DDLLogEntry & entry);
 
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
-    void scheduleTasks(bool reinitialized);
+    virtual void scheduleTasks(bool reinitialized);
 
     DDLTaskBase & saveTask(DDLTaskPtr && task);
 
@@ -151,12 +155,12 @@ protected:
     /// Most of these queries can be executed on non-leader replica, but actually they still send
     /// query via RemoteQueryExecutor to leader, so to avoid such "2-phase" query execution we
     /// execute query directly on leader.
-    bool tryExecuteQueryOnLeaderReplica(
+    bool tryExecuteQueryOnSingleReplica(
         DDLTaskBase & task,
         StoragePtr storage,
         const String & node_path,
         const ZooKeeperPtr & zookeeper,
-        std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
+        std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_single_replica_lock);
 
     bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal);
 
@@ -191,6 +195,7 @@ protected:
     std::string replicas_dir;
 
     mutable std::mutex zookeeper_mutex;
+    const std::string zookeeper_name;
     ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
 
     /// Save state of executed task to avoid duplicate execution on ZK error
@@ -216,6 +221,7 @@ protected:
 
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     Int64 cleanup_delay_period = 60; // minute (in seconds)
+    std::atomic_bool reset_state_requested{false};
     std::atomic_bool host_ids_updated{false};
     /// Delete node if its age is greater than that
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)

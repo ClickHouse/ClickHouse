@@ -65,7 +65,8 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_,
-    std::optional<size_t> file_size_)
+    std::optional<size_t> file_size_,
+    const S3CredentialsRefreshCallback & credentials_refresh_callback_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -77,6 +78,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
+    , credentials_refresh_callback(credentials_refresh_callback_)
 {
     file_size = file_size_;
 }
@@ -292,6 +294,16 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
+        if (s3_exception->isAccessTokenExpiredError() && credentials_refresh_callback)
+        {
+            auto new_client = credentials_refresh_callback();
+            if (new_client)
+            {
+                client_ptr = std::move(new_client);
+                return true;
+            }
+        }
+
         /// It doesn't make sense to retry Access Denied or No Such Key
         if (!s3_exception->isRetryableError())
         {
@@ -322,9 +334,9 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     {
         throw Exception(
             ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-            "Seek is allowed only before first read attempt from the buffer (current offset: "
-            "{}, new offset: {}, reading until position: {}, available: {})",
-            getPosition(), offset_, read_until_position.load(), available());
+            "Seek is allowed only before first read attempt from the buffer (current position: "
+            "{}, offset: {}, new offset: {}, reading until position: {}, available: {})",
+            getPosition(), offset.load(), offset_, read_until_position.load(), available());
     }
 
     if (whence != SEEK_SET)

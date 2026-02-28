@@ -118,7 +118,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 
     auto literal = make_intrusive<ASTLiteral>(value);
     literal->alias = column_name;
-    literal->prefer_alias_to_column_name = true;
+    literal->setPreferAliasToColumnName(true);
     select.with()->children.push_back(literal);
 }
 
@@ -588,8 +588,10 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
-            tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
-        size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
+            static_cast<Float64>(tables_count),
+            static_cast<Float64>(
+                std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
+        size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
 
         pipeline.narrow(num_streams);
     }
@@ -629,9 +631,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     std::vector<ChildPlan> res;
 
     size_t tables_count = selected_tables.size();
-    Float64 num_streams_multiplier
-        = std::min(tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
-    size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
+    Float64 num_streams_multiplier = std::min(
+        static_cast<Float64>(tables_count),
+        std::max(1.0, static_cast<double>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
+    size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
     if (order_info)
@@ -718,7 +721,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 database_name,
                 table_name,
                 RowPolicyFilterType::SELECT_FILTER);
-            if (row_policy_filter_ptr && !row_policy_filter_ptr->empty())
+            if (row_policy_filter_ptr && !row_policy_filter_ptr->isAlwaysTrue())
             {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
@@ -856,7 +859,18 @@ public:
                 node = std::move(column_expression);
             }
             else
+            {
+                /// Do not replace column source for lambda arguments.
+                /// Lambda argument columns reference the LambdaNode as their source,
+                /// and replacing it with the table expression would cause toAST()
+                /// to qualify them with the table alias (e.g. `__table1.x` instead of `x`),
+                /// which is invalid for lambda argument identifiers.
+                auto column_source = column->getColumnSourceOrNull();
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    return;
+
                 column->setColumnSource(replacement_table_expression);
+            }
         }
     }
 private:

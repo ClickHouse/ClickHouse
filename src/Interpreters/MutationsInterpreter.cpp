@@ -87,10 +87,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTICS;
 }
 
-
-namespace
-{
-
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
@@ -124,6 +120,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 
     return select;
 }
+
+namespace
+{
 
 QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
@@ -1185,6 +1184,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & [name, ast] : stage.column_to_updated)
                         stages_copy.back().column_to_updated.emplace(name, ast->clone());
                     stages_copy.back().output_columns = stage.output_columns;
+                    stages_copy.back().affects_all_columns = stage.affects_all_columns;
                     for (const auto & filter : stage.filters)
                         stages_copy.back().filters.push_back(filter->clone());
                 }

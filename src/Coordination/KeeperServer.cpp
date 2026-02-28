@@ -1048,6 +1048,25 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
             return follower_preappend(entry);
         }
+        case nuraft::cb_func::ReceivedMisbehavingMessage:
+        {
+            auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
+
+            if (req.get_src() == server_id)
+            {
+                LOG_FATAL
+                (
+                    log,
+                    "Raft received its own message intended for another peer, this indicates misconfiguration; server_id: {}, src: {}, dst: {}",
+                    server_id,
+                    req.get_src(),
+                    req.get_dst()
+                );
+                std::terminate();
+            }
+
+            return nuraft::cb_func::ReturnCode::Ok;
+        }
         default: /// ignore other events
             return nuraft::cb_func::ReturnCode::Ok;
     }

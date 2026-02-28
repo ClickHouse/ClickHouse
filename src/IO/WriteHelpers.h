@@ -5,6 +5,7 @@
 #include <limits>
 #include <algorithm>
 #include <bit>
+#include <sstream>
 
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
@@ -28,6 +29,8 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
 
 namespace DB
 {
@@ -105,8 +108,16 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
     writeStringBinary(std::string_view{s}, buf);
 }
 
-template <typename T>
-void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
+inline void writeJSONBinary(Poco::JSON::Object::Ptr object, WriteBuffer & buf)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit | std::ios::badbit);
+    Poco::JSON::Stringifier::stringify(object, oss);
+    writeStringBinary(oss.str(), buf);
+}
+
+template <typename T, typename Alloc = std::allocator<T>>
+void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf)
 {
     writeVarUInt(v.size(), buf);
 
@@ -1385,8 +1396,8 @@ inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, b
 inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
-template <typename T>
-void writeBinary(const std::vector<T> & x, WriteBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf)
 {
     size_t size = x.size();
     writeVarUInt(size, buf);

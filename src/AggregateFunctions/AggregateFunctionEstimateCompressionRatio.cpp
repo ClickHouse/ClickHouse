@@ -219,7 +219,7 @@ public:
 
         Float64 ratio = 0;
         if (compressed_size > 0)
-            ratio = static_cast<Float64>(uncompressed_size) / compressed_size;
+            ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);
 
         assert_cast<ColumnFloat64 &>(to).getData().push_back(ratio);
     }
@@ -343,6 +343,6 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(
         "estimateCompressionRatio",
-        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}, documentation});
+        {createAggregateFunctionEstimateCompressionRatio, documentation, {.is_order_dependent = true, .is_window_function = true}});
 }
 }

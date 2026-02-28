@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <ranges>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
@@ -355,11 +354,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (where_optimizer_context.use_statistics)
         {
             cond.good = cond.viable;
-
-            cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, node).rows;
-
-            if (node.getASTNode() != nullptr)
-                LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
+            cond.estimated_row_count = static_cast<Float64>(estimator->estimateRelationProfile(storage_metadata, node).rows);
+            LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getColumnName(), cond.estimated_row_count);
         }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)

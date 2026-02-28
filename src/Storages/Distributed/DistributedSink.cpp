@@ -1,3 +1,4 @@
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -572,7 +573,7 @@ void DistributedSink::onFinish()
     auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
+        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, static_cast<double>(inserted_rows) / elapsed, getCurrentStateDescription());
     };
 
     std::lock_guard lock(execution_mutex);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-sanitizers, no-flaky-check
+# Tags: long, no-parallel, no-sanitizers, no-flaky-check, no-azure-blob-storage
 # ^ The test is heavy
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

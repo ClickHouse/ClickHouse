@@ -164,7 +164,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     const UInt64 bloom_filter_bytes = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes];
     const UInt64 bloom_filter_hash_functions = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions];
     const Float64 pass_ratio_threshold_for_disabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling];
-    const Float64 blocks_to_skip_before_reenabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling];
+    const Float64 blocks_to_skip_before_reenabling = static_cast<Float64>(ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling]);
     const Float64 max_ratio_of_set_bits_in_bloom_filter = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits];
 
     return std::make_unique<BuildRuntimeFilterStep>(

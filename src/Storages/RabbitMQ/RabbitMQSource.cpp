@@ -4,11 +4,11 @@
 #include <Core/Settings.h>
 #include <Common/DateLUT.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <base/sleep.h>
 #include <Common/logger_useful.h>
 
 

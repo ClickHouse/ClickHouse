@@ -1,15 +1,20 @@
 #pragma once
 
+#include <Core/ColumnsWithTypeAndName.h>
 #include "config.h"
 
 #if USE_AVRO
 
-#include <IO/ReadBufferFromFileBase.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Common/SharedMutex.h>
+
 
 #include <memory>
+
+#include <base/defines.h>
 
 namespace DB::Iceberg
 {
@@ -31,10 +36,21 @@ private:
     std::string manifest_file_path;
     DB::ColumnPtr parsed_column;
     std::shared_ptr<const DB::DataTypeTuple> parsed_column_data_type;
+    mutable std::optional<ColumnsWithTypeAndName> cache_parsed_columns TSA_GUARDED_BY(cache_mutex);
+    mutable std::unordered_map<std::string, std::optional<std::pair<ColumnPtr, DataTypePtr>>>
+        cache_extracted_subcolumns_with_types TSA_GUARDED_BY(cache_mutex);
 
     std::map<std::string, std::vector<uint8_t>> metadata;
-public:
 
+    /// Shared mutex to protect mutable cache members for thread safety
+    mutable SharedMutex cache_mutex;
+
+    std::optional<std::pair<ColumnPtr, DataTypePtr>> & extractSubcolumnWithType(const std::string & path) const;
+
+    /// Helper to format a row as JSON. Assumes cache_parsed_columns is initialized and lock is held.
+    String formatRowAsJSON(const ColumnsWithTypeAndName & parsed_columns, size_t row_number) const TSA_REQUIRES_SHARED(cache_mutex);
+
+public:
     AvroForIcebergDeserializer(
         std::unique_ptr<DB::ReadBufferFromFileBase> buffer_,
         const std::string & manifest_file_path_,

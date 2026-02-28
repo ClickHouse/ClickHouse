@@ -166,7 +166,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
             size_t num_rows_in_part = data_part_info_for_read->getRowCount();
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
 
-            if (cardinality <= num_rows_in_part * selectivity_threshold)
+            if (cardinality <= static_cast<double>(num_rows_in_part) * selectivity_threshold)
             {
                 useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
                 ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
@@ -389,10 +389,10 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             {
                 auto it = remaining_tokens.find(token);
                 double token_cardinality = it == remaining_tokens.end() ? 0 : it->second.cardinality;
-                cardinality *= (1.0 - (token_cardinality / total_rows));
+                cardinality *= (1.0 - (token_cardinality / static_cast<double>(total_rows)));
             }
 
-            cardinality = total_rows * (1.0 - cardinality);
+            cardinality = static_cast<double>(total_rows) * (1.0 - cardinality);
             return cardinality;
         }
     }

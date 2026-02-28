@@ -1,3 +1,5 @@
+-- Tags: no-azure-blob-storage
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (k UInt64, v String)
