@@ -106,31 +106,9 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
     /// After graph->cancel(), onCancel() has been called on all processors synchronously.
     /// Some processors (e.g. RemoteSource) drain remaining packets during onCancel(),
     /// which may produce additional progress (e.g. Progress packets from parallel replicas).
-    /// This progress is accumulated in ISource::read_progress but might not have been
-    /// forwarded yet because finalizeExecution() in the background thread could have
-    /// already run (or be running concurrently) before the drain completed.
-    /// Collect any remaining progress here to ensure it reaches the progress callback.
-    if (read_progress_callback)
-    {
-        for (auto & node : graph->nodes)
-        {
-            if (node->processor)
-            {
-                if (auto read_progress = node->processor->getReadProgress())
-                {
-                    if (read_progress->counters.total_rows_approx)
-                        read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
-
-                    if (read_progress->counters.total_bytes)
-                        read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
-
-                    if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
-                        read_progress_callback->onProgress(
-                            read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
-                }
-            }
-        }
-    }
+    /// This progress is accumulated in ISource::read_progress and will be collected by
+    /// finalizeExecution() which runs after all worker threads have been joined,
+    /// ensuring no concurrent access to processor state.
 }
 
 void PipelineExecutor::cancelReading()

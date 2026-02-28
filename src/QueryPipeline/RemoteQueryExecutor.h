@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -276,9 +277,11 @@ private:
     /** All data from all replicas are received, before EndOfStream packet.
       * To prevent desynchronization, if not all data is read before object
       * destruction, it's required to send cancel query request to replicas and
-      * read all packets before EndOfStream
+      * read all packets before EndOfStream.
+      * Atomic because onCancel() -> finish() can set it concurrently with
+      * prepare() -> isFinished() reading it from a different thread.
       */
-    bool finished = false;
+    std::atomic<bool> finished = false;
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
