@@ -1,6 +1,7 @@
 -- Tags: no-parallel, no-fasttest
 -- Tag no-fasttest: Depends on AWS
 
+SET send_logs_level = 'fatal';
 SET s3_truncate_on_insert = 1;
 SET s3_skip_empty_files = 0;
 
