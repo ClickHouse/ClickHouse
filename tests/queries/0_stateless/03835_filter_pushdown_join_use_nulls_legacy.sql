@@ -6,7 +6,7 @@
 SET joined_subquery_requires_alias = 0;
 SET any_join_distinct_right_table_keys = 1;
 SET join_use_nulls = 1;
-SET query_plan_use_new_logical_join_step = 0;
+SET enable_analyzer = 0;
 
 SELECT k, x, y
 FROM (SELECT arrayJoin([1, 2, 3]) AS k, 'Hello' AS x)
