@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-llvm-coverage
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-llvm-coverage, no-flaky-check
 
 SET allow_introspection_functions = 0;
 SELECT addressToLineWithInlines(1); -- { serverError FUNCTION_NOT_ALLOWED }

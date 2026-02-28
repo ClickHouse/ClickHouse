@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: distributed, no-flaky-check
 
 set -ue
 
@@ -55,7 +55,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
         trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
         and parent_span_id in (
-           select span_id from system.opentelemetry_span_log where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) and parent_span_id = reinterpretAsUInt64(unhex('73'))
+           select span_id from system.opentelemetry_span_log where finish_date >= yesterday() AND trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) and parent_span_id = reinterpretAsUInt64(unhex('73'))
         )
     ;
 
