@@ -86,7 +86,7 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
 def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
-    TABLE_NAME = "test_optimize_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_optimize_manifests_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
         f"""
