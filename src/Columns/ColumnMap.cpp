@@ -1,5 +1,5 @@
-#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -96,20 +96,35 @@ DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_b
 
     if (options.notFull(name_buf))
         name_buf << "[";
-    DataTypes element_types;
-    element_types.reserve(size);
+
+    DataTypePtr element_type;
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        const auto & type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
-        element_types.push_back(type);
+        auto type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        if (!element_type)
+            element_type = std::move(type);
+        if (!options.notFull(name_buf))
+            break;
     }
+
     if (options.notFull(name_buf))
         name_buf << "]";
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
+    if (!element_type)
+    {
+        if (!getNestedData().empty())
+        {
+            WriteBufferFromOwnString tmp_buf;
+            element_type = getNestedData().getValueNameAndTypeImpl(tmp_buf, 0, options);
+        }
+        else
+            element_type = std::make_shared<DataTypeNothing>();
+    }
+
+    return std::make_shared<DataTypeArray>(std::move(element_type));
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const

@@ -1,5 +1,5 @@
-#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
@@ -156,20 +156,35 @@ DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name
 
     if (options.notFull(name_buf))
         name_buf << "[";
-    DataTypes element_types;
-    element_types.reserve(size);
+
+    DataTypePtr element_type;
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
-        element_types.push_back(type);
+        auto type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        if (!element_type)
+            element_type = std::move(type);
+        if (!options.notFull(name_buf))
+            break;
     }
+
     if (options.notFull(name_buf))
         name_buf << "]";
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
+    if (!element_type)
+    {
+        if (!getData().empty())
+        {
+            WriteBufferFromOwnString tmp_buf;
+            element_type = getData().getValueNameAndTypeImpl(tmp_buf, 0, options);
+        }
+        else
+            element_type = std::make_shared<DataTypeNothing>();
+    }
+
+    return std::make_shared<DataTypeArray>(std::move(element_type));
 }
 
 std::string_view ColumnArray::getDataAt(size_t n) const
