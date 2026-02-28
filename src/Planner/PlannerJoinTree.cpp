@@ -1861,6 +1861,17 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
 
         auto join_pipeline_type = join_algorithm->pipelineType();
 
+        /// `required_columns_after_join` starts as `outer_scope_columns`, which may
+        /// include columns from unrelated tables (e.g. from the right side of a CROSS
+        /// JOIN that wraps this join). Remove columns that don't exist in either join
+        /// input — the join cannot produce them and their presence confuses the
+        /// JoinStep's column-permutation logic (it treats "no matching required columns"
+        /// as "keep all columns", which breaks when the join output changes after swap).
+        std::erase_if(required_columns_after_join, [&](const String & name)
+        {
+            return !left_header->has(name) && !right_header->has(name);
+        });
+
         if (required_columns_after_join.empty())
         {
             if (left_header->columns() > 1)
