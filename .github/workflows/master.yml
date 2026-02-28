@@ -1613,7 +1613,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_parallel:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgb2xkIGFuYWx5emVyLCBzMyBzdG9yYWdlLCBEYXRhYmFzZVJlcGxpY2F0ZWQsIFdhc21FZGdlLCBwYXJhbGxlbCk=') }}
     name: "Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel)"
     outputs:
@@ -1651,7 +1651,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_sequential:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgb2xkIGFuYWx5emVyLCBzMyBzdG9yYWdlLCBEYXRhYmFzZVJlcGxpY2F0ZWQsIFdhc21FZGdlLCBzZXF1ZW50aWFsKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential)"
     outputs:
@@ -1689,7 +1689,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgUGFyYWxsZWxSZXBsaWNhcywgczMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
     name: "Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, parallel)"
     outputs:
@@ -1727,7 +1727,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgUGFyYWxsZWxSZXBsaWNhcywgczMgc3RvcmFnZSwgc2VxdWVudGlhbCk=') }}
     name: "Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, sequential)"
     outputs:
@@ -1765,7 +1765,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_debug, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2UsIHBhcmFsbGVsKQ==') }}
     name: "Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, parallel)"
     outputs:
@@ -1803,7 +1803,7 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_debug, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2UsIHNlcXVlbnRpYWwp') }}
     name: "Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, sequential)"
     outputs:
@@ -5527,7 +5527,7 @@ jobs:
 
   llvm_coverage:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_binary, build_amd_debug, build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, integration_tests_amd_llvm_coverage_1_5, integration_tests_amd_llvm_coverage_2_5, integration_tests_amd_llvm_coverage_3_5, integration_tests_amd_llvm_coverage_4_5, integration_tests_amd_llvm_coverage_5_5, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel, stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_parallel, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_sequential, stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel, stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential, unit_tests_amd_llvm_coverage]
+    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, integration_tests_amd_llvm_coverage_1_5, integration_tests_amd_llvm_coverage_2_5, integration_tests_amd_llvm_coverage_3_5, integration_tests_amd_llvm_coverage_4_5, integration_tests_amd_llvm_coverage_5_5, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel, stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_parallel, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_databasereplicated_wasmedge_sequential, stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel, stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential, unit_tests_amd_llvm_coverage]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TExWTSBDb3ZlcmFnZQ==') }}
     name: "LLVM Coverage"
     outputs:
