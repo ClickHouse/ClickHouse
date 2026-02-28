@@ -15,4 +15,4 @@ FORMAT Null;
 SELECT 1 AS c0
 FROM remote('localhost:9000', generateSeries(1, 10)) AS t1
 LEFT JOIN (SELECT 1 AS c0) AS t2 USING (c0)
-FORMAT Null;
+FORMAT Null; -- { serverError INVALID_JOIN_ON_EXPRESSION }
