@@ -437,18 +437,58 @@ void decodeRuntime(
     int W)
 {
     int64_t i = 0;
-    for (; i + 8 <= num_elements; i += 8) {
-        uint64_t streams[MAX_ELEMENT_WIDTH];
-        for (int64_t b = 0; b < W; ++b)
-            memcpy(&streams[b], src + b * num_elements + i, 8);
-        for (int ei = 0; ei < 8; ++ei) {
-            uint8_t * elem = dst + (i + ei) * W;
-            for (int64_t b = 0; b < W; ++b)
-                elem[b] = static_cast<uint8_t>(streams[b] >> (ei * 8));
+
+    // Process 16 elements at a time: read two uint64_t per stream
+    for (; i + 16 <= num_elements; i += 16) {
+        uint64_t s[MAX_ELEMENT_WIDTH][2];
+        for (int b = 0; b < W; ++b) {
+            memcpy(&s[b][0], src + b * num_elements + i,     8);
+            memcpy(&s[b][1], src + b * num_elements + i + 8, 8);
+        }
+
+        // Unpack all 16 elements, 4 at a time
+        for (int chunk = 0; chunk < 16; chunk += 4) {
+            int qword = chunk / 8;       // which uint64_t (0 or 1)
+            int shift  = (chunk % 8) * 8; // bit offset within that qword
+
+            uint8_t *e0 = dst + (i + chunk + 0) * W;
+            uint8_t *e1 = dst + (i + chunk + 1) * W;
+            uint8_t *e2 = dst + (i + chunk + 2) * W;
+            uint8_t *e3 = dst + (i + chunk + 3) * W;
+
+            for (int b = 0; b < W; ++b) {
+                uint32_t four = static_cast<uint32_t>(s[b][qword] >> shift);
+                e0[b] = static_cast<uint8_t>(four);
+                e1[b] = static_cast<uint8_t>(four >> 8);
+                e2[b] = static_cast<uint8_t>(four >> 16);
+                e3[b] = static_cast<uint8_t>(four >> 24);
+            }
         }
     }
+
+    // 8-element tail
+    for (; i + 8 <= num_elements; i += 8) {
+        uint64_t streams[MAX_ELEMENT_WIDTH];
+        for (int b = 0; b < W; ++b)
+            memcpy(&streams[b], src + b * num_elements + i, 8);
+        for (int ei = 0; ei < 8; ei += 4) {
+            uint8_t *e0 = dst + (i + ei + 0) * W;
+            uint8_t *e1 = dst + (i + ei + 1) * W;
+            uint8_t *e2 = dst + (i + ei + 2) * W;
+            uint8_t *e3 = dst + (i + ei + 3) * W;
+            for (int b = 0; b < W; ++b) {
+                uint32_t four = static_cast<uint32_t>(streams[b] >> (ei * 8));
+                e0[b] = static_cast<uint8_t>(four);
+                e1[b] = static_cast<uint8_t>(four >> 8);
+                e2[b] = static_cast<uint8_t>(four >> 16);
+                e3[b] = static_cast<uint8_t>(four >> 24);
+            }
+        }
+    }
+
+    // Scalar tail
     for (; i < num_elements; ++i)
-        for (int64_t b = 0; b < W; ++b)
+        for (int b = 0; b < W; ++b)
             dst[i * W + b] = src[b * num_elements + i];
 }
 
@@ -994,7 +1034,7 @@ int main()
     printf("\n");
 
     // --- Phase 4: benchmark ---
-    const int64_t DATA_SIZE = 500LL << 20;
+    const int64_t DATA_SIZE = 1000LL << 20;
     const int rounds = 10, inner = 4;
 
     for (int W : {2, 4, 8, 16, 20, 32, 64, 128})

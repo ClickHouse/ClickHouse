@@ -41,7 +41,7 @@
 //  Hardware: Intel i7-12500H (12th gen Alder Lake)
 //  Data: 500 MiB, 40 rounds × 8 inner iterations, averaged over 2 runs
 //
-//                    ENCODE            DECODE
+//                                      ENCODE            DECODE
 //  W     path                         min   median      min   median
 //  ---   ---------------------------  -----  -----     -----  -----
 //        Vectorized
@@ -574,41 +574,62 @@ ALWAYS_INLINE void decodeW<16>(
 }
 
 /// Runtime-W decode for widths not handled by decodeW<W> specialisations.
-ALWAYS_INLINE void decodeRuntime(
-    const char * __restrict__ src,
-    char       * __restrict__ dst,
+void decodeRuntime(
+    const uint8_t * __restrict__ src,
+    uint8_t       * __restrict__ dst,
     int64_t num_elements,
-    UInt8  W)
+    int W)
 {
-    const auto * __restrict__ s = reinterpret_cast<const unsigned char *>(src);
-    auto       * __restrict__ d = reinterpret_cast<unsigned char *>(dst);
+    int64_t i = 0;
 
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        int64_t i = 0;
-        for (; i + 8 <= num_elements; i += 8)
-        {
-            uint64_t streams[MAX_ELEMENT_WIDTH];
-            for (int64_t b = 0; b < W; ++b)
-                memcpy(&streams[b], s + b * num_elements + i, 8);
-            for (int ei = 0; ei < 8; ++ei)
-            {
-                unsigned char * elem = d + (i + ei) * W;
-                for (int64_t b = 0; b < W; ++b)
-                    elem[b] = static_cast<unsigned char>(streams[b] >> (ei * 8));
+    for (; i + 16 <= num_elements; i += 16) {
+        uint64_t s[MAX_ELEMENT_WIDTH][2];
+        for (int b = 0; b < W; ++b) {
+            memcpy(&s[b][0], src + b * num_elements + i,     8);
+            memcpy(&s[b][1], src + b * num_elements + i + 8, 8);
+        }
+
+        for (int chunk = 0; chunk < 16; chunk += 4) {
+            int qword = chunk / 8;       
+            int shift  = (chunk % 8) * 8;
+
+            uint8_t *e0 = dst + (i + chunk + 0) * W;
+            uint8_t *e1 = dst + (i + chunk + 1) * W;
+            uint8_t *e2 = dst + (i + chunk + 2) * W;
+            uint8_t *e3 = dst + (i + chunk + 3) * W;
+
+            for (int b = 0; b < W; ++b) {
+                uint32_t four = static_cast<uint32_t>(s[b][qword] >> shift);
+                e0[b] = static_cast<uint8_t>(four);
+                e1[b] = static_cast<uint8_t>(four >> 8);
+                e2[b] = static_cast<uint8_t>(four >> 16);
+                e3[b] = static_cast<uint8_t>(four >> 24);
             }
         }
-        for (; i < num_elements; ++i)
-            for (int64_t b = 0; b < W; ++b)
-                d[i * W + b] = s[b * num_elements + i];
     }
-    else
-    {
-        // Big-endian: uint64_t shift extraction would reverse byte order
-        for (int64_t i = 0; i < num_elements; ++i)
-            for (int64_t b = 0; b < W; ++b)
-                d[i * W + b] = s[b * num_elements + i];
+
+    for (; i + 8 <= num_elements; i += 8) {
+        uint64_t streams[MAX_ELEMENT_WIDTH];
+        for (int b = 0; b < W; ++b)
+            memcpy(&streams[b], src + b * num_elements + i, 8);
+        for (int ei = 0; ei < 8; ei += 4) {
+            uint8_t *e0 = dst + (i + ei + 0) * W;
+            uint8_t *e1 = dst + (i + ei + 1) * W;
+            uint8_t *e2 = dst + (i + ei + 2) * W;
+            uint8_t *e3 = dst + (i + ei + 3) * W;
+            for (int b = 0; b < W; ++b) {
+                uint32_t four = static_cast<uint32_t>(streams[b] >> (ei * 8));
+                e0[b] = static_cast<uint8_t>(four);
+                e1[b] = static_cast<uint8_t>(four >> 8);
+                e2[b] = static_cast<uint8_t>(four >> 16);
+                e3[b] = static_cast<uint8_t>(four >> 24);
+            }
+        }
     }
+
+    for (; i < num_elements; ++i)
+        for (int b = 0; b < W; ++b)
+            dst[i * W + b] = src[b * num_elements + i];
 }
 
 // =============================================================================
