@@ -1,9 +1,7 @@
 import pytest
 
-import time
-
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import tsv_close_to
 from .prometheus_test_utils import *
 
 
@@ -234,7 +232,11 @@ def do_query_test(
     eps=0,
 ):
     assert execute_query_in_prometheus(query, timestamp) == result
-    assert execute_query_in_clickhouse_sql(query, timestamp) == TSV(chresult)
+
+    actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
+    assert tsv_close_to(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
 
     actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
     assert (
@@ -275,9 +277,12 @@ def do_range_query_test(
         execute_range_query_in_prometheus(query, start_time, end_time, step) == result
     )
 
-    assert execute_range_query_in_clickhouse_sql(
+    actual_chresult = execute_range_query_in_clickhouse_sql(
         query, start_time, end_time, step
-    ) == TSV(chresult)
+    )
+    assert tsv_close_to(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
 
     actual_result_from_http_api = execute_range_query_in_clickhouse_http_api(
         query, start_time, end_time, step
