@@ -108,12 +108,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<FilterStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count;
+        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / distribution_node_count;
     }
     else if (typeid_cast<ExpressionStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count;
+        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / distribution_node_count;
     }
     else if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(expression_plan_step))
     {
@@ -125,18 +125,21 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
         /// Merging intermediate aggregate states: CPU proportional to input + output rows.
-        total_cost.cost.cpu = group->statistics->estimated_row_count + input_group->statistics->estimated_row_count;
+        /// At N nodes each node merges 1/N of the data.
+        total_cost.cost.cpu = (group->statistics->estimated_row_count + input_group->statistics->estimated_row_count) / distribution_node_count;
         /// Merge phase is sequential (single-threaded merge of partial states).
-        total_cost.cost.sequential += input_group->statistics->estimated_row_count;
+        total_cost.cost.sequential += input_group->statistics->estimated_row_count / distribution_node_count;
     }
     else if (auto * broadcast = dynamic_cast<BroadcastExchangeStep *>(expression_plan_step))
     {
         auto result_count = static_cast<Float64>(broadcast->getResultBucketCount());
         auto bytes_per_row = group->statistics->estimated_bytes_per_row;
-        /// Broadcast replicates all rows to every destination node; cost is proportional to data volume.
+        /// Broadcast replicates all rows to every destination node.
+        /// Total network traffic is proportional to rows * N, but the sending is pipelined
+        /// across destinations, so model the cost as total bytes transferred.
         total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row * result_count;
-        /// Each destination materializes the full dataset in memory.
-        total_cost.cost.memory += group->statistics->estimated_row_count * bytes_per_row * result_count;
+        /// Per-node memory: each destination materializes one copy.
+        total_cost.cost.memory += group->statistics->estimated_row_count * bytes_per_row;
         /// Fixed overhead for connection setup / metadata exchange is sequential.
         total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
     }
@@ -151,10 +154,11 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<SortingStep *>(expression_plan_step))
     {
         /// Sorting: N log N CPU cost (parallel partial sort across streams).
+        /// At N nodes each node sorts 1/N of the data.
         Float64 rows = group->statistics->estimated_row_count;
-        total_cost.cost.cpu += rows * std::max(1.0, std::log2(rows));
+        total_cost.cost.cpu += rows * std::max(1.0, std::log2(rows)) / distribution_node_count;
         /// Final N-way merge (`MergingSortedTransform`) is single-threaded.
-        total_cost.cost.sequential += rows;
+        total_cost.cost.sequential += rows / distribution_node_count;
     }
     else
     {
@@ -190,14 +194,15 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
     const bool is_shuffle = dynamic_cast<const ShuffleJoinStrategy *>(strategy) != nullptr;
 
     ExpressionCost join_cost;
-    join_cost.cost.cpu = this_step_statistics.estimated_row_count;       /// Number of output rows
+    /// Output rows are distributed across N nodes; per-node probe work is proportional to output_rows / N.
+    join_cost.cost.cpu = this_step_statistics.estimated_row_count / distribution_node_count;
 
     if (is_broadcast)
     {
         /// Hash table is built from the full right table on every node.
         /// Network cost is already modeled by the BroadcastExchange expression.
-        /// Memory is proportional to data volume of the build side.
-        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row * distribution_node_count;
+        /// Per-node memory: each node holds one copy of the right table.
+        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
         /// Build phase is sequential: each node inserts the full right table into the hash table.
         join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0;
     }
@@ -211,13 +216,15 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
     }
     else
     {
+        /// Local join: at N nodes each node processes 1/N of both inputs.
         join_cost.cost.cpu +=
-            left_statistics.estimated_row_count +           /// Scan of left table
-            2.0 * right_statistics.estimated_row_count;     /// Right table contributes more because we build hash table from it
+            (left_statistics.estimated_row_count +           /// Scan of left table
+            2.0 * right_statistics.estimated_row_count)      /// Right table contributes more because we build hash table from it
+            / distribution_node_count;
 
-        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
-        /// Build phase is sequential: single-node hash table construction.
-        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0;
+        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row / distribution_node_count;
+        /// Build phase is sequential: each node builds hash table from 1/N of the right input.
+        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0 / distribution_node_count;
     }
 
     return join_cost;

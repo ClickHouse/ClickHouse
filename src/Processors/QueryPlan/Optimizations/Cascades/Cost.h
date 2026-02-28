@@ -12,7 +12,7 @@ namespace DB
 struct CostConfig
 {
     Float64 cpu_weight = 1.0;
-    Float64 memory_weight = 1.0;
+    Float64 memory_weight = 0.1;
     Float64 network_weight = 1.0;
     Float64 io_weight = 1.0;
     Float64 sequential_weight = 1.0;
