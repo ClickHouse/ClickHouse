@@ -71,9 +71,10 @@ namespace DB
 class CompressionCodecByteStreamSplit : public ICompressionCodec
 {
 public:
-    static constexpr UInt32 HEADER_SIZE = 2;
+    /// Header: 4 bytes (Int32 element width) + 1 byte (bytes_to_skip)
+    static constexpr UInt32 HEADER_SIZE = 5;
 
-    explicit CompressionCodecByteStreamSplit(UInt8 element_bytes_size_);
+    explicit CompressionCodecByteStreamSplit(Int32 element_bytes_size_);
 
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
@@ -102,7 +103,7 @@ protected:
     }
 
 private:
-    const UInt8 element_bytes_size;
+    const Int32 element_bytes_size;
 };
 
 
@@ -448,7 +449,7 @@ ALWAYS_INLINE void encodeRuntime(
     const char * __restrict__ src,
     char       * __restrict__ dst,
     int64_t num_elements,
-    UInt8  W)
+    Int32  W)
 {
     const auto * __restrict__ s = reinterpret_cast<const unsigned char *>(src);
     auto       * __restrict__ d = reinterpret_cast<unsigned char *>(dst);
@@ -575,14 +576,18 @@ ALWAYS_INLINE void decodeW<16>(
 
 /// Runtime-W decode for widths not handled by decodeW<W> specialisations.
 void decodeRuntime(
-    const uint8_t * __restrict__ src,
-    uint8_t       * __restrict__ dst,
+    const char * __restrict__ src_,
+    char       * __restrict__ dst_,
     int64_t num_elements,
-    int W)
+    Int32 W)
 {
+    const auto * __restrict__ src = reinterpret_cast<const uint8_t *>(src_);
+    auto       * __restrict__ dst = reinterpret_cast<uint8_t *>(dst_);
+
     int64_t i = 0;
 
     for (; i + 16 <= num_elements; i += 16) {
+        /// NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
         uint64_t s[MAX_ELEMENT_WIDTH][2];
         for (int b = 0; b < W; ++b) {
             memcpy(&s[b][0], src + b * num_elements + i,     8);
@@ -609,6 +614,7 @@ void decodeRuntime(
     }
 
     for (; i + 8 <= num_elements; i += 8) {
+        /// NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
         uint64_t streams[MAX_ELEMENT_WIDTH];
         for (int b = 0; b < W; ++b)
             memcpy(&streams[b], src + b * num_elements + i, 8);
@@ -647,7 +653,7 @@ void), encodeDispatch, MULTITARGET_FUNCTION_BODY((
     const char * __restrict__ src,
     char       * __restrict__ dst,
     int64_t num_elements,
-    UInt8  element_bytes) /// NOLINT
+    Int32  element_bytes) /// NOLINT
 {
     switch (element_bytes)
     {
@@ -664,7 +670,7 @@ ALWAYS_INLINE void encode(
     const char * src,
     char       * dst,
     int64_t num_elements,
-    UInt8  element_bytes)
+    Int32  element_bytes)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::AVX512BW))
@@ -697,7 +703,7 @@ void), decodeDispatch, MULTITARGET_FUNCTION_BODY((
     const char * __restrict__ src,
     char       * __restrict__ dst,
     int64_t num_elements,
-    UInt8  element_bytes) /// NOLINT
+    Int32  element_bytes) /// NOLINT
 {
     switch (element_bytes)
     {
@@ -714,7 +720,7 @@ ALWAYS_INLINE void decode(
     const char * src,
     char       * dst,
     int64_t num_elements,
-    UInt8  element_bytes)
+    Int32  element_bytes)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::AVX512BW))
@@ -741,7 +747,7 @@ ALWAYS_INLINE void decode(
     decodeDispatch(src, dst, num_elements, element_bytes);
 }
 
-UInt8 getElementBytesSize(const IDataType * column_type)
+Int32 getElementBytesSize(const IDataType * column_type)
 {
     if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
         throw Exception(
@@ -767,13 +773,13 @@ UInt8 getElementBytesSize(const IDataType * column_type)
             "{} exceeds the maximum supported width of {} bytes",
             column_type->getName(), size, MAX_ELEMENT_WIDTH);
 
-    return static_cast<UInt8>(size);
+    return static_cast<Int32>(size);
 }
 
 } // anonymous namespace
 
 
-CompressionCodecByteStreamSplit::CompressionCodecByteStreamSplit(UInt8 element_bytes_size_)
+CompressionCodecByteStreamSplit::CompressionCodecByteStreamSplit(Int32 element_bytes_size_)
     : element_bytes_size(element_bytes_size_)
 {
     setCodecDescription(
@@ -794,10 +800,10 @@ void CompressionCodecByteStreamSplit::updateHash(SipHash & hash) const
 UInt32 CompressionCodecByteStreamSplit::doCompressData(
     const char * source, UInt32 source_size, char * dest) const
 {
-    UInt8 bytes_to_skip = source_size % element_bytes_size;
+    UInt32 bytes_to_skip = source_size % element_bytes_size;
 
-    dest[0] = element_bytes_size;
-    dest[1] = bytes_to_skip;
+    unalignedStoreLittleEndian<Int32>(dest, element_bytes_size);
+    dest[4] = static_cast<UInt8>(bytes_to_skip);
 
     if (bytes_to_skip)
         memcpy(dest + HEADER_SIZE, source, bytes_to_skip);
@@ -825,18 +831,23 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
     if (uncompressed_size == 0)
         return 0;
 
-    UInt8 saved_element_bytes = static_cast<UInt8>(source[0]);
-
-    UInt8 bytes_to_skip;
+    Int32 saved_element_bytes = unalignedLoadLittleEndian<Int32>(source);
 
     if (saved_element_bytes < 2)
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS,
             "Cannot decompress ByteStreamSplit-encoded data: invalid element size {} in header "
             "(must be at least 2)",
-            static_cast<UInt32>(saved_element_bytes));
+            saved_element_bytes);
 
-    bytes_to_skip = uncompressed_size % saved_element_bytes;
+    if (saved_element_bytes > MAX_ELEMENT_WIDTH)
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS,
+            "Cannot decompress ByteStreamSplit-encoded data: element size {} in header "
+            "exceeds maximum supported width of {}",
+            saved_element_bytes, MAX_ELEMENT_WIDTH);
+
+    UInt32 bytes_to_skip = uncompressed_size % saved_element_bytes;
 
     if (source_size < static_cast<UInt32>(HEADER_SIZE + bytes_to_skip))
         throw Exception(
@@ -918,7 +929,7 @@ void registerCodecByteStreamSplit(CompressionCodecFactory & factory)
                     MAX_ELEMENT_WIDTH, user_size);
 
             return std::make_shared<CompressionCodecByteStreamSplit>(
-                static_cast<UInt8>(user_size));
+                static_cast<Int32>(user_size));
         }
 
         if (column_type)
