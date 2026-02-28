@@ -805,8 +805,11 @@ void TCPHandler::runImpl()
                 /// Send final progress after calling onFinish(), since it will update the progress.
                 /// This is important for parallel replicas where connection draining during
                 /// pipeline destruction produces additional progress.
-                sendProgress(*query_state);
-                sendSelectProfileEvents(*query_state);
+                {
+                    std::lock_guard lock(*callback_mutex);
+                    sendProgress(*query_state);
+                    sendSelectProfileEvents(*query_state);
+                }
             }
             else if (query_state->io.pipeline.completed())
             {
