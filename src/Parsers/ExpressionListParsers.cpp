@@ -2616,6 +2616,41 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
     }
 }
 
+/// Convert ASTLiteral with compound value (Array/Tuple) into
+/// ASTFunction("array"/"tuple") with operator flag, recursively.
+/// This ensures the AST structure is identical to what ArrayLayer/TupleLayer
+/// would produce, giving consistent tree hashes after formatting roundtrip.
+static ASTPtr convertCollectionLiteralToFunction(ASTPtr && node)
+{
+    auto * lit = node->as<ASTLiteral>();
+    if (!lit)
+        return std::move(node);
+
+    const char * func_name = nullptr;
+    const FieldVector * elements = nullptr;
+
+    if (lit->value.getType() == Field::Types::Array)
+    {
+        func_name = "array";
+        elements = &lit->value.safeGet<Array>();
+    }
+    else if (lit->value.getType() == Field::Types::Tuple)
+    {
+        func_name = "tuple";
+        elements = &lit->value.safeGet<Tuple>();
+    }
+    else
+        return std::move(node);
+
+    auto func = makeASTFunction(func_name);
+    func->setIsOperator(true);
+    func->arguments->children.reserve(elements->size());
+    for (const auto & elem : *elements)
+        func->arguments->children.push_back(
+            convertCollectionLiteralToFunction(make_intrusive<ASTLiteral>(elem)));
+    return func;
+}
+
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
@@ -2742,12 +2777,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (ParseDateOperatorExpression(pos, tmp, expected) ||
         ParseTimestampOperatorExpression(pos, tmp, expected) ||
-        /// NOTE: We intentionally do NOT use tuple_literal_parser / array_literal_parser here.
-        /// Those fast-path parsers collapse [1, 2] into ASTLiteral(Array) and (1, 2) into
-        /// ASTLiteral(Tuple), which have different tree hashes than ASTFunction("array"/
-        /// "tuple") produced by the normal ArrayLayer/TupleLayer path. Skipping them ensures
-        /// a consistent AST representation and allows operator-form formatting ([...] and
-        /// (...)) to always be used.
+        tuple_literal_parser.parse(pos, tmp, expected) ||
+        array_literal_parser.parse(pos, tmp, expected) ||
         number_parser.parse(pos, tmp, expected) ||
         literal_parser.parse(pos, tmp, expected) ||
         asterisk_parser.parse(pos, tmp, expected) ||
@@ -2755,6 +2786,11 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         columns_matcher_parser.parse(pos, tmp, expected) ||
         qualified_columns_matcher_parser.parse(pos, tmp, expected))
     {
+        /// Fast-path parsers (tuple_literal_parser, array_literal_parser) produce
+        /// ASTLiteral(Array/Tuple). Convert to ASTFunction("array"/"tuple") with
+        /// operator flag so the AST is identical to what ArrayLayer/TupleLayer would
+        /// produce. This gives consistent tree hashes after formatting roundtrip.
+        tmp = convertCollectionLiteralToFunction(std::move(tmp));
         layers.back()->pushOperand(std::move(tmp));
     }
     else
