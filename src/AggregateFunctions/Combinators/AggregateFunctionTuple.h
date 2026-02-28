@@ -1,9 +1,9 @@
-
 #pragma once
 
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Common/Arena.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -44,9 +44,9 @@ class AggregateFunctionTuple final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     /// One nested aggregate function per tuple element (may be different instantiations).
-    std::vector<AggregateFunctionPtr> nested_functions;
+    VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
     /// Precomputed byte offsets of each nested state within the aggregation data block.
-    std::vector<size_t> state_offsets;
+    VectorWithMemoryTracking<size_t> state_offsets;
     size_t total_state_size = 0;
     size_t max_state_align = 1;
     size_t num_elements;
