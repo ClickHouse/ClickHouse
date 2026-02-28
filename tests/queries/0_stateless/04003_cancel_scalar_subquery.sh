@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t (col U
 $CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_TEST_UNIQUE_NAME}_t VALUES (1), (2), (3)"
 
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_in"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --query="SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t WHERE col IN (SELECT max(number) FROM system.numbers)" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id="$query_id" --query="SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t WHERE col IN (SELECT number FROM system.numbers)" >/dev/null 2>&1 &
 client_pid=$!
 
 for _ in {0..60}
