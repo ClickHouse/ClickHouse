@@ -45,6 +45,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
@@ -93,6 +94,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto & context = scope.context;
     auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback();
+    const UInt64 interactive_delay_ms = context->getSettingsRef()[Setting::interactive_delay] / 1000;
 
     Block scalar_block;
 
@@ -239,7 +241,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                while (chunk.getNumRows() == 0 && executor->pull(chunk, 100))
+                while (chunk.getNumRows() == 0 && executor->pull(chunk, interactive_delay_ms))
                 {
                     cancel_callback();
                 }
@@ -282,7 +284,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 Chunk tmp_chunk;
-                while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk, 100))
+                while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk, interactive_delay_ms))
                 {
                     cancel_callback();
                 }

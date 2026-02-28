@@ -34,6 +34,7 @@ namespace Setting
 {
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
@@ -210,11 +211,12 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         {
             auto io = interpreter->execute();
             auto cancel_callback = data.getContext()->getQueryContext()->getInteractiveCancelCallback();
+            const UInt64 interactive_delay_ms = data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000;
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
-            while (block.rows() == 0 && executor.pull(block, 100))
+            while (block.rows() == 0 && executor.pull(block, interactive_delay_ms))
                 cancel_callback();
 
             if (block.rows() == 0)
@@ -252,7 +254,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
             Block tmp_block;
-            while (tmp_block.rows() == 0 && executor.pull(tmp_block, 100))
+            while (tmp_block.rows() == 0 && executor.pull(tmp_block, interactive_delay_ms))
                 cancel_callback();
 
             if (tmp_block.rows() != 0)

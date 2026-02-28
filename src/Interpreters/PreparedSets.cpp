@@ -31,6 +31,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode set_overflow_mode;
@@ -311,7 +312,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
-    executor.setCancelCallback(context->getQueryContext()->getInteractiveCancelCallback(), 100);
+    executor.setCancelCallback(context->getQueryContext()->getInteractiveCancelCallback(), context->getSettingsRef()[Setting::interactive_delay] / 1000);
     executor.execute();
 }
 
@@ -352,7 +353,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
-    executor.setCancelCallback(context->getQueryContext()->getInteractiveCancelCallback(), 100);
+    executor.setCancelCallback(context->getQueryContext()->getInteractiveCancelCallback(), context->getSettingsRef()[Setting::interactive_delay] / 1000);
     executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
