@@ -11,7 +11,7 @@ DATA_DIR=${USER_FILES_PATH:?}/$TEST_DIR_NAME
 mkdir -p $DATA_DIR
 
 echo "data" >> ${DATA_DIR}/good.txt
-ln -s /tmp/$(uuidgen) ${DATA_DIR}/broken_link
+ln -s ${DATA_DIR}/that_does_not_exist ${DATA_DIR}/broken_link
 
 echo $DATA_DIR
 
