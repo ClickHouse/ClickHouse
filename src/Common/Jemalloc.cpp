@@ -204,8 +204,10 @@ void setup(
     if (!did_setup)
     {
         /// Verify that the settings match what was configured on the first call.
+        /// Catch mismatches between server settings defaults and the manually defined config names in `BaseDaemon`.
         auto log_warning = [](std::string_view setting)
         {
+            chassert(false, fmt::format("Jemalloc::setup called with different `{}` value", setting));
             LOG_WARNING(&Poco::Logger::get("Jemalloc"), "Jemalloc::setup called with different `{}` value", setting);
         };
 
