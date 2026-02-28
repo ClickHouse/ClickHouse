@@ -21,10 +21,10 @@ $CLICKHOUSE_CLIENT --query "SELECT exception FROM system.query_log WHERE query_i
 
 # Test cancellation of IN subquery with a MergeTree table
 $CLICKHOUSE_CLIENT --query "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t (col UInt64) ENGINE = MergeTree() ORDER BY col"
-$CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_TEST_UNIQUE_NAME}_t VALUES (1), (2), (3)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_TEST_UNIQUE_NAME}_t VALUES (rand()), (rand()), (rand())"
 
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_in"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --query="SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t WHERE col IN (SELECT number FROM system.numbers)" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id="$query_id" --query="SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t WHERE col IN (SELECT max(rand()) FROM system.numbers)" >/dev/null 2>&1 &
 client_pid=$!
 
 for _ in {0..60}
