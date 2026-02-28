@@ -115,6 +115,8 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , no_destination(no_destination_)
     , async_insert(async_insert_)
 {
+    getContext()->setSetting("automatic_parallel_replicas_mode", Field{0});
+
     checkStackSize();
     if (auto quota = getContext()->getQuota())
         quota->checkExceeded(QuotaType::WRITTEN_BYTES);
@@ -140,7 +142,12 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         {
             SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-            select_query_options.is_part_of_insert_select = true;
+            // select_query_options.is_part_of_insert_select = true;
+            {
+                auto ctx = Context::createCopy(current_context);
+                ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
+                current_context = ctx;
+            }
 
             if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -346,9 +353,11 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
 static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
-    select_query_options.is_part_of_insert_select = true;
+    // select_query_options.is_part_of_insert_select = true;
+    auto ctx = Context::createCopy(context);
+    ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
 
-    InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
+    InterpreterSelectQueryAnalyzer interpreter(select, ctx, select_query_options);
     auto & plan = interpreter.getQueryPlan();
 
     /// Find reading steps for remote replicas and remove them,
@@ -573,7 +582,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-        select_query_options.is_part_of_insert_select = true;
+        {
+            auto ctx = Context::createCopy(select_context);
+            ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
+            select_context = ctx;
+        }
+        // select_query_options.is_part_of_insert_select = true;
 
         const Settings & settings = select_context->getSettingsRef();
         if (settings[Setting::allow_experimental_analyzer])
