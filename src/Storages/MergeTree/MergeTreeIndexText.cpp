@@ -439,8 +439,12 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
     });
 
     token_infos[token] = token_info;
+
     if (token_info->embedded_postings)
+    {
         tokens_with_postings.emplace(token);
+        ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+    }
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
