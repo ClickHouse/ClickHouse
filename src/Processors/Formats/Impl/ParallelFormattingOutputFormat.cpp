@@ -104,14 +104,13 @@ namespace DB
         if (type == ProcessingUnitType::FINALIZE)
         {
             std::lock_guard lock(statistics_mutex);
-            /// Save progress accumulated during normal execution before moving statistics.
-            /// The move clears statistics.progress, but we need it for deferred statistics
-            /// which are written later by completeDeferredStatistics() after all remaining
-            /// progress has been collected from processors.
-            Progress saved_progress;
-            saved_progress.incrementPiecewiseAtomically(statistics.progress);
             unit.statistics = std::move(statistics);
-            statistics.progress.incrementPiecewiseAtomically(saved_progress);
+            /// Note: after the move, statistics.progress still retains its values
+            /// because Progress::operator=(&&) copies atomics without clearing the source.
+            /// This is intentional: writeDeferredStatisticsAndFinalize() (called later
+            /// from IOutputFormat::finalize or completeDeferredStatistics) needs the
+            /// accumulated progress. Additional progress from connection draining
+            /// (parallel replicas) will be added via onProgress() before that call.
         }
 
         size_t first_row_num = rows_consumed;
