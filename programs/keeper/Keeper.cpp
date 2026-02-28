@@ -22,6 +22,7 @@
 #include <base/getMemoryAmount.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <base/Numa.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
@@ -690,6 +691,9 @@ try
         if (current_connections)
         {
             LOG_INFO(log, "Will shutdown forcefully.");
+            /// safeExit calls _exit, which bypasses static destructors and atexit handlers.
+            /// Explicitly clean up OpenSSL to avoid LeakSanitizer false positives.
+            OpenSSLInitializer::cleanup();
             safeExit(0);
         }
     });

@@ -1,6 +1,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <IO/WriteHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -84,7 +85,38 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
-    auto dictionary = std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
+
+    /// Check if we have a cancellable query context
+    QueryStatusPtr process_list_element;
+    if (local_context->hasQueryContext())
+        process_list_element = local_context->getProcessListElement();
+
+    std::shared_ptr<const IDictionary> dictionary;
+    if (process_list_element)
+    {
+        /// Wait with periodic cancellation checks
+        while (true)
+        {
+            auto result = tryLoad<LoadResult>(resolved_dictionary_name, /* timeout = */ std::chrono::milliseconds(1000));
+            if (result.object)
+            {
+                dictionary = std::static_pointer_cast<const IDictionary>(std::move(result.object));
+                break;
+            }
+            /// If loading has terminally failed, call load() to throw the proper error
+            if (result.status != Status::LOADING && result.status != Status::NOT_LOADED)
+            {
+                dictionary = std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
+                break;
+            }
+            /// Check if the query was cancelled while we were waiting
+            process_list_element->checkTimeLimit();
+        }
+    }
+    else
+    {
+        dictionary = std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
+    }
 
     if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, dictionary->getQualifiedName());
