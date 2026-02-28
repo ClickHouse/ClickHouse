@@ -471,7 +471,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
 
     for (const auto & token : query.tokens)
     {
-        if (result && result->cardinality() == 0)
+        if (query.search_mode == TextSearchMode::All && result && result->cardinality() == 0)
             return {};
 
         if (!large_postings_streams.contains(token))
@@ -503,7 +503,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
         }
         else
         {
-            PostingList large_postings = *read_blocks.front() & range_posting;
+            PostingList large_postings = (*read_blocks.front() & range_posting);
 
             for (size_t i = 1; i < read_blocks.size(); ++i)
                 large_postings |= (*read_blocks[i] & range_posting);
