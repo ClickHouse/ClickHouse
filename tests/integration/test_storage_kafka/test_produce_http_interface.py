@@ -125,7 +125,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
 
     extra_settings = {
         "Protobuf": ", kafka_schema = 'string_key_value.proto:StringKeyValuePair'",
-        "ProtobufList": ", kafka_schema = 'string_key_value_list.proto:Envelope'",
+        "ProtobufList": ", kafka_schema = 'string_key_value_list.proto:StringKeyValuePair'",
         "CapnProto": ", kafka_schema='string_key_value:StringKeyValuePair'",
         "Template": ", format_template_row='string_key_value.format'",
     }
