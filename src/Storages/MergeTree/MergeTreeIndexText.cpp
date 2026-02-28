@@ -366,19 +366,19 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings)
     if (is_failed)
         return;
 
-    if (postings.cardinality() == 0)
+    if (!postings)
     {
         postings = *token_postings;
     }
     else if (query->search_mode == TextSearchMode::Any)
     {
-        postings |= *token_postings;
+        *postings |= *token_postings;
     }
     else
     {
-        postings &= *token_postings;
+        *postings &= *token_postings;
 
-        if (postings.cardinality() == 0)
+        if (postings->cardinality() == 0)
             is_failed = true;
     }
 }
@@ -429,7 +429,7 @@ void TextIndexAnalyzer::addLargePostings(std::string_view token)
 void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
     chassert(token_info->ranges.size() == 1);
-    RowsRange rows_range(token_info->ranges.front().begin, token_info->ranges.front().end);
+    RowsRange rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
@@ -497,7 +497,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     }
 
     analyzeDictionary(*index_stream, *dictionary_stream, state);
-    readPostingsForRareTokens(*postings_stream, state);
+    analyzePostings(*postings_stream, state);
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionary(
@@ -703,7 +703,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 
-void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
+void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
     using enum PostingsSerialization::Flags;
     const auto & token_infos = analyzer->getTokenInfos();
@@ -740,25 +740,28 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
-    const auto & query_builder = analyzer->getQueryBuilder(query);
+    if (query.tokens.empty())
+        return false;
 
+    const auto & query_builder = analyzer->getQueryBuilder(query);
     if (!current_range.has_value())
-    {
         return !query_builder.is_failed;
-    }
+
+    if (query_builder.is_failed || !query_builder.rows_range.has_value())
+        return false;
 
     auto intersection = query_builder.rows_range->intersectWith(*current_range);
     if (!intersection.has_value())
         return false;
 
-    if (query_builder.has_large_postings)
-        return true;
+    if (!query_builder.has_large_postings && query_builder.postings)
+    {
+        PostingList range_posting;
+        range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
-    PostingList range_posting;
-    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
-
-    if (range_posting.and_cardinality(query_builder.postings) == 0)
-        return false;
+        if (range_posting.and_cardinality(*query_builder.postings) == 0)
+            return false;
+    }
 
     return true;
 }
@@ -773,22 +776,29 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
 {
-    const auto & query_builder = analyzer->getQueryBuilder(query);
+    if (query.tokens.empty())
+        return true;
 
+    const auto & query_builder = analyzer->getQueryBuilder(query);
     if (!current_range.has_value())
-    {
         return !query_builder.is_failed;
-    }
+
+    if (query_builder.is_failed || !query_builder.rows_range.has_value())
+        return false;
 
     auto intersection = query_builder.rows_range->intersectWith(*current_range);
+
     if (!intersection.has_value())
         return false;
 
-    PostingList range_posting;
-    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
+    if (query_builder.postings)
+    {
+        PostingList range_posting;
+        range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
-    if (range_posting.and_cardinality(query_builder.postings) == 0)
-        return false;
+        if (range_posting.and_cardinality(*query_builder.postings) == 0)
+            return false;
+    }
 
     return true;
 }

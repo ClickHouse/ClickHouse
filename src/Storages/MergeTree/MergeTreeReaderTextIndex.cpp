@@ -451,27 +451,37 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
         return {};
     }
 
+    PostingList range_posting;
+    range_posting.addRangeClosed(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
+
     if (!query_builder.has_large_postings)
     {
-        PostingList result;
-        result.addRange(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
-        return result &= query_builder.postings;
+        if (!query_builder.postings)
+            return {};
+
+        range_posting &= *query_builder.postings;
+        return range_posting;
     }
 
-    PostingList result = query_builder.postings;
+    std::optional<PostingList> result = query_builder.postings;
 
     auto apply_postings = [&](const PostingList & postings)
     {
-        if (query.search_mode == TextSearchMode::All)
-            result &= postings;
+        if (!result)
+            result = postings;
+        else if (query.search_mode == TextSearchMode::All)
+            *result &= postings;
         else if (query.search_mode == TextSearchMode::Any)
-            result |= postings;
+            *result |= postings;
     };
 
     for (const auto & token : query.tokens)
     {
-        if (result.cardinality() == 0)
-            break;
+        if (result && result->cardinality() == 0)
+            return {};
+
+        if (!large_postings_streams.contains(token))
+            continue;
 
         auto it = token_infos.find(token);
         if (it == token_infos.end())
@@ -482,8 +492,9 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
                 continue;
         }
 
-        auto posting_blocks = readPostingsBlocksForToken(token, *it->second, range);
-        if (postings_blocks.empty())
+        auto read_blocks = readPostingsBlocksForToken(token, *it->second, range);
+
+        if (read_blocks.empty())
         {
             if (query.search_mode == TextSearchMode::All)
                 return {};
@@ -491,22 +502,26 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
                 continue;
         }
 
-        if (posting_blocks.size() == 1)
+        if (read_blocks.size() == 1)
         {
-            apply_postings(*posting_blocks.front());
+            apply_postings(*read_blocks.front());
         }
         else
         {
-            PostingList large_postings = *posting_blocks.front();
+            PostingList large_postings = *read_blocks.front();
 
-            for (size_t i = 1; i < posting_blocks.size(); ++i)
-                large_postings |= *posting_blocks[i];
+            for (size_t i = 1; i < read_blocks.size(); ++i)
+                large_postings |= *read_blocks[i];
 
             apply_postings(large_postings);
         }
     }
 
-    return result;
+    if (!result)
+        return {};
+
+    range_posting &= *result;
+    return range_posting;
 }
 
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)

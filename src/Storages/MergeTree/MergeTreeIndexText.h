@@ -287,7 +287,7 @@ public:
     struct QueryBuilder
     {
         TextSearchQueryPtr query;
-        PostingList postings;
+        std::optional<PostingList> postings;
         std::optional<RowsRange> rows_range;
 
         bool is_failed = false;
@@ -370,7 +370,7 @@ private:
     std::pair<std::vector<size_t>, NameSet> matchTokens(const ColumnString & all_tokens, std::vector<std::string_view> needed_tokens);
 
     DictionarySparseIndexPtr loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
-    void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzePostings(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
