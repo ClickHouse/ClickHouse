@@ -8,6 +8,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
 
 #include <functional>
@@ -784,6 +785,7 @@ public:
             return;
         try
         {
+            auto component_guard = Coordination::setCurrentComponent("EphemeralNodeHolder::~EphemeralNodeHolder");
             if (!zookeeper.expired())
                 zookeeper.tryRemove(path);
             else
