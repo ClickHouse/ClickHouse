@@ -3,6 +3,8 @@
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
