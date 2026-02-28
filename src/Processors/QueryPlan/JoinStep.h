@@ -69,6 +69,11 @@ private:
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
 
+    /// The right-side header that was used to create the current join algorithm.
+    /// Query plan optimizations can change the right child's header without updating the join,
+    /// so we track the original header to detect and fix mismatches at pipeline build time.
+    SharedHeader right_header_for_join;
+
     JoinPtr join;
     size_t max_block_size;
     size_t min_block_size_rows;

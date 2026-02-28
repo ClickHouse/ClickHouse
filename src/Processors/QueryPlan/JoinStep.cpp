@@ -88,7 +88,8 @@ JoinStep::JoinStep(
     bool keep_left_read_in_order_,
     bool use_new_analyzer_,
     bool use_join_disjunctions_push_down_)
-    : join(std::move(join_))
+    : right_header_for_join(right_header_)
+    , join(std::move(join_))
     , max_block_size(max_block_size_)
     , min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
@@ -112,6 +113,27 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (swap_streams)
         std::swap(pipelines[0], pipelines[1]);
+
+    /// Query plan optimizations (e.g. filter push-down, outer-to-inner join conversion with join_use_nulls)
+    /// can change the right child's output header after the HashJoin was created.
+    /// When the actual right pipeline header differs from the one the join was built with,
+    /// re-clone the join so that its internal sample_block matches the real data.
+    {
+        const Block & actual_right_header = pipelines[1]->getHeader();
+        if (right_header_for_join && !blocksHaveEqualStructure(actual_right_header, *right_header_for_join))
+        {
+            if (join->isCloneSupported())
+            {
+                auto table_join_ptr = std::make_shared<TableJoin>(join->getTableJoin());
+                auto left_shared = std::make_shared<const Block>(pipelines[0]->getHeader());
+                auto right_shared = std::make_shared<const Block>(actual_right_header);
+                join = join->clone(table_join_ptr, left_shared, right_shared);
+                right_header_for_join = right_shared;
+                join_algorithm_header.reset();
+                updateOutputHeader();
+            }
+        }
+    }
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
     /// Sharding requires both pipelines to have the same number of streams.
@@ -260,6 +282,9 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
     join_algorithm_header.reset();
     swap_streams = swap_streams_;
     join = std::move(join_);
+    /// The caller re-created the join with the current input headers,
+    /// so update our tracking of which right header the join was built with.
+    right_header_for_join = input_headers[swap_streams ? 0 : 1];
     updateOutputHeader();
 }
 
