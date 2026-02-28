@@ -2,6 +2,10 @@
 // Benchmark for ByteStreamSplit codec — mirrors the exact ClickHouse implementations.
 // Includes correctness tests AND security/robustness validation for the decode path.
 //
+// HEADER FORMAT (v2 — 5 bytes):
+//   [0..3]  int32_t  element_bytes_size   (little-endian)
+//   [4]     uint8_t  bytes_to_skip        (legacy; recomputed on decode)
+//
 
 #include <cstdint>
 #include <cstring>
@@ -21,8 +25,8 @@ using Clock = std::chrono::high_resolution_clock;
 // Maximum element width — matches ClickHouse (UInt8 max, enforced at registration)
 static constexpr int MAX_ELEMENT_WIDTH = 255;
 
-// Header size — matches ClickHouse codec
-static constexpr uint32_t HEADER_SIZE = 2;
+// Header size: 4 bytes (int32 element width) + 1 byte (bytes_to_skip)
+static constexpr uint32_t HEADER_SIZE = 5;
 
 // =============================================================================
 //  W=16 SIMD — SSE2 butterfly transpose (shared by encode + decode)
@@ -440,6 +444,7 @@ void decodeRuntime(
 
     // Process 16 elements at a time: read two uint64_t per stream
     for (; i + 16 <= num_elements; i += 16) {
+        // NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
         uint64_t s[MAX_ELEMENT_WIDTH][2];
         for (int b = 0; b < W; ++b) {
             memcpy(&s[b][0], src + b * num_elements + i,     8);
@@ -468,6 +473,7 @@ void decodeRuntime(
 
     // 8-element tail
     for (; i + 8 <= num_elements; i += 8) {
+        // NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
         uint64_t streams[MAX_ELEMENT_WIDTH];
         for (int b = 0; b < W; ++b)
             memcpy(&streams[b], src + b * num_elements + i, 8);
@@ -525,15 +531,24 @@ void decode(const uint8_t * src, uint8_t * dst, int64_t num_elements, int elemen
 // =============================================================================
 //  Codec-level compress / decompress (with header — mirrors ClickHouse)
 //  These are the functions that the security tests exercise.
+//
+//  HEADER (5 bytes):
+//    [0..3]  int32_t   element_bytes_size  (little-endian via memcpy)
+//    [4]     uint8_t   bytes_to_skip       (written for compat; ignored on read)
 // =============================================================================
 
 /// Mirrors CompressionCodecByteStreamSplit::doCompressData
-uint32_t codec_compress(const uint8_t * source, uint32_t source_size, uint8_t * dest, uint8_t element_bytes_size)
+uint32_t codec_compress(const uint8_t * source, uint32_t source_size, uint8_t * dest, int32_t element_bytes_size)
 {
-    uint8_t bytes_to_skip = source_size % element_bytes_size;
+    uint32_t bytes_to_skip = source_size % element_bytes_size;
 
-    dest[0] = element_bytes_size;
-    dest[1] = bytes_to_skip;
+    // Store element width as little-endian int32
+    int32_t le_width = element_bytes_size;
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    le_width = __builtin_bswap32(le_width);
+#endif
+    memcpy(dest, &le_width, 4);
+    dest[4] = static_cast<uint8_t>(bytes_to_skip);
 
     if (bytes_to_skip)
         memcpy(dest + HEADER_SIZE, source, bytes_to_skip);
@@ -559,14 +574,21 @@ uint32_t codec_decompress(const uint8_t * source, uint32_t source_size, uint8_t 
     if (uncompressed_size == 0)
         return 0;
 
-    uint8_t saved_element_bytes = source[0];
+    // Read element width as little-endian int32
+    int32_t saved_element_bytes;
+    memcpy(&saved_element_bytes, source, 4);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    saved_element_bytes = __builtin_bswap32(saved_element_bytes);
+#endif
 
-    // FIX 1: reject element size < 2 (was only rejecting == 0)
+    // FIX 1: reject element size < 2 or > MAX_ELEMENT_WIDTH
     if (saved_element_bytes < 2)
         throw std::runtime_error("invalid element size in header (must be >= 2)");
+    if (saved_element_bytes > MAX_ELEMENT_WIDTH)
+        throw std::runtime_error("invalid element size in header (exceeds MAX_ELEMENT_WIDTH)");
 
-    // FIX 2: recompute bytes_to_skip from uncompressed_size, don't trust source[1]
-    uint8_t bytes_to_skip = uncompressed_size % saved_element_bytes;
+    // FIX 2: recompute bytes_to_skip from uncompressed_size, don't trust source[4]
+    uint32_t bytes_to_skip = uncompressed_size % saved_element_bytes;
 
     if (source_size < static_cast<uint32_t>(HEADER_SIZE + bytes_to_skip))
         throw std::runtime_error("source too small for header + tail");
@@ -676,7 +698,7 @@ static bool verify_codec_roundtrip_one(int W, int64_t N, const char * label)
     fill_pattern(original, static_cast<uint64_t>(W) * 7777 + N);
 
     uint32_t comp_size = codec_compress(original.data(), static_cast<uint32_t>(sz),
-                                        compressed.data(), static_cast<uint8_t>(W));
+                                        compressed.data(), static_cast<int32_t>(W));
 
     if (comp_size != HEADER_SIZE + sz)
     {
@@ -766,6 +788,15 @@ static void expect_ok(const char * name, const uint8_t * src, uint32_t src_size,
     }
 }
 
+// Helper: write an int32 element width into a buffer at offset 0 (little-endian)
+static void write_header_width(uint8_t * buf, int32_t width)
+{
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    width = __builtin_bswap32(width);
+#endif
+    memcpy(buf, &width, 4);
+}
+
 void verify_security()
 {
     printf("Security / robustness validation:\n");
@@ -775,25 +806,50 @@ void verify_security()
 
     // --- 1. Source too small (< HEADER_SIZE) ---
     {
-        uint8_t tiny[1] = {4};
+        uint8_t tiny[4] = {4, 0, 0, 0};
         expect_throw("source_size=0", tiny, 0, dst, 100);
         expect_throw("source_size=1", tiny, 1, dst, 100);
+        expect_throw("source_size=4 (< 5)", tiny, 4, dst, 100);
     }
 
     // --- 2. Element size = 0 in header ---
     {
         uint8_t buf[100] = {};
-        buf[0] = 0;  // element_bytes = 0
-        buf[1] = 0;
+        write_header_width(buf, 0);
+        buf[4] = 0;
         expect_throw("element_bytes=0 in header", buf, sizeof(buf), dst, 64);
     }
 
     // --- 3. Element size = 1 in header (CVE-class: was not rejected) ---
     {
         uint8_t buf[100] = {};
-        buf[0] = 1;  // element_bytes = 1 — should be rejected
-        buf[1] = 0;
+        write_header_width(buf, 1);
+        buf[4] = 0;
         expect_throw("element_bytes=1 in header", buf, sizeof(buf), dst, 64);
+    }
+
+    // --- 3b. Element size negative in header ---
+    {
+        uint8_t buf[100] = {};
+        write_header_width(buf, -1);
+        buf[4] = 0;
+        expect_throw("element_bytes=-1 in header", buf, sizeof(buf), dst, 64);
+    }
+
+    // --- 3c. Element size exceeds MAX_ELEMENT_WIDTH ---
+    {
+        uint8_t buf[100] = {};
+        write_header_width(buf, 256);
+        buf[4] = 0;
+        expect_throw("element_bytes=256 in header (> max)", buf, sizeof(buf), dst, 64);
+    }
+
+    // --- 3d. Element size = INT32_MAX ---
+    {
+        uint8_t buf[100] = {};
+        write_header_width(buf, INT32_MAX);
+        buf[4] = 0;
+        expect_throw("element_bytes=INT32_MAX in header", buf, sizeof(buf), dst, 64);
     }
 
     // --- 4. Valid element size but should work ---
@@ -828,27 +884,27 @@ void verify_security()
         expect_throw("truncated body (off-by-one)", compressed.data(), comp_sz - 1, dst, data_size);
     }
 
-    // --- 6. bytes_to_skip forgery (attacker writes bogus source[1]) ---
-    //     With our fix, source[1] is ignored, so this should still work
+    // --- 6. bytes_to_skip forgery (attacker writes bogus source[4]) ---
+    //     With our fix, source[4] is ignored, so this should still work
     //     correctly as long as the body is valid.
     {
         uint8_t original[16] = {1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16};
         uint8_t compressed[HEADER_SIZE + 16];
         codec_compress(original, 16, compressed, 4);
 
-        // Corrupt source[1] to a bogus value
+        // Corrupt source[4] to a bogus value
         uint8_t tampered[HEADER_SIZE + 16];
         memcpy(tampered, compressed, HEADER_SIZE + 16);
-        tampered[1] = 3;  // was 0, set to 3 (bogus)
+        tampered[4] = 3;  // was 0, set to 3 (bogus)
 
         // Should still decompress correctly because we recompute bytes_to_skip
-        // 16 % 4 = 0, so bytes_to_skip = 0 regardless of source[1]
+        // 16 % 4 = 0, so bytes_to_skip = 0 regardless of source[4]
         uint8_t result[16];
         expect_ok("forged bytes_to_skip=3, actual=0", tampered, HEADER_SIZE + 16, result, 16);
         if (memcmp(original, result, 16) == 0)
-            printf("           (data matches — source[1] correctly ignored)\n");
+            printf("           (data matches — source[4] correctly ignored)\n");
         else
-            printf("           WARNING: data mismatch — source[1] may still be trusted!\n");
+            printf("           WARNING: data mismatch — source[4] may still be trusted!\n");
     }
 
     // --- 7. bytes_to_skip forgery with unaligned data ---
@@ -866,18 +922,18 @@ void verify_security()
         if (memcmp(original, result, 13) == 0)
             printf("           (data matches)\n");
 
-        // Now forge source[1] = 0 (attacker claims no remainder)
+        // Now forge source[4] = 0 (attacker claims no remainder)
         uint8_t tampered[HEADER_SIZE + 13];
         memcpy(tampered, compressed, HEADER_SIZE + 13);
-        tampered[1] = 0;  // forge: claim no skip bytes
+        tampered[4] = 0;  // forge: claim no skip bytes
 
         // Should still decompress correctly: we recompute 13%4 = 1
         memset(result, 0xEE, 13);
         expect_ok("forged bytes_to_skip=0, actual=1", tampered, HEADER_SIZE + 13, result, 13);
         if (memcmp(original, result, 13) == 0)
-            printf("           (data matches — source[1] correctly ignored)\n");
+            printf("           (data matches — source[4] correctly ignored)\n");
         else
-            printf("           WARNING: data mismatch — source[1] may still be trusted!\n");
+            printf("           WARNING: data mismatch — source[4] may still be trusted!\n");
     }
 
     // --- 8. Element size forgery: header says W=2 but data was compressed with W=4 ---
@@ -887,7 +943,8 @@ void verify_security()
         codec_compress(original, 16, compressed, 4);
 
         // Corrupt element size to 2
-        compressed[0] = 2;
+        int32_t forged_w = 2;
+        memcpy(compressed, &forged_w, 4);
 
         // Should decompress without crashing (body size check passes:
         // 16 bytes body >= 16 bytes expected). It'll produce wrong data
@@ -907,31 +964,25 @@ void verify_security()
 
         // Forge element size to 4, claim uncompressed_size = 400
         // body is only 8 bytes, but 400 bytes expected → should throw
-        compressed[0] = 4;
+        int32_t forged_w = 4;
+        memcpy(compressed, &forged_w, 4);
         expect_throw("forged element_bytes=4, inflated uncompressed_size",
                      compressed, HEADER_SIZE + 8, dst, 400);
     }
 
     // --- 10. uncompressed_size = 0 (edge case) ---
     {
-        uint8_t buf[10] = {4, 0};
+        uint8_t buf[10] = {};
+        write_header_width(buf, 4);
+        buf[4] = 0;
         expect_ok("uncompressed_size=0", buf, 10, dst, 0);
     }
 
     // --- 11. Aligned uncompressed not a multiple of element size ---
-    //     This can happen if uncompressed_size and element_bytes don't align
-    //     after subtracting bytes_to_skip.
-    //     E.g. header says W=4, uncompressed_size=7: skip=3, aligned=4 → OK
-    //     But  header says W=4, uncompressed_size=6: skip=2, aligned=4 → OK
-    //     And  header says W=3, uncompressed_size=7: skip=1, aligned=6 → 6%3=0 OK
-    //     Try  header says W=4, uncompressed_size=5: skip=1, aligned=4 → 4%4=0 OK
-    //     Actually this is hard to trigger with recomputed bytes_to_skip because
-    //     aligned = uncompressed - (uncompressed % W) is always a multiple of W.
-    //     So this check is now effectively dead code — but let's verify.
+    //     This check is now effectively dead code with recomputed bytes_to_skip,
+    //     because aligned = uncompressed - (uncompressed % W) is always divisible by W.
+    //     Just verify it doesn't fire for valid data.
     {
-        // The modulo check can never fail when bytes_to_skip is recomputed,
-        // because aligned = uncompressed - (uncompressed % W) is always divisible by W.
-        // This is a defense-in-depth check. Just verify it doesn't fire for valid data.
         uint8_t original[12] = {1,2,3,4,5,6,7,8,9,10,11,12};
         uint8_t compressed[HEADER_SIZE + 12];
         codec_compress(original, 12, compressed, 4);
@@ -940,7 +991,7 @@ void verify_security()
                   compressed, HEADER_SIZE + 12, result, 12);
     }
 
-    // --- 12. Large element size (max UInt8 = 255) ---
+    // --- 12. Large element size (max = 255) ---
     {
         // Valid: W=255, 1 element = 255 bytes
         uint32_t sz = 255;
