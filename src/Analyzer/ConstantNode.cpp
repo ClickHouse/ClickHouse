@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -191,8 +192,8 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     auto requires_cast = [this]()
     {
-        const auto & [_, type] = getValueNameAndType({});
-        return requiresCastCall(type, getResultType());
+        auto field_type = applyVisitor(FieldToDataType(), getValue());
+        return requiresCastCall(field_type, getResultType());
     };
 
     if (source_expression != nullptr || requires_cast())

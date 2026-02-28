@@ -1,5 +1,3 @@
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -88,7 +86,7 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];
@@ -97,34 +95,17 @@ DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_b
     if (options.notFull(name_buf))
         name_buf << "[";
 
-    DataTypePtr element_type;
-
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        auto type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
-        if (!element_type)
-            element_type = std::move(type);
+        getNestedData().getValueNameImpl(name_buf, offset + i, options);
         if (!options.notFull(name_buf))
             break;
     }
 
     if (options.notFull(name_buf))
         name_buf << "]";
-
-    if (!element_type)
-    {
-        if (!getNestedData().empty())
-        {
-            WriteBufferFromOwnString tmp_buf;
-            element_type = getNestedData().getValueNameAndTypeImpl(tmp_buf, 0, options);
-        }
-        else
-            element_type = std::make_shared<DataTypeNothing>();
-    }
-
-    return std::make_shared<DataTypeArray>(std::move(element_type));
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
