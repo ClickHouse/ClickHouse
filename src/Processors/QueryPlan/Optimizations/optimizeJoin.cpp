@@ -1,3 +1,4 @@
+#include <Common/EquivalenceClasses.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
 
@@ -40,6 +41,7 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -811,6 +813,146 @@ static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
     return node;
 }
 
+/// Infer transitive equi-join predicates and add synthetic edges to the query graph.
+///
+/// Given existing edges like `A.x = B.x` and `B.x = C.x`, this produces a synthetic
+/// `A.x = C.x` edge so that the join order optimizer can consider direct (A JOIN C) plans
+/// that would otherwise be unreachable.
+///
+/// Only INNER JOIN equality predicates on simple column references (INPUT nodes) participate.
+/// OUTER/SEMI/ANTI join predicates, expression-based predicates, and `NullSafeEquals` are excluded.
+static void addTransitivePredicates(QueryGraph & query_graph, JoinExpressionActions & global_expression_actions)
+{
+    /// (relation_id, column_name) identifies a column endpoint in the query graph.
+    using RelColumn = std::pair<size_t, String>;
+    struct RelColumnHash
+    {
+        size_t operator()(const RelColumn & rc) const
+        {
+            return std::hash<size_t>()(rc.first) ^ (std::hash<String>()(rc.second) * 0x9e3779b97f4a7c15ULL);
+        }
+    };
+
+    auto is_inner_relation = [&](size_t rel_id) -> bool
+    {
+        auto it = query_graph.join_kinds.find(rel_id);
+        if (it == query_graph.join_kinds.end())
+            return true;
+        return it->second.second == JoinKind::Inner || it->second.second == JoinKind::Cross;
+    };
+
+    /// Single pass: extract qualifying equality edges and build equivalence classes.
+    EquivalenceClasses<RelColumn, RelColumnHash> equivalent_column_sets;
+    std::vector<std::pair<RelColumn, RelColumn>> equality_edges;
+
+    for (const auto & edge : query_graph.edges)
+    {
+        if (!edge || query_graph.pinned.contains(edge))
+            continue;
+
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+
+        /// Walk through ALIAS chains to find the underlying INPUT node
+        const auto * lhs_node = lhs.getNode();
+        while (lhs_node->type == ActionsDAG::ActionType::ALIAS)
+            lhs_node = lhs_node->children.at(0);
+        const auto * rhs_node = rhs.getNode();
+        while (rhs_node->type == ActionsDAG::ActionType::ALIAS)
+            rhs_node = rhs_node->children.at(0);
+
+        if (lhs_node->type != ActionsDAG::ActionType::INPUT || rhs_node->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        auto lhs_rel = lhs.getSourceRelations().getSingleBit();
+        auto rhs_rel = rhs.getSourceRelations().getSingleBit();
+        if (!lhs_rel || !rhs_rel)
+            continue;
+
+        if (!is_inner_relation(*lhs_rel) || !is_inner_relation(*rhs_rel))
+            continue;
+
+        RelColumn lhs_rc{*lhs_rel, lhs_node->result_name};
+        RelColumn rhs_rc{*rhs_rel, rhs_node->result_name};
+        equivalent_column_sets.add(lhs_rc, rhs_rc);
+        equality_edges.emplace_back(std::move(lhs_rc), std::move(rhs_rc));
+    }
+
+    /// Track which table pairs already have edges.
+    std::set<std::pair<size_t, size_t>> connected_relations;
+    for (const auto & edge : query_graph.edges)
+    {
+        if (!edge)
+            continue;
+        const auto & sources = edge.getSourceRelations();
+        if (sources.count() != 2)
+            continue;
+        auto it = sources.begin();
+        size_t first = *it;
+        ++it;
+        size_t second = *it;
+        connected_relations.emplace(std::min(first, second), std::max(first, second));
+    }
+
+    /// Generate synthetic edges for transitively-connected pairs.
+    /// For each equivalence class with 3+ members, enumerate all pairs of members from
+    /// different relations that aren't already connected.
+    using ConstClassPtr = typename EquivalenceClasses<RelColumn, RelColumnHash>::ConstClassPtr;
+    std::set<ConstClassPtr> visited_classes;
+    size_t added_count = 0;
+
+    for (const auto & [lhs_rc, rhs_rc] : equality_edges)
+    {
+        for (const auto & rc : {lhs_rc, rhs_rc})
+        {
+            auto equivalent_columns = equivalent_column_sets.getClass(rc);
+            if (!equivalent_columns || equivalent_columns->size() <= 2)
+                continue;
+            if (!visited_classes.insert(equivalent_columns).second)
+                continue;
+
+            /// Members are already (relation_id, column_name) pairs — no decoding needed.
+            std::vector<RelColumn> members(equivalent_columns->begin(), equivalent_columns->end());
+
+            for (size_t i = 0; i < members.size(); ++i)
+            {
+                for (size_t j = i + 1; j < members.size(); ++j)
+                {
+                    const auto & [rel_i, col_i] = members[i];
+                    const auto & [rel_j, col_j] = members[j];
+
+                    if (rel_i == rel_j)
+                        continue;
+
+                    auto relations_pair = std::make_pair(std::min(rel_i, rel_j), std::max(rel_i, rel_j));
+                    if (connected_relations.contains(relations_pair))
+                        continue;
+
+                    auto lhs_ref = global_expression_actions.findNode(col_i, /* is_input= */ true, /* throw_if_not_found= */ false);
+                    auto rhs_ref = global_expression_actions.findNode(col_j, /* is_input= */ true, /* throw_if_not_found= */ false);
+                    if (!lhs_ref || !rhs_ref)
+                        continue;
+
+                    query_graph.edges.push_back(JoinActionRef::transform(
+                        {lhs_ref, rhs_ref},
+                        JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+                    connected_relations.insert(relations_pair);
+                    ++added_count;
+
+                    LOG_TEST(&Poco::Logger::get("JoinOrderOptimizer"),
+                        "Added transitive predicate: relation {} `{}` = relation {} `{}`",
+                        rel_i, col_i, rel_j, col_j);
+                }
+            }
+        }
+    }
+
+    if (added_count > 0)
+        LOG_DEBUG(&Poco::Logger::get("JoinOrderOptimizer"),
+            "Added {} transitive join predicate(s)", added_count);
+}
+
 constexpr bool isSwapOnlyJoinKind(JoinKind kind)
 {
     return kind == JoinKind::Full;
@@ -849,6 +991,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
+
+    addTransitivePredicates(query_graph, global_expression_actions);
 
     auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);
