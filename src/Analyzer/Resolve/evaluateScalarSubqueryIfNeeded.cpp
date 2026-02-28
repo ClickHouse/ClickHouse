@@ -241,9 +241,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                while (chunk.getNumRows() == 0 && executor->pull(chunk, interactive_delay_ms))
+                if (cancel_callback)
                 {
-                    cancel_callback();
+                    while (chunk.getNumRows() == 0 && executor->pull(chunk, interactive_delay_ms))
+                        cancel_callback();
+                }
+                else
+                {
+                    while (chunk.getNumRows() == 0 && executor->pull(chunk))
+                    {
+                    }
                 }
             }
 
@@ -284,9 +291,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 Chunk tmp_chunk;
-                while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk, interactive_delay_ms))
+                if (cancel_callback)
                 {
-                    cancel_callback();
+                    while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk, interactive_delay_ms))
+                        cancel_callback();
+                }
+                else
+                {
+                    while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))
+                    {
+                    }
                 }
 
                 if (tmp_chunk.getNumRows() != 0)
