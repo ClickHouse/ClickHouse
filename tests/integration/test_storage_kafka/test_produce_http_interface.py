@@ -125,6 +125,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
 
     extra_settings = {
         "Protobuf": ", kafka_schema = 'string_key_value.proto:StringKeyValuePair'",
+        "ProtobufList": ", kafka_schema = 'string_key_value_list.proto:Envelope'",
         "CapnProto": ", kafka_schema='string_key_value:StringKeyValuePair'",
         "Template": ", format_template_row='string_key_value.format'",
     }
@@ -134,7 +135,6 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
     #  - JSONStrings: not actually an input format
     #  - ProtobufSingle: I cannot make it work to parse the messages. Probably something is broken,
     #    because the producer can write multiple rows into a same message, which makes them impossible to parse properly. Should added after #67549 is fixed.
-    #  - ProtobufList: I didn't want to deal with the envelope and stuff
     #  - Npy: supports only single column
     #  - LineAsString: supports only single column
     #  - RawBLOB: supports only single column
@@ -170,6 +170,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
         "BSONEachRow",
         "TSKV",
         "Protobuf",
+        "ProtobufList",
         "Avro",
         "Parquet",
         "Arrow",
