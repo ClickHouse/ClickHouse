@@ -23,7 +23,7 @@ void TokensCardinalitiesCache::update(const TokenToPostingsInfosMap & token_info
 
     for (const auto & token : missing_tokens)
     {
-        auto & cardinality_agg = cardinalities[String(token)];
+        auto & cardinality_agg = cardinalities[token];
         cardinality_agg.checked_rows += total_rows;
     }
 }

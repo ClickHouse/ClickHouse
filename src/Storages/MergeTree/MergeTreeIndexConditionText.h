@@ -90,6 +90,7 @@ public:
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
     TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
+    const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
 
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
