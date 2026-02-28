@@ -2,6 +2,7 @@
 -- when filtering _table virtual column with tuple IN in `merge` table function.
 
 SET allow_experimental_nullable_tuple_type = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_local_1;
 CREATE TABLE test_local_1 (x UInt32) ENGINE = MergeTree ORDER BY x;
