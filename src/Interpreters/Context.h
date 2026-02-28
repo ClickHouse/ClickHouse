@@ -1708,8 +1708,8 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
-    bool canUseTaskBasedParallelReplicas() const;
-    bool canUseParallelReplicasOnInitiator() const;
+    bool canUseTaskBasedParallelReplicas(bool ignore_automatic_mode = false) const;
+    bool canUseParallelReplicasOnInitiator(bool ignore_automatic_mode = false) const;
     bool canUseParallelReplicasOnFollower() const;
     bool canUseParallelReplicasCustomKey() const;
     bool canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const;

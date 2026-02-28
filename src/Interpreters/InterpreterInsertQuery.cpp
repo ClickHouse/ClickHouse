@@ -74,7 +74,6 @@ namespace Setting
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
     extern const SettingsBool async_query_sending_for_remote;
@@ -347,7 +346,12 @@ static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> ge
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
 
-    InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
+    /// Build the plan with automatic_parallel_replicas_mode disabled so the Planner
+    /// doesn't suppress parallel replicas — this path explicitly uses parallel replicas.
+    auto ctx = Context::createCopy(context);
+    ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
+
+    InterpreterSelectQueryAnalyzer interpreter(select, ctx, select_query_options);
     auto & plan = interpreter.getQueryPlan();
 
     /// Find reading steps for remote replicas and remove them,
@@ -658,7 +662,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!settings[Setting::allow_experimental_analyzer])
         return {};
 
-    if (!context_ptr->canUseParallelReplicasOnInitiator())
+    if (!context_ptr->canUseParallelReplicasOnInitiator(/*ignore_automatic_mode=*/true))
         return {};
 
     if (settings[Setting::parallel_distributed_insert_select] != 2)
@@ -677,13 +681,18 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
+    /// Suppress automatic_parallel_replicas_mode so that follower replicas can participate
+    /// in coordinated reading via canUseParallelReplicasOnFollower.
+    auto pr_context = Context::createCopy(context_ptr);
+    pr_context->setSetting("automatic_parallel_replicas_mode", Field{0});
+
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline])
     {
         auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table);
-        return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr, std::move(local_pipeline), coordinator);
+        return ClusterProxy::executeInsertSelectWithParallelReplicas(query, pr_context, std::move(local_pipeline), coordinator);
     }
 
-    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr);
+    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, pr_context);
 }
 
 
@@ -935,25 +944,12 @@ BlockIO InterpreterInsertQuery::execute()
                 if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
                     res.pipeline = std::move(*pipeline);
             }
-            if (!res.pipeline.initialized())
+            /// For INSERT SELECT, we want to use parallel replicas regardless of automatic_parallel_replicas_mode.
+            if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator(/*ignore_automatic_mode=*/true))
             {
-                /// For INSERT SELECT, we want to use parallel replicas regardless of automatic_parallel_replicas_mode.
-                /// Temporarily suppress automatic_parallel_replicas_mode so that canUseParallelReplicasOnInitiator returns true.
-                auto saved_automatic_mode = settings[Setting::automatic_parallel_replicas_mode];
-                if (saved_automatic_mode != 0)
-                    context->setSetting("automatic_parallel_replicas_mode", Field{0});
-
-                if (context->canUseParallelReplicasOnInitiator())
-                {
-                    auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
-                    if (pipeline)
-                        res.pipeline = std::move(*pipeline);
-                }
-
-                /// Restore automatic_parallel_replicas_mode for the fallback path (buildInsertSelectPipeline),
-                /// so the Planner can properly decide whether to use parallel replicas.
-                if (saved_automatic_mode != 0)
-                    context->setSetting("automatic_parallel_replicas_mode", Field{saved_automatic_mode});
+                auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
+                if (pipeline)
+                    res.pipeline = std::move(*pipeline);
             }
         }
         if (!res.pipeline.initialized())
