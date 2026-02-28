@@ -434,7 +434,6 @@ ALWAYS_INLINE void encodeW<16>(
 }
 
 /// Runtime-W encode for widths not handled by encodeW<W> specialisations.
-/// Performance depends heavily on the compiler's auto-vectorizer.
 ALWAYS_INLINE void encodeRuntime(
     const char * __restrict__ src,
     char       * __restrict__ dst,
@@ -565,7 +564,6 @@ ALWAYS_INLINE void decodeW<16>(
 }
 
 /// Runtime-W decode for widths not handled by decodeW<W> specialisations.
-/// Performance depends heavily on the compiler's auto-vectorizer.
 ALWAYS_INLINE void decodeRuntime(
     const char * __restrict__ src,
     char       * __restrict__ dst,
