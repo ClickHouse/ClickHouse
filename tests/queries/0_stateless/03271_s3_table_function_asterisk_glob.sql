@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, long, no-flaky-check
 -- Tag no-fasttest: Depends on AWS
 
 SET send_logs_level = 'fatal';
