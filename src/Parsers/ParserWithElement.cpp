@@ -1,3 +1,4 @@
+#include <iostream>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSubquery.h>
@@ -61,6 +62,10 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = old_pos;
         ParserExpressionWithOptionalAlias s_expr(false);
         if (!s_expr.parse(pos, node, expected))
+            return false;
+
+        auto * with_element_alias = dynamic_cast<ASTWithAlias *>(node.get());
+        if (!with_element_alias || with_element_alias->alias.empty())
             return false;
     }
     return true;
