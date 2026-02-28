@@ -1,0 +1,7 @@
+INSERT INTO t1 (\n    (\n        SELECT 1\n    )\n    EXCEPT ALL\n    (\n        SELECT 2\n    )\n)\nINTERSECT\n(\n    SELECT 3\n)
+INSERT INTO t1 (\n    (\n        SELECT 1\n    )\n    INTERSECT\n    (\n        SELECT 2\n    )\n)\nEXCEPT ALL\n(\n    SELECT 3\n)
+INSERT INTO t1 (\n    (\n        SELECT 1\n    )\n    UNION ALL\n    (\n        SELECT 2\n    )\n)\nINTERSECT\n(\n    SELECT 3\n)
+INSERT INTO t1 (\n    (\n        SELECT 1\n    )\n    EXCEPT ALL\n    (\n        SELECT 2\n    )\n)\nINTERSECT\n(\n    SELECT 3\n)
+INSERT INTO t1 (a, b, c) FORMAT Values
+INSERT INTO t1 SELECT\n    1,\n    2,\n    3
+INSERT INTO t1 SELECT\n    1,\n    2,\n    3

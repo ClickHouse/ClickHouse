@@ -1188,6 +1188,9 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeDataPartsFetchFromPeer, "How many times we fetch data parts from peer", ValueType::Number) \
     M(SharedMergeTreeDataPartsFetchFromPeerMicroseconds, "Data parts fetch from peer microseconds", ValueType::Number) \
     M(SharedMergeTreeDataPartsFetchFromS3, "How many times we fetch data parts from S3", ValueType::Number) \
+    M(SharedMergeTreeReplicaSetUpdatesFromZooKeeper, "How many times we have update replica set from ZooKeeper", ValueType::Number) \
+    M(SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests, "How many total ZooKeeper requests we made to update replica set", ValueType::Number) \
+    M(SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds, "How much time we spend to update replica set", ValueType::Number) \
     \
     M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \

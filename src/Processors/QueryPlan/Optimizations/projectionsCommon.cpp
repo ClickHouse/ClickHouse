@@ -103,10 +103,13 @@ PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
 
 void QueryDAG::appendExpression(const ActionsDAG & expression)
 {
+    auto cloned = expression.clone();
+    cloned.removeTrivialWrappers();
+
     if (dag)
-        dag->mergeInplace(expression.clone());
+        dag->mergeInplace(std::move(cloned));
     else
-        dag = expression.clone();
+        dag = std::move(cloned);
 }
 
 const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)

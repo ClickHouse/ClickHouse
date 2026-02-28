@@ -58,6 +58,7 @@ public:
     std::optional<Columns> releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
+    PlainMarksByName releaseCachedIndexMarks();
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
     MergeTreeWriterSettings getWriterSettings() const { return settings; }
@@ -89,6 +90,8 @@ protected:
     MergeTreeIndexGranularityPtr index_granularity;
     /// Marks that will be saved to cache on finish.
     PlainMarksByName cached_marks;
+    /// Index marks (for secondary indices) that will be saved to cache on finish.
+    PlainMarksByName cached_index_marks;
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;

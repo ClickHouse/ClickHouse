@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
+            {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -1071,7 +1072,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
-
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
@@ -1081,6 +1082,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"}
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
