@@ -57,7 +57,7 @@
 //
 //
 // =============================================================================
-//  Throughput reference (GB/s) — Unvectorized (scalar)
+//  Throughput reference (GB/s) — with  -fno-vectorize -fno-slp-vectorize 
 // =============================================================================
 //
 //                    ENCODE            DECODE
